@@ -1,0 +1,42 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and local overrides
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Go
+bin/
+/core/**/bin/
+*.test
+*.out
+coverage.txt
+
+# Node / Next.js
+node_modules/
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Generated protobuf output (regenerated via `make proto`)
+/core/shared/gen/
+/ui/web/src/gen/
+
+# Swift / Xcode
+.build/
+*.xcuserstate
+xcuserdata/
+DerivedData/
