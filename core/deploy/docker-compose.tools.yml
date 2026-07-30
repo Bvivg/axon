@@ -29,9 +29,11 @@ services:
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     # The workspace root is not itself a module, so packages are named per
-    # module rather than with a bare ./... . Configuration is picked up from
-    # /workspace/.golangci.yml by searching upwards.
-    command: ["golangci-lint", "run", "./shared/..."]
+    # module rather than with a bare ./... . The Makefile overrides this with the
+    # current module list; the default is here only so a bare `docker compose
+    # run golangci-lint` does something sensible. Configuration is picked up
+    # from /workspace/.golangci.yml by searching upwards.
+    command: ["golangci-lint", "run", "./shared/...", "./services/auth/..."]
 
 volumes:
   buf-cache:

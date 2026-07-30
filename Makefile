@@ -7,7 +7,23 @@ SHELL := /bin/bash
 
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
-GO_MODULES    := ./shared/...
+# Every module in the workspace, listed explicitly. A pattern has to start at a
+# module root in workspace mode, so ./services/... does not work — each service
+# is added here as it appears.
+GO_MODULES    := ./shared/... ./services/auth/...
+
+# Migration targets need the per-service DSN, which lives in .env. A missing
+# file is not an error here: every other target works without it, and `make env`
+# is what creates it.
+-include core/deploy/.env
+
+# Which service's migrations to act on: `make migrate-up S=auth`. The DSN is
+# derived from the name, so a new service needs no change here — only its own
+# <NAME>_POSTGRES_DSN entry in .env.
+S ?= auth
+MIGRATE_SERVICE := $(S)
+MIGRATE_DSN := $($(shell echo $(S) | tr '[:lower:]' '[:upper:]')_POSTGRES_DSN)
+export MIGRATE_SERVICE
 
 .DEFAULT_GOAL := help
 
@@ -58,6 +74,37 @@ logs: ## Follow stack logs
 	$(COMPOSE) logs -f
 
 # ---------------------------------------------------------------------------
+# Migrations
+# ---------------------------------------------------------------------------
+
+# Guard so a missing DSN fails with something readable instead of migrate's
+# "error parsing url".
+.PHONY: migrate-guard
+migrate-guard:
+	@if [ -z "$(MIGRATE_DSN)" ]; then \
+		echo "no DSN for service '$(S)'."; \
+		echo "expected $$(echo $(S) | tr '[:lower:]' '[:upper:]')_POSTGRES_DSN in core/deploy/.env — run 'make env' first"; \
+		exit 1; \
+	fi
+
+.PHONY: migrate-up
+migrate-up: migrate-guard ## Apply pending migrations (make migrate-up S=auth)
+	$(COMPOSE) run --rm migrate -path=/migrations -database "$(MIGRATE_DSN)" up
+
+.PHONY: migrate-down
+migrate-down: migrate-guard ## Roll back the last migration (make migrate-down S=auth)
+	$(COMPOSE) run --rm migrate -path=/migrations -database "$(MIGRATE_DSN)" down 1
+
+.PHONY: migrate-status
+migrate-status: migrate-guard ## Show the applied migration version (make migrate-status S=auth)
+	$(COMPOSE) run --rm migrate -path=/migrations -database "$(MIGRATE_DSN)" version
+
+.PHONY: migrate-new
+migrate-new: ## Create an empty migration pair (make migrate-new S=auth NAME=add_sessions)
+	@if [ -z "$(NAME)" ]; then echo "NAME is required: make migrate-new S=$(S) NAME=add_sessions"; exit 1; fi
+	$(COMPOSE) run --rm migrate -dir=/migrations create -ext sql -seq $(NAME)
+
+# ---------------------------------------------------------------------------
 # Code generation
 # ---------------------------------------------------------------------------
 
@@ -94,7 +141,7 @@ vet: ## Run go vet over the workspace
 
 .PHONY: lint
 lint: ## Run golangci-lint in a container
-	$(COMPOSE_TOOLS) run --rm golangci-lint
+	$(COMPOSE_TOOLS) run --rm golangci-lint golangci-lint run $(GO_MODULES)
 
 .PHONY: test
 test: ## Run unit tests (no external dependencies)

@@ -72,7 +72,7 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: core
-          args: ./shared/...
+          args: ./shared/... ./services/auth/...
 
   proto:
     name: Contracts

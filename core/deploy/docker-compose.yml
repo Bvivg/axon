@@ -61,6 +61,22 @@ services:
       retries: 10
       start_period: 5s
 
+  # Migrations. Lives here rather than in the tools file because it needs the
+  # stack's network to reach Postgres. Behind a profile, so `up` ignores it:
+  #
+  #   make migrate-up S=auth
+  #
+  # It runs as the service's own role, which holds CREATE only on its own
+  # schema — a migration cannot reach across a schema boundary even by mistake.
+  migrate:
+    image: migrate/migrate:v4.18.1
+    profiles: ["tools"]
+    volumes:
+      - ../services/${MIGRATE_SERVICE:-auth}/migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 # Kafka joins this file with the chat service, and LiveKit with calling. They are
 # not here yet because nothing would produce to or consume from them, and an
 # idle broker only slows down `docker compose up`.
