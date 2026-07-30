@@ -1,0 +1,55 @@
+# The local Axon stack. Everything runs in Docker: the host needs no Postgres,
+# no Redis and no Go toolchain beyond formatting and unit tests.
+#
+# Host ports are all configurable and default to a high, unusual range, because
+# 5432 and 6379 are almost always taken by something else on a developer
+# machine. Container-to-container traffic uses the standard ports over the
+# compose network and is unaffected.
+
+name: axon
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-axon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-axon}
+      POSTGRES_DB: ${POSTGRES_DB:-axon}
+      # Fail fast on a misconfigured volume rather than silently initialising a
+      # second cluster.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The user is passed explicitly: pg_isready defaults to the OS user, which
+      # is not the database user here.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-axon} -d ${POSTGRES_DB:-axon}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Redis holds only reconstructible state — cache, presence, pub/sub fan-out —
+    # so persistence is off deliberately. Losing it costs latency, not data.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_HOST_PORT:-56379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+# Kafka joins this file with the chat service, and LiveKit with calling. They are
+# not here yet because nothing would produce to or consume from them, and an
+# idle broker only slows down `docker compose up`.
+
+volumes:
+  postgres-data:
