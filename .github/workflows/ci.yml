@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GOLANGCI_LINT_VERSION: v2.6.2
+
+jobs:
+  go:
+    name: Format, vet and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # The workspace file is the single source of truth for the Go version,
+          # so CI cannot drift from local development.
+          go-version-file: core/go.work
+          cache-dependency-path: core/shared/go.sum
+
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Vet
+        run: make vet
+
+      # -race is not optional: the services are concurrent by nature, and a data
+      # race that only shows up under load is the hardest kind of bug to chase.
+      - name: Unit tests
+        run: make test
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.work
+          cache-dependency-path: core/shared/go.sum
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: core
+          args: ./shared/...
+
+  proto:
+    name: Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Breaking-change detection compares against main.
+          fetch-depth: 0
+
+      - name: Check for contracts
+        id: contracts
+        run: |
+          if find core/shared/proto -name '*.proto' -print -quit | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No .proto files yet; skipping lint and breaking-change checks."
+          fi
+
+      - uses: bufbuild/buf-setup-action@v1
+        if: steps.contracts.outputs.present == 'true'
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Lint contracts
+        if: steps.contracts.outputs.present == 'true'
+        run: buf lint
+
+      # A released contract is a promise. Additive changes are fine; anything
+      # that would break an existing client has to ship as a new version.
+      - name: Check for breaking changes
+        if: steps.contracts.outputs.present == 'true' && github.event_name == 'pull_request'
+        run: buf breaking --against ".git#branch=origin/main"
+
+      - name: Generate
+        if: steps.contracts.outputs.present == 'true'
+        run: buf generate
+
+  deploy-config:
+    name: Compose files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches a malformed compose file or an unresolvable variable before it
+      # wastes anyone's time locally.
+      - name: Validate compose files
+        run: |
+          docker compose -f core/deploy/docker-compose.yml config -q
+          docker compose -f core/deploy/docker-compose.tools.yml config -q
+
+# Still to come, each with the stage that makes it meaningful:
+#   - service image builds, once the first service has a cmd/ entrypoint
+#   - integration tests against a real Postgres (testcontainers-go)
+#   - the e2e stack via docker-compose.e2e.yml
+#   - web lint, typecheck and Playwright, once ui/web exists
