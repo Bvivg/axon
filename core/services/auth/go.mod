@@ -2,4 +2,23 @@ module github.com/bvivg/axon/core/services/auth
 
 go 1.25.0
 
-require github.com/google/uuid v1.6.0
+// shared is a sibling directory in this repository, never a published version.
+// Without this, `go mod tidy` resolves it from GitHub and pins whatever commit
+// happens to be pushed — which goes stale immediately and makes an image build
+// fetch code that is already in the build context. go.work points at the same
+// directory, so this matters only when the module is built on its own.
+replace github.com/bvivg/axon/core/shared => ../../shared
+
+require (
+	github.com/bvivg/axon/core/shared v0.0.0-00010101000000-000000000000
+	github.com/google/uuid v1.6.0
+	github.com/jackc/pgx/v5 v5.10.0
+)
+
+require (
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
+)
