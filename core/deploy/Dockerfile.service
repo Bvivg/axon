@@ -10,7 +10,9 @@
 #   dev     — hot reload via air; source is bind-mounted by compose
 #   runtime — static binary on a distroless base, runs as nonroot
 
-ARG GO_VERSION=1.24
+# Must not fall behind the toolchain in core/go.work, or `go mod download` fails
+# with "go.mod requires go >= ...". Bump both together.
+ARG GO_VERSION=1.25
 
 # ---------------------------------------------------------------------------
 # base — dependency resolution, shared by the dev and build stages
