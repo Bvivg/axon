@@ -1,0 +1,32 @@
+version: v2
+
+# Managed mode sets go_package for every file centrally, so a .proto never
+# hard-codes a Go import path and moving the module does not mean editing every
+# contract.
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/bvivg/axon/core/shared/gen/go
+
+# Remote plugins keep the toolchain out of both the host and a custom image:
+# `buf` fetches pinned plugin versions itself, so generation is reproducible
+# from a stock bufbuild/buf container.
+plugins:
+  # Go message types.
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: core/shared/gen/go
+    opt: paths=source_relative
+
+  # Go service handlers and clients (gRPC, gRPC-Web and JSON over one contract).
+  - remote: buf.build/connectrpc/go:v1.20.0
+    out: core/shared/gen/go
+    opt: paths=source_relative
+
+  # TypeScript types and service descriptors for the Next.js client. The web app
+  # never hand-writes a request or response type.
+  - remote: buf.build/bufbuild/es:v2.10.0
+    out: ui/web/src/gen
+    opt: target=ts
+
+  # connect-swift is added here in the SwiftUI stage; the same contracts feed it.
