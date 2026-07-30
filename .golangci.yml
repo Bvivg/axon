@@ -39,6 +39,10 @@ linters:
           - gosec
           - errcheck
 
+    # Generated code is not ours to fix: the only way to act on a finding there
+    # is to edit a file that the next `make proto` overwrites.
+    generated: strict
+
 formatters:
   enable:
     - gofmt

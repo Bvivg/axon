@@ -30,6 +30,15 @@ jobs:
           go-version-file: core/go.work
           cache-dependency-path: core/shared/go.sum
 
+      # Generated code is git-ignored and rebuilt on demand, so it has to exist
+      # before anything tries to compile against it.
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        run: buf generate
+
       - name: Check formatting
         run: make fmt-check
 
@@ -51,6 +60,13 @@ jobs:
         with:
           go-version-file: core/go.work
           cache-dependency-path: core/shared/go.sum
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        run: buf generate
 
       - uses: golangci/golangci-lint-action@v8
         with:

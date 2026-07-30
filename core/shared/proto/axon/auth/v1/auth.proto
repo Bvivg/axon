@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+// Authentication and identity. This contract is served by the gateway as gRPC,
+// gRPC-Web and JSON at once, so the web client, the SwiftUI client and internal
+// services all speak the same shapes.
+package axon.auth.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// AuthService issues and refreshes the tokens every other service trusts.
+//
+// Access tokens are short-lived RS256 JWTs verified locally by each service
+// against the JWKS below, so a request never costs a round trip to auth.
+service AuthService {
+  // Register creates an account from an email and password and signs the user
+  // in immediately.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Login exchanges an email and password for a token pair.
+  rpc Login(LoginRequest) returns (LoginResponse);
+
+  // RefreshToken exchanges a refresh token for a new pair and invalidates the
+  // one presented. Presenting an already-used token revokes the whole chain.
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+
+  // Logout revokes the refresh chain the given token belongs to. Access tokens
+  // already issued stay valid until they expire — that is the cost of stateless
+  // verification, and the reason their lifetime is short.
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+
+  // GetMe returns the caller's profile. It takes no user id on purpose: the
+  // subject comes from the access token, so the method cannot be asked for
+  // somebody else's account.
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);
+
+  // StartOAuth returns the provider URL to send the browser to, along with the
+  // opaque state that CompleteOAuth will require back.
+  rpc StartOAuth(StartOAuthRequest) returns (StartOAuthResponse);
+
+  // CompleteOAuth exchanges the provider's authorization code for a token pair,
+  // creating the account on first sign-in and linking it on later ones.
+  rpc CompleteOAuth(CompleteOAuthRequest) returns (CompleteOAuthResponse);
+}
+
+// OauthProvider enumerates the supported identity providers.
+//
+// Spelled Oauth rather than OAuth so the value prefix buf derives from the type
+// name is OAUTH_PROVIDER_ and not O_AUTH_PROVIDER_.
+enum OauthProvider {
+  OAUTH_PROVIDER_UNSPECIFIED = 0;
+  OAUTH_PROVIDER_GOOGLE = 1;
+  OAUTH_PROVIDER_GITHUB = 2;
+  OAUTH_PROVIDER_APPLE = 3;
+
+  // Local stand-in that runs the full authorization code flow without a third
+  // party. Enabled only outside production, so development and e2e runs need no
+  // real credentials.
+  OAUTH_PROVIDER_FAKE = 4;
+}
+
+// TokenPair is everything a client needs after a successful sign-in.
+//
+// The lifetime is returned explicitly rather than left for the client to decode
+// out of the JWT: a client that has to parse the token to know when to refresh
+// ends up depending on the token format.
+message TokenPair {
+  string access_token = 1;
+  string refresh_token = 2;
+
+  // Seconds until access_token expires.
+  int64 expires_in = 3;
+
+  // Always "Bearer". Present so clients build the header from the response
+  // instead of hard-coding the scheme.
+  string token_type = 4;
+}
+
+// User is the caller-visible profile. It never carries credentials.
+message User {
+  string id = 1;
+  string email = 2;
+
+  // True once the address has been confirmed. Registration does not wait for
+  // it, so an unverified account can still sign in.
+  bool email_verified = 3;
+
+  optional string display_name = 4;
+  optional string avatar_url = 5;
+
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+  optional string display_name = 3;
+}
+
+message RegisterResponse {
+  User user = 1;
+  TokenPair tokens = 2;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  User user = 1;
+  TokenPair tokens = 2;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  TokenPair tokens = 1;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  User user = 1;
+}
+
+message StartOAuthRequest {
+  OauthProvider provider = 1;
+
+  // Where to send the browser once the provider is done. Validated against an
+  // allow-list — an open redirect here would let an attacker harvest codes.
+  optional string return_to = 2;
+}
+
+message StartOAuthResponse {
+  // The provider URL to redirect the browser to.
+  string authorization_url = 1;
+
+  // Single-use, short-lived value that CompleteOAuth requires back. Without it
+  // the callback is open to CSRF.
+  string state = 2;
+}
+
+message CompleteOAuthRequest {
+  OauthProvider provider = 1;
+  string code = 2;
+  string state = 3;
+}
+
+message CompleteOAuthResponse {
+  User user = 1;
+  TokenPair tokens = 2;
+
+  // True when this call created the account rather than signing in to an
+  // existing one. Lets the client show onboarding without a second round trip.
+  bool created = 3;
+}
