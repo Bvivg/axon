@@ -19,10 +19,19 @@ services:
       # Fail fast on a misconfigured volume rather than silently initialising a
       # second cluster.
       PGDATA: /var/lib/postgresql/data/pgdata
+      # Consumed by the init script below, which creates one login role per
+      # service. Each role can only reach its own schema.
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
+      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
+      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
+      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
     ports:
       - "${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Runs once, when the data volume is first created. `make reset` drops the
+      # volume and replays it.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # The user is passed explicitly: pg_isready defaults to the OS user, which
       # is not the database user here.
@@ -35,13 +44,18 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-axon}
     # Redis holds only reconstructible state — cache, presence, pub/sub fan-out —
     # so persistence is off deliberately. Losing it costs latency, not data.
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    #
+    # A password is set even locally: the port is published on the host, and an
+    # unauthenticated Redis on a laptop is a well-known way to get owned.
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
     ports:
       - "${REDIS_HOST_PORT:-56379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
