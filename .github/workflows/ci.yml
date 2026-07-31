@@ -72,7 +72,11 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: core
-          args: ./shared/... ./services/auth/...
+          # Every module, listed explicitly: a pattern has to start at a module
+          # root in workspace mode. Keep in step with GO_MODULES in the Makefile
+          # and with the default command in docker-compose.tools.yml — a service
+          # missing from this list is a service nobody lints.
+          args: ./shared/... ./services/auth/... ./services/gateway/...
 
   proto:
     name: Contracts
@@ -124,9 +128,92 @@ jobs:
         run: |
           docker compose -f core/deploy/docker-compose.yml config -q
           docker compose -f core/deploy/docker-compose.tools.yml config -q
+          # The e2e file requires a signing key, so a placeholder stands in:
+          # this step checks the file parses, not that the stack runs.
+          JWT_PRIVATE_KEY_DEV_1=placeholder \
+            docker compose -f core/deploy/docker-compose.e2e.yml config -q
+
+  # Both of the jobs below wait on `go`: if the unit tests are red there is no
+  # point spending several minutes standing a database or a whole stack up.
+  integration:
+    name: Integration (testcontainers)
+    runs-on: ubuntu-latest
+    needs: go
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.work
+          cache-dependency-path: core/services/auth/go.sum
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        run: buf generate
+
+      - name: Integration tests
+        run: make test-integration
+
+  e2e:
+    name: E2E (full stack)
+    runs-on: ubuntu-latest
+    needs: go
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      # The runner container compiles the tests from the mounted source, and the
+      # service images build from it too, so the generated code has to be on disk
+      # before the stack goes up.
+      - name: Generate contracts
+        run: buf generate
+
+      - name: E2E tests
+        run: make test-e2e
+
+      # A red run without the services' logs is close to undebuggable, and the
+      # stack is torn down the moment the run ends — so make writes them out
+      # before tearing it down, whichever way the run went.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-logs
+          path: e2e-logs.txt
+          retention-days: 7
+
+  images:
+    name: Service images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth, gateway]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        run: buf generate
+
+      # The runtime target, not dev: this is the image that would ship, and a
+      # Dockerfile that only ever builds the hot-reload stage is a Dockerfile
+      # whose shipping path is untested.
+      - name: Build ${{ matrix.service }}
+        run: |
+          docker build \
+            --file core/deploy/Dockerfile.service \
+            --build-arg SERVICE=${{ matrix.service }} \
+            --target runtime \
+            --tag axon/${{ matrix.service }}:${{ github.sha }} \
+            core
 
 # Still to come, each with the stage that makes it meaningful:
-#   - service image builds, once the first service has a cmd/ entrypoint
-#   - integration tests against a real Postgres (testcontainers-go)
-#   - the e2e stack via docker-compose.e2e.yml
 #   - web lint, typecheck and Playwright, once ui/web exists

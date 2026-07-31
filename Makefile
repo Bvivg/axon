@@ -189,14 +189,13 @@ E2E_ENV_FILE := core/deploy/.env.e2e
 #
 # The teardown is a trap so a failing run, an interrupt, or a crash all leave the
 # machine clean.
+E2E_LOG_FILE := e2e-logs.txt
+
 .PHONY: test-e2e
 test-e2e: e2e-key ## Run e2e against the full stack on the shipping images
-	@trap '$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	@trap '$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) logs --no-color > $(E2E_LOG_FILE) 2>&1; \
+	       $(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
 	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) run --rm --build e2e
-
-.PHONY: e2e-logs
-e2e-logs: ## Dump logs from the last e2e run (the stack is torn down after it)
-	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) logs --no-color
 
 # A throwaway signing key per machine, never committed. Regenerating it costs
 # nothing: the stack is rebuilt from empty on every run, so no token outlives it.

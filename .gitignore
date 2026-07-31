@@ -21,6 +21,8 @@ bin/
 *.test
 *.out
 coverage.txt
+# Written by `make test-e2e` before it tears the stack down.
+e2e-logs.txt
 
 # Node / Next.js
 node_modules/

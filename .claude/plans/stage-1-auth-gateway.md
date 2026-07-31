@@ -185,27 +185,46 @@ Next.js + Tailwind + shadcn/@base-ui + TanStack Query.
   это XSS-подарок.
 - Интерцептор: на 401 один раз пробует refresh и повторяет запрос.
 
-## 5. Тесты
+## 5. Тесты — ✅ ВЫПОЛНЕНО (кроме OAuth-сценария)
 
-| Уровень | Что покрывает |
-|---|---|
-| Unit | argon2id (в т.ч. что два хэша одного пароля различаются), JWT issue/verify, выбор ключа по `kid`, валидация входа, `state` для OAuth |
-| Unit | **reuse detection**: повторный refresh отзывает всю цепочку |
-| Integration | `auth` + реальный Postgres (testcontainers-go): уникальность email, ротация refresh, связывание oauth-аккаунта |
-| E2E | регистрация → логин → защищённый метод через gateway → refresh → logout инвалидирует; отдельный сценарий OAuth через fake-провайдер |
+| Уровень | Что покрывает | Где |
+|---|---|---|
+| Unit | argon2id (в т.ч. что два хэша одного пароля различаются), JWT issue/verify, выбор ключа по `kid`, валидация входа, reuse detection на моках | рядом с кодом |
+| Integration | гонка восьми горутин за один refresh, откат регистрации при конфликте email, границы отзыва семьи, атомарность смены пароля, изоляция схем | `services/auth/integration/`, тег `integration` |
+| E2E | 15 сценариев: регистрация → логин → GetMe → refresh → logout, повтор потраченного refresh, отсутствие user-enumeration, rate limit, CORS, админский порт не публичен | `services/auth/e2e/`, тег `e2e` |
+| E2E | OAuth через fake-провайдер | **не сделано** — идёт вместе с самим провайдером |
 
-E2E живёт в `services/auth/e2e/`, гоняется только в Docker
-(`core/deploy/docker-compose.e2e.yml`). В CI сейчас четыре джоба (формат/vet/тесты,
-линтер, контракты, compose) — добавляются integration и e2e.
+Разделение уровней: в integration попадает только то, что невидимо ни снизу
+(моки не арбитрируют гонку), ни сверху (через HTTP тайминг не воспроизвести).
+
+Ключевые решения:
+
+- **E2E гоняется на `runtime`-образах**, а не на `dev` с air. Зелёный прогон
+  против контейнера с hot-reload ничего не говорит про то, что уедет в прод.
+- **Порты на хост не публикуются.** Прогон не конфликтует ни с dev-стеком, ни с
+  другим прогоном, ни с занятым 8080.
+- **`TRUSTED_PROXIES=1` на e2e-gateway.** Весь трафик прогона идёт с одного
+  адреса, поэтому каждый тест подставляет свой `X-Forwarded-For` и получает
+  собственную корзину лимитера. Побочно покрывается путь `ratelimit.ClientIP`,
+  которым gateway пойдёт за ingress.
+- **Ключ подписи генерируется на каждый прогон** в `core/deploy/.env.e2e`
+  (в `.gitignore`) — в репозитории нет ключа даже тестового.
+- **Бинарник умеет `-healthcheck`** (`shared/pkg/health`): в distroless-образе
+  нет shell, wget и curl, а healthcheck нужен.
+
+В CI стало семь джобов: формат/vet/unit, линтер, контракты, compose,
+integration, e2e (с выгрузкой логов сервисов при падении), сборка
+runtime-образов. Найденный по дороге баг: линтер в CI не покрывал `gateway`
+вообще.
 
 ## Порядок работ
 
-1. Починить `GO_VERSION` в `Dockerfile.service`
-2. `auth.proto` + генерация, убедиться, что код появился
-3. Модуль `auth`: домен, миграции, репозиторий, argon2id, JWT/JWKS
-4. Connect-хендлер auth + `main.go` + сервис в compose, поднять и дёрнуть `curl`
-5. Модуль `gateway`: проксирование, JWT-middleware, CORS, rate limit
-6. E2E на password-флоу
+1. ✅ Починить `GO_VERSION` в `Dockerfile.service`
+2. ✅ `auth.proto` + генерация, убедиться, что код появился
+3. ✅ Модуль `auth`: домен, миграции, репозиторий, argon2id, JWT/JWKS
+4. ✅ Connect-хендлер auth + `main.go` + сервис в compose, поднять и дёрнуть `curl`
+5. ✅ Модуль `gateway`: проксирование, JWT-middleware, CORS, rate limit
+6. ✅ E2E на password-флоу (плюс integration-уровень, которого не было в исходном порядке)
 7. OAuth: интерфейс, fake-провайдер, google/github/apple
 8. E2E на OAuth
 9. Web: скелет, connect-клиент, страницы логина и регистрации
@@ -219,8 +238,9 @@ E2E живёт в `services/auth/e2e/`, гоняется только в Docker
 make up                 # postgres, redis, auth, gateway — все healthy
 make proto              # контракты сгенерированы
 make check              # gofmt, vet, go test -race
-make test-integration   # testcontainers, добавляется на этом этапе
-make test-e2e           # полный стек, добавляется на этом этапе
+make lint               # golangci-lint, включая e2e/integration за тегами
+make test-integration   # testcontainers поднимает Postgres
+make test-e2e           # полный стек на runtime-образах, сносится после прогона
 ```
 
 Ручная проверка: зарегистрироваться и залогиниться в браузере на
