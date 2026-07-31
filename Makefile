@@ -10,7 +10,7 @@ COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
 # Every module in the workspace, listed explicitly. A pattern has to start at a
 # module root in workspace mode, so ./services/... does not work — each service
 # is added here as it appears.
-GO_MODULES    := ./shared/... ./services/auth/...
+GO_MODULES    := ./shared/... ./services/auth/... ./services/gateway/...
 
 # Migration targets need the per-service DSN, which lives in .env. A missing
 # file is not an error here: every other target works without it, and `make env`
