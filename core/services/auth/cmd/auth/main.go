@@ -19,6 +19,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
@@ -86,7 +87,9 @@ func run() error {
 		return err
 	}
 
-	verifier, err := jwt.NewVerifier(jwt.VerifierConfig{
+	// The service verifies its own tokens against the keys it holds, using the
+	// same verifier every other service runs against the JWKS document.
+	verifier, err := authn.NewVerifier(authn.Config{
 		Keys:     cfg.JWT.Keys,
 		Issuer:   cfg.JWT.Issuer,
 		Audience: cfg.JWT.Audience,

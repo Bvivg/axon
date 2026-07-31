@@ -7,8 +7,9 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/bvivg/axon/core/shared/pkg/authn"
+
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
-	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 )
 
 // translateError maps a domain failure onto a Connect code.
@@ -58,10 +59,15 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 		errors.Is(err, domain.ErrRefreshTokenReused):
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("refresh token is not valid"))
 
-	case errors.Is(err, jwt.ErrExpired):
+	case errors.Is(err, authn.ErrNoToken):
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("no access token"))
+
+	// Expiry is told apart from every other token failure because the client
+	// acts on it differently: refresh, rather than sign in again.
+	case errors.Is(err, authn.ErrExpired):
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("access token expired"))
 
-	case errors.Is(err, jwt.ErrInvalidToken), errors.Is(err, jwt.ErrUnknownKeyID):
+	case errors.Is(err, authn.ErrInvalidToken), errors.Is(err, authn.ErrUnknownKeyID):
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("access token is not valid"))
 
 	case errors.Is(err, domain.ErrProviderUnsupported):

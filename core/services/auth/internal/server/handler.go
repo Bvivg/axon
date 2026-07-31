@@ -10,30 +10,22 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/authn"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
-	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
-
-// authorizationHeader is where the access token arrives.
-const authorizationHeader = "Authorization"
-
-// bearerPrefix is the scheme, matched case-insensitively because RFC 7235 says
-// the scheme token is case-insensitive and clients differ.
-const bearerPrefix = "bearer "
 
 // Handler implements the generated AuthService interface.
 type Handler struct {
 	svc      *service.Service
-	verifier *jwt.Verifier
+	verifier *authn.Verifier
 	log      *slog.Logger
 	now      func() time.Time
 }
@@ -43,7 +35,7 @@ var _ authv1connect.AuthServiceHandler = (*Handler)(nil)
 // Config configures a Handler.
 type Config struct {
 	Service  *service.Service
-	Verifier *jwt.Verifier
+	Verifier *authn.Verifier
 	Logger   *slog.Logger
 
 	// Now overrides the clock. Tests set it; production leaves it nil.
@@ -193,17 +185,10 @@ func (h *Handler) CompleteOAuth(
 // that owns the resource, and a service that trusts a header because "the
 // gateway must have checked" is one misrouted request away from trusting anyone.
 // Verification is local against the key set, so the cost is a signature check.
-func (h *Handler) authenticate(headers http.Header) (jwt.Claims, error) {
-	raw := headers.Get(authorizationHeader)
-	if raw == "" {
-		return jwt.Claims{}, connect.NewError(connect.CodeUnauthenticated,
-			errors.New("no access token"))
+func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {
+	raw, err := authn.BearerToken(headers)
+	if err != nil {
+		return authn.Claims{}, err
 	}
-
-	if len(raw) < len(bearerPrefix) || !strings.EqualFold(raw[:len(bearerPrefix)], bearerPrefix) {
-		return jwt.Claims{}, connect.NewError(connect.CodeUnauthenticated,
-			errors.New("authorization header is not a bearer token"))
-	}
-
-	return h.verifier.Verify(strings.TrimSpace(raw[len(bearerPrefix):]))
+	return h.verifier.Verify(raw)
 }

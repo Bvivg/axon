@@ -22,6 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/bvivg/axon/core/shared/pkg/authn"
 )
 
 // MinKeySizeBits is the smallest RSA modulus accepted. Below 2048 the signature
@@ -70,10 +72,16 @@ func validateKeySize(key *rsa.PrivateKey) (*rsa.PrivateKey, error) {
 }
 
 // KeySet is every key a verifier will accept, plus which one currently signs.
+//
+// It satisfies authn.KeySource, so this service verifies its own tokens against
+// the keys it holds while every other service verifies the same tokens against
+// the JWKS document below — one verifier implementation, two key sources.
 type KeySet struct {
 	active  PrivateKey
 	byKeyID map[string]*rsa.PublicKey
 }
+
+var _ authn.KeySource = (*KeySet)(nil)
 
 // NewKeySet builds a key set from the signing key and any additional keys that
 // must stay verifiable — the previous key during a rotation, typically.
