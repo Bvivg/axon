@@ -4,13 +4,11 @@ root = "."
 tmp_dir = "/tmp/air"
 
 [build]
-  # Built from the workspace root so go.work applies and shared/ resolves to the
-  # mounted sibling rather than to a published version.
+  # The image sets GOWORK=off, so shared/ resolves through this module's
+  # `replace` directive to the mounted sibling rather than a published version.
   cmd = "go build -o /tmp/air/auth ./cmd/auth"
   bin = "/tmp/air/auth"
 
-  # Watching shared/ too: a change there has to restart the service, or a stale
-  # binary keeps running against edited code.
   include_dir = ["cmd", "internal"]
   include_ext = ["go"]
   exclude_dir = ["migrations", "e2e"]
