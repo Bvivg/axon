@@ -1,0 +1,175 @@
+# The end-to-end stack: everything a real client touches, and a runner that
+# behaves like one.
+#
+# Two things make this file different from docker-compose.yml, and both are
+# deliberate:
+#
+#   1. Nothing is published to the host. All traffic stays on the compose
+#      network, so a run cannot collide with the development stack, with another
+#      run, or with whatever already owns port 8080 on the machine.
+#   2. Services are built at the `runtime` target — the image that actually
+#      ships. A green run against a hot-reload container says nothing about what
+#      gets deployed.
+#
+# Run it through the Makefile, which generates a throwaway signing key and tears
+# the stack down afterwards:
+#
+#   make test-e2e
+
+name: axon-e2e
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: axon
+      POSTGRES_PASSWORD: axon
+      POSTGRES_DB: axon
+      PGDATA: /var/lib/postgresql/data/pgdata
+      AUTH_DB_PASSWORD: auth
+      CHAT_DB_PASSWORD: chat
+      GAME_DB_PASSWORD: game
+      CALLING_DB_PASSWORD: calling
+    volumes:
+      # A named volume rather than tmpfs: the init scripts run only when the
+      # volume is created, and `make test-e2e` drops it after every run, so each
+      # run starts from a freshly initialised cluster either way.
+      - e2e-postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axon -d axon"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "axon"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a axon --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # Migrations run as their own step rather than being left to the service.
+  # Nothing applies them automatically, and an e2e stack that races the schema
+  # fails in a way that looks like a bug in the code under test.
+  migrate-auth:
+    image: migrate/migrate:v4.18.1
+    restart: "no"
+    volumes:
+      - ../services/auth/migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  auth:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: runtime
+      args:
+        SERVICE: auth
+    restart: "no"
+    environment:
+      APP_ENV: test
+      LOG_LEVEL: debug
+      LOG_FORMAT: json
+      HTTP_ADDR: ":8081"
+      METRICS_ADDR: ":9091"
+      POSTGRES_DSN: postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: axon
+      JWT_ACTIVE_KEY_ID: dev-1
+      # Generated per run into core/deploy/.env.e2e by `make test-e2e`. No key
+      # is committed, not even a test one.
+      JWT_PRIVATE_KEY_DEV_1: ${JWT_PRIVATE_KEY_DEV_1:?run make test-e2e, which generates a throwaway key}
+      JWT_ISSUER: https://auth.axon.test
+      JWT_ACCESS_TOKEN_TTL: 15m
+      JWT_REFRESH_TOKEN_TTL: 720h
+    depends_on:
+      migrate-auth:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # The runtime image is distroless: no shell, no wget, no curl. The binary
+      # answers its own probe instead.
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: runtime
+      args:
+        SERVICE: gateway
+    restart: "no"
+    environment:
+      APP_ENV: test
+      LOG_LEVEL: debug
+      LOG_FORMAT: json
+      HTTP_ADDR: ":8080"
+      METRICS_ADDR: ":9090"
+      AUTH_SERVICE_URL: http://auth:8081
+      JWKS_URL: http://auth:9091/.well-known/jwks.json
+      JWT_ISSUER: https://auth.axon.test
+      JWT_AUDIENCE: axon
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      RATE_LIMIT_PER_MINUTE: 600
+      RATE_LIMIT_AUTH_PER_MINUTE: 60
+      # One proxy hop is trusted here, unlike in development. Every request in a
+      # run comes from the same container, so without this a single scenario
+      # would eat the budget for all the others; with it, each test forges its
+      # own address and gets its own bucket. It also means ratelimit.ClientIP's
+      # trusted-proxy path is exercised, which is how the gateway will actually
+      # run behind an ingress.
+      TRUSTED_PROXIES: "1"
+    depends_on:
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9090/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # The runner. It reaches the stack exactly as a browser would: through the
+  # gateway, over the published contract, with no access to Postgres or to any
+  # service's internals.
+  e2e:
+    image: golang:1.26-alpine
+    working_dir: /src/core/services/auth
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      # The internal listener. Reachable here because the runner is on the
+      # compose network, which is exactly what the tests use it to prove: what
+      # lives on this port must not also be served on the public one.
+      GATEWAY_ADMIN_URL: http://gateway:9090
+      # Each service module resolves shared/ through its own replace directive;
+      # see the note in deploy/Dockerfile.service.
+      GOWORK: "off"
+      GOFLAGS: -mod=mod
+    volumes:
+      - ../..:/src
+      - e2e-go-mod:/go/pkg/mod
+      - e2e-go-build:/root/.cache/go-build
+    command: ["go", "test", "-tags", "e2e", "-count=1", "-v", "./e2e/..."]
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  e2e-postgres-data:
+  e2e-go-mod:
+  e2e-go-build:

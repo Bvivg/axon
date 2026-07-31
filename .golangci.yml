@@ -3,6 +3,13 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+  # Integration and e2e files sit behind build tags so `go test ./...` does not
+  # try to run them without a stack. Without listing the tags here the linter
+  # would not see those files at all, which is the worst of both worlds: code
+  # that is never linted and nobody noticing.
+  build-tags:
+    - e2e
+    - integration
 
 linters:
   default: standard

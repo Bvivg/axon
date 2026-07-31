@@ -7,6 +7,7 @@ SHELL := /bin/bash
 
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
+COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
 # Every module in the workspace, listed explicitly. A pattern has to start at a
 # module root in workspace mode, so ./services/... does not work — each service
 # is added here as it appears.
@@ -171,6 +172,42 @@ test: ## Run unit tests (no external dependencies)
 .PHONY: test-cover
 test-cover: ## Run unit tests with a coverage summary
 	cd core && go test -race -coverprofile=coverage.out $(GO_MODULES) && go tool cover -func=coverage.out | tail -1
+
+# Integration and e2e sit behind build tags, so `make test` above never compiles
+# them and stays runnable on a machine with nothing but Go.
+
+.PHONY: test-integration
+test-integration: ## Run integration tests (testcontainers spins up Postgres)
+	cd core && go test -tags integration -count=1 ./services/auth/integration/...
+
+E2E_ENV_FILE := core/deploy/.env.e2e
+
+# `run` rather than `up --abort-on-container-exit`: the latter tears the stack
+# down the moment any container exits, and the migration container is supposed
+# to exit. `run` starts the dependency chain, waits for each depends_on
+# condition, and returns the runner's own exit code — which is what CI needs.
+#
+# The teardown is a trap so a failing run, an interrupt, or a crash all leave the
+# machine clean.
+.PHONY: test-e2e
+test-e2e: e2e-key ## Run e2e against the full stack on the shipping images
+	@trap '$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) run --rm --build e2e
+
+.PHONY: e2e-logs
+e2e-logs: ## Dump logs from the last e2e run (the stack is torn down after it)
+	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) logs --no-color
+
+# A throwaway signing key per machine, never committed. Regenerating it costs
+# nothing: the stack is rebuilt from empty on every run, so no token outlives it.
+.PHONY: e2e-key
+e2e-key:
+	@if [ -s $(E2E_ENV_FILE) ] && grep -qE '^JWT_PRIVATE_KEY_DEV_1=.+' $(E2E_ENV_FILE); then exit 0; fi; \
+	echo "generating a throwaway e2e signing key..."; \
+	key=$$(docker run --rm alpine/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n'); \
+	if [ -z "$$key" ]; then echo "key generation failed"; exit 1; fi; \
+	printf 'JWT_PRIVATE_KEY_DEV_1=%s\n' "$$key" > $(E2E_ENV_FILE); \
+	echo "wrote $(E2E_ENV_FILE) (git-ignored)"
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace
