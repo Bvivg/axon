@@ -53,6 +53,16 @@ func (l *Loader) fail(key string, err error) {
 	l.errs = append(l.errs, fmt.Errorf("%s: %w", key, err))
 }
 
+// Fail records a problem a caller found while interpreting a value the Loader
+// handed back — key material that parses as base64 but not as a PEM, say.
+//
+// It exists so those failures join the same batch as missing and malformed
+// variables. A service that returned them separately would report one class of
+// configuration problem, get restarted, and then report the next.
+func (l *Loader) Fail(key string, err error) {
+	l.fail(key, err)
+}
+
 // ErrMissing is reported for a required variable that is unset or empty.
 var ErrMissing = errors.New("required but not set")
 

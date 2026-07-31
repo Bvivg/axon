@@ -22,7 +22,7 @@ services:
 
   # golangci-lint over the Go workspace. Pinned so CI and local runs agree.
   golangci-lint:
-    image: golangci/golangci-lint:v2.6.2
+    image: golangci/golangci-lint:v2.9.0-alpine
     working_dir: /workspace/core
     volumes:
       - ../..:/workspace

@@ -61,6 +61,46 @@ services:
       retries: 10
       start_period: 5s
 
+  auth:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      # dev runs air against the bind-mounted source. Build with
+      # BUILD_TARGET=runtime to exercise the image that would actually ship.
+      target: ${BUILD_TARGET:-dev}
+      args:
+        SERVICE: auth
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # The service connects as its own role, which can only reach the auth
+      # schema. The superuser DSN is for migrations and psql, never for a service.
+      POSTGRES_DSN: ${AUTH_POSTGRES_DSN}
+      HTTP_ADDR: ":8081"
+      # Probes, metrics and JWKS live on their own port so the operational
+      # surface is never reachable through whatever the gateway exposes.
+      METRICS_ADDR: ":9091"
+    ports:
+      - "${AUTH_HOST_PORT:-8081}:8081"
+      - "${AUTH_METRICS_HOST_PORT:-9091}:9091"
+    volumes:
+      # The whole workspace, so go.work resolves shared/ to the sibling on disk
+      # and a change there triggers a rebuild too.
+      - ..:/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Liveness, not readiness: compose should hold dependents until the process
+      # is up, and /readyz would additionally wait on Postgres, which is already
+      # covered by depends_on.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9091/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
   # Migrations. Lives here rather than in the tools file because it needs the
   # stack's network to reach Postgres. Behind a profile, so `up` ignores it:
   #

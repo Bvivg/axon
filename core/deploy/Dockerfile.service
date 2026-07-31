@@ -12,7 +12,12 @@
 
 # Must not fall behind the toolchain in core/go.work, or `go mod download` fails
 # with "go.mod requires go >= ...". Bump both together.
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
+
+# Pinned, not @latest. A floating version means a build that worked yesterday
+# can fail today because an upstream release started requiring a newer
+# toolchain — which is exactly how this line first broke.
+ARG AIR_VERSION=v1.67.3
 
 # ---------------------------------------------------------------------------
 # base — dependency resolution, shared by the dev and build stages
@@ -39,10 +44,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM base AS dev
 
 ARG SERVICE
+ARG AIR_VERSION
 ENV SERVICE=${SERVICE}
 
 RUN --mount=type=cache,target=/go/pkg/mod \
-    go install github.com/air-verse/air@latest
+    go install github.com/air-verse/air@${AIR_VERSION}
 
 COPY shared/ ./shared/
 COPY services/${SERVICE}/ ./services/${SERVICE}/

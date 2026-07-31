@@ -74,6 +74,27 @@ logs: ## Follow stack logs
 	$(COMPOSE) logs -f
 
 # ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+
+ENV_FILE := core/deploy/.env
+
+.PHONY: jwt-key
+jwt-key: env ## Generate a development RS256 signing key into core/deploy/.env
+	@if grep -qE '^JWT_PRIVATE_KEY_DEV_1=.+' $(ENV_FILE); then \
+		echo "JWT_PRIVATE_KEY_DEV_1 is already set in $(ENV_FILE); delete the line to regenerate"; \
+		exit 0; \
+	fi; \
+	echo "generating a 2048-bit RSA key in a container..."; \
+	key=$$(docker run --rm alpine/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n'); \
+	if [ -z "$$key" ]; then echo "key generation failed"; exit 1; fi; \
+	tmp=$$(mktemp); \
+	grep -v '^JWT_PRIVATE_KEY_DEV_1=' $(ENV_FILE) > "$$tmp"; \
+	echo "JWT_PRIVATE_KEY_DEV_1=$$key" >> "$$tmp"; \
+	mv "$$tmp" $(ENV_FILE); \
+	echo "wrote JWT_PRIVATE_KEY_DEV_1 to $(ENV_FILE) (git-ignored)"
+
+# ---------------------------------------------------------------------------
 # Migrations
 # ---------------------------------------------------------------------------
 
