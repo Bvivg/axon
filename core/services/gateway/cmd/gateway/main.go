@@ -47,6 +47,11 @@ var version = "dev"
 const sensitiveBurst = 5
 
 func main() {
+	// Exits when started with -healthcheck. The runtime image is distroless and
+	// has no shell for a container healthcheck to use, so the binary probes
+	// itself.
+	health.RunProbeIfRequested()
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "gateway: %v\n", err)
 		os.Exit(1)

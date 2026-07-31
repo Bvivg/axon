@@ -65,8 +65,10 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.service
-      # dev runs air against the bind-mounted source. Build with
-      # BUILD_TARGET=runtime to exercise the image that would actually ship.
+      # dev runs air against the bind-mounted source. The healthchecks below
+      # assume that image: they call wget, which the distroless runtime image
+      # does not have. docker-compose.e2e.yml is where the shipping images are
+      # exercised, and there the binary probes itself with -healthcheck.
       target: ${BUILD_TARGET:-dev}
       args:
         SERVICE: auth

@@ -37,6 +37,11 @@ import (
 var version = "dev"
 
 func main() {
+	// Exits when started with -healthcheck. The runtime image is distroless and
+	// has no shell for a container healthcheck to use, so the binary probes
+	// itself.
+	health.RunProbeIfRequested()
+
 	if err := run(); err != nil {
 		// The logger may not exist yet when configuration fails, so this one
 		// message goes to stderr directly.
