@@ -24,9 +24,11 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/redis"
 
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
+	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 	"github.com/bvivg/axon/core/services/auth/internal/server"
@@ -77,6 +79,21 @@ func run() error {
 	}
 	defer pool.Close()
 
+	// Redis holds in-flight OAuth sign-ins and nothing else. It is connected
+	// unconditionally because every deployment of this stack runs one, and
+	// making it conditional would mean a service that starts happily and then
+	// cannot complete a sign-in.
+	cache, err := redis.Connect(ctx, cfg.Redis, log)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cache.Close() }()
+
+	oauthCfg, err := buildOAuth(cfg, cache, log)
+	if err != nil {
+		return err
+	}
+
 	hasher, err := password.NewHasher(cfg.Password)
 	if err != nil {
 		return err
@@ -105,6 +122,7 @@ func run() error {
 
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
 		RefreshTTL: cfg.JWT.RefreshTTL,
+		OAuth:      oauthCfg,
 	})
 	if err != nil {
 		return err
@@ -122,7 +140,7 @@ func run() error {
 	// operational surface stay off whatever the gateway exposes.
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(handler, metrics, log),
+		Handler:           publicHandler(cfg, handler, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		// gRPC clients need HTTP/2 without TLS inside the compose network, where
 		// TLS terminates at the edge rather than here.
@@ -131,7 +149,7 @@ func run() error {
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(cfg, pool, metrics, log),
+		Handler:           adminHandler(cfg, pool, cache, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -150,12 +168,62 @@ func run() error {
 	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
 }
 
+// buildOAuth assembles provider sign-in, or reports that none is configured.
+//
+// A deployment with no provider set up is a normal deployment, not a broken one:
+// it serves the password flow, and the OAuth procedures answer "unsupported".
+// Returning nil here is what says so.
+func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*service.OAuthConfig, error) {
+	registry, err := oauth.NewRegistry(oauth.RegistryConfig{
+		RedirectBaseURL:  cfg.OAuth.RedirectBaseURL,
+		Google:           cfg.OAuth.Google,
+		GitHub:           cfg.OAuth.GitHub,
+		FakeEnabled:      cfg.OAuth.FakeEnabled,
+		FakeAuthorizeURL: cfg.OAuth.FakeAuthorizeURL,
+		Production:       cfg.Environment.IsProduction(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	available := registry.Available()
+	if len(available) == 0 {
+		log.Warn("no oauth provider is configured; provider sign-in is unavailable")
+		return nil, nil
+	}
+
+	states, err := oauth.NewStateStore(cache, oauth.StateStoreConfig{})
+	if err != nil {
+		return nil, err
+	}
+
+	returnTo, err := oauth.NewReturnToPolicy(cfg.OAuth.AllowedReturnOrigins)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("oauth providers ready", "providers", available)
+
+	return &service.OAuthConfig{
+		Providers: registry,
+		States:    states,
+		ReturnTo:  returnTo,
+	}, nil
+}
+
 // publicHandler builds the contract listener.
-func publicHandler(handler *server.Handler, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func publicHandler(cfg config.Config, handler *server.Handler, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
 	interceptors := connectInterceptors(metrics, log)
 
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(handler, interceptors))
+
+	// The fake provider's consent screen, such as it is. Mounted only when the
+	// provider is enabled, which never happens in production — the registry
+	// refuses to build there.
+	if cfg.OAuth.FakeEnabled {
+		mux.Handle("GET "+oauth.FakeAuthorizePath, oauth.FakeAuthorizeHandler())
+	}
 
 	return middleware.Chain(
 		middleware.Correlation,
@@ -177,10 +245,19 @@ func unencryptedHTTP2() *http.Protocols {
 }
 
 // adminHandler builds the internal listener: probes, metrics and JWKS.
-func adminHandler(cfg config.Config, pool *postgres.Pool, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func adminHandler(
+	cfg config.Config,
+	pool *postgres.Pool,
+	cache *redis.Client,
+	metrics *middleware.Metrics,
+	log *slog.Logger,
+) http.Handler {
 	mux := http.NewServeMux()
 
-	health.New(log, []health.Checker{pool}).Register(mux)
+	// Redis joins readiness because an instance that cannot reach it can serve
+	// password sign-in but not provider sign-in, and half a service in rotation
+	// is a worse outcome than one out of it.
+	health.New(log, []health.Checker{pool, cache}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	mux.Handle("GET /.well-known/jwks.json", jwksHandler(cfg.JWT.Keys, log))
 

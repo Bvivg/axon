@@ -41,7 +41,12 @@ type harness struct {
 	clock time.Time
 }
 
-func newHarness(t *testing.T) *harness {
+// harnessOption customises the service under test. Everything optional is
+// off by default, so a test that says nothing gets the smallest service that
+// can serve the password flow.
+type harnessOption func(*service.Config)
+
+func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	t.Helper()
 
 	h := &harness{
@@ -76,10 +81,15 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("NewIssuer: %v", err)
 	}
 
-	svc, err := service.New(h.store, hasher, issuer, logger.Discard(), service.Config{
+	cfg := service.Config{
 		RefreshTTL: refreshTTL,
 		Now:        h.now,
-	})
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	svc, err := service.New(h.store, hasher, issuer, logger.Discard(), cfg)
 	if err != nil {
 		t.Fatalf("service.New: %v", err)
 	}

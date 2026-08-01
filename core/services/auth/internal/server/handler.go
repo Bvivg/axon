@@ -155,14 +155,20 @@ func (h *Handler) StartOAuth(
 	ctx context.Context,
 	req *connect.Request[authv1.StartOAuthRequest],
 ) (*connect.Response[authv1.StartOAuthResponse], error) {
-	if _, ok := fromProtoProvider(req.Msg.GetProvider()); !ok {
+	provider, ok := fromProtoProvider(req.Msg.GetProvider())
+	if !ok {
 		return nil, translateError(ctx, h.log, domain.ErrProviderUnsupported)
 	}
 
-	// The providers land in their own change; refusing explicitly is better than
-	// a handler that looks wired up and returns an empty URL.
-	return nil, connect.NewError(connect.CodeUnimplemented,
-		errors.New("oauth sign-in is not available yet"))
+	started, err := h.svc.StartOAuth(ctx, provider, req.Msg.GetReturnTo())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.StartOAuthResponse{
+		AuthorizationUrl: started.AuthorizationURL,
+		State:            started.State,
+	}), nil
 }
 
 // CompleteOAuth finishes an authorization code flow.
@@ -170,12 +176,21 @@ func (h *Handler) CompleteOAuth(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteOAuthRequest],
 ) (*connect.Response[authv1.CompleteOAuthResponse], error) {
-	if _, ok := fromProtoProvider(req.Msg.GetProvider()); !ok {
+	provider, ok := fromProtoProvider(req.Msg.GetProvider())
+	if !ok {
 		return nil, translateError(ctx, h.log, domain.ErrProviderUnsupported)
 	}
 
-	return nil, connect.NewError(connect.CodeUnimplemented,
-		errors.New("oauth sign-in is not available yet"))
+	completed, err := h.svc.CompleteOAuth(ctx, provider, req.Msg.GetCode(), req.Msg.GetState())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.CompleteOAuthResponse{
+		User:    toProtoUser(completed.User),
+		Tokens:  toProtoTokens(completed.Tokens, h.now()),
+		Created: completed.Created,
+	}), nil
 }
 
 // authenticate verifies the bearer token on a request.

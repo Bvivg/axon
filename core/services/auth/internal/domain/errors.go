@@ -39,6 +39,26 @@ var (
 	// ErrOauthStateInvalid covers a missing, expired or already-consumed state
 	// value on the OAuth callback.
 	ErrOauthStateInvalid = errors.New("auth: oauth state invalid")
+
+	// ErrOauthEmailUnverified is returned when a provider hands back an address
+	// it has not itself verified.
+	//
+	// Accounts are matched to existing users by email, so an unverified address
+	// is an account takeover waiting to happen: register victim@example.com at a
+	// provider that never checks, sign in here, and inherit their account. The
+	// sign-in is refused rather than merely unlinked, because a provider that
+	// cannot vouch for the address has told us nothing we can act on.
+	ErrOauthEmailUnverified = errors.New("auth: oauth provider did not verify the email address")
+
+	// ErrOauthProfileIncomplete is returned when a provider gives back no stable
+	// subject identifier or no email at all. Neither is optional: one is the
+	// primary key of the link, the other is how the account is matched.
+	ErrOauthProfileIncomplete = errors.New("auth: oauth provider returned an incomplete profile")
+
+	// ErrOauthReturnToNotAllowed is returned for a post-sign-in redirect target
+	// outside the allow-list. An open redirect here is how an attacker collects
+	// authorization codes.
+	ErrOauthReturnToNotAllowed = errors.New("auth: return_to is not an allowed destination")
 )
 
 // ValidationError reports input that failed a domain invariant. It names the

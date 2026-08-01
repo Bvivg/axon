@@ -76,6 +76,21 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrOauthStateInvalid):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("oauth state is not valid"))
 
+	// The client cannot fix these by retrying, and the person can: verify the
+	// address at the provider, or use a different one. Saying which is which is
+	// safe — the caller already controls the provider account involved.
+	case errors.Is(err, domain.ErrOauthEmailUnverified):
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("the provider has not verified this email address"))
+
+	case errors.Is(err, domain.ErrOauthProfileIncomplete):
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("the provider did not return an email address"))
+
+	case errors.Is(err, domain.ErrOauthReturnToNotAllowed):
+		return connect.NewError(connect.CodeInvalidArgument,
+			errors.New("return_to is not an allowed destination"))
+
 	case errors.Is(err, context.Canceled):
 		return connect.NewError(connect.CodeCanceled, errors.New("request canceled"))
 

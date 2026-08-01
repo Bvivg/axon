@@ -92,6 +92,14 @@ services:
       JWT_ISSUER: https://auth.axon.test
       JWT_ACCESS_TOKEN_TTL: 15m
       JWT_REFRESH_TOKEN_TTL: 720h
+      # Only the fake provider. Google and GitHub have no credentials here and
+      # are therefore absent from the registry, which is what the suite asserts
+      # they do when unconfigured.
+      OAUTH_FAKE_ENABLED: "true"
+      # As the runner reaches it: on the compose network, not from a host.
+      OAUTH_FAKE_AUTHORIZE_URL: http://auth:8081/oauth/fake/authorize
+      OAUTH_REDIRECT_BASE_URL: http://localhost:3000/auth/callback
+      OAUTH_ALLOWED_RETURN_ORIGINS: http://localhost:3000
     depends_on:
       migrate-auth:
         condition: service_completed_successfully
@@ -156,6 +164,10 @@ services:
       # compose network, which is exactly what the tests use it to prove: what
       # lives on this port must not also be served on the public one.
       GATEWAY_ADMIN_URL: http://gateway:9090
+      # The fake provider's authorize endpoint, which the suite follows the way
+      # a browser would. It lives on auth's public listener rather than behind
+      # the gateway: the gateway serves the contract and nothing else.
+      OAUTH_FAKE_AUTHORIZE_URL: http://auth:8081/oauth/fake/authorize
       # Each service module resolves shared/ through its own replace directive;
       # see the note in deploy/Dockerfile.service.
       GOWORK: "off"

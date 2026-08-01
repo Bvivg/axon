@@ -13,8 +13,10 @@ import (
 
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/redis"
 
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
+	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 )
 
@@ -26,8 +28,37 @@ type Config struct {
 	config.Base
 
 	Postgres postgres.Config
+	Redis    redis.Config
 	JWT      JWTConfig
 	Password password.Params
+	OAuth    OAuthConfig
+}
+
+// OAuthConfig configures provider sign-in.
+type OAuthConfig struct {
+	// RedirectBaseURL is the client route a provider returns the browser to.
+	// The provider name is appended: .../auth/callback/google.
+	//
+	// It points at the web client, not at this service or the gateway. The
+	// client reads the code and state out of the query and calls CompleteOAuth,
+	// which is what the contract is shaped for, and means tokens never travel
+	// through a redirect URL.
+	RedirectBaseURL string
+
+	// AllowedReturnOrigins is the allow-list for the post-sign-in destination.
+	// An open redirect here is how an attacker harvests authorization codes.
+	AllowedReturnOrigins []string
+
+	Google oauth.ProviderConfig
+	GitHub oauth.ProviderConfig
+
+	// FakeEnabled turns on the local provider, which accepts any identity it is
+	// given. Refused in production.
+	FakeEnabled bool
+
+	// FakeAuthorizeURL is the fake provider's authorize endpoint as a browser
+	// would reach it. It is served on this service's public listener.
+	FakeAuthorizeURL string
 }
 
 // JWTConfig configures token issuing and verification.
@@ -50,8 +81,10 @@ func Load() (Config, error) {
 	cfg := Config{
 		Base:     config.LoadBase(l, ServiceName),
 		Postgres: postgres.LoadConfig(l),
+		Redis:    redis.LoadConfig(l),
 		JWT:      loadJWT(l),
 		Password: loadPasswordParams(l),
+		OAuth:    loadOAuth(l),
 	}
 
 	// The service owns one schema and reaches nothing else. Pinning the search
@@ -153,6 +186,29 @@ func decodeKeyMaterial(raw string) ([]byte, error) {
 		return nil, fmt.Errorf("key material is neither a PEM block nor base64")
 	}
 	return decoded, nil
+}
+
+// loadOAuth reads the provider settings.
+//
+// Nothing here is required. A deployment with no provider configured still
+// serves the password flow, and the OAuth procedures answer "unsupported" — a
+// service that refused to start because nobody had filled in a Google client id
+// would be wrong about what it needs.
+func loadOAuth(l *config.Loader) OAuthConfig {
+	return OAuthConfig{
+		RedirectBaseURL:      l.StringDefault("OAUTH_REDIRECT_BASE_URL", "http://localhost:3000/auth/callback"),
+		AllowedReturnOrigins: l.StringSlice("OAUTH_ALLOWED_RETURN_ORIGINS", []string{"http://localhost:3000"}),
+		Google: oauth.ProviderConfig{
+			ClientID:     l.StringDefault("OAUTH_GOOGLE_CLIENT_ID", ""),
+			ClientSecret: l.SecretDefault("OAUTH_GOOGLE_CLIENT_SECRET", "").Reveal(),
+		},
+		GitHub: oauth.ProviderConfig{
+			ClientID:     l.StringDefault("OAUTH_GITHUB_CLIENT_ID", ""),
+			ClientSecret: l.SecretDefault("OAUTH_GITHUB_CLIENT_SECRET", "").Reveal(),
+		},
+		FakeEnabled:      l.Bool("OAUTH_FAKE_ENABLED", false),
+		FakeAuthorizeURL: l.StringDefault("OAUTH_FAKE_AUTHORIZE_URL", "http://localhost:8081"+oauth.FakeAuthorizePath),
+	}
 }
 
 func loadPasswordParams(l *config.Loader) password.Params {
