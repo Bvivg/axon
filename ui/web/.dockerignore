@@ -1,0 +1,13 @@
+# Installed and built inside the image. Copying either in would shadow the
+# image's own node_modules with the host's, which is how a native module built
+# for macOS ends up in an Alpine container.
+node_modules
+.next
+out
+
+.env
+.env.local
+.env.*.local
+
+.DS_Store
+*.log

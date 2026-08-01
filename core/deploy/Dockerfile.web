@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1
+
+# The Next.js client. Two targets, the same split the Go services use: `dev`
+# runs the dev server against bind-mounted source, `runtime` is what would ship.
+#
+# The build context is ui/web rather than the repository root, so the image
+# carries the web app and nothing else. Note that src/gen is generated and
+# git-ignored: `make proto` has to have run, or the build fails on missing types.
+
+ARG NODE_VERSION=22
+
+# ---------------------------------------------------------------------------
+# deps — node_modules, cached on the lock file alone
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine AS deps
+
+WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Only the manifests, so editing a component does not reinstall the world.
+COPY package.json package-lock.json ./
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+# ---------------------------------------------------------------------------
+# dev — hot reload against the bind mount
+# ---------------------------------------------------------------------------
+FROM deps AS dev
+
+# No source is copied: docker-compose mounts it. node_modules is masked by an
+# anonymous volume there, which is why it has to be installed in the image and
+# not on the host.
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
+
+# ---------------------------------------------------------------------------
+# build — the production bundle
+# ---------------------------------------------------------------------------
+FROM deps AS build
+
+COPY . .
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# runtime — what would ship
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+# Not root. The Node images ship a `node` user for exactly this.
+USER node
+
+# `output: standalone` in next.config.ts traces the modules actually reached and
+# emits a self-contained server, so this image carries neither the full
+# node_modules nor the source.
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/public ./public
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]

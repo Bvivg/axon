@@ -208,6 +208,33 @@ e2e-key:
 	printf 'JWT_PRIVATE_KEY_DEV_1=%s\n' "$$key" > $(E2E_ENV_FILE); \
 	echo "wrote $(E2E_ENV_FILE) (git-ignored)"
 
+# ---------------------------------------------------------------------------
+# Web client
+# ---------------------------------------------------------------------------
+
+# All of these run in a container: npm is not expected on the host. node_modules
+# lands in ui/web on the host through the bind mount, which is what the editor
+# reads for type information — the one place the host does see it.
+
+.PHONY: web-install
+web-install: ## Install the web client's dependencies (in a container)
+	$(COMPOSE_TOOLS) run --rm node npm ci
+
+.PHONY: web-lint
+web-lint: ## Lint the web client
+	$(COMPOSE_TOOLS) run --rm node npm run lint
+
+.PHONY: web-typecheck
+web-typecheck: ## Type-check the web client
+	$(COMPOSE_TOOLS) run --rm node npm run typecheck
+
+.PHONY: web-build
+web-build: ## Build the web client's production bundle
+	$(COMPOSE_TOOLS) run --rm node npm run build
+
+.PHONY: web-check
+web-check: web-lint web-typecheck web-build ## Everything CI runs for the web client
+
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace
 	@# GOWORK=off deliberately: the service images build each module on its own,

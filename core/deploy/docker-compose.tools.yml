@@ -35,7 +35,22 @@ services:
     # from /workspace/.golangci.yml by searching upwards.
     command: ["golangci-lint", "run", "./shared/...", "./services/auth/...", "./services/gateway/..."]
 
+  # Node for the web client's checks: install, lint, typecheck, build. The
+  # running dev server is the `web` service in docker-compose.yml; this is for
+  # the one-shot commands, which need node_modules to persist between runs
+  # rather than the throwaway anonymous volume the dev service uses.
+  node:
+    image: node:22-alpine
+    working_dir: /app
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - ../../ui/web:/app
+      - npm-cache:/root/.npm
+    command: ["npm", "run", "lint"]
+
 volumes:
   buf-cache:
   go-mod-cache:
   go-build-cache:
+  npm-cache:

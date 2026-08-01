@@ -141,6 +141,37 @@ services:
       retries: 12
       start_period: 40s
 
+  # The web client. Talks to the gateway from the browser, so it needs no
+  # network path of its own to any service — only the browser does, and the
+  # gateway's CORS allow-list is what decides whether it may.
+  web:
+    build:
+      context: ../../ui/web
+      dockerfile: ../../core/deploy/Dockerfile.web
+      target: ${WEB_BUILD_TARGET:-dev}
+    restart: unless-stopped
+    environment:
+      # Read by the browser, not by this container: NEXT_PUBLIC_ variables are
+      # inlined into the bundle. So it has to be the address the host reaches
+      # the gateway on, never http://gateway:8080.
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${GATEWAY_HOST_PORT:-18080}
+      NEXT_PUBLIC_OAUTH_PROVIDERS: ${NEXT_PUBLIC_OAUTH_PROVIDERS:-fake}
+      # Polling is slower but reliable across the bind mount; native file events
+      # do not cross the boundary on macOS or Windows.
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${WEB_HOST_PORT:-3000}:3000"
+    volumes:
+      - ../../ui/web:/app
+      # Masks the host's node_modules with the image's. Without it, the bind
+      # mount above hides everything npm installed during the build — and on
+      # macOS the host's copy would be the wrong platform anyway.
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      gateway:
+        condition: service_healthy
+
   # Migrations. Lives here rather than in the tools file because it needs the
   # stack's network to reach Postgres. Behind a profile, so `up` ignores it:
   #

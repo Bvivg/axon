@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 keeps the design tokens in CSS rather than a config file. The
+ * names follow the shadcn palette so components copied from there work
+ * unchanged.
+ */
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.15 0.01 260);
+
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.15 0.01 260);
+
+  --color-primary: oklch(0.45 0.19 265);
+  --color-primary-foreground: oklch(0.99 0 0);
+
+  --color-muted: oklch(0.96 0.005 260);
+  --color-muted-foreground: oklch(0.5 0.015 260);
+
+  --color-destructive: oklch(0.55 0.21 27);
+  --color-destructive-foreground: oklch(0.99 0 0);
+
+  --color-border: oklch(0.9 0.005 260);
+  --color-ring: oklch(0.45 0.19 265);
+}
+
+/* Follows the operating system rather than offering a toggle: there is nowhere
+   to put a preference yet that would survive a reload. */
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-background: oklch(0.16 0.01 265);
+    --color-foreground: oklch(0.97 0.005 260);
+
+    --color-card: oklch(0.2 0.012 265);
+    --color-card-foreground: oklch(0.97 0.005 260);
+
+    --color-primary: oklch(0.7 0.16 265);
+    --color-primary-foreground: oklch(0.16 0.01 265);
+
+    --color-muted: oklch(0.26 0.014 265);
+    --color-muted-foreground: oklch(0.68 0.015 260);
+
+    --color-destructive: oklch(0.65 0.19 27);
+    --color-destructive-foreground: oklch(0.16 0.01 265);
+
+    --color-border: oklch(0.3 0.014 265);
+    --color-ring: oklch(0.7 0.16 265);
+  }
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
