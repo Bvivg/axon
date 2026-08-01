@@ -31,8 +31,9 @@ type Config struct {
 	JWTIssuer   string
 	JWTAudience string
 
-	CORS      CORSConfig
-	RateLimit RateLimitConfig
+	CORS          CORSConfig
+	RateLimit     RateLimitConfig
+	RefreshCookie RefreshCookieConfig
 
 	// UpstreamTimeout bounds one forwarded call.
 	UpstreamTimeout time.Duration
@@ -63,6 +64,16 @@ type RateLimitConfig struct {
 	TrustedProxies int
 }
 
+// RefreshCookieConfig configures the cookie a browser holds its refresh token
+// in. See internal/cookie for why the token goes there at all.
+type RefreshCookieConfig struct {
+	// Secure keeps the cookie off plaintext connections.
+	Secure bool
+
+	// MaxAge is how long the browser keeps it.
+	MaxAge time.Duration
+}
+
 // Load reads the configuration, reporting every problem at once.
 func Load() (Config, error) {
 	l := config.NewLoader()
@@ -87,6 +98,17 @@ func Load() (Config, error) {
 	// who issued them and who they are for.
 	cfg.JWTIssuer = l.StringDefault("JWT_ISSUER", "https://auth.axon.local")
 	cfg.JWTAudience = l.StringDefault("JWT_AUDIENCE", "axon")
+
+	// Secure is on unless this is a developer's machine. Reading the tier rather
+	// than defaulting to false means forgetting the variable in production gives
+	// the safe setting, not the convenient one.
+	cfg.RefreshCookie = RefreshCookieConfig{
+		Secure: l.Bool("REFRESH_COOKIE_SECURE", cfg.Environment != config.EnvDevelopment),
+		// Matches the default refresh token lifetime in auth. The gateway cannot
+		// read that service's configuration, so the two are kept in step by the
+		// note in .env.example rather than by the type system.
+		MaxAge: l.DurationDefault("REFRESH_COOKIE_MAX_AGE", 720*time.Hour),
+	}
 
 	if err := l.Err(); err != nil {
 		return Config{}, err

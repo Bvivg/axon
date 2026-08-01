@@ -27,6 +27,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/config"
+	"github.com/bvivg/axon/core/services/gateway/internal/cookie"
 	"github.com/bvivg/axon/core/services/gateway/internal/cors"
 	"github.com/bvivg/axon/core/services/gateway/internal/guard"
 	"github.com/bvivg/axon/core/services/gateway/internal/proxy"
@@ -186,6 +187,12 @@ func publicHandler(
 			// still logged with an id, and before logging so the outcome the
 			// log records is the one the client got.
 			policyGuard,
+			// After the policy: a call refused for want of a token or for
+			// exceeding its budget has no business touching the cookie.
+			cookie.New(cookie.Config{
+				Secure: cfg.RefreshCookie.Secure,
+				MaxAge: cfg.RefreshCookie.MaxAge,
+			}),
 			middleware.NewLoggingInterceptor(log),
 		),
 	))
