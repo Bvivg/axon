@@ -210,7 +210,14 @@ e2e-key:
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace
-	cd core/shared && go mod tidy
+	@# GOWORK=off deliberately: the service images build each module on its own,
+	@# so every go.sum has to be complete by itself. Tidying inside the workspace
+	@# lets go.work.sum cover the gaps, and the omission only surfaces as a
+	@# failed image build — which is exactly how it surfaced the first time.
+	@for module in shared services/auth services/gateway; do \
+		echo "tidy $$module"; \
+		(cd core/$$module && GOWORK=off go mod tidy) || exit 1; \
+	done
 
 .PHONY: check
 check: fmt-check vet test ## Everything CI runs that needs no Docker
