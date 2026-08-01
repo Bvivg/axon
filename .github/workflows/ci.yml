@@ -122,6 +122,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The stack file declares `env_file: .env`, which is git-ignored and so
+      # absent on a fresh checkout. Compose refuses to read a file that is not
+      # there, so the example stands in — which incidentally checks that the
+      # example is complete enough to start from, the promise `make env` makes.
+      - name: Create .env from the example
+        run: make env
+
       # Catches a malformed compose file or an unresolvable variable before it
       # wastes anyone's time locally.
       - name: Validate compose files
@@ -215,5 +222,45 @@ jobs:
             --tag axon/${{ matrix.service }}:${{ github.sha }} \
             core
 
+  web:
+    name: Web client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/web/package-lock.json
+
+      # The TypeScript client is generated from the same contracts as the Go
+      # one and is git-ignored, so nothing here compiles until it exists.
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        working-directory: .
+        run: buf generate
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Separate from the build: `next build` type-checks too, but a type error
+      # reported as a build failure is slower to read than one reported as a
+      # type error.
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
 # Still to come, each with the stage that makes it meaningful:
-#   - web lint, typecheck and Playwright, once ui/web exists
+#   - Playwright against the Docker stack (stage 1, step 10)
