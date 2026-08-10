@@ -106,10 +106,26 @@ jobs:
         if: steps.contracts.outputs.present == 'true'
         run: buf lint
 
+      # The comparison needs something to compare against. buf treats a module
+      # with no .proto files as an error rather than as an empty baseline, so
+      # the very first contract would fail this step for want of a predecessor.
+      - name: Check for contracts on the base branch
+        id: baseline
+        run: |
+          if git ls-tree -r origin/main --name-only | grep -q '\.proto$'; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "main has no .proto files yet; nothing to break."
+          fi
+
       # A released contract is a promise. Additive changes are fine; anything
       # that would break an existing client has to ship as a new version.
       - name: Check for breaking changes
-        if: steps.contracts.outputs.present == 'true' && github.event_name == 'pull_request'
+        if: |
+          steps.contracts.outputs.present == 'true'
+          && steps.baseline.outputs.present == 'true'
+          && github.event_name == 'pull_request'
         run: buf breaking --against ".git#branch=origin/main"
 
       - name: Generate
