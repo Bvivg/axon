@@ -2,7 +2,6 @@ package oauth
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,7 +40,8 @@ const appleIssuer = "https://appleid.apple.com"
 // callback is an HTML form POST — required once the request asks for the name
 // and email scopes — and a client page cannot receive one. So the web client
 // carries a server route at this path which accepts the POST and sends the
-// browser on to the ordinary callback page with the code in the query.
+// browser on to the ordinary callback page with the code, and the name Apple
+// sent alongside it, in the query.
 //
 // It deliberately sits outside /auth/callback/: a route handler mounted on the
 // page's own path would also catch the redirect it issues, and the flow would
@@ -153,18 +153,21 @@ func (p *appleProvider) AuthorizationURL(state, challenge string) string {
 }
 
 // Exchange redeems the code and reads the profile out of the id_token.
+//
+// The profile it returns carries no name, and cannot: Apple sends the name to
+// whoever receives the callback — the web client — and never to this service,
+// neither here nor in the id_token. The client passes it back on
+// CompleteOAuthRequest.display_name, and the flow fills it in there.
 func (p *appleProvider) Exchange(ctx context.Context, code, verifier string) (domain.ProviderProfile, error) {
 	ctx, cancel := context.WithTimeout(ctx, exchangeTimeout)
 	defer cancel()
-
-	callback := decodeAppleCallback(code)
 
 	secret, err := p.secret.value()
 	if err != nil {
 		return domain.ProviderProfile{}, err
 	}
 
-	idToken, err := p.redeem(ctx, callback.Code, verifier, secret)
+	idToken, err := p.redeem(ctx, code, verifier, secret)
 	if err != nil {
 		return domain.ProviderProfile{}, err
 	}
@@ -173,11 +176,6 @@ func (p *appleProvider) Exchange(ctx context.Context, code, verifier string) (do
 	if err != nil {
 		return domain.ProviderProfile{}, err
 	}
-
-	// The only place the person's name is ever offered. Apple sends it with the
-	// first authorization and never again, so there is nothing to fall back on
-	// when it is absent.
-	profile.DisplayName = callback.Name
 
 	if err := validateProfile(profile); err != nil {
 		return domain.ProviderProfile{}, fmt.Errorf("oauth: apple: %w", err)
@@ -316,52 +314,6 @@ func appleBool(claims jwt.MapClaims, key string) bool {
 func stringClaim(claims jwt.MapClaims, key string) string {
 	s, _ := claims[key].(string)
 	return s
-}
-
-// appleCallback is what the callback route hands to this provider.
-//
-// The name is the reason this exists. Apple sends it in a `user` form field on
-// the first authorization only, in the POST body — never in the id_token, and
-// never again afterwards. CompleteOAuth carries a code and nothing else, so the
-// callback route packs both into that one field:
-//
-//	base64url(JSON{"code": "<apple's code>", "name": "<the person's name>"})
-//
-// The other side of this format is ui/web/src/app/auth/apple/callback/route.ts.
-// A value that is not that packing is treated as a bare authorization code,
-// which is what every sign-in after the first one carries.
-type appleCallback struct {
-	Code string `json:"code"`
-	Name string `json:"name"`
-}
-
-// appleMaxNameLength bounds the name taken from the callback. It is a display
-// name, and the domain rejects anything longer anyway; cutting it here keeps an
-// absurd value out of the logs on the way.
-const appleMaxNameLength = 128
-
-// decodeAppleCallback unpacks the callback field, falling back to treating the
-// whole value as an authorization code.
-//
-// Nothing here is a security check. The name is self-asserted at Apple too, and
-// the address — the only claim anything is decided on — comes from the signed
-// id_token, never from this.
-func decodeAppleCallback(code string) appleCallback {
-	raw, err := base64.RawURLEncoding.DecodeString(code)
-	if err != nil {
-		return appleCallback{Code: code}
-	}
-
-	var packed appleCallback
-	if err := json.Unmarshal(raw, &packed); err != nil || packed.Code == "" {
-		return appleCallback{Code: code}
-	}
-
-	packed.Name = strings.TrimSpace(packed.Name)
-	if len(packed.Name) > appleMaxNameLength {
-		packed.Name = packed.Name[:appleMaxNameLength]
-	}
-	return packed
 }
 
 // appleRedirectURL derives Apple's callback address from the base every other

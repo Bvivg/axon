@@ -63,30 +63,21 @@ export async function POST(request: Request): Promise<Response> {
     return seeOther(query);
   }
 
-  query.set("code", packCode(code, displayName(field(form, "user"))));
+  query.set("code", code);
+
+  // Apple's one and only mention of the person's name. The callback page passes
+  // it to CompleteOAuth, which has a field for exactly this; there is nowhere
+  // else to keep it, because the page is reached by a redirect and this handler
+  // holds no session. It rides in the query as the code and the state do —
+  // self-asserted, not a credential, and useful only while the account is being
+  // created — with the length bounded above so a hostile POST cannot turn it
+  // into an enormous URL. Every sign-in after the first carries no name at all.
+  const name = displayName(field(form, "user"));
+  if (name) {
+    query.set("name", name);
+  }
 
   return seeOther(query);
-}
-
-/**
- * packCode carries the name through a contract that has room only for a code.
- *
- * CompleteOAuth takes a provider, a code and a state — there is no field for a
- * profile, and adding one for the single provider that needs it would change the
- * contract for every client. So the code the browser carries to the page is the
- * pair, packed as base64url(JSON{code, name}); the Apple provider in the auth
- * service unpacks it. The other side of this format is
- * core/services/auth/internal/oauth/apple.go — the two have to be changed
- * together.
- *
- * With no name there is nothing to carry, and the bare code goes as it arrived —
- * which is what every sign-in after the first one looks like.
- */
-function packCode(code: string, name: string): string {
-  if (!name) {
-    return code;
-  }
-  return Buffer.from(JSON.stringify({ code, name }), "utf8").toString("base64url");
 }
 
 /** displayName reads the name out of Apple's `user` field, if it sent one. */

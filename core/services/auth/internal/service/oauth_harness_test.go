@@ -76,6 +76,18 @@ func (h *harness) signIn(t *testing.T, identity url.Values) service.CompleteOAut
 func (h *harness) trySignIn(t *testing.T, identity url.Values) (service.CompleteOAuthResult, error) {
 	t.Helper()
 
+	return h.trySignInAs(t, identity, "")
+}
+
+// trySignInAs is trySignIn with a name of the kind a client supplies when the
+// provider gave it one and gave this service none — Apple, in practice.
+func (h *harness) trySignInAs(
+	t *testing.T,
+	identity url.Values,
+	displayName string,
+) (service.CompleteOAuthResult, error) {
+	t.Helper()
+
 	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "")
 	if err != nil {
 		return service.CompleteOAuthResult{}, err
@@ -83,7 +95,12 @@ func (h *harness) trySignIn(t *testing.T, identity url.Values) (service.Complete
 
 	code := h.follow(t, started.AuthorizationURL, identity)
 
-	return h.svc.CompleteOAuth(t.Context(), domain.ProviderFake, code, started.State)
+	return h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
+		Provider:    domain.ProviderFake,
+		Code:        code,
+		State:       started.State,
+		DisplayName: displayName,
+	})
 }
 
 // follow performs the browser's half: request the authorization URL, stop at the

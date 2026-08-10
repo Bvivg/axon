@@ -74,11 +74,27 @@ type CompleteOAuthResult struct {
 	ReturnTo string
 }
 
+// CompleteOAuthInput is a provider callback as the client received it.
+type CompleteOAuthInput struct {
+	Provider domain.Provider
+	Code     string
+	State    string
+
+	// DisplayName is a name the provider gave the client rather than this
+	// service — in practice Apple, which puts it in the callback body on the
+	// first authorization and nowhere else. It fills a gap the provider left; it
+	// never overrides a name the provider did send, and it is read only when the
+	// account is created.
+	DisplayName string
+}
+
 // CompleteOAuth exchanges an authorization code for a signed-in session.
-func (s *Service) CompleteOAuth(ctx context.Context, id domain.Provider, code, state string) (CompleteOAuthResult, error) {
+func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (CompleteOAuthResult, error) {
 	if s.oauth == nil {
 		return CompleteOAuthResult{}, domain.ErrProviderUnsupported
 	}
+
+	id := in.Provider
 
 	provider, err := s.oauth.providers.Get(id)
 	if err != nil {
@@ -87,7 +103,7 @@ func (s *Service) CompleteOAuth(ctx context.Context, id domain.Provider, code, s
 
 	// Single-use: a state that comes back twice is a replay, and the second
 	// attempt finds nothing.
-	stored, err := s.oauth.states.Take(ctx, state)
+	stored, err := s.oauth.states.Take(ctx, in.State)
 	if err != nil {
 		return CompleteOAuthResult{}, err
 	}
@@ -101,7 +117,7 @@ func (s *Service) CompleteOAuth(ctx context.Context, id domain.Provider, code, s
 		return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
 	}
 
-	profile, err := provider.Exchange(ctx, code, stored.Verifier)
+	profile, err := provider.Exchange(ctx, in.Code, stored.Verifier)
 	if err != nil {
 		// The provider's own message can quote the code, so it is logged and
 		// not returned. The two cases a client can act on pass through.
@@ -110,6 +126,13 @@ func (s *Service) CompleteOAuth(ctx context.Context, id domain.Provider, code, s
 		}
 		s.log.ErrorContext(ctx, "oauth code exchange failed", "provider", id, "error", err)
 		return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
+	}
+
+	// The client's name is a fallback, not an override: what the provider said
+	// about the person outranks what the browser carried back. In practice only
+	// Apple leaves this gap.
+	if profile.DisplayName == "" {
+		profile.DisplayName = in.DisplayName
 	}
 
 	user, created, err := s.resolveOauthUser(ctx, id, profile)

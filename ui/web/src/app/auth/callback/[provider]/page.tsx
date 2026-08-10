@@ -82,7 +82,13 @@ export default function OAuthCallbackPage() {
       }
 
       try {
-        const result = await authClient.completeOAuth({ provider, code, state });
+        // Present only when Apple sent a name, which it does on the first
+        // authorization and never again; /auth/apple/callback puts it here on
+        // its way past. For every other provider the name comes from the
+        // provider itself, and this is absent.
+        const displayName = search.get("name") ?? undefined;
+
+        const result = await authClient.completeOAuth({ provider, code, state, displayName });
         if (!result.user) {
           throw new Error("the server returned no user");
         }

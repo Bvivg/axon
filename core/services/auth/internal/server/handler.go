@@ -181,7 +181,12 @@ func (h *Handler) CompleteOAuth(
 		return nil, translateError(ctx, h.log, domain.ErrProviderUnsupported)
 	}
 
-	completed, err := h.svc.CompleteOAuth(ctx, provider, req.Msg.GetCode(), req.Msg.GetState())
+	completed, err := h.svc.CompleteOAuth(ctx, service.CompleteOAuthInput{
+		Provider:    provider,
+		Code:        req.Msg.GetCode(),
+		State:       req.Msg.GetState(),
+		DisplayName: req.Msg.GetDisplayName(),
+	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}

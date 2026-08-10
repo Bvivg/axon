@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -249,7 +248,7 @@ func TestAppleReadsTheProfileFromTheIDToken(t *testing.T) {
 
 	provider := stub.provider(t)
 
-	profile, err := provider.Exchange(t.Context(), packAppleCode(t, "apple-code-1", "Ada Lovelace"), "a-verifier")
+	profile, err := provider.Exchange(t.Context(), "apple-code-1", "a-verifier")
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
@@ -266,15 +265,15 @@ func TestAppleReadsTheProfileFromTheIDToken(t *testing.T) {
 	if !profile.IsPrivateEmail {
 		t.Error("is_private_email was not carried through")
 	}
-	// The name reaches this service only in the callback body, and only once.
-	if profile.DisplayName != "Ada Lovelace" {
-		t.Errorf("display name = %q, want the name from the callback", profile.DisplayName)
+	// Apple never tells this service the name — it goes to whoever received the
+	// callback, which is the client, and comes back on the request instead.
+	if profile.DisplayName != "" {
+		t.Errorf("display name = %q, want none: the id_token does not carry one", profile.DisplayName)
 	}
 
 	form := stub.sentForm()
 	for param, want := range map[string]string{
-		"client_id": testAppleClientID,
-		// The inner code, not the packed value the browser carried.
+		"client_id":     testAppleClientID,
 		"code":          "apple-code-1",
 		"code_verifier": "a-verifier",
 		"grant_type":    "authorization_code",
@@ -413,56 +412,6 @@ func TestAppleReportsARejectedExchange(t *testing.T) {
 	}
 }
 
-// The name arrives once, in the callback body, and has to survive a contract
-// that carries only a code. Everything else must keep working as a bare code.
-func TestAppleCallbackCodeCarriesTheNameWhenThereIsOne(t *testing.T) {
-	long := strings.Repeat("n", appleMaxNameLength+50)
-
-	for name, tc := range map[string]struct {
-		code     string
-		wantCode string
-		wantName string
-	}{
-		"packed with a name": {
-			code:     packAppleCode(t, "apple-code-1", "Ada Lovelace"),
-			wantCode: "apple-code-1",
-			wantName: "Ada Lovelace",
-		},
-		// Every sign-in after the first one: Apple sends no user field, so the
-		// route has nothing to pack and passes the code through.
-		"a bare code": {
-			code:     "c8f1a2b3.0.rst.abcdef",
-			wantCode: "c8f1a2b3.0.rst.abcdef",
-		},
-		// base64url that decodes to something else entirely is a code, not a
-		// broken packing: the two are indistinguishable, and treating it as a
-		// code is what keeps an unusual but valid code working.
-		"base64 that is not the packing": {
-			code:     base64.RawURLEncoding.EncodeToString([]byte("just-a-code")),
-			wantCode: base64.RawURLEncoding.EncodeToString([]byte("just-a-code")),
-		},
-		"packed with no name": {
-			code:     packAppleCode(t, "apple-code-2", ""),
-			wantCode: "apple-code-2",
-		},
-		"a name longer than anything a person has": {
-			code:     packAppleCode(t, "apple-code-3", long),
-			wantCode: "apple-code-3",
-			wantName: long[:appleMaxNameLength],
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			got := decodeAppleCallback(tc.code)
-			if got.Code != tc.wantCode {
-				t.Errorf("code = %q, want %q", got.Code, tc.wantCode)
-			}
-			if got.Name != tc.wantName {
-				t.Errorf("name = %q, want %q", got.Name, tc.wantName)
-			}
-		})
-	}
-}
-
 // Four values, not two, and a partly-filled entry counts as absent for the same
 // reason it does everywhere else: a provider that looks available and fails at
 // the exchange breaks in the middle of somebody's sign-in.
@@ -561,17 +510,4 @@ func TestAppleNeedsAnAbsoluteRedirectBase(t *testing.T) {
 	if err == nil {
 		t.Fatal("a relative redirect base was accepted for Apple")
 	}
-}
-
-// packAppleCode mirrors what the web callback route sends, so the two halves of
-// the format are asserted against each other rather than each against itself.
-// The other side is ui/web/src/app/auth/apple/callback/route.ts.
-func packAppleCode(t *testing.T, code, name string) string {
-	t.Helper()
-
-	encoded, err := json.Marshal(appleCallback{Code: code, Name: name})
-	if err != nil {
-		t.Fatalf("marshal callback: %v", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(encoded)
 }
