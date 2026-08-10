@@ -152,6 +152,17 @@ message CompleteOAuthRequest {
   OauthProvider provider = 1;
   string code = 2;
   string state = 3;
+
+  // The person's name, for the provider that hands it to the client instead of
+  // to this service.
+  //
+  // Apple is the only one: it sends the name in the callback body on the first
+  // authorization, never again, and never in the id_token — so a client that
+  // does not pass it on here loses it for good. It is used only when the call
+  // creates the account, and only when the provider itself offered no name.
+  // Nothing is authorized on it: the identity comes from the code exchange, and
+  // an unusable value is dropped rather than failing the sign-in.
+  optional string display_name = 4;
 }
 
 message CompleteOAuthResponse {

@@ -3,6 +3,7 @@ package service_test
 import (
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
@@ -28,6 +29,86 @@ func TestOauthSignInCreatesAnAccount(t *testing.T) {
 	// again would be asking them to repeat something already done.
 	if !result.User.EmailVerified {
 		t.Error("an address verified by the provider was not recorded as verified")
+	}
+}
+
+// Apple gives the name to the client and never to this service, so the client
+// passes it back on the request. It fills a gap, and only a gap: what the
+// provider itself said about the person is not up for revision by the browser.
+func TestTheClientsNameIsUsedOnlyWhenTheProviderGaveNone(t *testing.T) {
+	for name, tc := range map[string]struct {
+		fromProvider string
+		fromClient   string
+		want         string
+	}{
+		"only the client has one":     {fromClient: "Ada Lovelace", want: "Ada Lovelace"},
+		"the provider's name wins":    {fromProvider: "Ada L.", fromClient: "Someone Else", want: "Ada L."},
+		"neither has one":             {},
+		"the client sends whitespace": {fromClient: "   ", want: ""},
+		// Every sign-in after an account exists, and every sign-in at a provider
+		// that sends no name: nothing to carry, nothing to record.
+		"only the provider has one": {fromProvider: "Ada Lovelace", want: "Ada Lovelace"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, withOAuth(t))
+
+			who := identity("subject-1", "person@example.test")
+			if tc.fromProvider != "" {
+				who.Set("name", tc.fromProvider)
+			}
+
+			result, err := h.trySignInAs(t, who, tc.fromClient)
+			if err != nil {
+				t.Fatalf("sign in: %v", err)
+			}
+			if result.User.DisplayName != tc.want {
+				t.Errorf("display name = %q, want %q", result.User.DisplayName, tc.want)
+			}
+		})
+	}
+}
+
+// The name is not the caller's own input and is decided on by nothing, so an
+// unusable one costs the name rather than the sign-in.
+func TestAnUnusableNameFromTheClientDoesNotFailTheSignIn(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	tooLong := strings.Repeat("n", domain.MaxDisplayNameLength+1)
+
+	result, err := h.trySignInAs(t, identity("subject-1", "person@example.test"), tooLong)
+	if err != nil {
+		t.Fatalf("an over-long name failed the sign-in: %v", err)
+	}
+	if result.User.DisplayName != "" {
+		t.Errorf("display name = %q, want it dropped", result.User.DisplayName)
+	}
+}
+
+// A name arrives with the first authorization only, and by then the account may
+// well exist — linked from another provider, or created by registration. It has
+// no business renaming anyone.
+func TestTheClientsNameDoesNotRenameAnExistingAccount(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	registered, err := h.svc.Register(t.Context(), service.RegisterInput{
+		Email:       "person@example.test",
+		Password:    validPassword,
+		DisplayName: "Ada Lovelace",
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	result, err := h.trySignInAs(t, identity("subject-1", "person@example.test"), "Someone Else")
+	if err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+
+	if result.User.ID != registered.User.ID {
+		t.Fatal("the sign-in did not resolve to the account it matched by address")
+	}
+	if result.User.DisplayName != "Ada Lovelace" {
+		t.Errorf("display name = %q, want the account's own", result.User.DisplayName)
 	}
 }
 
@@ -180,11 +261,19 @@ func TestStateCannotBeReplayed(t *testing.T) {
 
 	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@example.test"))
 
-	if _, err := h.svc.CompleteOAuth(t.Context(), domain.ProviderFake, code, started.State); err != nil {
+	if _, err := h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
+		Provider: domain.ProviderFake,
+		Code:     code,
+		State:    started.State,
+	}); err != nil {
 		t.Fatalf("the first completion failed: %v", err)
 	}
 
-	_, err = h.svc.CompleteOAuth(t.Context(), domain.ProviderFake, code, started.State)
+	_, err = h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
+		Provider: domain.ProviderFake,
+		Code:     code,
+		State:    started.State,
+	})
 	if !errors.Is(err, domain.ErrOauthStateInvalid) {
 		t.Fatalf("err = %v, want ErrOauthStateInvalid", err)
 	}
@@ -203,7 +292,11 @@ func TestStateIsBoundToItsProvider(t *testing.T) {
 
 	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@example.test"))
 
-	_, err = h.svc.CompleteOAuth(t.Context(), domain.ProviderGoogle, code, started.State)
+	_, err = h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
+		Provider: domain.ProviderGoogle,
+		Code:     code,
+		State:    started.State,
+	})
 	if !errors.Is(err, domain.ErrOauthStateInvalid) {
 		t.Fatalf("err = %v, want ErrOauthStateInvalid", err)
 	}
@@ -212,7 +305,11 @@ func TestStateIsBoundToItsProvider(t *testing.T) {
 func TestAnUnknownStateIsRefused(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
-	_, err := h.svc.CompleteOAuth(t.Context(), domain.ProviderFake, "some-code", "never-issued")
+	_, err := h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
+		Provider: domain.ProviderFake,
+		Code:     "some-code",
+		State:    "never-issued",
+	})
 	if !errors.Is(err, domain.ErrOauthStateInvalid) {
 		t.Fatalf("err = %v, want ErrOauthStateInvalid", err)
 	}
@@ -234,7 +331,11 @@ func TestStartOauthChecksTheDestination(t *testing.T) {
 
 	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@example.test"))
 
-	completed, err := h.svc.CompleteOAuth(t.Context(), domain.ProviderFake, code, started.State)
+	completed, err := h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
+		Provider: domain.ProviderFake,
+		Code:     code,
+		State:    started.State,
+	})
 	if err != nil {
 		t.Fatalf("CompleteOAuth: %v", err)
 	}
@@ -262,7 +363,8 @@ func TestOauthIsUnsupportedWhenNothingIsConfigured(t *testing.T) {
 	if _, err := h.svc.StartOAuth(t.Context(), domain.ProviderGoogle, ""); !errors.Is(err, domain.ErrProviderUnsupported) {
 		t.Errorf("StartOAuth = %v, want ErrProviderUnsupported", err)
 	}
-	if _, err := h.svc.CompleteOAuth(t.Context(), domain.ProviderGoogle, "c", "s"); !errors.Is(err, domain.ErrProviderUnsupported) {
+	completeGoogle := service.CompleteOAuthInput{Provider: domain.ProviderGoogle, Code: "c", State: "s"}
+	if _, err := h.svc.CompleteOAuth(t.Context(), completeGoogle); !errors.Is(err, domain.ErrProviderUnsupported) {
 		t.Errorf("CompleteOAuth = %v, want ErrProviderUnsupported", err)
 	}
 }

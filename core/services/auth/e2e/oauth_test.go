@@ -33,13 +33,23 @@ func (c *caller) startOAuth(provider authv1.OauthProvider, returnTo string) (*au
 	return resp.Msg, nil
 }
 
-// completeOAuth finishes one.
-func (c *caller) completeOAuth(provider authv1.OauthProvider, code, state string) (*authv1.CompleteOAuthResponse, error) {
-	resp, err := c.client.CompleteOAuth(t0(), connect.NewRequest(&authv1.CompleteOAuthRequest{
+// completeOAuth finishes one. displayName stands for the name a provider hands
+// the client instead of the service — Apple, in practice — and is left out of
+// the request when empty, as it is for every other provider.
+func (c *caller) completeOAuth(
+	provider authv1.OauthProvider,
+	code, state, displayName string,
+) (*authv1.CompleteOAuthResponse, error) {
+	req := &authv1.CompleteOAuthRequest{
 		Provider: provider,
 		Code:     code,
 		State:    state,
-	}))
+	}
+	if displayName != "" {
+		req.DisplayName = &displayName
+	}
+
+	resp, err := c.client.CompleteOAuth(t0(), connect.NewRequest(req))
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +104,17 @@ func consent(t *testing.T, authorizationURL string, extra url.Values) (code, sta
 func (c *caller) signInWith(t *testing.T, extra url.Values) (*authv1.CompleteOAuthResponse, error) {
 	t.Helper()
 
+	return c.signInAs(t, extra, "")
+}
+
+// signInAs is signInWith, with the client supplying a name of its own.
+func (c *caller) signInAs(
+	t *testing.T,
+	extra url.Values,
+	displayName string,
+) (*authv1.CompleteOAuthResponse, error) {
+	t.Helper()
+
 	started, err := c.startOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, "")
 	if err != nil {
 		t.Fatalf("StartOAuth: %v", err)
@@ -108,7 +129,7 @@ func (c *caller) signInWith(t *testing.T, extra url.Values) (*authv1.CompleteOAu
 		t.Fatalf("state came back as %q, want %q", returned, started.GetState())
 	}
 
-	return c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState())
+	return c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState(), displayName)
 }
 
 // rewriteForRunner points the authorization URL at the address the runner can
@@ -172,6 +193,36 @@ func TestOAuthSignInCreatesAnAccount(t *testing.T) {
 	}
 	if user.GetId() != result.GetUser().GetId() {
 		t.Errorf("GetMe returned a different user than the sign-in did")
+	}
+}
+
+// Apple sends the name to the client and never to this service, so the client
+// passes it back on the request. This is the path that field travels: through
+// the gateway, through the exchange, onto the account it creates — and back out
+// of GetMe, which is where a client would read it.
+func TestTheClientsNameReachesTheAccountItCreates(t *testing.T) {
+	c := newCaller(t)
+
+	subject := "e2e-" + uuid.NewString()
+	address := subject + "@axon.test"
+	const name = "Ada Lovelace"
+
+	// No name in the identity: the fake provider offers one only when asked, so
+	// this is the gap Apple leaves.
+	result, err := c.signInAs(t, fakeIdentity(subject, address), name)
+	if err != nil {
+		t.Fatalf("sign in with the fake provider: %v", err)
+	}
+	if got := result.GetUser().GetDisplayName(); got != name {
+		t.Errorf("display name = %q, want %q", got, name)
+	}
+
+	user, err := c.getMe(result.GetTokens().GetAccessToken())
+	if err != nil {
+		t.Fatalf("GetMe: %v", err)
+	}
+	if got := user.GetDisplayName(); got != name {
+		t.Errorf("GetMe display name = %q, want it persisted as %q", got, name)
 	}
 }
 
@@ -262,11 +313,11 @@ func TestOAuthStateCannotBeReplayed(t *testing.T) {
 	code, _ := consent(t, rewriteForRunner(t, started.GetAuthorizationUrl()),
 		fakeIdentity("e2e-"+uuid.NewString(), "replay-"+uuid.NewString()+"@axon.test"))
 
-	if _, err := c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState()); err != nil {
+	if _, err := c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState(), ""); err != nil {
 		t.Fatalf("the first completion failed: %v", err)
 	}
 
-	_, err = c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState())
+	_, err = c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState(), "")
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %v, want invalid_argument", connect.CodeOf(err))
 	}
@@ -287,13 +338,13 @@ func TestOAuthStateIsBoundToItsProvider(t *testing.T) {
 	// Google is not configured in this stack, so it is refused as unsupported
 	// before the state is even looked at. Either refusal is correct; completing
 	// the flow is not.
-	if _, err = c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_GOOGLE, code, started.GetState()); err == nil {
+	if _, err = c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_GOOGLE, code, started.GetState(), ""); err == nil {
 		t.Fatal("a state issued for one provider completed a flow at another")
 	}
 
 	// And the state survived that attempt, so the legitimate callback still
 	// works: a failed cross-provider attempt must not consume someone's sign-in.
-	if _, err := c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState()); err != nil {
+	if _, err := c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState(), ""); err != nil {
 		t.Fatalf("the genuine callback was spent by the refused one: %v", err)
 	}
 }

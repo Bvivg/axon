@@ -157,3 +157,57 @@ test("signing out puts the profile out of reach", async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });
+
+/**
+ * Apple's callback, which is a form POST and therefore lands on a route handler
+ * rather than on the page every other provider returns to.
+ *
+ * The handler is the only place the person's name is ever seen: Apple sends it
+ * once, in this body, and never again. There is no Apple sign-in to drive here —
+ * no credentials, so the provider is not even registered — but the translation
+ * from POST to redirect is the part that has no second source of truth, and it
+ * is server-side, so a request is the honest way to reach it.
+ */
+test("Apple's form POST becomes a redirect carrying the code and the name", async ({
+  request,
+}) => {
+  const response = await request.post("/auth/apple/callback", {
+    form: {
+      code: "apple-code-1",
+      state: "a-state",
+      user: JSON.stringify({ name: { firstName: "Ada", lastName: "Lovelace" } }),
+    },
+    maxRedirects: 0,
+  });
+
+  // 303 and not 302: the browser arrived with a POST, and only 303 obliges it
+  // to switch to GET for the page it is being sent to.
+  expect(response.status()).toBe(303);
+
+  const location = new URL(
+    response.headers()["location"],
+    "http://web.axon.test:3000",
+  );
+  expect(location.pathname).toBe("/auth/callback/apple");
+  expect(location.searchParams.get("code")).toBe("apple-code-1");
+  expect(location.searchParams.get("state")).toBe("a-state");
+  expect(location.searchParams.get("name")).toBe("Ada Lovelace");
+});
+
+test("a later Apple sign-in carries no name, and the redirect says so", async ({
+  request,
+}) => {
+  const response = await request.post("/auth/apple/callback", {
+    form: { code: "apple-code-2", state: "a-state" },
+    maxRedirects: 0,
+  });
+
+  expect(response.status()).toBe(303);
+
+  const location = new URL(
+    response.headers()["location"],
+    "http://web.axon.test:3000",
+  );
+  expect(location.searchParams.get("code")).toBe("apple-code-2");
+  expect(location.searchParams.has("name")).toBe(false);
+});
