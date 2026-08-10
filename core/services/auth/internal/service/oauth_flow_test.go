@@ -112,6 +112,63 @@ func TestAnUnverifiedAddressCannotClaimAnAccount(t *testing.T) {
 	}
 }
 
+// Linking to an account matched by address is safe only while the identity is
+// still unclaimed. It can stop being unclaimed between the lookup that found
+// nothing and the write that links it — two devices signing in at once, or
+// someone racing the flow on purpose.
+//
+// The store refuses to move the identity either way. What is under test here is
+// that the refusal ends the sign-in: letting the person into the address-matched
+// account regardless would seat them in an account the identity does not point
+// at, and the next sign-in would resolve the same identity to the other one.
+func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	const (
+		email    = "matched-by-address@example.test"
+		claimant = "someone-else@example.test"
+		subject  = "contested-subject"
+	)
+
+	matched := h.register(t, email, validPassword)
+	other := h.register(t, claimant, validPassword)
+
+	// Planted after resolveOauthUser has looked and found nothing, which is
+	// exactly the window the store's conditional update closes.
+	h.store.beforeLink = func() {
+		h.store.beforeLink = nil
+		h.store.linkDirectly(domain.OauthAccount{
+			Provider:       domain.ProviderFake,
+			ProviderUserID: subject,
+			UserID:         other.User.ID,
+			Email:          claimant,
+		})
+	}
+
+	_, err := h.trySignIn(t, identity(subject, email))
+	if !errors.Is(err, domain.ErrOauthIdentityClaimed) {
+		t.Fatalf("err = %v, want ErrOauthIdentityClaimed", err)
+	}
+
+	// The identity stayed with whoever claimed it first.
+	link, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderFake, subject)
+	if err != nil {
+		t.Fatalf("look up the contested identity: %v", err)
+	}
+	if link.UserID != other.User.ID {
+		t.Errorf("the identity moved to %s, want %s", link.UserID, other.User.ID)
+	}
+
+	// And the account that merely shared an address is untouched: no session
+	// was issued for it, and its password still works.
+	if n := h.store.liveTokensForUser(matched.User.ID, h.clock); n != 1 {
+		t.Errorf("the address-matched account holds %d live tokens, want only the one from registration", n)
+	}
+	if _, err := h.svc.Login(t.Context(), service.LoginInput{Email: email, Password: validPassword}); err != nil {
+		t.Errorf("the address-matched account was disturbed: %v", err)
+	}
+}
+
 // A state may be spent once. A second callback carrying it is a replay.
 func TestStateCannotBeReplayed(t *testing.T) {
 	h := newHarness(t, withOAuth(t))

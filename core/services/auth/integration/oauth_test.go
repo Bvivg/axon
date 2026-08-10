@@ -118,6 +118,49 @@ func TestSeveralProvidersCanPointAtOneAccount(t *testing.T) {
 	}
 }
 
+// The refusal to move an identity, reached through the transaction that creates
+// an account:
+// nothing is left behind when the identity turns out to be taken.
+//
+// This is the path a first sign-in takes, and it used to commit a user with no
+// link at all — an account nobody could reach again, holding an address nobody
+// could register.
+func TestCreatingAnAccountForATakenIdentityLeavesNothingBehind(t *testing.T) {
+	repo := newRepo(t)
+	ctx := t.Context()
+
+	owner := createUser(t, repo)
+
+	subject := "github-" + uuid.NewString()
+	if err := repo.LinkOauthAccount(ctx, domain.OauthAccount{
+		Provider:       domain.ProviderGitHub,
+		ProviderUserID: subject,
+		UserID:         owner.ID,
+		Email:          owner.Email,
+	}); err != nil {
+		t.Fatalf("link the identity to its owner: %v", err)
+	}
+
+	email := "newcomer-" + uuid.NewString() + "@axon.test"
+
+	_, err := repo.CreateUserWithOauthAccount(ctx, domain.User{
+		ID:            uuid.New(),
+		Email:         email,
+		EmailVerified: true,
+	}, domain.OauthAccount{
+		Provider:       domain.ProviderGitHub,
+		ProviderUserID: subject,
+		Email:          email,
+	})
+	if !errors.Is(err, domain.ErrOauthIdentityClaimed) {
+		t.Fatalf("err = %v, want ErrOauthIdentityClaimed", err)
+	}
+
+	if n := countUsers(t, email); n != 0 {
+		t.Errorf("%d users were left behind by the rolled-back creation, want 0", n)
+	}
+}
+
 // The same subject at two different providers is two different people as far as
 // the primary key is concerned. Collapsing them would let anyone who can pick
 // their own id at one provider impersonate a user of another.

@@ -90,10 +90,15 @@ func TestOauthRegistrationLinksTheAccountAtomically(t *testing.T) {
 	}
 }
 
-// A provider identity stays with whoever claimed it first. Signing in again is
-// routine and must not error, so the guarantee is not that a second link fails —
-// it is that the identity does not move. If it could, whoever re-linked last
-// would own the account.
+// A provider identity stays with whoever claimed it first, and two different
+// things follow from that.
+//
+// Signing in again is routine and must not error: the same user re-links on
+// every sign-in, and the provider's current email is written through. Somebody
+// else claiming the identity is refused — and the refusal is reported, which is
+// the part that used to be missing. The conditional update matches no row, which
+// is not a database error, so a caller that only checked err was told the link
+// had been made and went on to act on it.
 func TestAProviderIdentityNeverMovesToAnotherUser(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -123,12 +128,13 @@ func TestAProviderIdentityNeverMovesToAnotherUser(t *testing.T) {
 		t.Errorf("email = %q, want the provider's current one %q", stored.Email, link.Email)
 	}
 
-	// Someone else claiming it: the ON CONFLICT update is skipped, so this is a
-	// no-op rather than an error. What matters is the row afterwards.
+	// Someone else claiming it: the ON CONFLICT update is skipped, no row is
+	// touched, and that has to reach the caller as a refusal rather than as
+	// silence. What matters is both the error and the row afterwards.
 	link.UserID = other.ID
 	link.Email = other.Email
-	if err := repo.LinkOauthAccount(ctx, link); err != nil {
-		t.Fatalf("link by another user: %v", err)
+	if err := repo.LinkOauthAccount(ctx, link); !errors.Is(err, domain.ErrOauthIdentityClaimed) {
+		t.Fatalf("link by another user: err = %v, want ErrOauthIdentityClaimed", err)
 	}
 
 	stored := mustLoadLink(t, repo, providerUserID)

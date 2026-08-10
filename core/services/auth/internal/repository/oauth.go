@@ -32,7 +32,13 @@ func (r *Repository) OauthAccountByProviderID(ctx context.Context, provider doma
 //
 // A repeated link for the same identity is not an error — it happens whenever
 // someone signs in again — but the identity never moves to a different user:
-// the WHERE clause on the update keeps it with whoever claimed it first.
+// the WHERE clause on the update keeps it with whoever claimed it first, and an
+// attempt to move it fails with domain.ErrOauthIdentityClaimed.
+//
+// The row count is what makes that refusal visible. A conditional DO UPDATE
+// whose WHERE clause matches nothing updates no row and reports no error, so
+// without this check the caller is told the link exists when it does not — and
+// then acts on it.
 func (r *Repository) LinkOauthAccount(ctx context.Context, a domain.OauthAccount) error {
 	const query = `
 		INSERT INTO oauth_accounts (provider, provider_user_id, user_id, email)
@@ -41,8 +47,17 @@ func (r *Repository) LinkOauthAccount(ctx context.Context, a domain.OauthAccount
 		SET email = EXCLUDED.email
 		WHERE oauth_accounts.user_id = EXCLUDED.user_id`
 
-	if _, err := r.q.Exec(ctx, query, a.Provider.String(), a.ProviderUserID, a.UserID, a.Email); err != nil {
+	tag, err := r.q.Exec(ctx, query, a.Provider.String(), a.ProviderUserID, a.UserID, a.Email)
+	if err != nil {
 		return fmt.Errorf("repository: link oauth account: %w", err)
+	}
+
+	// Zero rows has one cause here: the identity exists and belongs to somebody
+	// else. An insert affects one row, and so does the update when the identity
+	// is already this user's — Postgres counts it whether or not the email
+	// actually changed.
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("repository: link oauth account: %w", domain.ErrOauthIdentityClaimed)
 	}
 	return nil
 }

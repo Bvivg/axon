@@ -157,9 +157,16 @@ E2E на Apple не заводится: без реальных ключей о�
 пользователя **без** привязки; теперь транзакция откатывается.
 
 Тесты:
-- integration (`integration/oauth_test.go`) на две учётки: привязка к первой
-  проходит, та же пара `(provider, provider_user_id)` ко второй — отказ,
-  lookup по-прежнему ведёт к первой, повторная привязка к первой — не ошибка;
+- integration на две учётки — **правка существующего теста, а не новый**.
+  `TestAProviderIdentityNeverMovesToAnotherUser` (`integration/user_test.go`)
+  уже покрывал этот сценарий и прямо фиксировал молчание: «ON CONFLICT update
+  пропускается, так что это no-op, а не ошибка». Новый тест рядом оставил бы в
+  наборе утверждение, что молчать правильно, поэтому старый теперь ждёт
+  `ErrOauthIdentityClaimed` — вместе с сохранённой проверкой, что повторный
+  вход того же пользователя проходит и обновляет email;
+- integration, новый (`integration/oauth_test.go`): тот же отказ через
+  транзакцию `CreateUserWithOauthAccount` — она раньше коммитила пользователя
+  **без** привязки, теперь откатывается и не оставляет ни строки;
 - unit (`service/oauth_flow_test.go`): вход по совпадению адреса, когда
   identity успела достаться другому аккаунту, отказывает и не выдаёт токенов.
 
@@ -170,10 +177,15 @@ cd core && gofmt -l .          # пусто
 make check                     # fmt + vet + go test -race
 make lint                      # golangci-lint, включая теги integration/e2e
 make test-integration          # testcontainers, Postgres
-COMPOSE_PROJECT_NAME=axon-e2e-b make test-e2e   # 31 сценарий, все зелёные
+COMPOSE_PROJECT_NAME=axon-e2e-b make test-e2e   # весь набор зелёный
+make web-lint && make web-typecheck && make web-build   # роут Apple собирается
 ```
 
 `make up` не запускается: dev-стек занят параллельной сессией.
+
+Расхождение в счёте: набор e2e — это 29 тестов (плюс 7 подтестов внутри них),
+а не 31, как сказано в `parallel-sessions.md`. Ни одного файла в `e2e/` эта
+работа не трогала, так что расхождение было и до неё.
 
 ## Критерий готовности
 

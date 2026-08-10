@@ -87,6 +87,14 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 		return connect.NewError(connect.CodeFailedPrecondition,
 			errors.New("the provider did not return an email address"))
 
+	// Neither a retry nor a server fault: this provider account belongs to a
+	// different user here. Saying so is safe — whoever is asking controls the
+	// provider account in question — and it is the only way they learn that the
+	// way in is the other account, not this one.
+	case errors.Is(err, domain.ErrOauthIdentityClaimed):
+		return connect.NewError(connect.CodeAlreadyExists,
+			errors.New("this provider account is already linked to another user"))
+
 	case errors.Is(err, domain.ErrOauthReturnToNotAllowed):
 		return connect.NewError(connect.CodeInvalidArgument,
 			errors.New("return_to is not an allowed destination"))

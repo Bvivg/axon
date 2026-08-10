@@ -55,6 +55,17 @@ var (
 	// primary key of the link, the other is how the account is matched.
 	ErrOauthProfileIncomplete = errors.New("auth: oauth provider returned an incomplete profile")
 
+	// ErrOauthIdentityClaimed is returned when a provider identity is already
+	// linked to a different account.
+	//
+	// The link never moves: whoever claimed the identity first keeps it, or
+	// anyone able to sign in at a provider could drag an identity — and the
+	// account behind it — across to themselves. That much was always true; what
+	// this error adds is that the refusal is reported. Reporting it as success
+	// was worse than either outcome, because the caller then acted on a link
+	// that did not exist.
+	ErrOauthIdentityClaimed = errors.New("auth: this provider account is already linked to another user")
+
 	// ErrOauthReturnToNotAllowed is returned for a post-sign-in redirect target
 	// outside the allow-list. An open redirect here is how an attacker collects
 	// authorization codes.

@@ -36,6 +36,10 @@ type fakeStore struct {
 	// how a concurrent exchange is simulated deterministically, without hoping a
 	// goroutine interleaves the right way.
 	beforeRotate func()
+
+	// beforeLink is the same trick for LinkOauthAccount: it opens the window
+	// between finding no link for an identity and writing one.
+	beforeLink func()
 }
 
 var _ service.Store = (*fakeStore)(nil)
@@ -306,6 +310,10 @@ func (s *fakeStore) OauthAccountByProviderID(_ context.Context, p domain.Provide
 }
 
 func (s *fakeStore) LinkOauthAccount(_ context.Context, a domain.OauthAccount) error {
+	if s.beforeLink != nil {
+		s.beforeLink()
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -314,15 +322,29 @@ func (s *fakeStore) LinkOauthAccount(_ context.Context, a domain.OauthAccount) e
 	}
 
 	key := oauthKey(a.Provider, a.ProviderUserID)
-	// Mirrors the SQL: an existing link never moves to a different user.
+	// Mirrors the SQL: an existing link never moves to a different user, and the
+	// refusal is reported. The conditional update matches no row in this case,
+	// so the real store sees a row count of zero and says so.
 	if existing, ok := s.oauth[key]; ok && existing.UserID != a.UserID {
-		return nil
+		return domain.ErrOauthIdentityClaimed
 	}
 	if a.LinkedAt.IsZero() {
 		a.LinkedAt = time.Now().UTC()
 	}
 	s.oauth[key] = a
 	return nil
+}
+
+// linkDirectly plants a link without going through LinkOauthAccount, for tests
+// that need the store already in a state the service refuses to create.
+func (s *fakeStore) linkDirectly(a domain.OauthAccount) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if a.LinkedAt.IsZero() {
+		a.LinkedAt = time.Now().UTC()
+	}
+	s.oauth[oauthKey(a.Provider, a.ProviderUserID)] = a
 }
 
 func oauthKey(p domain.Provider, providerUserID string) string {

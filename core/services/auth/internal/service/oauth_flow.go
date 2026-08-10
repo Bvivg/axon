@@ -187,6 +187,16 @@ func (s *Service) resolveOauthUser(
 	case err == nil:
 		account.UserID = existing.ID
 		if err := s.store.LinkOauthAccount(ctx, account); err != nil {
+			// The identity was claimed by another account between the lookup
+			// above and this write. The sign-in ends here rather than
+			// continuing: the address matched, but the identity points
+			// somewhere else, and letting them in would seat them in an account
+			// that the next sign-in — resolved by identity, not by address —
+			// would not bring them back to.
+			if errors.Is(err, domain.ErrOauthIdentityClaimed) {
+				s.log.WarnContext(ctx, "provider identity is already linked to another account",
+					"provider", id, "user_id", existing.ID)
+			}
 			return domain.User{}, false, err
 		}
 
