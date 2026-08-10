@@ -11,7 +11,7 @@ COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
 # Every module in the workspace, listed explicitly. A pattern has to start at a
 # module root in workspace mode, so ./services/... does not work — each service
 # is added here as it appears.
-GO_MODULES    := ./shared/... ./services/auth/... ./services/gateway/...
+GO_MODULES    := ./shared/... ./services/auth/... ./services/gateway/... ./services/game/...
 
 # Migration targets need the per-service DSN, which lives in .env. A missing
 # file is not an error here: every other target works without it, and `make env`
@@ -241,7 +241,7 @@ tidy: ## Tidy every module in the workspace
 	@# so every go.sum has to be complete by itself. Tidying inside the workspace
 	@# lets go.work.sum cover the gaps, and the omission only surfaces as a
 	@# failed image build — which is exactly how it surfaced the first time.
-	@for module in shared services/auth services/gateway; do \
+	@for module in shared services/auth services/gateway services/game; do \
 		echo "tidy $$module"; \
 		(cd core/$$module && GOWORK=off go mod tidy) || exit 1; \
 	done
