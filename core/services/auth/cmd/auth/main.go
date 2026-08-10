@@ -178,6 +178,8 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 		RedirectBaseURL:  cfg.OAuth.RedirectBaseURL,
 		Google:           cfg.OAuth.Google,
 		GitHub:           cfg.OAuth.GitHub,
+		Apple:            cfg.OAuth.Apple,
+		Logger:           log,
 		FakeEnabled:      cfg.OAuth.FakeEnabled,
 		FakeAuthorizeURL: cfg.OAuth.FakeAuthorizeURL,
 		Production:       cfg.Environment.IsProduction(),

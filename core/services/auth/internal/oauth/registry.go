@@ -2,7 +2,11 @@ package oauth
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
+
+	"github.com/bvivg/axon/core/shared/pkg/authn"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
@@ -30,6 +34,15 @@ type RegistryConfig struct {
 
 	Google ProviderConfig
 	GitHub ProviderConfig
+
+	// Apple carries four values instead of two, because its client secret is
+	// signed rather than issued. It returns the browser to its own route: see
+	// AppleCallbackPath.
+	Apple AppleConfig
+
+	// Logger is what the Apple key cache reports failed refreshes on. It is
+	// required only when Apple is configured, since nothing else here logs.
+	Logger *slog.Logger
 
 	// FakeEnabled turns on the local provider. Refused outside development and
 	// test: see NewRegistry.
@@ -83,6 +96,14 @@ func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 		)
 	}
 
+	if cfg.Apple.configured() {
+		apple, err := newAppleFromConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		providers[domain.ProviderApple] = apple
+	}
+
 	if cfg.FakeEnabled {
 		if strings.TrimSpace(cfg.FakeAuthorizeURL) == "" {
 			return nil, errors.New("oauth: the fake provider needs its authorize URL")
@@ -94,6 +115,38 @@ func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 	}
 
 	return &Registry{providers: providers}, nil
+}
+
+// newAppleFromConfig assembles Apple together with the key cache its id_token
+// verification reads from.
+//
+// The cache is not primed here on purpose. Fetching Apple's key set at startup
+// would make this service's ability to start depend on reaching appleid.apple.com,
+// and the cache already fetches on the first token that names a key it has not
+// seen — which is the first Apple sign-in.
+func newAppleFromConfig(cfg RegistryConfig) (Provider, error) {
+	if cfg.Logger == nil {
+		return nil, errors.New("oauth: apple needs a logger for its key cache")
+	}
+
+	redirectURL, err := appleRedirectURL(cfg.RedirectBaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// The shared JWKS cache rather than a second one written here: it already
+	// knows to collapse concurrent fetches, to re-fetch once for an unknown key
+	// id behind a cooldown, and to keep serving the previous keys when a fetch
+	// fails. A second copy of that would drift from the first.
+	keys, err := authn.NewCache(authn.JWKSConfig{
+		URL:    appleKeysURL,
+		Logger: cfg.Logger.With("component", "apple_jwks"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("oauth: apple: key cache: %w", err)
+	}
+
+	return newApple(cfg.Apple, redirectURL, keys)
 }
 
 // Get returns a configured provider.

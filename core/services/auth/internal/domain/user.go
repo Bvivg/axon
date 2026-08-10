@@ -86,4 +86,11 @@ type ProviderProfile struct {
 	EmailVerified  bool
 	DisplayName    string
 	AvatarURL      string
+
+	// IsPrivateEmail marks an address the provider relays rather than the
+	// person's own — Apple's "Hide My Email". It changes nothing about how the
+	// account is matched or created, but it is worth recording: it explains
+	// both why the address looks the way it does and why mail to it depends on
+	// a relay staying alive.
+	IsPrivateEmail bool
 }

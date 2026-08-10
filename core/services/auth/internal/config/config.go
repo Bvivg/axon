@@ -52,6 +52,11 @@ type OAuthConfig struct {
 	Google oauth.ProviderConfig
 	GitHub oauth.ProviderConfig
 
+	// Apple needs four values rather than two: its client secret is an
+	// assertion this service signs with the team's .p8 key, not a string an
+	// operator copies out of a console.
+	Apple oauth.AppleConfig
+
 	// FakeEnabled turns on the local provider, which accepts any identity it is
 	// given. Refused in production.
 	FakeEnabled bool
@@ -206,9 +211,40 @@ func loadOAuth(l *config.Loader) OAuthConfig {
 			ClientID:     l.StringDefault("OAUTH_GITHUB_CLIENT_ID", ""),
 			ClientSecret: l.SecretDefault("OAUTH_GITHUB_CLIENT_SECRET", "").Reveal(),
 		},
+		Apple: oauth.AppleConfig{
+			ClientID:   l.StringDefault("OAUTH_APPLE_CLIENT_ID", ""),
+			TeamID:     l.StringDefault("OAUTH_APPLE_TEAM_ID", ""),
+			KeyID:      l.StringDefault("OAUTH_APPLE_KEY_ID", ""),
+			PrivateKey: applePrivateKey(l),
+		},
 		FakeEnabled:      l.Bool("OAUTH_FAKE_ENABLED", false),
 		FakeAuthorizeURL: l.StringDefault("OAUTH_FAKE_AUTHORIZE_URL", "http://localhost:8081"+oauth.FakeAuthorizePath),
 	}
+}
+
+// applePrivateKey reads the .p8 signing key Apple issues.
+//
+// Empty is normal and means Apple is simply not configured — the registry then
+// treats it as absent, like any provider missing half its credentials. A value
+// that is present but unreadable is the opposite case: somebody meant to
+// configure Apple and got the encoding wrong, and starting anyway would hide
+// that until the first person tried to sign in.
+//
+// Both a literal PEM and a base64-encoded one are accepted, for the same reason
+// the JWT keys accept both: a PEM block is multi-line, and .env files, compose
+// environments and CI secrets disagree about newlines.
+func applePrivateKey(l *config.Loader) string {
+	raw := l.SecretDefault("OAUTH_APPLE_PRIVATE_KEY", "").Reveal()
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+
+	pemBytes, err := decodeKeyMaterial(raw)
+	if err != nil {
+		l.Fail("OAUTH_APPLE_PRIVATE_KEY", err)
+		return ""
+	}
+	return string(pemBytes)
 }
 
 func loadPasswordParams(l *config.Loader) password.Params {

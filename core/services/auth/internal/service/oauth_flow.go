@@ -122,7 +122,15 @@ func (s *Service) CompleteOAuth(ctx context.Context, id domain.Provider, code, s
 		return CompleteOAuthResult{}, err
 	}
 
-	s.log.InfoContext(ctx, "oauth sign-in", "provider", id, "user_id", user.ID, "created", created)
+	// private_email marks a relayed address — Apple's "Hide My Email". Nothing
+	// is decided on it; it is recorded because it is what explains an address
+	// nobody recognises and mail that depends on a relay.
+	s.log.InfoContext(ctx, "oauth sign-in",
+		"provider", id,
+		"user_id", user.ID,
+		"created", created,
+		"private_email", profile.IsPrivateEmail,
+	)
 
 	return CompleteOAuthResult{
 		Result:   Result{User: user, Tokens: tokens},
