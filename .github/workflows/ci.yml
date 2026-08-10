@@ -217,7 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [auth, gateway]
+        service: [auth, chat, gateway]
     steps:
       - uses: actions/checkout@v4
 

@@ -47,6 +47,18 @@ var procedures = map[string]Rule{
 	"/axon.auth.v1.AuthService/Logout": {Public: true, Tier: TierStandard},
 
 	"/axon.auth.v1.AuthService/GetMe": {Public: false, Tier: TierStandard},
+
+	// Chat: everything requires a token, and reads are cheap.
+	"/axon.chat.v1.ChatService/ListRooms":    {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatService/GetRoom":      {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatService/ListMessages": {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatService/JoinRoom":     {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatService/LeaveRoom":    {Public: false, Tier: TierStandard},
+
+	// Opening a room writes a row nobody can delete yet, so it sits on the
+	// tight budget: a loop creating rooms is cheap to write and annoying to
+	// clean up.
+	"/axon.chat.v1.ChatService/CreateRoom": {Public: false, Tier: TierSensitive},
 }
 
 // For returns the rule for a procedure. An unlisted procedure gets the closed

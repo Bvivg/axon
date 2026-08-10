@@ -1,0 +1,27 @@
+# Hot reload for local development. Used only by the dev stage of
+# Dockerfile.service, where compose bind-mounts the source over the image.
+root = "."
+tmp_dir = "/tmp/air"
+
+[build]
+  # The image sets GOWORK=off, so shared/ resolves through this module's
+  # `replace` directive to the mounted sibling rather than a published version.
+  cmd = "go build -o /tmp/air/chat ./cmd/chat"
+  bin = "/tmp/air/chat"
+
+  include_dir = ["cmd", "internal"]
+  include_ext = ["go"]
+  exclude_dir = ["migrations", "e2e", "integration"]
+  exclude_regex = ["_test\\.go"]
+
+  # Long enough to let an editor finish writing a file before rebuilding.
+  delay = 300
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = "2s"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

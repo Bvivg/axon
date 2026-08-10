@@ -103,6 +103,45 @@ services:
       retries: 12
       start_period: 40s
 
+  chat:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: ${BUILD_TARGET:-dev}
+      args:
+        SERVICE: chat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DSN: ${CHAT_POSTGRES_DSN}
+      HTTP_ADDR: ":8082"
+      METRICS_ADDR: ":9092"
+      # Chat verifies tokens itself rather than trusting the gateway, so it
+      # needs the key set — from auth's internal listener, like everyone else.
+      JWKS_URL: "http://auth:9091/.well-known/jwks.json"
+      # Used for exactly one call: reading the caller's own profile, with the
+      # caller's own token, to snapshot a display name when they join a room.
+      AUTH_SERVICE_URL: "http://auth:8081"
+    ports:
+      - "${CHAT_HOST_PORT:-8082}:8082"
+      - "${CHAT_METRICS_HOST_PORT:-9092}:9092"
+    volumes:
+      - ..:/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Not merely started: the first thing chat does is fetch the key set, and
+      # it refuses to start without it.
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9092/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
   # The only service published to the outside world. Everything else is reachable
   # only over the compose network.
   gateway:
@@ -119,6 +158,7 @@ services:
       HTTP_ADDR: ":8080"
       METRICS_ADDR: ":9090"
       AUTH_SERVICE_URL: "http://auth:8081"
+      CHAT_SERVICE_URL: "http://chat:8082"
       # The admin listener, which is internal. The document is public, but
       # nothing outside needs to reach it directly.
       JWKS_URL: "http://auth:9091/.well-known/jwks.json"
@@ -133,6 +173,8 @@ services:
       - ..:/src
     depends_on:
       auth:
+        condition: service_healthy
+      chat:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9090/healthz"]

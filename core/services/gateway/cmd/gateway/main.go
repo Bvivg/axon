@@ -21,6 +21,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
@@ -141,9 +142,18 @@ func run() error {
 		return err
 	}
 
+	chatClient := proxy.NewChatClient(upstream, cfg.ChatServiceURL,
+		connect.WithInterceptors(middleware.NewCorrelationInterceptor()),
+	)
+
+	chatProxy, err := proxy.NewChat(chatClient)
+	if err != nil {
+		return err
+	}
+
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -172,6 +182,7 @@ func run() error {
 func publicHandler(
 	cfg config.Config,
 	authProxy authv1connect.AuthServiceHandler,
+	chatProxy chatv1connect.ChatServiceHandler,
 	policyGuard connect.Interceptor,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
@@ -193,6 +204,19 @@ func publicHandler(
 				Secure: cfg.RefreshCookie.Secure,
 				MaxAge: cfg.RefreshCookie.MaxAge,
 			}),
+			middleware.NewLoggingInterceptor(log),
+		),
+	))
+
+	// Chat gets the same chain minus the cookie interceptor: the refresh cookie
+	// belongs to the sign-in procedures and to nothing else, and an interceptor
+	// that touches it here would widen its path for no reason.
+	mux.Handle(chatv1connect.NewChatServiceHandler(chatProxy,
+		connect.WithInterceptors(
+			middleware.NewCorrelationInterceptor(),
+			middleware.NewRecoveryInterceptor(log),
+			metrics.Interceptor(),
+			policyGuard,
 			middleware.NewLoggingInterceptor(log),
 		),
 	))

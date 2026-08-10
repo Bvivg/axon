@@ -18,6 +18,9 @@ type Config struct {
 	// AuthServiceURL is the base URL of the auth service's Connect listener.
 	AuthServiceURL string
 
+	// ChatServiceURL is the base URL of the chat service's Connect listener.
+	ChatServiceURL string
+
 	// JWKSURL is where the public key set is fetched from. It points at auth's
 	// admin listener, which is internal — the document is public, but nothing
 	// outside needs to reach it directly.
@@ -81,6 +84,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		Base:                config.LoadBase(l, ServiceName),
 		AuthServiceURL:      l.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
+		ChatServiceURL:      l.StringDefault("CHAT_SERVICE_URL", "http://chat:8082"),
 		JWKSURL:             l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		JWKSRefreshInterval: l.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
 		UpstreamTimeout:     l.DurationDefault("UPSTREAM_TIMEOUT", 10*time.Second),
