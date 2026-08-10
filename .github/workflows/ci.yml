@@ -76,7 +76,7 @@ jobs:
           # root in workspace mode. Keep in step with GO_MODULES in the Makefile
           # and with the default command in docker-compose.tools.yml — a service
           # missing from this list is a service nobody lints.
-          args: ./shared/... ./services/auth/... ./services/gateway/... ./services/game/...
+          args: ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/...
 
   proto:
     name: Contracts
