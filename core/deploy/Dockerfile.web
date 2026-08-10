@@ -1,0 +1,115 @@
+# syntax=docker/dockerfile:1
+
+# The Next.js client. Two targets, the same split the Go services use: `dev`
+# runs the dev server against bind-mounted source, `runtime` is what would ship.
+#
+# The build context is ui/web rather than the repository root, so the image
+# carries the web app and nothing else. Note that src/gen is generated and
+# git-ignored: `make proto` has to have run, or the build fails on missing types.
+
+ARG NODE_VERSION=22
+
+# ---------------------------------------------------------------------------
+# deps — node_modules, cached on the lock file alone
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine AS deps
+
+WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Only the manifests, so editing a component does not reinstall the world.
+COPY package.json package-lock.json ./
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+# ---------------------------------------------------------------------------
+# dev — hot reload against the bind mount
+# ---------------------------------------------------------------------------
+FROM deps AS dev
+
+# No source is copied: docker-compose mounts it. node_modules is masked by an
+# anonymous volume there, which is why it has to be installed in the image and
+# not on the host.
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
+
+# ---------------------------------------------------------------------------
+# build — the production bundle
+# ---------------------------------------------------------------------------
+FROM deps AS build
+
+# NEXT_PUBLIC_ variables are read by the browser, not by the container, and Next
+# inlines them into the bundle right here. So for the shipping image they are a
+# build-time input, not a runtime one — the `dev` target above is the only place
+# the environment still decides.
+#
+# The defaults match docker-compose.yml, so an image built without arguments
+# behaves the way the development stack does. The browser e2e stack overrides
+# them, because there the caller is a browser inside the compose network and
+# `localhost` means the runner container.
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:18080
+ARG NEXT_PUBLIC_OAUTH_PROVIDERS=fake
+
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL} \
+    NEXT_PUBLIC_OAUTH_PROVIDERS=${NEXT_PUBLIC_OAUTH_PROVIDERS}
+
+COPY . .
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# runtime — what would ship
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+# Not root. The Node images ship a `node` user for exactly this.
+USER node
+
+# `output: standalone` in next.config.ts traces the modules actually reached and
+# emits a self-contained server, so this image carries neither the full
+# node_modules nor the source.
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/public ./public
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
+
+# ---------------------------------------------------------------------------
+# e2e — the Playwright runner
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/playwright:v1.62.1-noble AS e2e
+
+WORKDIR /app
+
+# Pinned to the same version as @playwright/test in package.json. The image
+# carries the browsers for exactly its own version, and a mismatch surfaces as
+# "Executable doesn't exist" rather than as a version complaint.
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    CI=1
+
+# The source is copied rather than bind-mounted on purpose: this image is glibc,
+# while `make web-install` populates ui/web/node_modules from an Alpine
+# container. Mounting the tree would hand musl builds of the native packages to
+# a glibc runtime. The install layer is keyed on the lock file, so editing a
+# test rebuilds only the copies below it.
+COPY package.json package-lock.json ./
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+COPY playwright.config.ts ./
+COPY e2e ./e2e
+
+CMD ["npx", "playwright", "test"]

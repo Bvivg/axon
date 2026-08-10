@@ -61,6 +61,133 @@ services:
       retries: 10
       start_period: 5s
 
+  auth:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      # dev runs air against the bind-mounted source. The healthchecks below
+      # assume that image: they call wget, which the distroless runtime image
+      # does not have. docker-compose.e2e.yml is where the shipping images are
+      # exercised, and there the binary probes itself with -healthcheck.
+      target: ${BUILD_TARGET:-dev}
+      args:
+        SERVICE: auth
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # The service connects as its own role, which can only reach the auth
+      # schema. The superuser DSN is for migrations and psql, never for a service.
+      POSTGRES_DSN: ${AUTH_POSTGRES_DSN}
+      HTTP_ADDR: ":8081"
+      # Probes, metrics and JWKS live on their own port so the operational
+      # surface is never reachable through whatever the gateway exposes.
+      METRICS_ADDR: ":9091"
+    ports:
+      - "${AUTH_HOST_PORT:-8081}:8081"
+      - "${AUTH_METRICS_HOST_PORT:-9091}:9091"
+    volumes:
+      # The whole workspace, so go.work resolves shared/ to the sibling on disk
+      # and a change there triggers a rebuild too.
+      - ..:/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Liveness, not readiness: compose should hold dependents until the process
+      # is up, and /readyz would additionally wait on Postgres, which is already
+      # covered by depends_on.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9091/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  # The only service published to the outside world. Everything else is reachable
+  # only over the compose network.
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: ${BUILD_TARGET:-dev}
+      args:
+        SERVICE: gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      HTTP_ADDR: ":8080"
+      METRICS_ADDR: ":9090"
+      AUTH_SERVICE_URL: "http://auth:8081"
+      # The admin listener, which is internal. The document is public, but
+      # nothing outside needs to reach it directly.
+      JWKS_URL: "http://auth:9091/.well-known/jwks.json"
+      # Reached directly in development, so X-Forwarded-For is ignored: trusting
+      # it without a proxy in front lets any caller forge their own address and
+      # hand themselves a private rate-limit bucket.
+      TRUSTED_PROXIES: "0"
+    ports:
+      - "${GATEWAY_HOST_PORT:-18080}:8080"
+      - "${GATEWAY_METRICS_HOST_PORT:-19090}:9090"
+    volumes:
+      - ..:/src
+    depends_on:
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  # The web client. Talks to the gateway from the browser, so it needs no
+  # network path of its own to any service — only the browser does, and the
+  # gateway's CORS allow-list is what decides whether it may.
+  web:
+    build:
+      context: ../../ui/web
+      dockerfile: ../../core/deploy/Dockerfile.web
+      target: ${WEB_BUILD_TARGET:-dev}
+    restart: unless-stopped
+    environment:
+      # Read by the browser, not by this container: NEXT_PUBLIC_ variables are
+      # inlined into the bundle. So it has to be the address the host reaches
+      # the gateway on, never http://gateway:8080.
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${GATEWAY_HOST_PORT:-18080}
+      NEXT_PUBLIC_OAUTH_PROVIDERS: ${NEXT_PUBLIC_OAUTH_PROVIDERS:-fake}
+      # Polling is slower but reliable across the bind mount; native file events
+      # do not cross the boundary on macOS or Windows.
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${WEB_HOST_PORT:-3000}:3000"
+    volumes:
+      - ../../ui/web:/app
+      # Masks the host's node_modules with the image's. Without it, the bind
+      # mount above hides everything npm installed during the build — and on
+      # macOS the host's copy would be the wrong platform anyway.
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # Migrations. Lives here rather than in the tools file because it needs the
+  # stack's network to reach Postgres. Behind a profile, so `up` ignores it:
+  #
+  #   make migrate-up S=auth
+  #
+  # It runs as the service's own role, which holds CREATE only on its own
+  # schema — a migration cannot reach across a schema boundary even by mistake.
+  migrate:
+    image: migrate/migrate:v4.18.1
+    profiles: ["tools"]
+    volumes:
+      - ../services/${MIGRATE_SERVICE:-auth}/migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 # Kafka joins this file with the chat service, and LiveKit with calling. They are
 # not here yet because nothing would produce to or consume from them, and an
 # idle broker only slows down `docker compose up`.

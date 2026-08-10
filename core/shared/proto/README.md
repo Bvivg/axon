@@ -1,12 +1,17 @@
 # Contracts
 
-Every service contract lives here as `<service>/v1/<service>.proto` and is the
-single source of truth for Go, TypeScript and (later) Swift types. Nothing that
-crosses a service boundary is hand-written on either side.
+Every service contract lives here as `axon/<service>/v1/<service>.proto` and is
+the single source of truth for Go, TypeScript and (later) Swift types. Nothing
+that crosses a service boundary is hand-written on either side.
 
 ## Conventions
 
-- One versioned package per service: `axon.auth.v1`, `axon.chat.v1`.
+- One versioned package per service: `axon.auth.v1`, `axon.chat.v1`. The
+  directory has to mirror the package exactly — `buf lint` enforces it, which is
+  why the tree starts with an `axon/` level.
+- Enum names avoid consecutive capitals (`OauthProvider`, not `OAuthProvider`):
+  buf derives the required value prefix from the type name, and `OAuthProvider`
+  would demand values spelled `O_AUTH_PROVIDER_*`.
 - Methods are verb + noun: `Register`, `RefreshToken`, `ListActiveGames`.
 - New fields are added as `optional` and never renumbered; a change that cannot
   be made additively ships as `v2` alongside `v1`.
