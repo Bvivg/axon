@@ -33,7 +33,7 @@ services:
     # current module list; the default is here only so a bare `docker compose
     # run golangci-lint` does something sensible. Configuration is picked up
     # from /workspace/.golangci.yml by searching upwards.
-    command: ["golangci-lint", "run", "./shared/...", "./services/auth/...", "./services/gateway/..."]
+    command: ["golangci-lint", "run", "./shared/...", "./services/auth/...", "./services/gateway/...", "./services/game/..."]
 
   # Node for the web client's checks: install, lint, typecheck, build. The
   # running dev server is the `web` service in docker-compose.yml; this is for
