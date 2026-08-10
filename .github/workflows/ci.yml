@@ -135,10 +135,12 @@ jobs:
         run: |
           docker compose -f core/deploy/docker-compose.yml config -q
           docker compose -f core/deploy/docker-compose.tools.yml config -q
-          # The e2e file requires a signing key, so a placeholder stands in:
-          # this step checks the file parses, not that the stack runs.
+          # The e2e files require a signing key, so a placeholder stands in:
+          # this step checks they parse, not that the stacks run.
           JWT_PRIVATE_KEY_DEV_1=placeholder \
             docker compose -f core/deploy/docker-compose.e2e.yml config -q
+          JWT_PRIVATE_KEY_DEV_1=placeholder \
+            docker compose -f core/deploy/docker-compose.web-e2e.yml config -q
 
   # Both of the jobs below wait on `go`: if the unit tests are red there is no
   # point spending several minutes standing a database or a whole stack up.
@@ -262,5 +264,27 @@ jobs:
       - name: Build
         run: npm run build
 
-# Still to come, each with the stage that makes it meaningful:
-#   - Playwright against the Docker stack (stage 1, step 10)
+  # The browser half of the client's coverage. It waits on `web` for the reason
+  # the Go e2e job waits on `go`: if the bundle does not build, standing a whole
+  # stack up to watch it fail costs minutes and tells nobody anything.
+  web-e2e:
+    name: Browser E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      # The client is built inside the stack from this checkout, and its
+      # TypeScript client is generated and git-ignored — so it has to be on disk
+      # before the image build starts.
+      - name: Generate contracts
+        run: buf generate
+
+      # No upload step to match the Go suite's: the report goes to stdout, and
+      # make prints the services' logs there too when the run is red.
+      - name: Browser e2e tests
+        run: make test-web-e2e
