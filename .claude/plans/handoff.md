@@ -8,75 +8,35 @@
 
 ## Где мы
 
-Ветка `feat/auth-gateway`, **32 коммита** поверх `origin/main` (`edb7fc5`),
-fast-forward — расхождения нет, force-push не нужен.
+`main` = `745a0b5` — этап 1 слит squash-мержем через
+[PR #3](https://github.com/Bvivg/axon/pull/3), все десять проверок CI зелёные.
+Веток, кроме `main`, на remote нет; worktree-каталоги параллельных сессий сняты.
 
 | | Статус |
 |---|---|
 | Этап 0 — фундамент | ✅ закрыт (PR #1, #2) |
-| Этап 1 — auth + gateway + веб-логин | ✅ **закрыт, все 10 шагов** |
+| Этап 1 — auth + gateway + веб-логин | ✅ закрыт, все 10 шагов (PR #3) |
 | Этап 2 — chat | транспорт (`shared/pkg/kafka`, `shared/pkg/ws`) готов, сервиса нет |
 | Этап 3 — game | движок и Tic-Tac-Toe готовы, `session`/`server`/proto нет |
 | Этапы 4–7 | не начинались |
 
-Объём: 131 Go-файл (~22 000 строк) и 356 тестов; веб — 27 файлов TS/TSX
+Объём: 131 Go-файл (~22 000 строк) и 359 тестов; веб — 27 файлов TS/TSX
 (~1 700 строк). Сгенерированный код в счёт не идёт. Модулей в `go.work` четыре:
 `shared`, `services/auth`, `services/gateway`, `services/game`.
 
-### Последняя сессия: четыре задачи параллельно
-
-Четыре ветки написаны независимыми сессиями в отдельных `git worktree` и сведены
-в `feat/auth-gateway` девятью коммитами, cherry-pick, **без конфликтов** —
-разделение по файлам сработало. Ветки-worktree ещё существуют и могут быть
-удалены: `feat/web-playwright`, `feat/auth-apple-signin`,
-`feat/game-engine-tictactoe`, `feat/shared-kafka-ws`. Страховочная ветка на
-состояние до сведения — `backup/pre-merge`.
-
-```
-c1bcab9 test(shared): cover the Kafka transport against a real broker
-86e14b3 feat(shared): add the Kafka producer and consumer
-2c6a296 feat(shared): add the WebSocket transport wrapper
-1949161 docs(plans): plan the shared transport for stage 2
-77703e1 fix(auth): report a refused oauth link instead of silent success
-e4d7aa5 feat(auth): add sign in with Apple
-65d23ea ci: run the browser e2e suite
-1715c3c test(web): drive the browser sign-in flow with Playwright
-956336a feat(game): add the engine contract and tic-tac-toe behind it
-```
-
-Всё проверено **на сведённой ветке**, а не только по отдельности: `make check`
-(0 FAIL), `make lint` (0 issues), `make test-integration` (auth + shared),
-`make test-e2e` (29 сценариев), `make test-web-e2e` (6 сценариев в браузере),
-`make web-check` — все `exit=0`.
+Тестовое покрытие сквозного пути: 31 Go-сценарий e2e через gateway и 8
+браузерных в Chromium.
 
 ## Что дальше, по порядку
 
-### 1. PR по этапу 1
+### 1. Этап 2 — chat
 
-`main` защищена, мерж только через PR со squash (`rules/git-ci.md`). Ветка ещё
-не запушена (`origin/feat/auth-gateway` не существует). **Пуш делает пользователь
-сам** — автоматический режим его блокирует:
+Первая незакрытая работа. Транспорт написан заранее и ждёт первого потребителя;
+всё остальное — с нуля: Kafka в `docker-compose.yml`, схема `chat` в Postgres,
+сам сервис, WebSocket-протокол поверх `shared/pkg/ws`, Redis pub/sub для fan-out
+между инстансами, proto-контракт, веб-клиент. План — `stage-2-chat.md`.
 
-```bash
-git push -u origin feat/auth-gateway
-```
-
-### 2. Имя Apple — отдельным полем в контракте
-
-Apple присылает имя пользователя ровно один раз, при первой авторизации, а
-`CompleteOAuth` несёт только provider/code/state. Сейчас имя упаковано вместе с
-кодом в одно поле: `base64url(JSON{code,name})` — работает и документировано с
-обеих сторон, но это протокол поверх поля, не предназначенного для этого.
-Правильное место — отдельное `optional`-поле в `auth.proto`; правило
-additive-only это позволяет сделать чисто.
-
-### 3. Этап 2 — chat
-
-Транспорт уже есть и ждёт первого потребителя. Осталось: Kafka в
-`docker-compose.yml`, схема `chat` в Postgres, сам сервис, WebSocket-протокол
-поверх `shared/pkg/ws`, Redis pub/sub для fan-out между инстансами, веб-клиент.
-
-### 4. Этап 3 — game
+### 2. Этап 3 — game
 
 Домен готов и от инфраструктуры не зависит. Осталось: `session` (Manager +
 Repository, история ходов в Postgres), `server` (gRPC + ws), proto-контракт,
@@ -107,6 +67,10 @@ postgres 55432, redis 56379. Стандартные заняты другими 
 `axon-tools`), поэтому **два стека одновременно держать нельзя**: параллельные
 сессии либо не трогают Docker, либо переопределяют `COMPOSE_PROJECT_NAME`.
 
+Список модулей для линтера продублирован в трёх местах — `Makefile` (`GO_MODULES`),
+`ci.yml` и `docker-compose.tools.yml`. Новый сервис нужно вписать во все три,
+иначе он собирается и тестируется, но не линтуется.
+
 ## Что дорого переоткрывать заново
 
 - **Куку ставит gateway, не веб.** Интерцептор `services/gateway/internal/cookie`.
@@ -132,10 +96,19 @@ postgres 55432, redis 56379. Стандартные заняты другими 
   браузер, а не контейнер. Для dev-стека `NEXT_PUBLIC_API_BASE_URL` — адрес, по
   которому до gateway дотягивается хост; в браузерном e2e браузер живёт внутри
   сети compose, поэтому там это внутреннее имя, переданное build-arg'ом.
+- **`buf breaking` падает, если на базовой ветке нет ни одного `.proto`** —
+  модуль без файлов для него ошибка, а не пустая база. В `ci.yml` поэтому стоит
+  отдельный шаг-проверка базы; удалять его нельзя, пока история не гарантирует
+  наличие контрактов.
 - **Реальных OAuth-ключей нет и не ожидается в репозитории.** Google/GitHub/Apple
   написаны, но в реестр не попадают без полного набора креденшелов; весь флоу
   проверяется fake-провайдером, переход на настоящие ключи — правка `.env`, без
   правок кода.
+- **Имя от Apple приходит один раз и не этому сервису.** Apple отдаёт его тому,
+  кто принял form_post — то есть веб-клиенту, — и клиент возвращает его в
+  `CompleteOAuthRequest.display_name`. Провайдер Apple в Go имени не видит вообще.
+  Подставляется, только если сам провайдер имени не дал, и только при создании
+  аккаунта.
 - **Реестр игр заполняется явно при wiring** (`reg.Register(tictactoe.Definition())`),
   без `init()`-побочек — будущий `cmd/main.go` игрового сервиса обязан это сделать.
 
@@ -148,6 +121,7 @@ postgres 55432, redis 56379. Стандартные заняты другими 
 | Apple Sign In | `.claude/plans/auth-apple-signin.md` |
 | Движок игр | `.claude/plans/stage-3-game-engine.md` |
 | Транспорт под этап 2 | `.claude/plans/stage-2-transport.md` |
+| Сервис chat (этап 2) | `.claude/plans/stage-2-chat.md` |
 | Как делили работу между сессиями | `.claude/plans/parallel-sessions.md` |
 | Общий порядок этапов | `.claude/plans/roadmap.md` |
 | Конвенции (Go, proto, web, infra, тесты, git, security) | `.claude/rules/*.md` |
