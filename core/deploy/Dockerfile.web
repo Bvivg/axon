@@ -41,6 +41,21 @@ CMD ["npm", "run", "dev"]
 # ---------------------------------------------------------------------------
 FROM deps AS build
 
+# NEXT_PUBLIC_ variables are read by the browser, not by the container, and Next
+# inlines them into the bundle right here. So for the shipping image they are a
+# build-time input, not a runtime one — the `dev` target above is the only place
+# the environment still decides.
+#
+# The defaults match docker-compose.yml, so an image built without arguments
+# behaves the way the development stack does. The browser e2e stack overrides
+# them, because there the caller is a browser inside the compose network and
+# `localhost` means the runner container.
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:18080
+ARG NEXT_PUBLIC_OAUTH_PROVIDERS=fake
+
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL} \
+    NEXT_PUBLIC_OAUTH_PROVIDERS=${NEXT_PUBLIC_OAUTH_PROVIDERS}
+
 COPY . .
 
 RUN npm run build
@@ -70,3 +85,31 @@ COPY --from=build --chown=node:node /app/public ./public
 EXPOSE 3000
 
 CMD ["node", "server.js"]
+
+# ---------------------------------------------------------------------------
+# e2e — the Playwright runner
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/playwright:v1.62.1-noble AS e2e
+
+WORKDIR /app
+
+# Pinned to the same version as @playwright/test in package.json. The image
+# carries the browsers for exactly its own version, and a mismatch surfaces as
+# "Executable doesn't exist" rather than as a version complaint.
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    CI=1
+
+# The source is copied rather than bind-mounted on purpose: this image is glibc,
+# while `make web-install` populates ui/web/node_modules from an Alpine
+# container. Mounting the tree would hand musl builds of the native packages to
+# a glibc runtime. The install layer is keyed on the lock file, so editing a
+# test rebuilds only the copies below it.
+COPY package.json package-lock.json ./
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+COPY playwright.config.ts ./
+COPY e2e ./e2e
+
+CMD ["npx", "playwright", "test"]

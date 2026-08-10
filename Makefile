@@ -248,3 +248,28 @@ tidy: ## Tidy every module in the workspace
 
 .PHONY: check
 check: fmt-check vet test ## Everything CI runs that needs no Docker
+
+# ---------------------------------------------------------------------------
+# Browser end-to-end (Playwright)
+# ---------------------------------------------------------------------------
+
+COMPOSE_WEB_E2E := docker compose -f core/deploy/docker-compose.web-e2e.yml
+
+# Its own stack rather than the Go suite's: the browser needs a different
+# origin, a different CORS allow-list and a refresh cookie without Secure, and
+# threading that through docker-compose.e2e.yml would put a working suite at
+# risk. The signing key is shared, because one throwaway key per machine is
+# enough.
+#
+# Logs are printed rather than written to a file, and only when the run is red:
+# the report itself is on stdout, and a CI job shows stdout without an artifact
+# step. The teardown is a trap so a failure, an interrupt or a crash all leave
+# the machine clean.
+.PHONY: test-web-e2e
+test-web-e2e: e2e-key ## Run the browser e2e suite (Playwright) against the full stack
+	@trap '$(COMPOSE_WEB_E2E) --env-file $(E2E_ENV_FILE) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	if ! $(COMPOSE_WEB_E2E) --env-file $(E2E_ENV_FILE) run --rm --build playwright; then \
+		echo "--- stack logs ------------------------------------------------"; \
+		$(COMPOSE_WEB_E2E) --env-file $(E2E_ENV_FILE) logs --no-color; \
+		exit 1; \
+	fi
