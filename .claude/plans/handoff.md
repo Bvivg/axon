@@ -4,59 +4,54 @@
 > `roadmap.md` и `stage-<N>-*.md`. Обновляется в конце сессии, чтобы следующая
 > (или другой человек) поднималась с нуля, не перечитывая историю.
 >
-> Последнее обновление: 2026-08-02.
+> Последнее обновление: 2026-08-10.
 
 ## Где мы
 
-Ветка `feat/auth-gateway`, **21 коммит** поверх `origin/main` (`edb7fc5`),
+Ветка `feat/auth-gateway`, **32 коммита** поверх `origin/main` (`edb7fc5`),
 fast-forward — расхождения нет, force-push не нужен.
 
 | | Статус |
 |---|---|
 | Этап 0 — фундамент | ✅ закрыт (PR #1, #2) |
-| Этап 1 — auth + gateway + веб-логин | **9 из 10 шагов**, остался Playwright |
-| Этапы 2–7 | не начинались |
+| Этап 1 — auth + gateway + веб-логин | ✅ **закрыт, все 10 шагов** |
+| Этап 2 — chat | транспорт (`shared/pkg/kafka`, `shared/pkg/ws`) готов, сервиса нет |
+| Этап 3 — game | движок и Tic-Tac-Toe готовы, `session`/`server`/proto нет |
+| Этапы 4–7 | не начинались |
 
-Объём на сейчас: 96 Go-файлов (~16 000 строк) и 264 теста; веб — 24 файла
-TS/TSX (~1 300 строк). Сгенерированный код в счёт не идёт.
+Объём: 131 Go-файл (~22 000 строк) и 356 тестов; веб — 27 файлов TS/TSX
+(~1 700 строк). Сгенерированный код в счёт не идёт. Модулей в `go.work` четыре:
+`shared`, `services/auth`, `services/gateway`, `services/game`.
 
-Последние коммиты этапа 1:
+### Последняя сессия: четыре задачи параллельно
+
+Четыре ветки написаны независимыми сессиями в отдельных `git worktree` и сведены
+в `feat/auth-gateway` девятью коммитами, cherry-pick, **без конфликтов** —
+разделение по файлам сработало. Ветки-worktree ещё существуют и могут быть
+удалены: `feat/web-playwright`, `feat/auth-apple-signin`,
+`feat/game-engine-tictactoe`, `feat/shared-kafka-ws`. Страховочная ветка на
+состояние до сведения — `backup/pre-merge`.
 
 ```
-291250f docs(plans): record the web client and the gateway refresh cookie
-0a45fc1 ci: check the web client, and give the compose job an .env to read
-db69c1b feat(web): add the Next.js client with password and provider sign-in
-4803c2c feat(gateway): keep a browser's refresh token in an HttpOnly cookie
-cab3c13 feat(auth): add provider sign-in with a fake, Google and GitHub
+c1bcab9 test(shared): cover the Kafka transport against a real broker
+86e14b3 feat(shared): add the Kafka producer and consumer
+2c6a296 feat(shared): add the WebSocket transport wrapper
+1949161 docs(plans): plan the shared transport for stage 2
+77703e1 fix(auth): report a refused oauth link instead of silent success
+e4d7aa5 feat(auth): add sign in with Apple
+65d23ea ci: run the browser e2e suite
+1715c3c test(web): drive the browser sign-in flow with Playwright
+956336a feat(game): add the engine contract and tic-tac-toe behind it
 ```
 
-Проверено вручную в браузере на `http://localhost:3000`: регистрация → профиль,
-F5 сессию не роняет, выход гасит куку, вход паролем, вход через fake-провайдера.
-`document.cookie` пуст на всех шагах, в `localStorage` ничего.
+Всё проверено **на сведённой ветке**, а не только по отдельности: `make check`
+(0 FAIL), `make lint` (0 issues), `make test-integration` (auth + shared),
+`make test-e2e` (29 сценариев), `make test-web-e2e` (6 сценариев в браузере),
+`make web-check` — все `exit=0`.
 
 ## Что дальше, по порядку
 
-Эти четыре задачи розданы параллельным сессиям, каждая в своём `git worktree` и
-на своей ветке. Границы (кто какие файлы правит, кто держит Docker) и готовые
-промпты — в `parallel-sessions.md`. Если вы читаете это в worktree — работайте
-строго в границах своей задачи оттуда.
-
-### 1. Шаг 10 — Playwright (закрывает этап 1)
-
-Единственное, что осталось до критерия готовности этапа. Флоу уже подтверждён
-живым браузером, так что тест кодирует известно-рабочий путь, а не догадки.
-
-Что покрывать: регистрация → профиль; вход паролем; вход через fake-провайдера
-целиком (редирект → callback → профиль); перезагрузка не разлогинивает;
-`document.cookie` refresh-токена не содержит; выход делает профиль недоступным.
-
-Известный пробел: **`docker-compose.e2e.yml` сервиса `web` не содержит** — там
-сейчас только Go-стек. Его нужно добавить вместе с раннером Playwright; по
-`rules/testing.md` прогон идёт против поднятого через Docker стека и никогда на
-голом хосте. В CI это восьмой джоб; заглушка-комментарий на этот счёт стоит в
-конце `.github/workflows/ci.yml`.
-
-### 2. PR по этапу 1
+### 1. PR по этапу 1
 
 `main` защищена, мерж только через PR со squash (`rules/git-ci.md`). Ветка ещё
 не запушена (`origin/feat/auth-gateway` не существует). **Пуш делает пользователь
@@ -66,18 +61,26 @@ F5 сессию не роняет, выход гасит куку, вход па
 git push -u origin feat/auth-gateway
 ```
 
-### 3. Apple Sign In
+### 2. Имя Apple — отдельным полем в контракте
 
-Единственный ненастроенный провайдер, вынесен намеренно: `client_secret` у него —
-ES256-JWT из `.p8` с ротацией, профиль приходит только в `id_token` и только при
-первой авторизации, callback — `form_post` (то есть нужен серверный роут, а не
-клиентская страница, как у остальных). Сейчас ведёт себя как любой ненастроенный
-провайдер: `ErrProviderUnsupported`.
+Apple присылает имя пользователя ровно один раз, при первой авторизации, а
+`CompleteOAuth` несёт только provider/code/state. Сейчас имя упаковано вместе с
+кодом в одно поле: `base64url(JSON{code,name})` — работает и документировано с
+обеих сторон, но это протокол поверх поля, не предназначенного для этого.
+Правильное место — отдельное `optional`-поле в `auth.proto`; правило
+additive-only это позволяет сделать чисто.
 
-### 4. Мелочь, отложенная
+### 3. Этап 2 — chat
 
-`LinkOauthAccount` при попытке привязать провайдера, уже занятого **другим**
-пользователем, отвечает молчаливым успехом вместо явного отказа.
+Транспорт уже есть и ждёт первого потребителя. Осталось: Kafka в
+`docker-compose.yml`, схема `chat` в Postgres, сам сервис, WebSocket-протокол
+поверх `shared/pkg/ws`, Redis pub/sub для fan-out между инстансами, веб-клиент.
+
+### 4. Этап 3 — game
+
+Домен готов и от инфраструктуры не зависит. Осталось: `session` (Manager +
+Repository, история ходов в Postgres), `server` (gRPC + ws), proto-контракт,
+сервис в compose, регистрация игр при wiring.
 
 ## Как всё запускается — только через Docker
 
@@ -88,15 +91,21 @@ ES256-JWT из `.p8` с ротацией, профиль приходит тол
 |---|---|
 | `make env` | `.env` из `.env.example` — без него compose не стартует |
 | `make proto` | генерация Go + TS; **обязательна первой** после чистого клона |
+| `make web-install` | `npm ci`; нужна после любой правки `package.json` |
 | `make up` / `make down` / `make logs` | dev-стек: postgres, redis, auth, gateway, web |
 | `make check` | gofmt + vet + `go test -race` |
 | `make lint` | golangci-lint, включая код за тегами `e2e`/`integration` |
-| `make test-integration` | testcontainers поднимает Postgres |
+| `make test-integration` | testcontainers: Postgres для auth, Kafka для shared |
 | `make test-e2e` | полный стек на **runtime**-образах, сносится после прогона |
+| `make test-web-e2e` | Playwright в Chromium внутри сети compose |
 | `make web-check` | lint + typecheck + build веб-клиента через сервис `node` |
 
 Порты на хосте: web 3000, gateway 18080 (публичный) и 19090 (админский),
 postgres 55432, redis 56379. Стандартные заняты другими проектами.
+
+Имена compose-проектов глобальны (`axon`, `axon-e2e`, `axon-web-e2e`,
+`axon-tools`), поэтому **два стека одновременно держать нельзя**: параллельные
+сессии либо не трогают Docker, либо переопределяют `COMPOSE_PROJECT_NAME`.
 
 ## Что дорого переоткрывать заново
 
@@ -104,27 +113,44 @@ postgres 55432, redis 56379. Стандартные заняты другими 
   Браузер определяется по наличию заголовка `Origin` — подделать со стороны
   страницы нельзя, поэтому «прикинуться не-браузером и получить токен в теле» не
   сценарий. Клиенты без `Origin` (будущий connect-swift, Go-набор e2e) не задеты.
+- **Веб-клиент и gateway обязаны делить общий регистрируемый домен.** Иначе
+  `SameSite=Lax` режет refresh-куку, и выглядит это не как отказ, а как сломанный
+  код сессии: вход проходит, перезагрузка разлогинивает. Chromium сообщает
+  причину только через CDP. В dev работает случайно — оба на `localhost`; в
+  браузерном e2e пришлось дать контейнерам имена под общим `axon.test`.
+  Однословные `web` и `gateway` — два разных сайта.
+- **`.test`, а не `.dev`** для таких имён: `.dev` в HSTS-preload, Chrome
+  принудительно переводит его на HTTPS и падает на plaintext-сети.
 - **E2E не использует `cookiejar`** и держит куку руками: e2e-gateway работает с
   `APP_ENV=test`, то есть `Secure=true`, а jar отказался бы слать такую куку по
-  plaintext-сети compose.
+  plaintext-сети compose. По той же причине браузерный стек ставит
+  `REFRESH_COOKIE_SECURE=false` явно.
 - **`ui/web/src/gen` в `.gitignore`.** Без `buf generate` веб не собирается, и
   падает невнятно — на отсутствующих типах. Поэтому шаг генерации есть и в
   образе, и в каждом джобе CI.
-- **`NEXT_PUBLIC_*` инлайнится в бандл**, то есть читается браузером, а не
-  контейнером: `NEXT_PUBLIC_API_BASE_URL` — это адрес, по которому до gateway
-  дотягивается **хост**, никогда `http://gateway:8080`.
-- **Реальных OAuth-ключей нет и не ожидается в репозитории.** Google/GitHub
-  написаны, но в реестр не попадают без пары id/secret; весь флоу проверяется
-  fake-провайдером, переход на настоящие ключи — правка `.env`, без правок кода.
+- **`NEXT_PUBLIC_*` инлайнится в бандл на сборке**, то есть значение читает
+  браузер, а не контейнер. Для dev-стека `NEXT_PUBLIC_API_BASE_URL` — адрес, по
+  которому до gateway дотягивается хост; в браузерном e2e браузер живёт внутри
+  сети compose, поэтому там это внутреннее имя, переданное build-arg'ом.
+- **Реальных OAuth-ключей нет и не ожидается в репозитории.** Google/GitHub/Apple
+  написаны, но в реестр не попадают без полного набора креденшелов; весь флоу
+  проверяется fake-провайдером, переход на настоящие ключи — правка `.env`, без
+  правок кода.
+- **Реестр игр заполняется явно при wiring** (`reg.Register(tictactoe.Definition())`),
+  без `init()`-побочек — будущий `cmd/main.go` игрового сервиса обязан это сделать.
 
 ## Куда смотреть
 
 | Что | Где |
 |---|---|
-| Раздача задач по параллельным сессиям | `.claude/plans/parallel-sessions.md` |
 | Решения по этапу 1 целиком | `.claude/plans/stage-1-auth-gateway.md` |
+| Браузерный e2e и его находки | `.claude/plans/stage-1-web-e2e.md` |
+| Apple Sign In | `.claude/plans/auth-apple-signin.md` |
+| Движок игр | `.claude/plans/stage-3-game-engine.md` |
+| Транспорт под этап 2 | `.claude/plans/stage-2-transport.md` |
+| Как делили работу между сессиями | `.claude/plans/parallel-sessions.md` |
 | Общий порядок этапов | `.claude/plans/roadmap.md` |
 | Конвенции (Go, proto, web, infra, тесты, git, security) | `.claude/rules/*.md` |
 | Refresh-кука | `core/services/gateway/internal/cookie/` |
 | Веб-клиент, auth-слой | `ui/web/src/lib/auth/`, `ui/web/src/lib/connect/` |
-| E2E-набор | `core/services/auth/e2e/` |
+| E2E-наборы | `core/services/auth/e2e/`, `ui/web/e2e/` |

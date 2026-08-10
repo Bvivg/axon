@@ -91,15 +91,15 @@ schema-level изоляция Postgres, пароль Redis).
 
 ---
 
-## Этап 1 — Auth + Gateway + веб-логин (первый сквозной путь)
+## Этап 1 — Auth + Gateway + веб-логин ✅ ВЫПОЛНЕН (все 10 шагов)
 
 Самый большой и самый важный этап. Делаем auth и gateway вместе — по отдельности
 ни один из них не проверяем.
 
-**Статус: 9 из 10 шагов.** Auth, gateway, OAuth (fake/Google/GitHub) и веб-клиент
-готовы; в браузере проходят регистрация, вход паролем и вход через провайдера.
-Остался шаг 10 — Playwright. Детали и принятые решения — в
-`stage-1-auth-gateway.md`.
+Критерий готовности достигнут: в браузере проходят регистрация, вход паролем и
+вход через провайдера, профиль читается по access-токену, перезагрузка вход не
+роняет — и всё это закодировано в Playwright-наборе, который гоняется в Chromium
+внутри сети compose. Детали и принятые решения — в `stage-1-auth-gateway.md`.
 
 Главное расхождение с замыслом: `httpOnly`-кука для refresh-токена оказалась не
 частью веб-клиента, а интерцептором на gateway. Контракт возвращает токен в теле,
@@ -157,8 +157,16 @@ fake-OAuth), увидеть свой профиль; e2e зелёный в CI.
 
 ## Этап 2 — Chat
 
-- Kafka в `docker-compose.yml`; `shared/pkg/kafka` (producer/consumer, correlation_id в headers);
-  `shared/pkg/ws` — общая обёртка над `coder/websocket` (пинги, backoff, graceful close)
+**Статус: транспорт готов, сервиса нет.** `shared/pkg/kafka` и `shared/pkg/ws`
+написаны заранее, отдельной параллельной задачей, и покрыты unit- плюс
+integration-тестами (Kafka через testcontainers). Это сознательное отступление
+от исходного «отложить до первого потребителя»: чтобы не проектировать в пустоту,
+пакеты сделаны ровно под двух названных потребителей — fan-out `chat.message` и
+события `game.started`/`game.finished`. Детали — в `stage-2-transport.md`.
+
+- ~~`shared/pkg/kafka` (producer/consumer, correlation_id в headers)~~ ✅
+- ~~`shared/pkg/ws` — обёртка над `coder/websocket` (пинги, backoff, graceful close)~~ ✅
+- Kafka в `docker-compose.yml` — вместе с самим сервисом chat
 - Схема `chat` в Postgres: `rooms`, `messages`, `members`. Postgres — источник истины
 - Redis pub/sub — fan-out между инстансами chat-сервиса и presence; всё восстановимо из Postgres
 - Kafka-событие `chat.message` (для будущих потребителей — уведомления, аналитика)
@@ -177,10 +185,15 @@ fake-OAuth), увидеть свой профиль; e2e зелёный в CI.
 
 Инфраструктура realtime уже отлажена на чате — здесь фокус на доменной модели.
 
-- `internal/engine/`: интерфейс `Game` (`Init`/`ApplyMove`/`ValidMoves`/`IsTerminal`) + `registry.go`.
-  Интерфейс проектируем сразу под шахматы и Quoridor, чтобы не переделывать
-- `internal/games/tictactoe/` — первая реализация. `ApplyMove` — **чистая функция**,
-  никакого I/O; table-driven unit-тесты без моков
+**Статус: домен готов, инфраструктуры нет.** Движок и Tic-Tac-Toe написаны
+заранее, отдельной параллельной задачей — чистый домен ни от чего не зависит,
+поэтому его можно было делать одновременно со всем остальным. `State`/`Move` —
+конверт: общий скелет плюс непрозрачный JSON-payload, который читает только сама
+игра. Обоснование, почему это переживёт шахматы и Quoridor, — в
+`stage-3-game-engine.md`.
+
+- ~~`internal/engine/`: интерфейс `Game` + `registry.go`~~ ✅
+- ~~`internal/games/tictactoe/` — первая реализация, `ApplyMove` чистая функция~~ ✅
 - `internal/session/`: `Manager` (состояние в памяти + Redis-кэш), `Repository` (Postgres,
   схема `game`: `sessions`, `moves` — полная история ходов, состояние восстановимо реплеем)
 - `internal/server/`: `grpc.go` (`CreateSession`, `ListActiveGames`, `GetState`),
