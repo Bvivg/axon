@@ -36,6 +36,17 @@ const (
 	// larger is a misconfiguration or something hostile, and either way should
 	// not be read into memory.
 	maxJWKSBytes = 1 << 20
+
+	// DefaultStartupTimeout bounds WaitUntilReady.
+	//
+	// Long enough that auth restarted by the same event that restarted this
+	// process — a Docker Desktop restart or a host reboot, not a `docker compose
+	// up` — has time to become reachable too; short enough that a URL which is
+	// actually wrong still fails startup rather than hanging indefinitely.
+	DefaultStartupTimeout = 60 * time.Second
+
+	// DefaultStartupRetryInterval paces the attempts inside WaitUntilReady.
+	DefaultStartupRetryInterval = 2 * time.Second
 )
 
 // JWKSConfig configures a Cache.
@@ -50,6 +61,10 @@ type JWKSConfig struct {
 	FetchTimeout       time.Duration
 	UnknownKeyCooldown time.Duration
 
+	// StartupRetryInterval paces WaitUntilReady's attempts. Tests shrink it;
+	// production leaves it at DefaultStartupRetryInterval.
+	StartupRetryInterval time.Duration
+
 	Logger *slog.Logger
 
 	// Now overrides the clock. Tests set it; production leaves it nil.
@@ -62,12 +77,13 @@ type JWKSConfig struct {
 // request would put it in the path of all traffic and undo the reason for
 // choosing asymmetric signing in the first place.
 type Cache struct {
-	url                string
-	client             *http.Client
-	refreshInterval    time.Duration
-	unknownKeyCooldown time.Duration
-	log                *slog.Logger
-	now                func() time.Time
+	url                  string
+	client               *http.Client
+	refreshInterval      time.Duration
+	unknownKeyCooldown   time.Duration
+	startupRetryInterval time.Duration
+	log                  *slog.Logger
+	now                  func() time.Time
 
 	mu   sync.RWMutex
 	keys map[string]*rsa.PublicKey
@@ -81,8 +97,9 @@ type Cache struct {
 
 var _ KeySource = (*Cache)(nil)
 
-// NewCache builds a Cache. It does not fetch: call Refresh once before serving
-// so a misconfigured URL fails at startup, then Start for the background loop.
+// NewCache builds a Cache. It does not fetch: call WaitUntilReady once before
+// serving so a misconfigured URL still fails startup, then Start for the
+// background loop.
 func NewCache(cfg JWKSConfig) (*Cache, error) {
 	if cfg.URL == "" {
 		return nil, errors.New("authn: jwks cache needs a URL")
@@ -111,19 +128,25 @@ func NewCache(cfg JWKSConfig) (*Cache, error) {
 		cooldown = DefaultUnknownKeyCooldown
 	}
 
+	startupRetry := cfg.StartupRetryInterval
+	if startupRetry <= 0 {
+		startupRetry = DefaultStartupRetryInterval
+	}
+
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
 	}
 
 	return &Cache{
-		url:                cfg.URL,
-		client:             client,
-		refreshInterval:    refresh,
-		unknownKeyCooldown: cooldown,
-		log:                cfg.Logger,
-		now:                now,
-		keys:               make(map[string]*rsa.PublicKey),
+		url:                  cfg.URL,
+		client:               client,
+		refreshInterval:      refresh,
+		unknownKeyCooldown:   cooldown,
+		startupRetryInterval: startupRetry,
+		log:                  cfg.Logger,
+		now:                  now,
+		keys:                 make(map[string]*rsa.PublicKey),
 	}, nil
 }
 
@@ -240,6 +263,37 @@ func (c *Cache) fetch(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	}
 
 	return ParseJWKS(body)
+}
+
+// WaitUntilReady fetches the key set, retrying until it succeeds or timeout
+// elapses.
+//
+// This is what a service should call at startup instead of a bare Refresh.
+// depends_on's service_healthy condition only orders a `docker compose up`; it
+// does nothing when the daemon itself restarts already-running containers —
+// a Docker Desktop restart, a host reboot — which brings every service with a
+// `restart: unless-stopped` policy back independently, in no particular order.
+// auth answering slower than this one, or not yet at all, is therefore the
+// routine case here, not a misconfiguration, and one failed attempt must not
+// be fatal. A URL that is genuinely wrong still surfaces as an error — just
+// after this budget elapses instead of on the first try.
+func (c *Cache) WaitUntilReady(ctx context.Context, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var lastErr error
+	for {
+		lastErr = c.Refresh(ctx)
+		if lastErr == nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("authn: jwks was not reachable within %s: %w", timeout, lastErr)
+		case <-time.After(c.startupRetryInterval):
+		}
+	}
 }
 
 // Start runs the background refresh until ctx is cancelled.

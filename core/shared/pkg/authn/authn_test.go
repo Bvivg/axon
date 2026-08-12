@@ -459,6 +459,53 @@ func TestFailedRefreshKeepsTheCachedKeys(t *testing.T) {
 	}
 }
 
+// The scenario this exists for: auth answers 502 or connection-refused for a
+// moment — a Docker daemon restart brings every service back independently,
+// not in depends_on's order — and then comes up. WaitUntilReady must ride that
+// out rather than fail on the first attempt.
+func TestWaitUntilReadyRetriesUntilTheEndpointAnswers(t *testing.T) {
+	var attempts atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) < 3 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write(jwksDocument(map[string]*rsa.PublicKey{"dev-1": &key1.PublicKey}))
+	}))
+	t.Cleanup(srv.Close)
+
+	cache := newCache(t, srv.URL, authn.JWKSConfig{StartupRetryInterval: time.Millisecond})
+
+	if err := cache.WaitUntilReady(context.Background(), time.Second); err != nil {
+		t.Fatalf("WaitUntilReady: %v", err)
+	}
+	if got := attempts.Load(); got < 3 {
+		t.Fatalf("the endpoint answered on attempt 3 but WaitUntilReady stopped after %d", got)
+	}
+
+	v := verifier(t, cache)
+	if _, err := v.Verify(sign(t, key1, "dev-1", nil)); err != nil {
+		t.Fatalf("Verify against the key fetched once the endpoint recovered: %v", err)
+	}
+}
+
+// A URL that is actually wrong — not merely slow to answer — must still fail
+// startup. WaitUntilReady is patience, not an infinite wait.
+func TestWaitUntilReadyGivesUpAfterTheTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+
+	cache := newCache(t, srv.URL, authn.JWKSConfig{StartupRetryInterval: time.Millisecond})
+
+	err := cache.WaitUntilReady(context.Background(), 20*time.Millisecond)
+	if err == nil {
+		t.Fatal("an endpoint that never recovers was reported as ready")
+	}
+}
+
 func TestParseJWKS(t *testing.T) {
 	t.Run("skips entries that are not RS256 signing keys", func(t *testing.T) {
 		doc := []byte(`{"keys":[

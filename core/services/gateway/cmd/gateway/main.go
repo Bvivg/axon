@@ -91,9 +91,12 @@ func run() error {
 		return err
 	}
 
-	// Fetched once before serving, so a wrong URL or an auth service that never
-	// came up fails at startup instead of as a wave of 401s.
-	if err := keys.Refresh(ctx); err != nil {
+	// Fetched before serving, so a wrong URL or an auth service that never comes
+	// up fails startup instead of as a wave of 401s. Retried rather than
+	// attempted once: depends_on cannot order a restart of the daemon itself
+	// (see the comment on WaitUntilReady), so auth briefly unreachable here is
+	// routine, not a misconfiguration.
+	if err := keys.WaitUntilReady(ctx, authn.DefaultStartupTimeout); err != nil {
 		return fmt.Errorf("initial jwks fetch: %w", err)
 	}
 	go keys.Start(ctx)
