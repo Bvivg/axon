@@ -17,21 +17,14 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 )
 
-// procedure is a stand-in for a generated service method. The interceptors
-// under test are exercised against a real Connect handler over a real HTTP
-// server rather than a hand-rolled fake, so header propagation and error
-// mapping are verified the way they behave in production.
 const procedure = "/axon.test.v1.EchoService/Echo"
 
 type echoFunc func(context.Context, *connect.Request[wrapperspb.StringValue]) (*connect.Response[wrapperspb.StringValue], error)
 
-// echo is a handler that returns its request value unchanged.
 func echo(_ context.Context, req *connect.Request[wrapperspb.StringValue]) (*connect.Response[wrapperspb.StringValue], error) {
 	return connect.NewResponse(wrapperspb.String(req.Msg.GetValue())), nil
 }
 
-// newClient stands up an HTTP server hosting handler behind interceptors and
-// returns a Connect client pointed at it.
 func newClient(t *testing.T, handler echoFunc, interceptors ...connect.Interceptor) *connect.Client[wrapperspb.StringValue, wrapperspb.StringValue] {
 	t.Helper()
 
@@ -89,8 +82,6 @@ func TestCorrelationInterceptorGeneratesWhenAbsent(t *testing.T) {
 	}
 }
 
-// On the client side the interceptor's job is the mirror image: take the ID off
-// the context and put it on the wire, so the next service sees the same ID.
 func TestCorrelationInterceptorPropagatesFromClientContext(t *testing.T) {
 	var seen string
 	h := connect.NewUnaryHandler(procedure,
@@ -134,7 +125,7 @@ func TestRecoveryInterceptorMapsPanicToInternal(t *testing.T) {
 	if code := connect.CodeOf(err); code != connect.CodeInternal {
 		t.Errorf("code = %v, want internal", code)
 	}
-	// The panic value is a server internal; it belongs in the log, not the wire.
+
 	if strings.Contains(err.Error(), "handler exploded") {
 		t.Errorf("error sent to the client leaked the panic value: %v", err)
 	}
@@ -167,8 +158,6 @@ func TestLoggingInterceptorRecordsSuccess(t *testing.T) {
 	}
 }
 
-// A client's mistake is not the server's fault, and must not inflate the error
-// rate the way a genuine internal failure does.
 func TestLoggingInterceptorSeparatesClientAndServerFaults(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -246,7 +235,6 @@ func TestMetricsInterceptorLabelsErrorCode(t *testing.T) {
 	}
 }
 
-// Services register their own domain collectors on the same registry.
 func TestMetricsRegistryIsUsableByServices(t *testing.T) {
 	metrics := middleware.NewMetrics("game")
 

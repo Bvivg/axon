@@ -15,13 +15,8 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 )
 
-// consumeTimeout bounds a consumer that is waiting for messages. It is
-// generous because forming a consumer group involves a join and a rebalance,
-// which take longer than reading the messages afterwards.
 const consumeTimeout = 60 * time.Second
 
-// handled is one message as its handler saw it, including the correlation ID
-// that was on the context — the part that cannot be checked after the fact.
 type handled struct {
 	msg           kafka.Message
 	correlationID string
@@ -46,7 +41,6 @@ func newProducer(t *testing.T, service string) *kafka.Producer {
 	return producer
 }
 
-// consumeN runs a consumer until it has handled n messages, then stops it.
 func consumeN(t *testing.T, service string, topic kafka.Topic, n int) []handled {
 	t.Helper()
 
@@ -85,9 +79,6 @@ func consumeN(t *testing.T, service string, topic kafka.Topic, n int) []handled 
 	return got
 }
 
-// The first consumer this package was designed for: chat publishes
-// chat.message, and a service that cares about it reads the message with its
-// key, its payload and its headers intact.
 func TestPublishAndConsume(t *testing.T) {
 	topic := newTopic(t, "chat", "message")
 	producer := newProducer(t, "chat")
@@ -119,9 +110,6 @@ func TestPublishAndConsume(t *testing.T) {
 	}
 }
 
-// rules/observability.md wants one ID to follow a request through every service
-// that touches it. Kafka is where that chain is easiest to drop, since nothing
-// carries a context across the bus but the headers we put there ourselves.
 func TestCorrelationIDCrossesTheBus(t *testing.T) {
 	topic := newTopic(t, "game", "started")
 	producer := newProducer(t, "game")
@@ -141,9 +129,6 @@ func TestCorrelationIDCrossesTheBus(t *testing.T) {
 	}
 }
 
-// Publishing from a context that never had an ID must not produce a message
-// with no ID at all: the publish and everything the consumer does with it still
-// have to share one.
 func TestPublishWithoutACorrelationIDStampsOne(t *testing.T) {
 	topic := newTopic(t, "game", "finished")
 	producer := newProducer(t, "game")
@@ -162,9 +147,6 @@ func TestPublishWithoutACorrelationIDStampsOne(t *testing.T) {
 	}
 }
 
-// A message from a producer that is not ours — an operator's console, another
-// team's service — has no header. The consumer is that message's edge of the
-// system, so it starts a new trace rather than logging without one.
 func TestMessageWithoutTheHeaderGetsAFreshID(t *testing.T) {
 	topic := newTopic(t, "chat", "message")
 
@@ -191,8 +173,6 @@ func TestMessageWithoutTheHeaderGetsAFreshID(t *testing.T) {
 	}
 }
 
-// The offset moves only after the handler succeeds, so a consumer that comes
-// back does not redo work it already reported as done.
 func TestCommittedOffsetsAreNotRedelivered(t *testing.T) {
 	topic := newTopic(t, "game", "started")
 	producer := newProducer(t, "game")
@@ -208,21 +188,15 @@ func TestCommittedOffsetsAreNotRedelivered(t *testing.T) {
 		t.Fatalf("messages arrived out of order: %q, %q", first[0].msg.Value, first[1].msg.Value)
 	}
 
-	// Same group again: everything it handled is committed, so it should idle.
 	if got := drain(t, "leaderboard", topic, 5*time.Second); len(got) != 0 {
 		t.Fatalf("the group was handed %d already-committed messages", len(got))
 	}
 
-	// A different service reads the topic from the start — proof that the
-	// silence above was committed offsets and not an empty topic.
 	if got := consumeN(t, "analytics", topic, 2); len(got) != 2 {
 		t.Fatalf("a fresh group saw %d messages, want 2", len(got))
 	}
 }
 
-// A handler that fails stops the consumer and leaves the offset alone, so the
-// message is still there afterwards. The alternative — carry on — would drop it
-// silently, because the next commit jumps over the offset that failed.
 func TestFailedHandlerLeavesTheMessageUncommitted(t *testing.T) {
 	topic := newTopic(t, "chat", "message")
 	producer := newProducer(t, "chat")
@@ -254,15 +228,12 @@ func TestFailedHandlerLeavesTheMessageUncommitted(t *testing.T) {
 		t.Fatalf("close consumer: %v", err)
 	}
 
-	// The same group starts again and gets the message back.
 	again := consumeN(t, "notifications", topic, 1)[0]
 	if string(again.msg.Value) != "poison" {
 		t.Fatalf("redelivered %q, want poison", again.msg.Value)
 	}
 }
 
-// Readiness has to fail while the brokers are unreachable, which is what keeps
-// an unready replica out of rotation instead of failing requests.
 func TestHealthCheck(t *testing.T) {
 	producer := newProducer(t, "chat")
 
@@ -293,8 +264,6 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-// drain consumes for a fixed window and returns whatever showed up, which may
-// be nothing. Used where the expected answer is "no messages".
 func drain(t *testing.T, service string, topic kafka.Topic, window time.Duration) []handled {
 	t.Helper()
 

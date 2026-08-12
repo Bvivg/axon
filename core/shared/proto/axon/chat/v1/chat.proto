@@ -1,94 +1,53 @@
 syntax = "proto3";
 
-// Rooms, membership and message history.
-//
-// Everything here is request-response. Sending a message and receiving one are
-// not: they live on the WebSocket protocol the chat service speaks, because a
-// unary call cannot push (rules/api-contracts.md). What is left for this
-// contract is the part a client asks for rather than waits for — which rooms
-// exist, who is in them, and what was said before the socket was open.
 package axon.chat.v1;
 
 import "google/protobuf/timestamp.proto";
 
-// ChatService owns rooms and their history.
-//
-// Every procedure here is authenticated, and every one of them checks
-// membership in this service rather than at the gateway: the gateway knows who
-// the caller is, not which rooms they belong to.
 service ChatService {
-  // CreateRoom opens a room and puts the caller in it.
+
   rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
 
-  // ListRooms returns the rooms the caller belongs to.
   rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
 
-  // GetRoom returns one room together with its members. It is what a client
-  // needs to render a conversation: messages carry an author id, and this is
-  // where those ids get names.
   rpc GetRoom(GetRoomRequest) returns (GetRoomResponse);
 
-  // JoinRoom adds the caller to a room.
   rpc JoinRoom(JoinRoomRequest) returns (JoinRoomResponse);
 
-  // LeaveRoom removes them. History stays: a message is not unsaid by its
-  // author walking out.
   rpc LeaveRoom(LeaveRoomRequest) returns (LeaveRoomResponse);
 
-  // ListMessages pages through history in either direction — back through
-  // what came before, or forward from where a disconnected client left off.
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
 }
 
-// Room is a conversation.
 message Room {
   string id = 1;
   string name = 2;
 
-  // Who opened it. Kept as an id: the chat service stores no identity of its
-  // own beyond the snapshot in Member.
   string created_by = 3;
 
   google.protobuf.Timestamp created_at = 4;
 
-  // How many people are in it. Present so a room list does not need a second
-  // call per row.
   int32 member_count = 5;
 }
 
-// Member is somebody in a room.
 message Member {
   string user_id = 1;
 
-  // The name as it was when they joined, not as it is now.
-  //
-  // The chat service has no user table and must not read auth's. It takes this
-  // once, on the way in, using the caller's own access token, and keeps it. A
-  // later rename shows up here when the person next joins a room. That is the
-  // price of not making every message render depend on another service being
-  // up.
   optional string display_name = 2;
 
   google.protobuf.Timestamp joined_at = 3;
 }
 
-// Message is one thing somebody said.
 message Message {
   string id = 1;
   string room_id = 2;
   string author_id = 3;
   string body = 4;
 
-  // Position in the room, monotonic and gapless enough to page by. Clients use
-  // it as a cursor; timestamps cannot be used for that, because two messages
-  // can share one.
   int64 seq = 5;
 
   google.protobuf.Timestamp sent_at = 6;
 
-  // The id the sender made up for this message, echoed back so it can match a
-  // delivery to something it drew optimistically. Absent on everybody else's
-  // messages.
   optional string client_id = 7;
 }
 
@@ -122,8 +81,6 @@ message JoinRoomRequest {
 message JoinRoomResponse {
   Room room = 1;
 
-  // False when the caller was already a member, so joining twice is not an
-  // error a client has to special-case.
   bool joined = 2;
 }
 
@@ -136,24 +93,16 @@ message LeaveRoomResponse {}
 message ListMessagesRequest {
   string room_id = 1;
 
-  // How many to return. The server clamps it; a client asking for everything
-  // gets a page.
   optional int32 limit = 2;
 
-  // Only messages before this position — paging back through history.
   optional int64 before_seq = 3;
 
-  // Only messages after this position — catching up on what was missed while
-  // the socket was down. Set both and the newer bound wins nothing: they are
-  // mutually exclusive, and asking for both is an invalid request.
   optional int64 after_seq = 4;
 }
 
 message ListMessagesResponse {
-  // Oldest first, whichever direction was asked for. A client appending to a
-  // transcript should not have to know which call produced the page.
+
   repeated Message messages = 1;
 
-  // Whether more remain in the direction that was asked for.
   bool has_more = 2;
 }

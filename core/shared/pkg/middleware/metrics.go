@@ -11,8 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics holds the RPC collectors. Together they give the three signals a
-// dashboard needs per procedure: request rate, error rate and latency.
 type Metrics struct {
 	registry *prometheus.Registry
 
@@ -21,10 +19,6 @@ type Metrics struct {
 	inFlight *prometheus.GaugeVec
 }
 
-// NewMetrics registers the RPC collectors on a fresh registry, along with the
-// process and Go runtime collectors. Using an explicit registry instead of the
-// default one keeps tests independent and prevents accidental duplicate
-// registration panics.
 func NewMetrics(service string) *Metrics {
 	registry := prometheus.NewRegistry()
 	labels := prometheus.Labels{"service": service}
@@ -39,8 +33,7 @@ func NewMetrics(service string) *Metrics {
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "rpc_duration_seconds",
 			Help: "RPC handling latency in seconds, by procedure and outcome code.",
-			// Buckets span 5ms to 10s: fine-grained where healthy RPCs live,
-			// coarse in the tail where only the fact of slowness matters.
+
 			Buckets:     []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 			ConstLabels: labels,
 		}, []string{"procedure", "code"}),
@@ -62,19 +55,14 @@ func NewMetrics(service string) *Metrics {
 	return m
 }
 
-// Registry exposes the registry so services can add their own domain
-// collectors — active game sessions, connected WebSocket clients.
 func (m *Metrics) Registry() *prometheus.Registry {
 	return m.registry
 }
 
-// Handler serves the metrics endpoint. Mount it on the service's private
-// metrics listener, never on the public port.
 func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 }
 
-// Interceptor returns a Connect interceptor that records every handled RPC.
 func (m *Metrics) Interceptor() connect.Interceptor {
 	return &metricsInterceptor{metrics: m}
 }
@@ -93,8 +81,7 @@ var _ connect.Interceptor = (*metricsInterceptor)(nil)
 
 func (i *metricsInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		// Client-side calls are the caller's business to measure; recording
-		// them here would double-count every hop.
+
 		if req.Spec().IsClient {
 			return next(ctx, req)
 		}

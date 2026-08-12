@@ -37,10 +37,8 @@ func TestTruncateReasonCutsOverlongReasons(t *testing.T) {
 	}
 }
 
-// Cutting mid-rune would produce invalid UTF-8, which a close frame may not
-// carry — the truncation would break the frame it was supposed to save.
 func TestTruncateReasonCutsOnRuneBoundaries(t *testing.T) {
-	// Two bytes per rune, so a byte-count cut lands mid-rune half the time.
+
 	got := ws.TruncateReason(strings.Repeat("ю", 100))
 
 	if len(got) > ws.MaxCloseReason {

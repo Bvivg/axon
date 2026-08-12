@@ -27,7 +27,6 @@ func failing(name string, err error) health.Checker {
 	}
 }
 
-// probe runs one request against handler and returns the status and body.
 func probe(t *testing.T, h *health.Handler, path string) (int, map[string]any) {
 	t.Helper()
 
@@ -44,8 +43,6 @@ func probe(t *testing.T, h *health.Handler, path string) (int, map[string]any) {
 	return rec.Code, body
 }
 
-// Liveness must stay green while a dependency is down, otherwise a database
-// blip restarts every replica.
 func TestLiveIgnoresFailingDependencies(t *testing.T) {
 	h := health.New(logger.Discard(), []health.Checker{
 		failing("postgres", errors.New("connection refused")),
@@ -104,13 +101,12 @@ func TestReadyFailsWhenADependencyIsDown(t *testing.T) {
 	if checks["postgres"] != "ok" {
 		t.Errorf("healthy dependency not reported ok: %v", checks)
 	}
-	// The failing dependency must be named, so a 503 is diagnosable.
+
 	if checks["redis"] != "connection refused" {
 		t.Errorf("failure reason for redis = %v, want the error text", checks["redis"])
 	}
 }
 
-// A dependency that hangs has to fail the probe rather than hang it.
 func TestReadyTimesOutOnHangingChecker(t *testing.T) {
 	hanging := health.CheckerFunc{
 		CheckerName: "postgres",

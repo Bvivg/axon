@@ -65,7 +65,7 @@ func TestRecoveryReturns500AndLogsStack(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}
-	// The panic value must not reach the client.
+
 	if strings.Contains(rec.Body.String(), "boom") {
 		t.Errorf("response body leaked the panic value: %s", rec.Body.String())
 	}
@@ -77,8 +77,6 @@ func TestRecoveryReturns500AndLogsStack(t *testing.T) {
 	}
 }
 
-// http.ErrAbortHandler is how a handler says "drop this connection"; swallowing
-// it would turn an intentional abort into a bogus 500.
 func TestRecoveryPropagatesErrAbortHandler(t *testing.T) {
 	h := middleware.Recovery(logger.Discard())(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		panic(http.ErrAbortHandler)
@@ -125,7 +123,6 @@ func TestRequestLoggerRecordsOutcome(t *testing.T) {
 	}
 }
 
-// A handler that never calls WriteHeader still returns 200.
 func TestRequestLoggerDefaultsTo200(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(logger.Options{Service: "test", Output: &buf})
@@ -156,8 +153,6 @@ func TestRequestLoggerLogsServerErrorsAtErrorLevel(t *testing.T) {
 	}
 }
 
-// Chain must run middleware in the order it is written, and the correlation ID
-// must reach the request log line.
 func TestChainOrderAndCorrelationInLogs(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(logger.Options{Service: "test", Level: slog.LevelInfo, Output: &buf})

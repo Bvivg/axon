@@ -20,9 +20,6 @@ func TestProbeAcceptsSuccess(t *testing.T) {
 	}
 }
 
-// The probe decides on the status code alone. A readiness handler that reports
-// a failing dependency answers 503 with a perfectly well-formed body, and a
-// probe that only checked for a response would call that healthy.
 func TestProbeRejectsNonSuccess(t *testing.T) {
 	for _, code := range []int{
 		http.StatusServiceUnavailable,
@@ -43,8 +40,6 @@ func TestProbeRejectsNonSuccess(t *testing.T) {
 	}
 }
 
-// The container is starting, or already gone. Either way the probe must fail
-// rather than hang.
 func TestProbeFailsWhenNothingIsListening(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	url := srv.URL
@@ -56,7 +51,7 @@ func TestProbeFailsWhenNothingIsListening(t *testing.T) {
 }
 
 func TestProbeRespectsCancellation(t *testing.T) {
-	// A handler that blocks until the client gives up.
+
 	blocked := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		<-blocked

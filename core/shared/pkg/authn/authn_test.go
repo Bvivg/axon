@@ -40,7 +40,6 @@ func init() {
 	}
 }
 
-// staticKeys is a KeySource over a fixed map.
 type staticKeys map[string]*rsa.PublicKey
 
 func (s staticKeys) PublicKey(keyID string) (*rsa.PublicKey, bool) {
@@ -48,7 +47,6 @@ func (s staticKeys) PublicKey(keyID string) (*rsa.PublicKey, bool) {
 	return k, ok
 }
 
-// sign mints a token the way the auth service would.
 func sign(t *testing.T, key *rsa.PrivateKey, keyID string, mutate func(gojwt.MapClaims)) string {
 	t.Helper()
 
@@ -121,7 +119,7 @@ func TestVerifyRejects(t *testing.T) {
 		"garbage":        {raw: "not-a-token", wantErr: authn.ErrInvalidToken},
 		"unknown key id": {raw: sign(t, key2, "dev-99", nil), wantErr: authn.ErrUnknownKeyID},
 		"wrong key": {
-			// Right kid, wrong signer: the signature check has to fail.
+
 			raw: sign(t, key2, "dev-1", nil), wantErr: authn.ErrInvalidToken,
 		},
 		"wrong issuer": {
@@ -154,7 +152,6 @@ func TestVerifyRejects(t *testing.T) {
 	}
 }
 
-// A token with no expiry would be valid forever.
 func TestVerifyRequiresAnExpiry(t *testing.T) {
 	v := verifier(t, staticKeys{"dev-1": &key1.PublicKey})
 
@@ -165,7 +162,6 @@ func TestVerifyRequiresAnExpiry(t *testing.T) {
 	}
 }
 
-// alg confusion, both variants.
 func TestVerifyRejectsAlgorithmConfusion(t *testing.T) {
 	v := verifier(t, staticKeys{"dev-1": &key1.PublicKey})
 
@@ -256,9 +252,6 @@ func TestClaimsRoundTripThroughContext(t *testing.T) {
 	}
 }
 
-// --- JWKS cache -------------------------------------------------------------
-
-// jwksDocument renders a key set the way the auth service does.
 func jwksDocument(keys map[string]*rsa.PublicKey) []byte {
 	type entry struct {
 		Kty string `json:"kty"`
@@ -289,7 +282,6 @@ func jwksDocument(keys map[string]*rsa.PublicKey) []byte {
 	return out
 }
 
-// jwksServer serves a key set and counts how often it was asked for one.
 func jwksServer(t *testing.T, keys func() map[string]*rsa.PublicKey) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 
@@ -337,7 +329,6 @@ func TestCacheFetchesAndVerifies(t *testing.T) {
 	}
 }
 
-// The reason the cache exists: verification must not cost a request to auth.
 func TestCacheDoesNotFetchPerVerification(t *testing.T) {
 	srv, hits := jwksServer(t, func() map[string]*rsa.PublicKey {
 		return map[string]*rsa.PublicKey{"dev-1": &key1.PublicKey}
@@ -360,9 +351,6 @@ func TestCacheDoesNotFetchPerVerification(t *testing.T) {
 	}
 }
 
-// A rotation publishes a new key and starts signing with it. A cache that waited
-// for its refresh interval would reject every valid token until then, which is
-// exactly what publishing ahead of use is meant to avoid.
 func TestUnknownKeyIDTriggersARefresh(t *testing.T) {
 	var rotated atomic.Bool
 
@@ -381,7 +369,6 @@ func TestUnknownKeyIDTriggersARefresh(t *testing.T) {
 
 	v := verifier(t, cache)
 
-	// Signed by a key published after the cache last looked.
 	rotated.Store(true)
 	raw := sign(t, key2, "dev-2", nil)
 
@@ -393,8 +380,6 @@ func TestUnknownKeyIDTriggersARefresh(t *testing.T) {
 	}
 }
 
-// Without a cooldown, a stream of made-up kids turns every request into a fetch
-// against the one service everything else depends on.
 func TestUnknownKeyRefreshIsRateLimited(t *testing.T) {
 	srv, hits := jwksServer(t, func() map[string]*rsa.PublicKey {
 		return map[string]*rsa.PublicKey{"dev-1": &key1.PublicKey}
@@ -415,12 +400,10 @@ func TestUnknownKeyRefreshIsRateLimited(t *testing.T) {
 		}
 	}
 
-	// One initial fetch plus at most one triggered by the misses.
 	if got := hits.Load(); got > 2 {
 		t.Fatalf("the endpoint was hit %d times for 20 unknown key ids; the cooldown is not holding", got)
 	}
 
-	// Past the cooldown, one more attempt is allowed.
 	clock = clock.Add(2 * time.Minute)
 	cache.PublicKey("made-up-kid")
 
@@ -429,8 +412,6 @@ func TestUnknownKeyRefreshIsRateLimited(t *testing.T) {
 	}
 }
 
-// A failed refresh must not empty the cache: serving with slightly stale keys
-// beats rejecting everything because auth is restarting.
 func TestFailedRefreshKeepsTheCachedKeys(t *testing.T) {
 	var broken atomic.Bool
 
@@ -459,10 +440,6 @@ func TestFailedRefreshKeepsTheCachedKeys(t *testing.T) {
 	}
 }
 
-// The scenario this exists for: auth answers 502 or connection-refused for a
-// moment — a Docker daemon restart brings every service back independently,
-// not in depends_on's order — and then comes up. WaitUntilReady must ride that
-// out rather than fail on the first attempt.
 func TestWaitUntilReadyRetriesUntilTheEndpointAnswers(t *testing.T) {
 	var attempts atomic.Int32
 
@@ -490,8 +467,6 @@ func TestWaitUntilReadyRetriesUntilTheEndpointAnswers(t *testing.T) {
 	}
 }
 
-// A URL that is actually wrong — not merely slow to answer — must still fail
-// startup. WaitUntilReady is patience, not an infinite wait.
 func TestWaitUntilReadyGivesUpAfterTheTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

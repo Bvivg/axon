@@ -1,9 +1,3 @@
-// Package redis builds the Redis client services use for caching, presence and
-// pub/sub fan-out between replicas.
-//
-// Redis is never the source of truth in Axon. Everything held here — session
-// state, presence, cached game boards — must be reconstructible from Postgres,
-// so losing Redis costs latency, not data.
 package redis
 
 import (
@@ -17,20 +11,17 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/config"
 )
 
-// Config describes the client. Only Addr is required.
 type Config struct {
-	// Addr is host:port.
 	Addr string
-	// Password is empty in the local stack and set everywhere else.
+
 	Password config.Secret
-	// DB selects the logical database.
+
 	DB int
-	// PoolSize bounds concurrent connections.
+
 	PoolSize int
-	// DialTimeout bounds connection establishment.
+
 	DialTimeout time.Duration
-	// ReadTimeout and WriteTimeout bound individual commands. A blocked Redis
-	// must surface as an error, not as a stuck request.
+
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
@@ -50,7 +41,6 @@ func (c *Config) applyDefaults() {
 	}
 }
 
-// LoadConfig reads the standard Redis variables.
 func LoadConfig(l *config.Loader) Config {
 	return Config{
 		Addr:         l.String("REDIS_ADDR"),
@@ -63,14 +53,12 @@ func LoadConfig(l *config.Loader) Config {
 	}
 }
 
-// Client is a Redis client that also satisfies health.Checker.
 type Client struct {
 	*redis.Client
 
 	logger *slog.Logger
 }
 
-// Connect opens the client and verifies it with a ping.
 func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error) {
 	cfg.applyDefaults()
 
@@ -97,10 +85,8 @@ func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error)
 	return &Client{Client: client, logger: log}, nil
 }
 
-// Name implements health.Checker.
 func (c *Client) Name() string { return "redis" }
 
-// Check implements health.Checker.
 func (c *Client) Check(ctx context.Context) error {
 	return c.Client.Ping(ctx).Err()
 }
