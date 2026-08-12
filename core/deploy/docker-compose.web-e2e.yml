@@ -44,6 +44,31 @@ services:
       postgres:
         condition: service_healthy
 
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    environment:
+      MINIO_ROOT_USER: axon
+      MINIO_ROOT_PASSWORD: axon12345
+    command: ["server", "/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        mc alias set local http://minio:9000 axon axon12345 &&
+        mc mb --ignore-existing local/avatars &&
+        mc anonymous set download local/avatars
+    depends_on:
+      minio:
+        condition: service_healthy
+
   auth:
     build:
       context: ..
@@ -73,6 +98,10 @@ services:
       OAUTH_ALLOWED_RETURN_ORIGINS: http://web.axon.test:3000
 
       OAUTH_FAKE_AUTHORIZE_URL: http://auth.axon.test:8081/oauth/fake/authorize
+      AVATARS_ENDPOINT: "minio:9000"
+      AVATARS_PUBLIC_URL: "http://minio:9000"
+      MINIO_ROOT_USER: axon
+      MINIO_ROOT_PASSWORD: axon12345
     networks:
       default:
         aliases:
@@ -82,6 +111,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
 
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/healthz"]
