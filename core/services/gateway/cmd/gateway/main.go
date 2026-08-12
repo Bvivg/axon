@@ -20,6 +20,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 
+	"github.com/bvivg/axon/core/services/gateway/internal/avatarproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/config"
 	"github.com/bvivg/axon/core/services/gateway/internal/cookie"
 	"github.com/bvivg/axon/core/services/gateway/internal/cors"
@@ -142,9 +143,20 @@ func run() error {
 		return err
 	}
 
+	avatarUpload, err := avatarproxy.New(avatarproxy.Config{
+		Upstream: cfg.AuthServiceURL + "/internal/avatar",
+		Verifier: verifier,
+		Limiter:  sensitive,
+		Client:   upstream,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, avatarUpload, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -170,8 +182,9 @@ func run() error {
 }
 
 const (
-	chatSocketPath  = "/ws/chat"
-	chatSubprotocol = "axon.chat.v1"
+	chatSocketPath   = "/ws/chat"
+	chatSubprotocol  = "axon.chat.v1"
+	avatarUploadPath = "/api/avatar"
 )
 
 func publicHandler(
@@ -179,6 +192,7 @@ func publicHandler(
 	authProxy authv1connect.AuthServiceHandler,
 	chatProxy chatv1connect.ChatServiceHandler,
 	chatSocket http.Handler,
+	avatarUpload http.Handler,
 	policyGuard connect.Interceptor,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
@@ -186,6 +200,7 @@ func publicHandler(
 	mux := http.NewServeMux()
 
 	mux.Handle(chatSocketPath, chatSocket)
+	mux.Handle("POST "+avatarUploadPath, avatarUpload)
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(
