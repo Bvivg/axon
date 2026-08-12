@@ -146,6 +146,11 @@ services:
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
       AUTH_SERVICE_URL: http://auth:8081
+      # Delivery between instances. There is only one instance here, and it
+      # still goes through Redis: the suite exercises the path the deployed
+      # shape uses, not a shortcut that exists only when there is one process.
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: axon
       # No broker here, and none wanted: KAFKA_BROKERS unset makes the publisher
       # a no-op. The suite reaches chat the way a client does, and a client
       # never sees chat.message — the transport itself is covered against a real
@@ -221,6 +226,32 @@ services:
       OAUTH_FAKE_AUTHORIZE_URL: http://auth:8081/oauth/fake/authorize
       # Each service module resolves shared/ through its own replace directive;
       # see the note in deploy/Dockerfile.service.
+      GOWORK: "off"
+      GOFLAGS: -mod=mod
+    volumes:
+      - ../..:/src
+      - e2e-go-mod:/go/pkg/mod
+      - e2e-go-build:/root/.cache/go-build
+    command: ["go", "test", "-tags", "e2e", "-count=1", "-v", "./e2e/..."]
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # A second runner, because a module is a module: chat's suite lives in its own
+  # one and compiles against its own go.mod. The two share the caches below, so
+  # the second run starts warm.
+  e2e-chat:
+    image: golang:1.26-alpine
+    working_dir: /src/core/services/chat
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      # The internal listener, where the probes are. Reachable here because the
+      # runner is on the compose network — which is also what the auth suite
+      # uses to prove nothing on this port is served publicly.
+      GATEWAY_ADMIN_URL: http://gateway:9090
+      # Where the gateway terminates the browser's socket. The suite connects
+      # here exactly as a page would, token offered as a subprotocol.
+      GATEWAY_SOCKET_URL: ws://gateway:8080/ws/chat
       GOWORK: "off"
       GOFLAGS: -mod=mod
     volumes:

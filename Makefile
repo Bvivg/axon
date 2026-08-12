@@ -195,7 +195,8 @@ E2E_LOG_FILE := e2e-logs.txt
 test-e2e: e2e-key ## Run e2e against the full stack on the shipping images
 	@trap '$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) logs --no-color > $(E2E_LOG_FILE) 2>&1; \
 	       $(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
-	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) run --rm --build e2e
+	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) run --rm --build e2e && \
+	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) run --rm e2e-chat
 
 # A throwaway signing key per machine, never committed. Regenerating it costs
 # nothing: the stack is rebuilt from empty on every run, so no token outlives it.

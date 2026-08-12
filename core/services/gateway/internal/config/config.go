@@ -3,6 +3,7 @@ package config
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/bvivg/axon/core/shared/pkg/config"
@@ -20,6 +21,11 @@ type Config struct {
 
 	// ChatServiceURL is the base URL of the chat service's Connect listener.
 	ChatServiceURL string
+
+	// ChatSocketURL is where chat's WebSocket lives. Derived from
+	// ChatServiceURL rather than configured separately, so the two cannot end
+	// up pointing at different deployments.
+	ChatSocketURL string
 
 	// JWKSURL is where the public key set is fetched from. It points at auth's
 	// admin listener, which is internal — the document is public, but nothing
@@ -47,6 +53,23 @@ type CORSConfig struct {
 	// AllowedOrigins is an explicit list. A wildcard is not representable here,
 	// which is the point: the gateway serves credentialed requests.
 	AllowedOrigins []string
+}
+
+// chatSocketPath is where the chat service serves its socket. Fixed by that
+// service, not by configuration here.
+const chatSocketPath = "/ws"
+
+// socketURL turns a service's HTTP base URL into its WebSocket address.
+func socketURL(base, path string) string {
+	switch {
+	case strings.HasPrefix(base, "https://"):
+		return "wss://" + strings.TrimPrefix(base, "https://") + path
+	case strings.HasPrefix(base, "http://"):
+		return "ws://" + strings.TrimPrefix(base, "http://") + path
+	default:
+		// Already a socket scheme, or something the validator will reject.
+		return strings.TrimSuffix(base, "/") + path
+	}
 }
 
 // RateLimitConfig configures the two budgets.
@@ -117,6 +140,11 @@ func Load() (Config, error) {
 	if err := l.Err(); err != nil {
 		return Config{}, err
 	}
+
+	// http -> ws, https -> wss, path appended. Deriving it means one address to
+	// configure and no way to point the socket at a different deployment than
+	// the calls.
+	cfg.ChatSocketURL = socketURL(cfg.ChatServiceURL, chatSocketPath)
 
 	if err := cfg.validate(); err != nil {
 		return Config{}, err

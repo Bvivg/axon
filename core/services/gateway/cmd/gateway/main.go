@@ -33,6 +33,7 @@ import (
 	"github.com/bvivg/axon/core/services/gateway/internal/guard"
 	"github.com/bvivg/axon/core/services/gateway/internal/proxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
+	"github.com/bvivg/axon/core/services/gateway/internal/wsproxy"
 )
 
 // version is stamped in at build time.
@@ -146,6 +147,17 @@ func run() error {
 		connect.WithInterceptors(middleware.NewCorrelationInterceptor()),
 	)
 
+	chatSocket, err := wsproxy.New(wsproxy.Config{
+		Upstream: cfg.ChatSocketURL,
+		Protocol: chatSubprotocol,
+		Verifier: verifier,
+		Origins:  cfg.CORS.AllowedOrigins,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
 	chatProxy, err := proxy.NewChat(chatClient)
 	if err != nil {
 		return err
@@ -153,7 +165,7 @@ func run() error {
 
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -178,16 +190,38 @@ func run() error {
 	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
 }
 
+// Where the browser opens its chat socket, and the subprotocol it speaks. The
+// path is this gateway's own; the subprotocol belongs to the chat service and
+// is passed through untouched.
+const (
+	chatSocketPath  = "/ws/chat"
+	chatSubprotocol = "axon.chat.v1"
+)
+
 // publicHandler builds the listener clients reach.
 func publicHandler(
 	cfg config.Config,
 	authProxy authv1connect.AuthServiceHandler,
 	chatProxy chatv1connect.ChatServiceHandler,
+	chatSocket http.Handler,
 	policyGuard connect.Interceptor,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
+
+	// The socket carries no Connect interceptors: they are shaped around a call
+	// that starts, answers and ends, and this one does none of those on that
+	// schedule. It still goes through the HTTP chain below, so it gets a
+	// correlation id, a recovered panic and the same origin allow-list as
+	// everything else.
+	//
+	// What it does not get is the rate limiter, which lives in the Connect
+	// interceptor and counts calls per minute. A socket is one upgrade followed
+	// by traffic nothing here counts, so the budget that fits it is connections
+	// per address rather than calls per minute — a different limiter, and one
+	// this gateway does not have yet.
+	mux.Handle(chatSocketPath, chatSocket)
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(
