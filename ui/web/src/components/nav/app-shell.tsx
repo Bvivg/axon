@@ -15,6 +15,13 @@ import { cn } from "@/lib/utils";
  * destinations plus search, so switching viewport size never loses a place
  * anything lived.
  *
+ * The sidebar is sticky and at least one viewport tall on its own (`sticky
+ * top-0 min-h-screen self-start`) rather than stretched to match the content
+ * column. Plain flex stretch would tie its height to whichever page is on
+ * screen — as tall as the content on a long one, scrolling out of view with
+ * it — instead of the nav being the one fixed thing while pages scroll
+ * underneath it.
+ *
  * Search sits apart from the four destinations on purpose — on the sidebar
  * it's pushed to the bottom by `mt-auto`, on the bar it's a separate circle
  * with a gap of its own — because it is not a fifth destination. It does not
@@ -27,10 +34,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="flex w-full bg-background">
       <nav
         aria-label="Primary"
-        className="hidden md:flex md:w-20 md:flex-col md:items-center md:gap-1 md:border-r md:border-border md:py-6"
+        className="hidden md:sticky md:top-0 md:flex md:min-h-screen md:w-20 md:shrink-0 md:flex-col md:items-center md:gap-1 md:self-start md:border-r md:border-border md:py-6"
       >
         <Link
           href="/"
