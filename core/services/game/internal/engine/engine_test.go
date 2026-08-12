@@ -16,8 +16,6 @@ const (
 	carol engine.PlayerID = "carol"
 )
 
-// newTestState is a position in a game nobody implements: Precheck only reads
-// the envelope, so a payload that decodes into nothing is enough.
 func newTestState() engine.State {
 	return engine.NewState(testKey, []engine.PlayerID{alice, bob}, json.RawMessage(`{}`))
 }
@@ -25,7 +23,6 @@ func newTestState() engine.State {
 func TestPrecheck(t *testing.T) {
 	fresh := newTestState()
 
-	// The same position one move in, with the turn passed to the second seat.
 	passed := fresh.Advance(json.RawMessage(`{}`), 1)
 
 	otherGame := fresh
@@ -78,8 +75,7 @@ func TestPrecheck(t *testing.T) {
 			wantErr: engine.ErrOutOfTurn,
 		},
 		{
-			// The case a turn check cannot catch: the right player sending the
-			// same position's move twice.
+
 			name:    "move computed against an older position",
 			state:   passed,
 			move:    engine.Move{Player: bob, Ply: 0},
@@ -172,8 +168,6 @@ func TestDecodeMove(t *testing.T) {
 		t.Errorf("DecodeMove() row = %d, want 2", got.Row)
 	}
 
-	// The separate sentinel earns its keep here: a client sending nonsense and a
-	// corrupt saved game are different answers to different people.
 	err := engine.DecodeMove(engine.Move{Data: json.RawMessage(`"e2e4"`)}, &got)
 	if !errors.Is(err, engine.ErrMoveMalformed) {
 		t.Errorf("DecodeMove() error = %v, want %v", err, engine.ErrMoveMalformed)
