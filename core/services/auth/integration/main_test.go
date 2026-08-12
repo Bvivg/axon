@@ -13,7 +13,10 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	miniogo "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/testcontainers/testcontainers-go"
+	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 )
 
@@ -32,7 +36,18 @@ const (
 	chatPassword = "chat"
 )
 
+const (
+	minioUser     = "axon"
+	minioPassword = "axon12345"
+	avatarsBucket = "avatars"
+)
+
 var pool *postgres.Pool
+
+var (
+	avatarPipeline  *avatar.Pipeline
+	avatarPublicURL string
+)
 
 const startupTimeout = 3 * time.Minute
 
@@ -101,7 +116,70 @@ func run(m *testing.M) (int, error) {
 	}
 	defer pool.Close()
 
+	minioContainer, err := startMinio(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if err := testcontainers.TerminateContainer(minioContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: terminate minio container: %v\n", err)
+		}
+	}()
+
 	return m.Run(), nil
+}
+
+func startMinio(ctx context.Context) (*tcminio.MinioContainer, error) {
+	minioContainer, err := tcminio.Run(ctx, "minio/minio:RELEASE.2025-04-22T22-12-26Z",
+		tcminio.WithUsername(minioUser),
+		tcminio.WithPassword(minioPassword),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("start minio: %w", err)
+	}
+
+	endpoint, err := minioContainer.ConnectionString(ctx)
+	if err != nil {
+		return minioContainer, fmt.Errorf("minio connection string: %w", err)
+	}
+
+	client, err := miniogo.New(endpoint, &miniogo.Options{
+		Creds: credentials.NewStaticV4(minioUser, minioPassword, ""),
+	})
+	if err != nil {
+		return minioContainer, fmt.Errorf("minio client: %w", err)
+	}
+
+	if err := client.MakeBucket(ctx, avatarsBucket, miniogo.MakeBucketOptions{}); err != nil {
+		return minioContainer, fmt.Errorf("make bucket: %w", err)
+	}
+
+	policy := fmt.Sprintf(`{
+		"Version": "2012-10-17",
+		"Statement": [{
+			"Effect": "Allow",
+			"Principal": {"AWS": ["*"]},
+			"Action": ["s3:GetObject"],
+			"Resource": ["arn:aws:s3:::%s/*"]
+		}]
+	}`, avatarsBucket)
+	if err := client.SetBucketPolicy(ctx, avatarsBucket, policy); err != nil {
+		return minioContainer, fmt.Errorf("set bucket policy: %w", err)
+	}
+
+	store, err := avatar.NewStore(avatar.StoreConfig{
+		Endpoint:  endpoint,
+		AccessKey: minioUser,
+		SecretKey: minioPassword,
+		Bucket:    avatarsBucket,
+	})
+	if err != nil {
+		return minioContainer, fmt.Errorf("avatar store: %w", err)
+	}
+
+	avatarPublicURL = "http://" + endpoint
+	avatarPipeline = avatar.NewPipeline(store, avatar.NewURLBuilder(avatarPublicURL, avatarsBucket))
+	return minioContainer, nil
 }
 
 func applyMigrations(dsn string) error {
