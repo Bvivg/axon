@@ -90,7 +90,10 @@ export default function ChatRoomPage() {
   };
 
   return (
-    <main className="mx-auto flex h-screen w-full max-w-2xl flex-col gap-4 px-6 py-8">
+    // The floating bottom bar (see AppShell) reserves its own space on
+    // mobile, so a plain h-screen would push the composer behind it — 7rem
+    // matches the wrapper's own clearance (pb-28) exactly for that reason.
+    <main className="mx-auto flex h-[calc(100dvh-7rem)] w-full max-w-2xl flex-col gap-4 px-6 py-8 md:h-screen">
       <header className="flex items-baseline justify-between">
         <div>
           <h1 className="text-xl font-semibold">

@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
-
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -12,7 +10,6 @@ import {
 } from "@/components/ui/card";
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
-import { cn } from "@/lib/utils";
 
 /**
  * The protected page. It proves the whole chain end to end: the access token
@@ -45,13 +42,6 @@ export default function ProfilePage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <Link
-            className={cn(buttonVariants({ variant: "outline" }), "w-full")}
-            href="/chat"
-          >
-            Go to chat
-          </Link>
-
           <dl className="space-y-3 text-sm">
             <Row label="Email" value={user.email} />
             <Row

@@ -21,8 +21,8 @@ import { useSession } from "@/lib/auth/session";
 /** signInPath is where an anonymous visitor is sent. */
 export const signInPath = "/login";
 
-/** homePath is where a signed-in visitor lands with nowhere else to be. */
-export const homePath = "/chat";
+/** homePath is where a signed-in visitor lands with nowhere else to be — Games. */
+export const homePath = "/";
 
 /** The query parameter carrying where somebody was headed before being bounced. */
 export const nextParam = "next";
