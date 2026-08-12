@@ -10,13 +10,6 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
-// fakeStore is an in-memory stand-in for the repository.
-//
-// It exists so the rules above it can be tested without a database. It is not a
-// second implementation of the storage semantics: message ordering, the resend
-// constraint and the room lock are properties of Postgres, and they are checked
-// against Postgres in services/chat/integration. What is checked here is
-// everything the service decides before storage is reached at all.
 type fakeStore struct {
 	mu sync.Mutex
 
@@ -24,8 +17,6 @@ type fakeStore struct {
 	members  map[uuid.UUID]map[uuid.UUID]domain.Member
 	messages map[uuid.UUID][]domain.Message
 
-	// failWith, when set, is returned by every method. It stands in for the
-	// database being unreachable.
 	failWith error
 }
 

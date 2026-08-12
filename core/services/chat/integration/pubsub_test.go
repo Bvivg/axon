@@ -14,7 +14,6 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/pubsub"
 )
 
-// newBus returns a Redis-backed bus, as one instance of the service would hold.
 func newBus(t *testing.T) *pubsub.Redis {
 	t.Helper()
 
@@ -43,7 +42,6 @@ func newTestMessage(roomID uuid.UUID, seq int64, body string) domain.Message {
 	}
 }
 
-// receive waits for one message, failing rather than hanging.
 func receive(t *testing.T, ch <-chan domain.Message) domain.Message {
 	t.Helper()
 
@@ -59,9 +57,6 @@ func receive(t *testing.T, ch <-chan domain.Message) domain.Message {
 	}
 }
 
-// The reason Redis is here at all: two instances, one room, and a message that
-// crosses from the process that wrote it to the process holding the person who
-// should see it.
 func TestAMessageCrossesBetweenInstances(t *testing.T) {
 	writer, reader := newBus(t), newBus(t)
 
@@ -73,9 +68,6 @@ func TestAMessageCrossesBetweenInstances(t *testing.T) {
 	}
 	defer stop()
 
-	// Redis registers a subscription asynchronously, and a message published
-	// into the gap is delivered to nobody. Waiting for the round trip is what
-	// makes this test about fan-out rather than about timing.
 	waitForSubscriber(t, roomID)
 
 	sent := newTestMessage(roomID, 1, "across the wire")
@@ -91,8 +83,7 @@ func TestAMessageCrossesBetweenInstances(t *testing.T) {
 	if got.RoomID != sent.RoomID || got.AuthorID != sent.AuthorID {
 		t.Errorf("the message changed hands: %+v", got)
 	}
-	// The sender's own id travels: the socket layer decides who is allowed to
-	// see it, and it cannot do that with a field the bus dropped.
+
 	if got.ClientID != sent.ClientID {
 		t.Errorf("client id = %q, wanted it carried across", got.ClientID)
 	}
@@ -101,9 +92,6 @@ func TestAMessageCrossesBetweenInstances(t *testing.T) {
 	}
 }
 
-// An instance hears its own message back through Redis rather than short-cutting
-// it locally. One delivery path means the local case cannot drift from the
-// remote one.
 func TestAnInstanceHearsItsOwnMessage(t *testing.T) {
 	bus := newBus(t)
 
@@ -127,9 +115,6 @@ func TestAnInstanceHearsItsOwnMessage(t *testing.T) {
 	}
 }
 
-// Two sockets on one instance share one Redis subscription, and each of them
-// still gets the message. Subscribing per socket would multiply connections by
-// conversations for no gain.
 func TestTwoLocalListenersShareOneSubscription(t *testing.T) {
 	bus := newBus(t)
 
@@ -161,8 +146,6 @@ func TestTwoLocalListenersShareOneSubscription(t *testing.T) {
 		t.Errorf("the second listener received %s", got.ID)
 	}
 
-	// One leaving does not take the other's delivery with it: the subscription
-	// is dropped on the last listener, not the first.
 	stopFirst()
 
 	next := newTestMessage(roomID, 2, "still listening")
@@ -175,8 +158,6 @@ func TestTwoLocalListenersShareOneSubscription(t *testing.T) {
 	}
 }
 
-// Stopping the last listener closes the room's channel, so a delivery goroutine
-// ranging over it ends rather than leaking for the life of the process.
 func TestStoppingTheLastListenerClosesTheChannel(t *testing.T) {
 	bus := newBus(t)
 
@@ -199,8 +180,6 @@ func TestStoppingTheLastListenerClosesTheChannel(t *testing.T) {
 	}
 }
 
-// waitForSubscriber blocks until Redis reports a subscriber on the room's
-// channel.
 func waitForSubscriber(t *testing.T, roomID uuid.UUID) {
 	t.Helper()
 

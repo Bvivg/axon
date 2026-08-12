@@ -8,9 +8,6 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
-// Domain types to wire types. Kept together so the shape of what leaves this
-// service is visible in one place rather than scattered across handlers.
-
 func toProtoRoom(r domain.Room) *chatv1.Room {
 	return &chatv1.Room{
 		Id:          r.ID.String(),
@@ -27,8 +24,6 @@ func toProtoMember(m domain.Member) *chatv1.Member {
 		JoinedAt: timestamppb.New(m.JoinedAt),
 	}
 
-	// Absent rather than empty: a member whose name could not be read has no
-	// name, and "" would render as one.
 	if m.DisplayName != "" {
 		member.DisplayName = &m.DisplayName
 	}

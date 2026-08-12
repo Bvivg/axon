@@ -1,8 +1,3 @@
-// Package server exposes the chat service over Connect.
-//
-// It is a translation layer and nothing else: requests become service inputs,
-// domain errors become Connect codes, domain types become wire types. No rule
-// about who may read a room lives here.
 package server
 
 import (
@@ -23,15 +18,10 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/service"
 )
 
-// Names resolves the caller's display name at auth.
-//
-// An interface rather than the concrete resolver so a test can supply a name
-// without an auth service to ask. It cannot fail: see identity.Resolver.
 type Names interface {
 	DisplayName(ctx context.Context, accessToken string) string
 }
 
-// Handler implements the generated ChatService interface.
 type Handler struct {
 	svc      *service.Service
 	verifier *authn.Verifier
@@ -41,7 +31,6 @@ type Handler struct {
 
 var _ chatv1connect.ChatServiceHandler = (*Handler)(nil)
 
-// Config configures a Handler.
 type Config struct {
 	Service  *service.Service
 	Verifier *authn.Verifier
@@ -49,7 +38,6 @@ type Config struct {
 	Logger   *slog.Logger
 }
 
-// New returns a Handler.
 func New(cfg Config) (*Handler, error) {
 	switch {
 	case cfg.Service == nil:
@@ -70,7 +58,6 @@ func New(cfg Config) (*Handler, error) {
 	}, nil
 }
 
-// CreateRoom opens a room with the caller in it.
 func (h *Handler) CreateRoom(
 	ctx context.Context,
 	req *connect.Request[chatv1.CreateRoomRequest],
@@ -92,7 +79,6 @@ func (h *Handler) CreateRoom(
 	return connect.NewResponse(&chatv1.CreateRoomResponse{Room: toProtoRoom(room)}), nil
 }
 
-// ListRooms returns the rooms the caller belongs to.
 func (h *Handler) ListRooms(
 	ctx context.Context,
 	req *connect.Request[chatv1.ListRoomsRequest],
@@ -115,7 +101,6 @@ func (h *Handler) ListRooms(
 	return connect.NewResponse(&chatv1.ListRoomsResponse{Rooms: out}), nil
 }
 
-// GetRoom returns a room and its members.
 func (h *Handler) GetRoom(
 	ctx context.Context,
 	req *connect.Request[chatv1.GetRoomRequest],
@@ -146,7 +131,6 @@ func (h *Handler) GetRoom(
 	}), nil
 }
 
-// JoinRoom puts the caller in a room.
 func (h *Handler) JoinRoom(
 	ctx context.Context,
 	req *connect.Request[chatv1.JoinRoomRequest],
@@ -176,7 +160,6 @@ func (h *Handler) JoinRoom(
 	}), nil
 }
 
-// LeaveRoom takes the caller out of a room.
 func (h *Handler) LeaveRoom(
 	ctx context.Context,
 	req *connect.Request[chatv1.LeaveRoomRequest],
@@ -198,7 +181,6 @@ func (h *Handler) LeaveRoom(
 	return connect.NewResponse(&chatv1.LeaveRoomResponse{}), nil
 }
 
-// ListMessages reads a page of a room's history.
 func (h *Handler) ListMessages(
 	ctx context.Context,
 	req *connect.Request[chatv1.ListMessagesRequest],
@@ -233,14 +215,6 @@ func (h *Handler) ListMessages(
 	}), nil
 }
 
-// authenticate verifies the bearer token on a request.
-//
-// The gateway already verified it, and this verifies it again. That is
-// deliberate: rules/security.md puts resource-level authorization in the
-// service that owns the resource, and a service that trusts a header because
-// "the gateway must have checked" is one misrouted request away from trusting
-// anyone. Verification is local against the key set, so the cost is a signature
-// check.
 func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {
 	raw, err := authn.BearerToken(headers)
 	if err != nil {
@@ -249,7 +223,6 @@ func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {
 	return h.verifier.Verify(raw)
 }
 
-// parseID turns a wire id into a uuid, naming the field when it will not.
 func parseID(field, raw string) (uuid.UUID, error) {
 	id, err := uuid.Parse(raw)
 	if err != nil {

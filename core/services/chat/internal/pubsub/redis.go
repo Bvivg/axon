@@ -16,26 +16,11 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
-// Redis fans messages out across instances.
-//
-// It wraps Memory rather than replacing it, and everything arrives the same
-// way: a message published here goes to Redis, comes back on the subscription
-// this instance holds — including to the instance that sent it — and is handed
-// to Memory, which delivers it to the sockets. One path, so the local case
-// cannot drift from the remote one in ordering or in shape.
-//
-// Nothing here is storage. Redis losing everything costs delivery in the moment
-// and no messages: they are in Postgres, and a client catches up by position.
-// That is what rules/infra.md means by Redis holding nothing that is not
-// reconstructible.
 type Redis struct {
 	client goredis.UniversalClient
 	local  *Memory
 	log    *slog.Logger
 
-	// mu guards rooms. One Redis subscription per room, however many sockets on
-	// this instance are listening to it — subscribing per socket would multiply
-	// connections by conversations.
 	mu    sync.Mutex
 	rooms map[uuid.UUID]*roomSubscription
 }
@@ -43,15 +28,12 @@ type Redis struct {
 type roomSubscription struct {
 	sub *goredis.PubSub
 
-	// listeners is how many local sockets want this room. The Redis
-	// subscription is dropped when it reaches zero.
 	listeners int
 
 	stop context.CancelFunc
 	done chan struct{}
 }
 
-// NewRedis returns a Bus backed by Redis pub/sub.
 func NewRedis(client goredis.UniversalClient, log *slog.Logger) (*Redis, error) {
 	if client == nil {
 		return nil, errors.New("pubsub: a redis client is required")
@@ -68,15 +50,8 @@ func NewRedis(client goredis.UniversalClient, log *slog.Logger) (*Redis, error) 
 	}, nil
 }
 
-// channel is where a room's messages travel.
 func channel(roomID uuid.UUID) string { return "chat:room:" + roomID.String() }
 
-// wire is a message as it crosses Redis.
-//
-// Its own type rather than domain.Message, for the same reason a Kafka payload
-// has one: this is a format two processes agree on, and a field renamed in the
-// domain must not silently change what a running instance sends to one that has
-// not been restarted yet.
 type wire struct {
 	ID       string    `json:"id"`
 	RoomID   string    `json:"room_id"`
@@ -124,7 +99,6 @@ func (w wire) toDomain() (domain.Message, error) {
 	}, nil
 }
 
-// Publish sends a message to every instance holding somebody in the room.
 func (r *Redis) Publish(ctx context.Context, m domain.Message) error {
 	payload, err := json.Marshal(toWire(m))
 	if err != nil {
@@ -137,8 +111,6 @@ func (r *Redis) Publish(ctx context.Context, m domain.Message) error {
 	return nil
 }
 
-// Subscribe registers a listener, opening the room's Redis subscription if this
-// is the first one on this instance.
 func (r *Redis) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan domain.Message, func(), error) {
 	if err := r.acquire(roomID); err != nil {
 		return nil, nil, err
@@ -161,7 +133,6 @@ func (r *Redis) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan domain.
 	return messages, stop, nil
 }
 
-// acquire opens or reuses the room's Redis subscription.
 func (r *Redis) acquire(roomID uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -171,8 +142,6 @@ func (r *Redis) acquire(roomID uuid.UUID) error {
 		return nil
 	}
 
-	// Background rather than a subscriber's context: this subscription outlives
-	// whichever socket happened to open it, and dies when the last one goes.
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sub := r.client.Subscribe(ctx, channel(roomID))
@@ -184,7 +153,6 @@ func (r *Redis) acquire(roomID uuid.UUID) error {
 	return nil
 }
 
-// release drops one listener and closes the subscription when none are left.
 func (r *Redis) release(roomID uuid.UUID) {
 	r.mu.Lock()
 
@@ -210,7 +178,6 @@ func (r *Redis) release(roomID uuid.UUID) {
 	<-room.done
 }
 
-// pump reads the room's channel and hands each message to the local bus.
 func (r *Redis) pump(ctx context.Context, roomID uuid.UUID, sub *goredis.PubSub, done chan<- struct{}) {
 	defer close(done)
 
@@ -238,15 +205,11 @@ func (r *Redis) pump(ctx context.Context, roomID uuid.UUID, sub *goredis.PubSub,
 				continue
 			}
 
-			// Local delivery cannot fail and cannot block: Memory drops for a
-			// subscriber that has fallen behind, which is the right answer here
-			// too — one slow socket must not stall the room for everyone else.
 			_ = r.local.Publish(ctx, m)
 		}
 	}
 }
 
-// Close drops every subscription this instance holds.
 func (r *Redis) Close() error {
 	r.mu.Lock()
 	rooms := r.rooms

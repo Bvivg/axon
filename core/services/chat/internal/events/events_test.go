@@ -15,9 +15,6 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
-// recordingSink stands in for the producer. The transport has its own tests
-// against a real broker in shared/integration; what is worth checking here is
-// the shape of what this package hands it.
 type recordingSink struct {
 	published []kafka.Message
 	failWith  error
@@ -57,9 +54,6 @@ func TestMessageSentCarriesTheWholeMessage(t *testing.T) {
 		t.Errorf("topic = %q, want chat.message", published.Topic)
 	}
 
-	// The room id, so that one room's messages share a partition and therefore
-	// arrive in order. Anything wider would serialise unrelated rooms; anything
-	// narrower would let a room's own messages overtake each other.
 	if got := string(published.Key); got != m.RoomID.String() {
 		t.Errorf("key = %q, want the room id %q", got, m.RoomID)
 	}
@@ -81,22 +75,14 @@ func TestMessageSentCarriesTheWholeMessage(t *testing.T) {
 		t.Errorf("payload = %+v, want %+v", payload, want)
 	}
 
-	// The body travels with the event. A consumer that had to come back and ask
-	// what was said would need a way into chat's database, which is the thing
-	// schema isolation exists to prevent.
 	if payload.Body == "" {
 		t.Error("the event carries no body")
 	}
 }
 
-// The message is already committed and already on its way to the room by the
-// time this runs. A broker that will not take it is a lost event, not a failed
-// send, and the caller has nothing to do about it.
 func TestAFailedPublishIsSwallowed(t *testing.T) {
 	sink := &recordingSink{failWith: errors.New("broker unreachable")}
 
-	// The assertion is that this returns at all: MessageSent has no error to
-	// return, so a panic or a block is the only way it could fail here.
 	New(sink, logger.Discard()).MessageSent(t.Context(), newMessage())
 }
 

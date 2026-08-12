@@ -1,8 +1,3 @@
-// Command chat runs the chat service.
-//
-// This file is wiring only: read configuration, build dependencies, start the
-// servers, shut them down cleanly. Anything that decides how chat behaves lives
-// under internal/.
 package main
 
 import (
@@ -37,18 +32,14 @@ import (
 	chatws "github.com/bvivg/axon/core/services/chat/internal/ws"
 )
 
-// version is stamped in at build time.
 var version = "dev"
 
 func main() {
-	// Exits when started with -healthcheck. The runtime image is distroless and
-	// has no shell for a container healthcheck to use, so the binary probes
-	// itself.
+
 	health.RunProbeIfRequested()
 
 	if err := run(); err != nil {
-		// The logger may not exist yet when configuration fails, so this one
-		// message goes to stderr directly.
+
 		fmt.Fprintf(os.Stderr, "chat: %v\n", err)
 		os.Exit(1)
 	}
@@ -89,11 +80,6 @@ func run() error {
 		return err
 	}
 
-	// Fetched before serving, so a wrong URL or an auth service that never comes
-	// up fails startup instead of as a wave of 401s. Retried rather than
-	// attempted once: depends_on cannot order a restart of the daemon itself
-	// (see the comment on WaitUntilReady), so auth briefly unreachable here is
-	// routine, not a misconfiguration.
 	if err := keys.WaitUntilReady(ctx, authn.DefaultStartupTimeout); err != nil {
 		return fmt.Errorf("initial jwks fetch: %w", err)
 	}
@@ -146,9 +132,6 @@ func run() error {
 		}
 	}()
 
-	// Delivery between instances. Redis is required rather than optional: a
-	// second instance without it looks healthy and quietly delivers nothing to
-	// the people connected to the first one, which is worse than not starting.
 	bus, err := pubsub.NewRedis(cache, log)
 	if err != nil {
 		return err
@@ -209,12 +192,6 @@ func run() error {
 	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
 }
 
-// buildEvents assembles the event publisher, or reports that there is no bus.
-//
-// No broker configured is a normal deployment rather than a broken one: nothing
-// consumes chat.message yet, and messages reach the room over the socket
-// regardless. Saying so out loud at startup is better than a nil that turns
-// into a check at every send.
 func buildEvents(cfg config.Config, log *slog.Logger) (service.Events, func(), error) {
 	if len(cfg.Kafka.Brokers) == 0 {
 		log.Warn("no kafka brokers configured; chat.message will not be published")
@@ -238,11 +215,6 @@ func buildEvents(cfg config.Config, log *slog.Logger) (service.Events, func(), e
 	}, nil
 }
 
-// publicHandler builds the contract listener.
-//
-// "Public" names the listener that carries the contract, not one the internet
-// reaches: clients arrive through the gateway, which is where CORS, throttling
-// and the policy live.
 func publicHandler(
 	handler *server.Handler,
 	socket *chatws.Handler,
@@ -251,10 +223,6 @@ func publicHandler(
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	// The socket carries no Connect interceptors: they are built around a call
-	// that begins, answers and ends, and this one does none of those on the
-	// schedule they assume. Correlation and recovery still apply, from the
-	// HTTP chain below.
 	mux.Handle(chatws.Path, socket)
 
 	mux.Handle(chatv1connect.NewChatServiceHandler(handler,
@@ -273,7 +241,6 @@ func publicHandler(
 	)(mux)
 }
 
-// adminHandler builds the internal listener: probes and metrics.
 func adminHandler(
 	pool *postgres.Pool,
 	cache *redis.Client,
@@ -282,18 +249,12 @@ func adminHandler(
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	// Redis is in readiness, not only liveness: without it this instance still
-	// answers, but nothing it is told reaches anybody connected elsewhere. An
-	// instance that cannot deliver should not be taking sockets.
 	health.New(log, []health.Checker{pool, cache}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }
 
-// internalTransport is the transport used for service-to-service calls: h2c,
-// because gRPC needs HTTP/2 and there is no TLS inside the network to negotiate
-// it with.
 func internalTransport() *http.Transport {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -309,8 +270,6 @@ func internalTransport() *http.Transport {
 	return t
 }
 
-// unencryptedHTTP2 enables h2c alongside HTTP/1.1: gRPC clients need HTTP/2,
-// while Connect's JSON and gRPC-Web transports use HTTP/1.1.
 func unencryptedHTTP2() *http.Protocols {
 	p := new(http.Protocols)
 	p.SetHTTP1(true)
@@ -318,7 +277,6 @@ func unencryptedHTTP2() *http.Protocols {
 	return p
 }
 
-// serve runs one listener, reporting anything but a clean shutdown.
 func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger, errs chan<- error) {
 	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr)
 
@@ -327,9 +285,6 @@ func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger,
 	}
 }
 
-// shutdown stops both listeners, giving in-flight requests a bounded chance to
-// finish. The deadline is not optional: without it a single stuck request keeps
-// the process alive until the orchestrator kills it.
 func shutdown(timeout time.Duration, log *slog.Logger, servers ...*http.Server) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

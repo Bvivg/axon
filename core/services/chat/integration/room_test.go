@@ -12,7 +12,6 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
 )
 
-// newRoom opens a room owned by a fresh user and returns both.
 func newRoom(t *testing.T, r *repository.Repository, name string) (domain.Room, uuid.UUID) {
 	t.Helper()
 
@@ -28,9 +27,6 @@ func newRoom(t *testing.T, r *repository.Repository, name string) (domain.Room, 
 	return room, owner
 }
 
-// A room with nobody in it is a state nothing else in the service knows how to
-// handle: it cannot be listed, read or joined by anyone who does not already
-// have its id. Creating one puts its creator in it, in the same transaction.
 func TestCreateRoomSeatsItsCreator(t *testing.T) {
 	r := newRepo(t)
 
@@ -48,7 +44,6 @@ func TestCreateRoomSeatsItsCreator(t *testing.T) {
 		t.Error("the person who opened the room is not in it")
 	}
 
-	// And it reads back the same way it was returned.
 	loaded, err := r.RoomByID(t.Context(), room.ID)
 	if err != nil {
 		t.Fatalf("RoomByID: %v", err)
@@ -66,8 +61,6 @@ func TestRoomByIDReportsAMissingRoom(t *testing.T) {
 	}
 }
 
-// Listing is by membership, not by existence: a room somebody else opened is
-// not theirs to see until they are in it.
 func TestRoomsForUserListsOnlyTheirOwn(t *testing.T) {
 	r := newRepo(t)
 
@@ -82,7 +75,6 @@ func TestRoomsForUserListsOnlyTheirOwn(t *testing.T) {
 		t.Fatalf("listed %d rooms, want only %s", len(rooms), mine.ID)
 	}
 
-	// Joining the other one adds it, and reports that this call is what did it.
 	joined, err := r.AddMember(t.Context(), theirs.ID, domain.Member{UserID: me, DisplayName: "Me"})
 	if err != nil {
 		t.Fatalf("AddMember: %v", err)
@@ -100,9 +92,6 @@ func TestRoomsForUserListsOnlyTheirOwn(t *testing.T) {
 	}
 }
 
-// A client that lost the answer and retried has done nothing wrong, so joining
-// twice is not an error. Rejoining is also the only way a stale name snapshot
-// gets corrected, so the second call refreshes it.
 func TestJoiningTwiceIsNotAnErrorAndRefreshesTheName(t *testing.T) {
 	r := newRepo(t)
 
@@ -147,8 +136,6 @@ func TestJoiningTwiceIsNotAnErrorAndRefreshesTheName(t *testing.T) {
 	}
 }
 
-// Leaving takes somebody out of the room and leaves what they said in it: a
-// message is not unsaid by its author walking out.
 func TestLeavingKeepsTheHistory(t *testing.T) {
 	r := newRepo(t)
 
@@ -184,8 +171,6 @@ func TestLeavingKeepsTheHistory(t *testing.T) {
 	}
 }
 
-// Leaving a room nobody is in should not be an error either: the caller wanted
-// to not be a member, and they are not.
 func TestLeavingTwiceIsNotAnError(t *testing.T) {
 	r := newRepo(t)
 

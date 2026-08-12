@@ -25,21 +25,14 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/ws"
 )
 
-// fakeRooms stands in for the chat service. What is under test here is the
-// protocol, so this answers in whatever way a scenario needs and records what
-// it was asked.
 type fakeRooms struct {
 	mu sync.Mutex
 
-	// members is who belongs where. Anything not listed answers as it would for
-	// a room that does not exist, which is the same answer.
 	members map[uuid.UUID]map[uuid.UUID]bool
 
 	messages map[uuid.UUID][]domain.Message
 	nextSeq  map[uuid.UUID]int64
 
-	// duplicateFor makes Send report a resend for a client id, as it would for
-	// a message that was already written.
 	duplicateFor string
 
 	sends int
@@ -129,7 +122,6 @@ func (f *fakeRooms) ListMessages(
 	return service.History{Messages: all}, nil
 }
 
-// harness is a running socket server and the pieces behind it.
 type harness struct {
 	server *httptest.Server
 	rooms  *fakeRooms
@@ -187,13 +179,11 @@ func newHarness(t *testing.T) *harness {
 	}
 }
 
-// client is one connected socket, with the frames it has received.
 type client struct {
 	conn *sharedws.Conn
 	t    *testing.T
 }
 
-// connect opens a socket as the given user.
 func (h *harness) connect(t *testing.T, userID uuid.UUID) *client {
 	t.Helper()
 	return h.connectFor(t, userID, time.Hour)
@@ -233,7 +223,6 @@ func (c *client) send(frame ws.Inbound) {
 	}
 }
 
-// read waits for the next frame.
 func (c *client) read() ws.Outbound {
 	c.t.Helper()
 
@@ -252,7 +241,6 @@ func (c *client) read() ws.Outbound {
 	return out
 }
 
-// expect waits for a frame of the given type, failing on anything else.
 func (c *client) expect(want string) ws.Outbound {
 	c.t.Helper()
 
@@ -263,9 +251,6 @@ func (c *client) expect(want string) ws.Outbound {
 	return out
 }
 
-// A socket is a credential-bearing thing like any other request, and the token
-// is checked before the upgrade so a client without one gets an answer it can
-// read rather than a connection that opens and vanishes.
 func TestASocketWithoutATokenIsRefused(t *testing.T) {
 	h := newHarness(t)
 
@@ -292,8 +277,6 @@ func TestASocketWithAForgedTokenIsRefused(t *testing.T) {
 	}
 }
 
-// The whole point of the thing: what one person says appears in front of the
-// other without either of them asking again.
 func TestAMessageReachesTheOtherPersonInTheRoom(t *testing.T) {
 	h := newHarness(t)
 
@@ -314,8 +297,6 @@ func TestAMessageReachesTheOtherPersonInTheRoom(t *testing.T) {
 		Type: ws.TypeSend, RoomID: roomID.String(), ClientID: "alice-1", Body: "hello bob",
 	})
 
-	// The sender is acknowledged first: that is the point at which the message
-	// is durable, and it is what tells a client it need not resend.
 	ack := ac.expect(ws.TypeAck)
 	if ack.ClientID != "alice-1" {
 		t.Errorf("ack carries client id %q, want alice-1", ack.ClientID)
@@ -333,23 +314,16 @@ func TestAMessageReachesTheOtherPersonInTheRoom(t *testing.T) {
 			delivered.Message.AuthorID, alice)
 	}
 
-	// One client's id for a message is its own bookkeeping. Echoing it to
-	// everybody else would hand out ids that belong to somebody else's client.
 	if delivered.Message.ClientID != "" {
 		t.Errorf("bob received alice's client id %q", delivered.Message.ClientID)
 	}
 
-	// And the sender sees their own message come back through the room, with
-	// their own id on it, so an optimistic draw can be reconciled.
 	own := ac.expect(ws.TypeMessage)
 	if own.Message.ClientID != "alice-1" {
 		t.Errorf("the sender's own copy carries client id %q, want alice-1", own.Message.ClientID)
 	}
 }
 
-// A room somebody does not belong to answers the same way a room that does not
-// exist does, and neither ends the connection: one bad room id is not a reason
-// to drop every other conversation on the socket.
 func TestAStrangerCannotSubscribeOrSend(t *testing.T) {
 	h := newHarness(t)
 
@@ -368,7 +342,6 @@ func TestAStrangerCannotSubscribeOrSend(t *testing.T) {
 		t.Errorf("send was refused with %q, want %q", refusal.Code, ws.ErrorNotAMember)
 	}
 
-	// A room that genuinely does not exist is indistinguishable.
 	stranger.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: uuid.New().String()})
 	if refusal := stranger.expect(ws.TypeError); refusal.Code != ws.ErrorNotAMember {
 		t.Errorf("a missing room answered %q, want %q", refusal.Code, ws.ErrorNotAMember)
@@ -394,13 +367,10 @@ func TestAnInvalidFrameIsRefusedWithoutClosingTheSocket(t *testing.T) {
 		t.Errorf("code = %q, want %q", refusal.Code, ws.ErrorInvalid)
 	}
 
-	// Still usable afterwards.
 	c.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
 	c.expect(ws.TypeSubscribed)
 }
 
-// A frame this protocol does not define is not a mistake to answer politely: it
-// means the peer is speaking something else.
 func TestAnUnknownFrameTypeClosesTheSocket(t *testing.T) {
 	h := newHarness(t)
 
@@ -412,8 +382,6 @@ func TestAnUnknownFrameTypeClosesTheSocket(t *testing.T) {
 	}
 }
 
-// The reconnect story: a client that says where it left off is given what it
-// missed, in order, before live delivery starts — and nothing twice.
 func TestSubscribingWithAPositionCatchesUp(t *testing.T) {
 	h := newHarness(t)
 
@@ -422,7 +390,6 @@ func TestSubscribingWithAPositionCatchesUp(t *testing.T) {
 	h.rooms.join(roomID, alice)
 	h.rooms.join(roomID, bob)
 
-	// Said while bob was away.
 	ac := h.connect(t, alice)
 	ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
 	ac.expect(ws.TypeSubscribed)
@@ -433,7 +400,6 @@ func TestSubscribingWithAPositionCatchesUp(t *testing.T) {
 		ac.expect(ws.TypeMessage)
 	}
 
-	// Bob comes back holding position 1.
 	bc := h.connect(t, bob)
 	bc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String(), Since: 1})
 
@@ -449,7 +415,6 @@ func TestSubscribingWithAPositionCatchesUp(t *testing.T) {
 		}
 	}
 
-	// And live delivery continues from there, with no repeat of the catch-up.
 	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "four"})
 	ac.expect(ws.TypeAck)
 
@@ -458,8 +423,6 @@ func TestSubscribingWithAPositionCatchesUp(t *testing.T) {
 	}
 }
 
-// A resend is answered, not repeated: the sender gets its acknowledgement, and
-// the room is not shown the message a second time.
 func TestAResendIsAcknowledgedButNotDeliveredAgain(t *testing.T) {
 	h := newHarness(t)
 
@@ -485,15 +448,11 @@ func TestAResendIsAcknowledgedButNotDeliveredAgain(t *testing.T) {
 		t.Fatalf("bob received %q", got.Message.Body)
 	}
 
-	// The same message again, as a client would after losing its connection
-	// between sending and being acknowledged.
 	ac.send(frame)
 	if ack := ac.expect(ws.TypeAck); ack.Seq != 1 {
 		t.Errorf("the resend was acknowledged at position %d, want the original 1", ack.Seq)
 	}
 
-	// Bob must not see it twice. Something else has to arrive for that to be
-	// observable rather than merely not yet observed.
 	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "second"})
 	ac.expect(ws.TypeAck)
 
@@ -503,7 +462,6 @@ func TestAResendIsAcknowledgedButNotDeliveredAgain(t *testing.T) {
 	}
 }
 
-// Unsubscribing stops delivery without ending the connection.
 func TestUnsubscribingStopsDelivery(t *testing.T) {
 	h := newHarness(t)
 
@@ -530,17 +488,11 @@ func TestUnsubscribingStopsDelivery(t *testing.T) {
 	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: otherID.String(), Body: "heard"})
 	ac.expect(ws.TypeAck)
 
-	// The first message must not arrive; the second must. Reading once is what
-	// distinguishes the two: if the unsubscribe did nothing, this frame is the
-	// one it was supposed to stop.
 	if got := bc.expect(ws.TypeMessage); got.Message.Body != "heard" {
 		t.Errorf("received %q after unsubscribing from its room", got.Message.Body)
 	}
 }
 
-// A socket may not outlive the token that opened it. Fifteen-minute access
-// tokens mean nothing if one connection can hold a dead credential open for a
-// day.
 func TestTheSocketClosesWhenTheTokenExpires(t *testing.T) {
 	h := newHarness(t)
 
@@ -556,8 +508,6 @@ func TestTheSocketClosesWhenTheTokenExpires(t *testing.T) {
 	}
 }
 
-// Subscribing twice to one room must not open a second delivery: the client
-// would then see every message in it twice.
 func TestSubscribingTwiceDeliversOnce(t *testing.T) {
 	h := newHarness(t)
 
@@ -580,7 +530,6 @@ func TestSubscribingTwiceDeliversOnce(t *testing.T) {
 		t.Fatalf("received %q", got.Message.Body)
 	}
 
-	// A second copy would be sitting in front of this one.
 	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "twice"})
 	ac.expect(ws.TypeAck)
 
@@ -590,8 +539,6 @@ func TestSubscribingTwiceDeliversOnce(t *testing.T) {
 	}
 }
 
-// staticKeys is the key set a test signs against: one key, published under one
-// id, with no JWKS document and no network in between.
 type staticKeys struct {
 	id  string
 	key *rsa.PublicKey
@@ -604,7 +551,6 @@ func (s staticKeys) PublicKey(keyID string) (*rsa.PublicKey, bool) {
 	return s.key, true
 }
 
-// signToken mints an access token of the shape auth issues.
 func signToken(
 	t *testing.T,
 	key *rsa.PrivateKey,

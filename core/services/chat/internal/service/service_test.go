@@ -39,8 +39,6 @@ func newHarness(t *testing.T) *harness {
 	return &harness{svc: svc, store: store, events: events}
 }
 
-// recordingEvents stands in for the bus. What matters about it here is how many
-// times it is told something, not what it does with it.
 type recordingEvents struct {
 	mu   sync.Mutex
 	sent []domain.Message
@@ -58,7 +56,6 @@ func (e *recordingEvents) count() int {
 	return len(e.sent)
 }
 
-// openRoom creates a room and returns it with the id of whoever opened it.
 func (h *harness) openRoom(t *testing.T, name string) (domain.Room, uuid.UUID) {
 	t.Helper()
 
@@ -91,8 +88,6 @@ func TestCreateRoomRefusesAnEmptyName(t *testing.T) {
 	}
 }
 
-// The name is not the caller's own input — it comes from auth — so an unusable
-// one costs the name, never the room.
 func TestAnUnusableNameStillOpensTheRoom(t *testing.T) {
 	h := newHarness(t)
 
@@ -117,9 +112,6 @@ func TestAnUnusableNameStillOpensTheRoom(t *testing.T) {
 	}
 }
 
-// A room somebody is not in is indistinguishable from a room that does not
-// exist. Both answers are ErrNotAMember, and the transport renders both the
-// same way — anything else turns a room id into a probe.
 func TestReadingARoomRequiresBelongingToIt(t *testing.T) {
 	h := newHarness(t)
 
@@ -138,7 +130,6 @@ func TestReadingARoomRequiresBelongingToIt(t *testing.T) {
 		t.Errorf("Send = %v, want ErrNotAMember", err)
 	}
 
-	// And a room that genuinely does not exist answers identically.
 	if _, err := h.svc.GetRoom(t.Context(), uuid.New(), stranger); !errors.Is(err, domain.ErrNotAMember) {
 		t.Errorf("GetRoom on a missing room = %v, want ErrNotAMember", err)
 	}
@@ -192,9 +183,6 @@ func TestJoiningARoomThatDoesNotExistIsRefused(t *testing.T) {
 	}
 }
 
-// The check that a socket cannot be trusted to have done once. A connection
-// outlives the membership that justified opening it, and somebody removed from
-// a room mid-conversation has to stop being able to write to it.
 func TestSendingStopsTheMomentMembershipDoes(t *testing.T) {
 	h := newHarness(t)
 
@@ -259,9 +247,6 @@ func TestSendValidatesWhatItIsGiven(t *testing.T) {
 	}
 }
 
-// The service passes the duplicate flag through rather than swallowing it: a
-// resend has to be answered, and the caller above needs to know not to announce
-// the message to the room a second time.
 func TestAResendIsReportedAsOne(t *testing.T) {
 	h := newHarness(t)
 
@@ -290,16 +275,11 @@ func TestAResendIsReportedAsOne(t *testing.T) {
 		t.Errorf("resend produced %s, want the original %s", again.ID, first.ID)
 	}
 
-	// One message was said, so the bus hears about it once. Announcing the
-	// resend would make a flaky connection look like two messages to every
-	// consumer downstream.
 	if n := h.events.count(); n != 1 {
 		t.Errorf("the bus was told %d times about one message", n)
 	}
 }
 
-// The message is announced only once it exists. A send that never reached
-// storage is not an event.
 func TestNothingIsAnnouncedWhenTheSendFails(t *testing.T) {
 	h := newHarness(t)
 
@@ -346,9 +326,6 @@ func TestListRoomsReturnsOnlyTheCallersOwn(t *testing.T) {
 	}
 }
 
-// A store that is down must not look like a room that is missing: one is an
-// outage and the other is the client's mistake, and a client that retries the
-// wrong one wastes everybody's time.
 func TestStoreFailuresDoNotBecomeDomainErrors(t *testing.T) {
 	h := newHarness(t)
 

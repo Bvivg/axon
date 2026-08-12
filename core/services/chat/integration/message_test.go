@@ -14,7 +14,6 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
 )
 
-// say appends a message and fails the test if it cannot.
 func say(t *testing.T, r *repository.Repository, roomID, author uuid.UUID, body, clientID string) domain.Message {
 	t.Helper()
 
@@ -31,9 +30,6 @@ func say(t *testing.T, r *repository.Repository, roomID, author uuid.UUID, body,
 	return m
 }
 
-// Positions start at one and count up within a room, and rooms do not share a
-// counter: a client's cursor is meaningless outside the room it came from, so
-// the numbering has to be the room's own.
 func TestPositionsAreThePerRoomSequence(t *testing.T) {
 	r := newRepo(t)
 
@@ -65,9 +61,6 @@ func TestAppendingToAMissingRoomIsRefused(t *testing.T) {
 	}
 }
 
-// A connection that drops between sending and being acknowledged leaves the
-// sender with no way to know which happened, so it resends. The honest answer
-// is the message it already sent, not a second copy of it.
 func TestAResendReturnsTheMessageItAlreadyWrote(t *testing.T) {
 	r := newRepo(t)
 
@@ -107,9 +100,6 @@ func TestAResendReturnsTheMessageItAlreadyWrote(t *testing.T) {
 	}
 }
 
-// The id is the sender's, so two people using the same one are two messages.
-// Scoping the constraint to the author is what keeps one client's choice of ids
-// from suppressing another's message.
 func TestTheSameClientIDFromTwoPeopleIsTwoMessages(t *testing.T) {
 	r := newRepo(t)
 
@@ -128,9 +118,6 @@ func TestTheSameClientIDFromTwoPeopleIsTwoMessages(t *testing.T) {
 	}
 }
 
-// Messages without a client id are the ones nobody offered one for. They must
-// not collide with each other — which they would under a plain unique index,
-// where every one of them shares the empty string.
 func TestMessagesWithoutAClientIDDoNotCollide(t *testing.T) {
 	r := newRepo(t)
 
@@ -148,17 +135,6 @@ func TestMessagesWithoutAClientIDDoNotCollide(t *testing.T) {
 	}
 }
 
-// The claim the whole cursor design rests on, and the only way to check it is
-// with real concurrent transactions.
-//
-// A shared sequence would hand out positions in an order the commits are free
-// to ignore: two senders take 7 and 8, 8 commits first, and a client that has
-// caught up to 8 never sees 7 — a message lost with no error anywhere. Taking
-// the position from the room's own row holds a lock until commit, so a later
-// position cannot become visible before an earlier one.
-//
-// What that means for the finished set is that it is exactly 1..N with nothing
-// missing, which is what this asserts.
 func TestConcurrentSendersLeaveNoGap(t *testing.T) {
 	r := newRepo(t)
 
@@ -209,9 +185,6 @@ func TestConcurrentSendersLeaveNoGap(t *testing.T) {
 	}
 }
 
-// Paging back through history and catching up after a reconnect are the same
-// read in opposite directions, and both hand back the same order: a client
-// appending to a transcript should not have to know which one produced a page.
 func TestPagingReadsBothWaysInOneOrder(t *testing.T) {
 	r := newRepo(t)
 
@@ -220,8 +193,6 @@ func TestPagingReadsBothWaysInOneOrder(t *testing.T) {
 		say(t, r, room.ID, owner, fmt.Sprintf("message %d", i), "")
 	}
 
-	// The most recent page: the newest four, oldest first, and there is more
-	// behind them.
 	page, more, err := r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 4})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
@@ -233,7 +204,6 @@ func TestPagingReadsBothWaysInOneOrder(t *testing.T) {
 		t.Errorf("the most recent page = %v, want the last four in order", got)
 	}
 
-	// Back one page further.
 	page, more, err = r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 4, BeforeSeq: 7})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
@@ -245,7 +215,6 @@ func TestPagingReadsBothWaysInOneOrder(t *testing.T) {
 		t.Errorf("the page before 7 = %v, want 3..6", got)
 	}
 
-	// And the reconnect: everything after where the client left off.
 	page, more, err = r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 4, AfterSeq: 8})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)

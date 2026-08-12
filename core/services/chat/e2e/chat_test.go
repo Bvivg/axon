@@ -12,11 +12,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 )
 
-// The scenario the whole stage exists for: two people, one room, and a message
-// that crosses from one browser to the other with nobody polling for it.
-//
-// Every hop here is the real one — gateway, socket, Postgres, Redis — which is
-// what makes this worth the minutes it costs to run.
 func TestAMessageReachesTheOtherPerson(t *testing.T) {
 	alice, bob := newUser(t), newUser(t)
 
@@ -46,15 +41,12 @@ func TestAMessageReachesTheOtherPerson(t *testing.T) {
 	if got.Message.AuthorID != alice.id {
 		t.Errorf("attributed to %s, want %s", got.Message.AuthorID, alice.id)
 	}
-	// One client's id for a message is its own bookkeeping and stays with it.
+
 	if got.Message.ClientID != "" {
 		t.Errorf("bob received alice's client id %q", got.Message.ClientID)
 	}
 }
 
-// What was said on the socket is what history holds. The two are different
-// paths through the service, and a client that reloads the page has to see the
-// same conversation it was just watching.
 func TestWhatWasSaidOnTheSocketIsInTheHistory(t *testing.T) {
 	alice := newUser(t)
 
@@ -91,9 +83,6 @@ func TestWhatWasSaidOnTheSocketIsInTheHistory(t *testing.T) {
 	}
 }
 
-// The reconnect promise: a connection that drops loses nothing. The client
-// comes back with the position it had and is given the gap, in order, before
-// live delivery resumes.
 func TestAReconnectLosesNothing(t *testing.T) {
 	alice, bob := newUser(t), newUser(t)
 
@@ -112,7 +101,6 @@ func TestAReconnectLosesNothing(t *testing.T) {
 
 	seen := bs.expect(typeMessage).Message.Seq
 
-	// Bob's connection dies mid-conversation, and alice keeps talking.
 	if err := bs.conn.CloseNow(); err != nil {
 		t.Fatalf("drop bob's connection: %v", err)
 	}
@@ -124,7 +112,6 @@ func TestAReconnectLosesNothing(t *testing.T) {
 		as.expect(typeMessage)
 	}
 
-	// Back, holding the position from before the drop.
 	reconnected := bob.connect(t)
 	if current := reconnected.subscribe(room.GetId(), seen); current != seen+int64(len(missed)) {
 		t.Errorf("the room reports position %d, want %d", current, seen+int64(len(missed)))
@@ -136,7 +123,6 @@ func TestAReconnectLosesNothing(t *testing.T) {
 		}
 	}
 
-	// And live delivery continues, with nothing repeated.
 	as.send(inbound{Type: typeSend, RoomID: room.GetId(), Body: "after the return"})
 	as.expect(typeAck)
 
@@ -145,8 +131,6 @@ func TestAReconnectLosesNothing(t *testing.T) {
 	}
 }
 
-// Membership is decided by the service that owns the room, on every frame,
-// whatever the gateway already let through.
 func TestAStrangerIsRefused(t *testing.T) {
 	alice, stranger := newUser(t), newUser(t)
 
@@ -164,8 +148,6 @@ func TestAStrangerIsRefused(t *testing.T) {
 		t.Errorf("send refused with %q, want %q", refusal.Code, errorNotAMember)
 	}
 
-	// The contract answers the same way, so neither path is a way around the
-	// other.
 	_, err := stranger.chat.ListMessages(context.Background(),
 		connect.NewRequest(&chatv1.ListMessagesRequest{RoomId: room.GetId()}))
 	if err == nil {
@@ -176,8 +158,6 @@ func TestAStrangerIsRefused(t *testing.T) {
 	}
 }
 
-// The socket is a credentialed connection, and the gateway checks the
-// credential before anything internal is dialled.
 func TestASocketWithoutATokenIsRefused(t *testing.T) {
 	_, err := ws.Dial(context.Background(), gatewaySocketURL, ws.DialOptions{
 		Subprotocols: []string{subprotocol},
@@ -187,8 +167,6 @@ func TestASocketWithoutATokenIsRefused(t *testing.T) {
 	}
 }
 
-// A resend after a dropped connection is answered with the message that is
-// already there, and the room is not shown it twice.
 func TestAResendIsNotASecondMessage(t *testing.T) {
 	alice, bob := newUser(t), newUser(t)
 
@@ -211,8 +189,6 @@ func TestAResendIsNotASecondMessage(t *testing.T) {
 		t.Errorf("the resend was acknowledged at %d, want the original %d", again.Seq, first.Seq)
 	}
 
-	// Something else has to arrive for a repeat to be observable rather than
-	// merely not yet observed.
 	as.send(inbound{Type: typeSend, RoomID: room.GetId(), Body: "twice"})
 	as.expect(typeAck)
 

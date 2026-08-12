@@ -22,12 +22,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 )
 
-// The frame vocabulary, repeated here rather than imported.
-//
-// The chat service's ws package is internal, and that is the point: this suite
-// is a client, and a client only has what the protocol documents. Importing the
-// server's own constants would let a rename pass unnoticed on both sides at
-// once.
 const (
 	subprotocol  = "axon.chat.v1"
 	bearerPrefix = "axon.bearer."
@@ -70,12 +64,8 @@ type outbound struct {
 	} `json:"message,omitempty"`
 }
 
-// nextCaller hands out a distinct forged address per caller: every request in a
-// run leaves the same container, so without it the first scenario to exhaust a
-// rate-limit budget would fail all the others.
 var nextCaller atomic.Uint32
 
-// user is one signed-in person with clients for both halves of the API.
 type user struct {
 	id     string
 	email  string
@@ -86,13 +76,11 @@ type user struct {
 
 const testPassword = "correct-horse-battery-staple"
 
-// newUser registers an account through the gateway and returns a client for it.
 func newUser(t *testing.T) *user {
 	t.Helper()
 
 	n := nextCaller.Add(1)
-	// 10.0.0.0/8 is private and unroutable: an address that escaped into a log
-	// is obviously synthetic.
+
 	addr := fmt.Sprintf("10.%d.%d.%d", (n>>16)&0xff, (n>>8)&0xff, n&0xff)
 
 	httpClient := &http.Client{Transport: forwardedFor{addr: addr}}
@@ -122,7 +110,6 @@ func newUser(t *testing.T) *user {
 	}
 }
 
-// forwardedFor stamps the caller's address on every request.
 type forwardedFor struct{ addr string }
 
 func (f forwardedFor) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -131,7 +118,6 @@ func (f forwardedFor) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
-// bearer adds the access token as well.
 type bearer struct {
 	token string
 	addr  string
@@ -144,7 +130,6 @@ func (b bearer) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
-// createRoom opens a room through the contract.
 func (u *user) createRoom(t *testing.T, name string) *chatv1.Room {
 	t.Helper()
 
@@ -157,7 +142,6 @@ func (u *user) createRoom(t *testing.T, name string) *chatv1.Room {
 	return created.Msg.GetRoom()
 }
 
-// joinRoom puts the user in a room.
 func (u *user) joinRoom(t *testing.T, roomID string) {
 	t.Helper()
 
@@ -168,15 +152,11 @@ func (u *user) joinRoom(t *testing.T, roomID string) {
 	}
 }
 
-// socket is one open connection to the gateway.
 type socket struct {
 	conn *ws.Conn
 	t    *testing.T
 }
 
-// connect opens the chat socket the way a browser does: through the gateway,
-// with the token offered as a subprotocol because a page cannot set a header on
-// an upgrade.
 func (u *user) connect(t *testing.T) *socket {
 	t.Helper()
 
@@ -208,7 +188,6 @@ func (s *socket) send(frame inbound) {
 	}
 }
 
-// read waits for the next frame.
 func (s *socket) read() outbound {
 	s.t.Helper()
 
@@ -227,7 +206,6 @@ func (s *socket) read() outbound {
 	return out
 }
 
-// expect waits for a frame of the given type.
 func (s *socket) expect(want string) outbound {
 	s.t.Helper()
 
@@ -238,7 +216,6 @@ func (s *socket) expect(want string) outbound {
 	return out
 }
 
-// subscribe joins the room's delivery and returns where the room has got to.
 func (s *socket) subscribe(roomID string, since int64) int64 {
 	s.t.Helper()
 

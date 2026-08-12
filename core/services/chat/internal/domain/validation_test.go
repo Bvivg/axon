@@ -42,10 +42,6 @@ func TestValidateRoomName(t *testing.T) {
 	}
 }
 
-// The bound here is also a CHECK constraint on the messages table. If the two
-// ever disagree, this is the side that should refuse first — a row the database
-// rejects surfaces as an internal error rather than as a message somebody can
-// shorten.
 func TestValidateMessageBody(t *testing.T) {
 	long := strings.Repeat("м", domain.MaxMessageLength)
 
@@ -80,8 +76,6 @@ func TestValidateMessageBody(t *testing.T) {
 	}
 }
 
-// An absent client id is allowed: it costs the sender the delivery echo and the
-// protection against a resend landing twice, and nothing else.
 func TestValidateClientID(t *testing.T) {
 	for name, tc := range map[string]struct {
 		in      string
@@ -111,8 +105,6 @@ func TestValidateClientID(t *testing.T) {
 	}
 }
 
-// The name comes from auth, not from the caller, so nothing about it may fail a
-// request. Every unusable value has to resolve to something storable.
 func TestValidateDisplayNameNeverFails(t *testing.T) {
 	for name, tc := range map[string]struct {
 		in   string
@@ -155,8 +147,7 @@ func TestValidatePage(t *testing.T) {
 			in:   domain.Page{Limit: 10, AfterSeq: 40},
 			want: domain.Page{Limit: 10, AfterSeq: 40},
 		},
-		// Bounded in both directions describes no page anyone could return, so
-		// it is refused rather than silently resolved one way.
+
 		"both cursors":    {in: domain.Page{BeforeSeq: 10, AfterSeq: 2}, wantErr: true},
 		"negative cursor": {in: domain.Page{AfterSeq: -1}, wantErr: true},
 	} {
@@ -178,8 +169,6 @@ func TestValidatePage(t *testing.T) {
 	}
 }
 
-// The most recent page is the first step of paging backwards, so it reads the
-// same direction as an explicit BeforeSeq.
 func TestPageDirection(t *testing.T) {
 	for name, tc := range map[string]struct {
 		page domain.Page
