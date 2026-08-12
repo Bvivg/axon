@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
@@ -62,6 +63,7 @@ func (h *Handler) Register(
 		Email:       msg.GetEmail(),
 		Password:    msg.GetPassword(),
 		DisplayName: msg.GetDisplayName(),
+		Device:      deviceFrom(req.Header()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
@@ -80,6 +82,7 @@ func (h *Handler) Login(
 	res, err := h.svc.Login(ctx, service.LoginInput{
 		Email:    req.Msg.GetEmail(),
 		Password: req.Msg.GetPassword(),
+		Device:   deviceFrom(req.Header()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
@@ -95,7 +98,7 @@ func (h *Handler) RefreshToken(
 	ctx context.Context,
 	req *connect.Request[authv1.RefreshTokenRequest],
 ) (*connect.Response[authv1.RefreshTokenResponse], error) {
-	res, err := h.svc.Refresh(ctx, req.Msg.GetRefreshToken())
+	res, err := h.svc.Refresh(ctx, req.Msg.GetRefreshToken(), deviceFrom(req.Header()))
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
@@ -166,6 +169,7 @@ func (h *Handler) CompleteOAuth(
 		Code:        req.Msg.GetCode(),
 		State:       req.Msg.GetState(),
 		DisplayName: req.Msg.GetDisplayName(),
+		Device:      deviceFrom(req.Header()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
@@ -176,6 +180,78 @@ func (h *Handler) CompleteOAuth(
 		Tokens:  toProtoTokens(completed.Tokens, h.now()),
 		Created: completed.Created,
 	}), nil
+}
+
+func (h *Handler) UpdateProfile(
+	ctx context.Context,
+	req *connect.Request[authv1.UpdateProfileRequest],
+) (*connect.Response[authv1.UpdateProfileResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	user, err := h.svc.UpdateProfile(ctx, claims.UserID, domain.ProfilePatch{
+		Email:     req.Msg.Email,
+		FirstName: req.Msg.FirstName,
+		LastName:  req.Msg.LastName,
+		Nickname:  req.Msg.Nickname,
+	})
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.UpdateProfileResponse{User: toProtoUser(user)}), nil
+}
+
+func (h *Handler) ListSessions(
+	ctx context.Context,
+	req *connect.Request[authv1.ListSessionsRequest],
+) (*connect.Response[authv1.ListSessionsResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	sessions, err := h.svc.ListSessions(ctx, claims.UserID, claims.FamilyID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	out := make([]*authv1.Session, len(sessions))
+	for i, s := range sessions {
+		out[i] = toProtoSession(s)
+	}
+
+	return connect.NewResponse(&authv1.ListSessionsResponse{Sessions: out}), nil
+}
+
+func (h *Handler) RevokeSession(
+	ctx context.Context,
+	req *connect.Request[authv1.RevokeSessionRequest],
+) (*connect.Response[authv1.RevokeSessionResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	sessionID, err := uuid.Parse(req.Msg.GetSessionId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, domain.ErrSessionNotFound)
+	}
+
+	if err := h.svc.RevokeSession(ctx, claims.UserID, sessionID); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.RevokeSessionResponse{}), nil
+}
+
+func deviceFrom(headers http.Header) domain.Device {
+	return domain.Device{
+		UserAgent: headers.Get("User-Agent"),
+		IP:        headers.Get(authn.ClientIPHeader),
+	}
 }
 
 func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {

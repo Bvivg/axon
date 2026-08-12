@@ -11,7 +11,7 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/token"
 )
 
-func (s *Service) Refresh(ctx context.Context, presented string) (Result, error) {
+func (s *Service) Refresh(ctx context.Context, presented string, device domain.Device) (Result, error) {
 	if presented == "" {
 
 		return Result{}, domain.ErrRefreshTokenInvalid
@@ -50,6 +50,8 @@ func (s *Service) Refresh(ctx context.Context, presented string) (Result, error)
 		FamilyID:  stored.FamilyID,
 		TokenHash: next.Hash,
 		ExpiresAt: now.Add(s.refreshTTL),
+		UserAgent: device.UserAgent,
+		IP:        device.IP,
 	}
 
 	won, err := s.store.RotateRefreshToken(ctx, stored.ID, successor, now)
@@ -67,7 +69,7 @@ func (s *Service) Refresh(ctx context.Context, presented string) (Result, error)
 		return Result{}, err
 	}
 
-	access, expiresAt, err := s.issuer.Issue(user.ID, user.Email)
+	access, expiresAt, err := s.issuer.Issue(user.ID, user.Email, stored.FamilyID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -143,7 +145,9 @@ func (s *Service) LogoutEverywhere(ctx context.Context, userID uuid.UUID) error 
 	return nil
 }
 
-func (s *Service) issueTokens(ctx context.Context, user domain.User, familyID uuid.UUID) (domain.TokenPair, error) {
+func (s *Service) issueTokens(
+	ctx context.Context, user domain.User, familyID uuid.UUID, device domain.Device,
+) (domain.TokenPair, error) {
 	refresh, err := token.New()
 	if err != nil {
 		return domain.TokenPair{}, fmt.Errorf("service: generate refresh token: %w", err)
@@ -157,12 +161,14 @@ func (s *Service) issueTokens(ctx context.Context, user domain.User, familyID uu
 		FamilyID:  familyID,
 		TokenHash: refresh.Hash,
 		ExpiresAt: now.Add(s.refreshTTL),
+		UserAgent: device.UserAgent,
+		IP:        device.IP,
 	})
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
 
-	access, expiresAt, err := s.issuer.Issue(user.ID, user.Email)
+	access, expiresAt, err := s.issuer.Issue(user.ID, user.Email, familyID)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}

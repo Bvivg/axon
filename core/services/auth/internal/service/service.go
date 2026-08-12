@@ -20,7 +20,8 @@ type Store interface {
 
 	UserByEmail(ctx context.Context, email string) (domain.User, error)
 	UserByID(ctx context.Context, id uuid.UUID) (domain.User, error)
-	UpdateUserProfile(ctx context.Context, id uuid.UUID, displayName, avatarURL string) (domain.User, error)
+	UpdateProfile(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate) (domain.User, error)
+	SetAvatar(ctx context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error)
 
 	SetCredential(ctx context.Context, userID uuid.UUID, passwordHash string) error
 	CredentialByUserID(ctx context.Context, userID uuid.UUID) (domain.Credential, error)
@@ -29,7 +30,9 @@ type Store interface {
 	RefreshTokenByHash(ctx context.Context, hash string) (domain.RefreshToken, error)
 	RotateRefreshToken(ctx context.Context, spentID uuid.UUID, next domain.RefreshToken, at time.Time) (bool, error)
 	RevokeFamily(ctx context.Context, familyID uuid.UUID, at time.Time) (int64, error)
+	RevokeFamilyForUser(ctx context.Context, userID, familyID uuid.UUID, at time.Time) (int64, error)
 	RevokeAllForUser(ctx context.Context, userID uuid.UUID, at time.Time) (int64, error)
+	Sessions(ctx context.Context, userID uuid.UUID, at time.Time) ([]domain.Session, error)
 
 	OauthAccountByProviderID(ctx context.Context, p domain.Provider, providerUserID string) (domain.OauthAccount, error)
 	LinkOauthAccount(ctx context.Context, a domain.OauthAccount) error

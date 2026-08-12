@@ -8,6 +8,8 @@ import (
 
 const Header = "Authorization"
 
+const ClientIPHeader = "X-Axon-Client-Ip"
+
 const bearerPrefix = "bearer "
 
 type ctxKey struct{}

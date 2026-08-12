@@ -10,14 +10,15 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-const refreshColumns = `id, user_id, family_id, token_hash, issued_at, expires_at, used_at, revoked_at`
+const refreshColumns = `id, user_id, family_id, token_hash, issued_at, expires_at, used_at, revoked_at, user_agent, ip`
 
 func (r *Repository) CreateRefreshToken(ctx context.Context, t domain.RefreshToken) error {
 	const query = `
-		INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, expires_at)
-		VALUES ($1, $2, $3, $4, $5)`
+		INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, expires_at, user_agent, ip)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, err := r.q.Exec(ctx, query, t.ID, t.UserID, t.FamilyID, t.TokenHash, t.ExpiresAt)
+	_, err := r.q.Exec(ctx, query,
+		t.ID, t.UserID, t.FamilyID, t.TokenHash, t.ExpiresAt, t.UserAgent, t.IP)
 	if err != nil {
 		return fmt.Errorf("repository: create refresh token: %w", err)
 	}
@@ -63,6 +64,19 @@ func (r *Repository) RevokeFamily(ctx context.Context, familyID uuid.UUID, at ti
 	return tag.RowsAffected(), nil
 }
 
+func (r *Repository) RevokeFamilyForUser(ctx context.Context, userID, familyID uuid.UUID, at time.Time) (int64, error) {
+	const query = `
+		UPDATE refresh_tokens
+		SET revoked_at = $3
+		WHERE family_id = $2 AND user_id = $1 AND revoked_at IS NULL`
+
+	tag, err := r.q.Exec(ctx, query, userID, familyID, at)
+	if err != nil {
+		return 0, fmt.Errorf("repository: revoke refresh token family for user: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *Repository) RevokeAllForUser(ctx context.Context, userID uuid.UUID, at time.Time) (int64, error) {
 	const query = `
 		UPDATE refresh_tokens
@@ -74,6 +88,38 @@ func (r *Repository) RevokeAllForUser(ctx context.Context, userID uuid.UUID, at 
 		return 0, fmt.Errorf("repository: revoke user refresh tokens: %w", err)
 	}
 	return tag.RowsAffected(), nil
+}
+
+func (r *Repository) Sessions(ctx context.Context, userID uuid.UUID, at time.Time) ([]domain.Session, error) {
+	const query = `
+		SELECT DISTINCT ON (family_id)
+			family_id,
+			user_agent,
+			ip,
+			issued_at,
+			MIN(issued_at) OVER (PARTITION BY family_id)
+		FROM refresh_tokens
+		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
+		ORDER BY family_id, issued_at DESC`
+
+	rows, err := r.q.Query(ctx, query, userID, at)
+	if err != nil {
+		return nil, fmt.Errorf("repository: sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []domain.Session
+	for rows.Next() {
+		var s domain.Session
+		if err := rows.Scan(&s.FamilyID, &s.UserAgent, &s.IP, &s.LastUsedAt, &s.StartedAt); err != nil {
+			return nil, fmt.Errorf("repository: scan session: %w", err)
+		}
+		sessions = append(sessions, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: sessions: %w", err)
+	}
+	return sessions, nil
 }
 
 func (r *Repository) DeleteExpiredRefreshTokens(ctx context.Context, cutoff time.Time) (int64, error) {

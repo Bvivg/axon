@@ -52,15 +52,19 @@ func ValidatePassword(password string) error {
 }
 
 func ValidateDisplayName(name string) (string, error) {
-	trimmed := strings.TrimSpace(name)
+	return ValidateNameField("display_name", name)
+}
+
+func ValidateNameField(field, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return "", nil
 	}
 	if utf8.RuneCountInString(trimmed) > MaxDisplayNameLength {
-		return "", newValidationError("display_name", "is too long")
+		return "", newValidationError(field, "is too long")
 	}
 	if !utf8.ValidString(trimmed) {
-		return "", newValidationError("display_name", "is not valid UTF-8")
+		return "", newValidationError(field, "is not valid UTF-8")
 	}
 	return trimmed, nil
 }

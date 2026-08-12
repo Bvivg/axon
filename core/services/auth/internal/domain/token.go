@@ -13,6 +13,9 @@ type RefreshToken struct {
 
 	TokenHash string
 
+	UserAgent string
+	IP        string
+
 	IssuedAt  time.Time
 	ExpiresAt time.Time
 

@@ -68,6 +68,8 @@ type CompleteOAuthInput struct {
 	State    string
 
 	DisplayName string
+
+	Device domain.Device
 }
 
 func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (CompleteOAuthResult, error) {
@@ -112,7 +114,7 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		return CompleteOAuthResult{}, err
 	}
 
-	tokens, err := s.issueTokens(ctx, user, uuid.New())
+	tokens, err := s.issueTokens(ctx, user, uuid.New(), in.Device)
 	if err != nil {
 		return CompleteOAuthResult{}, err
 	}

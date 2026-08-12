@@ -26,6 +26,8 @@ var (
 	ErrOauthIdentityClaimed = errors.New("auth: this provider account is already linked to another user")
 
 	ErrOauthReturnToNotAllowed = errors.New("auth: return_to is not an allowed destination")
+
+	ErrSessionNotFound = errors.New("auth: session not found")
 )
 
 type ValidationError struct {

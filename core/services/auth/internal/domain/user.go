@@ -14,8 +14,30 @@ type User struct {
 	DisplayName string
 	AvatarURL   string
 
+	FirstName string
+	LastName  string
+	Nickname  string
+
+	AvatarIsCustom bool
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type ProfilePatch struct {
+	Email     *string
+	FirstName *string
+	LastName  *string
+	Nickname  *string
+}
+
+type ProfileUpdate struct {
+	Email         string
+	EmailVerified bool
+	FirstName     string
+	LastName      string
+	Nickname      string
+	DisplayName   string
 }
 
 type Credential struct {

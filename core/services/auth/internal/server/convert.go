@@ -26,8 +26,28 @@ func toProtoUser(u domain.User) *authv1.User {
 	if u.AvatarURL != "" {
 		out.AvatarUrl = &u.AvatarURL
 	}
+	if u.FirstName != "" {
+		out.FirstName = &u.FirstName
+	}
+	if u.LastName != "" {
+		out.LastName = &u.LastName
+	}
+	if u.Nickname != "" {
+		out.Nickname = &u.Nickname
+	}
 
 	return out
+}
+
+func toProtoSession(s domain.Session) *authv1.Session {
+	return &authv1.Session{
+		Id:         s.FamilyID.String(),
+		UserAgent:  s.UserAgent,
+		Ip:         s.IP,
+		StartedAt:  timestamppb.New(s.StartedAt),
+		LastUsedAt: timestamppb.New(s.LastUsedAt),
+		Current:    s.Current,
+	}
 }
 
 func toProtoTokens(pair domain.TokenPair, now time.Time) *authv1.TokenPair {

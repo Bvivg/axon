@@ -56,13 +56,14 @@ func NewIssuer(cfg IssuerConfig) (*Issuer, error) {
 
 func (i *Issuer) TTL() time.Duration { return i.ttl }
 
-func (i *Issuer) Issue(userID uuid.UUID, email string) (string, time.Time, error) {
+func (i *Issuer) Issue(userID uuid.UUID, email string, familyID uuid.UUID) (string, time.Time, error) {
 	now := i.now().UTC()
 	expiresAt := now.Add(i.ttl)
 
 	claims := jwt.MapClaims{
 		"sub":   userID.String(),
 		"jti":   uuid.NewString(),
+		"fid":   familyID.String(),
 		"iss":   i.issuer,
 		"aud":   i.audience,
 		"iat":   now.Unix(),

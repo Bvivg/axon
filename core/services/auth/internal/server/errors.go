@@ -73,6 +73,9 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 		return connect.NewError(connect.CodeInvalidArgument,
 			errors.New("return_to is not an allowed destination"))
 
+	case errors.Is(err, domain.ErrSessionNotFound):
+		return connect.NewError(connect.CodeNotFound, errors.New("session not found"))
+
 	case errors.Is(err, context.Canceled):
 		return connect.NewError(connect.CodeCanceled, errors.New("request canceled"))
 

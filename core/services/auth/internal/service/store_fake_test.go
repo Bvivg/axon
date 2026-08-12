@@ -124,11 +124,11 @@ func (s *fakeStore) UserByID(_ context.Context, id uuid.UUID) (domain.User, erro
 	return u, nil
 }
 
-func (s *fakeStore) UpdateUserProfile(_ context.Context, id uuid.UUID, displayName, avatarURL string) (domain.User, error) {
+func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.ProfileUpdate) (domain.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.fail("UpdateUserProfile"); err != nil {
+	if err := s.fail("UpdateProfile"); err != nil {
 		return domain.User{}, err
 	}
 
@@ -137,11 +137,34 @@ func (s *fakeStore) UpdateUserProfile(_ context.Context, id uuid.UUID, displayNa
 		return domain.User{}, domain.ErrUserNotFound
 	}
 
-	if u.DisplayName == "" {
-		u.DisplayName = displayName
+	u.Email = in.Email
+	u.EmailVerified = in.EmailVerified
+	u.FirstName = in.FirstName
+	u.LastName = in.LastName
+	u.Nickname = in.Nickname
+	u.DisplayName = in.DisplayName
+	u.UpdatedAt = time.Now().UTC()
+	s.users[id] = u
+
+	return u, nil
+}
+
+func (s *fakeStore) SetAvatar(_ context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("SetAvatar"); err != nil {
+		return domain.User{}, err
 	}
-	if u.AvatarURL == "" {
+
+	u, ok := s.users[id]
+	if !ok {
+		return domain.User{}, domain.ErrUserNotFound
+	}
+
+	if custom || !u.AvatarIsCustom {
 		u.AvatarURL = avatarURL
+		u.AvatarIsCustom = custom
 	}
 	u.UpdatedAt = time.Now().UTC()
 	s.users[id] = u
@@ -257,6 +280,74 @@ func (s *fakeStore) RevokeFamily(_ context.Context, familyID uuid.UUID, at time.
 		}
 	}
 	return n, nil
+}
+
+func (s *fakeStore) RevokeFamilyForUser(_ context.Context, userID, familyID uuid.UUID, at time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("RevokeFamilyForUser"); err != nil {
+		return 0, err
+	}
+
+	var n int64
+	for id, t := range s.tokens {
+		if t.UserID == userID && t.FamilyID == familyID && !t.Revoked() {
+			t.RevokedAt = at
+			s.tokens[id] = t
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (s *fakeStore) Sessions(_ context.Context, userID uuid.UUID, at time.Time) ([]domain.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("Sessions"); err != nil {
+		return nil, err
+	}
+
+	type acc struct {
+		startedAt             time.Time
+		lastUsedAt            time.Time
+		lastUserAgent, lastIP string
+	}
+	byFamily := make(map[uuid.UUID]acc)
+
+	for _, t := range s.tokens {
+		if t.UserID != userID || t.Revoked() || !t.ExpiresAt.After(at) {
+			continue
+		}
+		a, ok := byFamily[t.FamilyID]
+		if !ok {
+			a.startedAt = t.IssuedAt
+			a.lastUsedAt = t.IssuedAt
+			a.lastUserAgent, a.lastIP = t.UserAgent, t.IP
+		} else {
+			if t.IssuedAt.Before(a.startedAt) {
+				a.startedAt = t.IssuedAt
+			}
+			if !t.IssuedAt.Before(a.lastUsedAt) {
+				a.lastUsedAt = t.IssuedAt
+				a.lastUserAgent, a.lastIP = t.UserAgent, t.IP
+			}
+		}
+		byFamily[t.FamilyID] = a
+	}
+
+	out := make([]domain.Session, 0, len(byFamily))
+	for familyID, a := range byFamily {
+		out = append(out, domain.Session{
+			FamilyID:   familyID,
+			UserAgent:  a.lastUserAgent,
+			IP:         a.lastIP,
+			StartedAt:  a.startedAt,
+			LastUsedAt: a.lastUsedAt,
+		})
+	}
+	return out, nil
 }
 
 func (s *fakeStore) RevokeAllForUser(_ context.Context, userID uuid.UUID, at time.Time) (int64, error) {

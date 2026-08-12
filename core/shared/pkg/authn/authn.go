@@ -20,6 +20,8 @@ type Claims struct {
 
 	Email string
 
+	FamilyID uuid.UUID
+
 	IssuedAt  time.Time
 	ExpiresAt time.Time
 }
@@ -136,10 +138,12 @@ func (v *Verifier) claims(token *jwt.Token) (Claims, error) {
 	}
 
 	tokenID, _ := uuid.Parse(stringClaim(mapClaims, "jti"))
+	familyID, _ := uuid.Parse(stringClaim(mapClaims, "fid"))
 
 	claims := Claims{
 		UserID:    userID,
 		TokenID:   tokenID,
+		FamilyID:  familyID,
 		Email:     stringClaim(mapClaims, "email"),
 		ExpiresAt: expiresAt.Time,
 	}

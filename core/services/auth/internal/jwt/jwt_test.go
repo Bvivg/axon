@@ -81,7 +81,7 @@ func TestIssuedTokensVerify(t *testing.T) {
 
 	userID := uuid.New()
 
-	raw, expiresAt, err := iss.Issue(userID, "bob@example.com")
+	raw, expiresAt, err := iss.Issue(userID, "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -112,11 +112,11 @@ func TestEachTokenHasItsOwnID(t *testing.T) {
 
 	userID := uuid.New()
 
-	first, _, err := iss.Issue(userID, "bob@example.com")
+	first, _, err := iss.Issue(userID, "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	second, _, err := iss.Issue(userID, "bob@example.com")
+	second, _, err := iss.Issue(userID, "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestEachTokenHasItsOwnID(t *testing.T) {
 func TestTokenNamesItsKey(t *testing.T) {
 	iss := issuer(t, keySet(t))
 
-	raw, _, err := iss.Issue(uuid.New(), "bob@example.com")
+	raw, _, err := iss.Issue(uuid.New(), "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestTokenFromARetiredKeyStillVerifies(t *testing.T) {
 		t.Fatalf("NewKeySet: %v", err)
 	}
 
-	raw, _, err := issuer(t, before).Issue(uuid.New(), "bob@example.com")
+	raw, _, err := issuer(t, before).Issue(uuid.New(), "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestJWKSRoundTripsThroughTheSharedParser(t *testing.T) {
 		t.Fatalf("parsed %d keys, want 2", len(parsed))
 	}
 
-	raw, _, err := issuer(t, set).Issue(uuid.New(), "bob@example.com")
+	raw, _, err := issuer(t, set).Issue(uuid.New(), "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}

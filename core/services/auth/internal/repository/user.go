@@ -9,7 +9,8 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-const userColumns = `id, email, email_verified, display_name, avatar_url, created_at, updated_at`
+const userColumns = `id, email, email_verified, display_name, avatar_url, ` +
+	`first_name, last_name, nickname, avatar_is_custom, created_at, updated_at`
 
 func (r *Repository) CreateUser(ctx context.Context, u domain.User) (domain.User, error) {
 	const query = `
@@ -55,23 +56,55 @@ func (r *Repository) UserByID(ctx context.Context, id uuid.UUID) (domain.User, e
 	return u, nil
 }
 
-func (r *Repository) UpdateUserProfile(ctx context.Context, id uuid.UUID, displayName, avatarURL string) (domain.User, error) {
+func (r *Repository) UpdateProfile(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate) (domain.User, error) {
 	const query = `
 		UPDATE users
-		SET display_name = CASE WHEN display_name = '' THEN $2 ELSE display_name END,
-		    avatar_url   = CASE WHEN avatar_url = ''   THEN $3 ELSE avatar_url   END,
-		    updated_at   = now()
+		SET email          = $2,
+		    email_verified = $3,
+		    first_name     = $4,
+		    last_name      = $5,
+		    nickname       = $6,
+		    display_name   = $7,
+		    updated_at     = now()
 		WHERE id = $1
 		RETURNING ` + userColumns
 
-	u, err := scanUser(r.q.QueryRow(ctx, query, id, displayName, avatarURL))
+	row := r.q.QueryRow(ctx, query,
+		id, u.Email, u.EmailVerified, u.FirstName, u.LastName, u.Nickname, u.DisplayName)
+
+	updated, err := scanUser(row)
 	if err != nil {
 		if noRows(err) {
 			return domain.User{}, domain.ErrUserNotFound
 		}
-		return domain.User{}, fmt.Errorf("repository: update user profile: %w", err)
+		if isUniqueViolation(err, "users_email_key") {
+			return domain.User{}, domain.ErrEmailTaken
+		}
+		return domain.User{}, fmt.Errorf("repository: update profile: %w", err)
 	}
-	return u, nil
+	return updated, nil
+}
+
+func (r *Repository) SetAvatar(ctx context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error) {
+	const query = `
+		UPDATE users
+		SET avatar_url       = $2,
+		    avatar_is_custom = $3,
+		    updated_at       = now()
+		WHERE id = $1 AND ($3 = true OR avatar_is_custom = false)
+		RETURNING ` + userColumns
+
+	row := r.q.QueryRow(ctx, query, id, avatarURL, custom)
+
+	updated, err := scanUser(row)
+	if err != nil {
+		if noRows(err) {
+
+			return domain.User{}, domain.ErrUserNotFound
+		}
+		return domain.User{}, fmt.Errorf("repository: set avatar: %w", err)
+	}
+	return updated, nil
 }
 
 func (r *Repository) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
@@ -127,6 +160,10 @@ func scanUser(row scanRow) (domain.User, error) {
 		&u.EmailVerified,
 		&u.DisplayName,
 		&u.AvatarURL,
+		&u.FirstName,
+		&u.LastName,
+		&u.Nickname,
+		&u.AvatarIsCustom,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	)

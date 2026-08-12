@@ -14,6 +14,7 @@ type RegisterInput struct {
 	Email       string
 	Password    string
 	DisplayName string
+	Device      domain.Device
 }
 
 type Result struct {
@@ -49,7 +50,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 		return Result{}, err
 	}
 
-	tokens, err := s.issueTokens(ctx, user, uuid.New())
+	tokens, err := s.issueTokens(ctx, user, uuid.New(), in.Device)
 	if err != nil {
 		return Result{}, err
 	}
@@ -62,6 +63,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 type LoginInput struct {
 	Email    string
 	Password string
+	Device   domain.Device
 }
 
 func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
@@ -102,7 +104,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 
 	s.rehashIfNeeded(ctx, user.ID, in.Password, credential.PasswordHash)
 
-	tokens, err := s.issueTokens(ctx, user, uuid.New())
+	tokens, err := s.issueTokens(ctx, user, uuid.New(), in.Device)
 	if err != nil {
 		return Result{}, err
 	}

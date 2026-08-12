@@ -15,7 +15,7 @@ func TestRefreshRotatesTheToken(t *testing.T) {
 
 	registered := h.register(t, "bob@example.com", validPassword)
 
-	refreshed, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken)
+	refreshed, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken, domain.Device{})
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestRefreshChainWorksRepeatedly(t *testing.T) {
 	current := h.register(t, "bob@example.com", validPassword).Tokens.RefreshToken
 
 	for i := range 5 {
-		next, err := h.svc.Refresh(context.Background(), current)
+		next, err := h.svc.Refresh(context.Background(), current, domain.Device{})
 		if err != nil {
 			t.Fatalf("refresh %d: %v", i, err)
 		}
@@ -65,17 +65,17 @@ func TestReusedTokenRevokesTheWholeFamily(t *testing.T) {
 	registered := h.register(t, "bob@example.com", validPassword)
 	stolen := registered.Tokens.RefreshToken
 
-	legitimate, err := h.svc.Refresh(context.Background(), stolen)
+	legitimate, err := h.svc.Refresh(context.Background(), stolen, domain.Device{})
 	if err != nil {
 		t.Fatalf("first Refresh: %v", err)
 	}
 
-	_, err = h.svc.Refresh(context.Background(), stolen)
+	_, err = h.svc.Refresh(context.Background(), stolen, domain.Device{})
 	if !errors.Is(err, domain.ErrRefreshTokenReused) {
 		t.Fatalf("replay error = %v, want ErrRefreshTokenReused", err)
 	}
 
-	if _, err := h.svc.Refresh(context.Background(), legitimate.Tokens.RefreshToken); err == nil {
+	if _, err := h.svc.Refresh(context.Background(), legitimate.Tokens.RefreshToken, domain.Device{}); err == nil {
 		t.Fatal("the legitimate successor still worked after reuse was detected")
 	}
 
@@ -97,14 +97,14 @@ func TestReuseDoesNotAffectOtherSignIns(t *testing.T) {
 	}
 
 	stolen := registered.Tokens.RefreshToken
-	if _, err := h.svc.Refresh(context.Background(), stolen); err != nil {
+	if _, err := h.svc.Refresh(context.Background(), stolen, domain.Device{}); err != nil {
 		t.Fatalf("first Refresh: %v", err)
 	}
-	if _, err := h.svc.Refresh(context.Background(), stolen); !errors.Is(err, domain.ErrRefreshTokenReused) {
+	if _, err := h.svc.Refresh(context.Background(), stolen, domain.Device{}); !errors.Is(err, domain.ErrRefreshTokenReused) {
 		t.Fatalf("replay error = %v, want ErrRefreshTokenReused", err)
 	}
 
-	if _, err := h.svc.Refresh(context.Background(), other.Tokens.RefreshToken); err != nil {
+	if _, err := h.svc.Refresh(context.Background(), other.Tokens.RefreshToken, domain.Device{}); err != nil {
 		t.Fatalf("the second sign-in was revoked along with the first: %v", err)
 	}
 }
@@ -122,12 +122,12 @@ func TestConcurrentExchangesAreTreatedAsReuse(t *testing.T) {
 		}
 		once = true
 
-		if _, err := h.svc.Refresh(context.Background(), stolen); err != nil {
+		if _, err := h.svc.Refresh(context.Background(), stolen, domain.Device{}); err != nil {
 			t.Errorf("the competing refresh failed: %v", err)
 		}
 	}
 
-	_, err := h.svc.Refresh(context.Background(), stolen)
+	_, err := h.svc.Refresh(context.Background(), stolen, domain.Device{})
 	if !errors.Is(err, domain.ErrRefreshTokenReused) {
 		t.Fatalf("the losing exchange returned %v, want ErrRefreshTokenReused", err)
 	}
@@ -141,7 +141,7 @@ func TestRefreshRejectsUnknownToken(t *testing.T) {
 	h := newHarness(t)
 
 	for _, presented := range []string{"", "not-a-real-token"} {
-		_, err := h.svc.Refresh(context.Background(), presented)
+		_, err := h.svc.Refresh(context.Background(), presented, domain.Device{})
 		if !errors.Is(err, domain.ErrRefreshTokenInvalid) {
 			t.Errorf("Refresh(%q) error = %v, want ErrRefreshTokenInvalid", presented, err)
 		}
@@ -155,7 +155,7 @@ func TestRefreshRejectsExpiredToken(t *testing.T) {
 
 	h.advance(refreshTTL + time.Second)
 
-	_, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken)
+	_, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken, domain.Device{})
 	if !errors.Is(err, domain.ErrRefreshTokenInvalid) {
 		t.Fatalf("Refresh error = %v, want ErrRefreshTokenInvalid", err)
 	}
@@ -170,7 +170,7 @@ func TestRevokedTokenIsInvalidNotReuse(t *testing.T) {
 		t.Fatalf("Logout: %v", err)
 	}
 
-	_, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken)
+	_, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken, domain.Device{})
 	if !errors.Is(err, domain.ErrRefreshTokenInvalid) {
 		t.Fatalf("Refresh error = %v, want ErrRefreshTokenInvalid", err)
 	}
@@ -184,7 +184,7 @@ func TestLogoutRevokesTheFamily(t *testing.T) {
 
 	registered := h.register(t, "bob@example.com", validPassword)
 
-	refreshed, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken)
+	refreshed, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken, domain.Device{})
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestLogoutEverywhereRevokesEverySignIn(t *testing.T) {
 		"first":  registered.Tokens.RefreshToken,
 		"second": second.Tokens.RefreshToken,
 	} {
-		if _, err := h.svc.Refresh(context.Background(), presented); err == nil {
+		if _, err := h.svc.Refresh(context.Background(), presented, domain.Device{}); err == nil {
 			t.Errorf("the %s sign-in still worked after signing out everywhere", name)
 		}
 	}
@@ -247,13 +247,13 @@ func TestReuseIsRefusedEvenIfRevocationFails(t *testing.T) {
 	registered := h.register(t, "bob@example.com", validPassword)
 	stolen := registered.Tokens.RefreshToken
 
-	if _, err := h.svc.Refresh(context.Background(), stolen); err != nil {
+	if _, err := h.svc.Refresh(context.Background(), stolen, domain.Device{}); err != nil {
 		t.Fatalf("first Refresh: %v", err)
 	}
 
 	h.store.failOn["RevokeFamily"] = errors.New("database is on fire")
 
-	_, err := h.svc.Refresh(context.Background(), stolen)
+	_, err := h.svc.Refresh(context.Background(), stolen, domain.Device{})
 	if !errors.Is(err, domain.ErrRefreshTokenReused) {
 		t.Fatalf("error = %v, want ErrRefreshTokenReused", err)
 	}
