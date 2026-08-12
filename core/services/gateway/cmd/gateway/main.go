@@ -1,10 +1,3 @@
-// Command gateway is the public entry point to Axon.
-//
-// It terminates client traffic, decides who may call what and how often, and
-// forwards to the services behind it. Everything past this process is internal
-// traffic that has already been through the policy here.
-//
-// This file is wiring only.
 package main
 
 import (
@@ -36,23 +29,12 @@ import (
 	"github.com/bvivg/axon/core/services/gateway/internal/wsproxy"
 )
 
-// version is stamped in at build time.
 var version = "dev"
 
-// sensitiveBurst is how many sign-in attempts may arrive back to back before
-// throttling starts.
-//
-// The limiter's default burst is a tenth of the per-minute rate, which is right
-// for browsing traffic but degenerates to one at the rates the sensitive tier
-// runs at — and a burst of one means the second mistyped password returns "too
-// many requests" instead of "wrong password". Five is a person correcting a
-// typo; the sustained rate is what actually shapes a brute-force attempt.
 const sensitiveBurst = 5
 
 func main() {
-	// Exits when started with -healthcheck. The runtime image is distroless and
-	// has no shell for a container healthcheck to use, so the binary probes
-	// itself.
+
 	health.RunProbeIfRequested()
 
 	if err := run(); err != nil {
@@ -91,11 +73,6 @@ func run() error {
 		return err
 	}
 
-	// Fetched before serving, so a wrong URL or an auth service that never comes
-	// up fails startup instead of as a wave of 401s. Retried rather than
-	// attempted once: depends_on cannot order a restart of the daemon itself
-	// (see the comment on WaitUntilReady), so auth briefly unreachable here is
-	// routine, not a misconfiguration.
 	if err := keys.WaitUntilReady(ctx, authn.DefaultStartupTimeout); err != nil {
 		return fmt.Errorf("initial jwks fetch: %w", err)
 	}
@@ -132,8 +109,7 @@ func run() error {
 
 	upstream := &http.Client{
 		Timeout: cfg.UpstreamTimeout,
-		// h2c to the internal service: gRPC needs HTTP/2, and there is no TLS
-		// inside the compose network to negotiate it with.
+
 		Transport: internalTransport(),
 	}
 
@@ -193,15 +169,11 @@ func run() error {
 	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
 }
 
-// Where the browser opens its chat socket, and the subprotocol it speaks. The
-// path is this gateway's own; the subprotocol belongs to the chat service and
-// is passed through untouched.
 const (
 	chatSocketPath  = "/ws/chat"
 	chatSubprotocol = "axon.chat.v1"
 )
 
-// publicHandler builds the listener clients reach.
 func publicHandler(
 	cfg config.Config,
 	authProxy authv1connect.AuthServiceHandler,
@@ -213,17 +185,6 @@ func publicHandler(
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	// The socket carries no Connect interceptors: they are shaped around a call
-	// that starts, answers and ends, and this one does none of those on that
-	// schedule. It still goes through the HTTP chain below, so it gets a
-	// correlation id, a recovered panic and the same origin allow-list as
-	// everything else.
-	//
-	// What it does not get is the rate limiter, which lives in the Connect
-	// interceptor and counts calls per minute. A socket is one upgrade followed
-	// by traffic nothing here counts, so the budget that fits it is connections
-	// per address rather than calls per minute — a different limiter, and one
-	// this gateway does not have yet.
 	mux.Handle(chatSocketPath, chatSocket)
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
@@ -231,12 +192,9 @@ func publicHandler(
 			middleware.NewCorrelationInterceptor(),
 			middleware.NewRecoveryInterceptor(log),
 			metrics.Interceptor(),
-			// The policy runs after correlation and recovery so a refusal is
-			// still logged with an id, and before logging so the outcome the
-			// log records is the one the client got.
+
 			policyGuard,
-			// After the policy: a call refused for want of a token or for
-			// exceeding its budget has no business touching the cookie.
+
 			cookie.New(cookie.Config{
 				Secure: cfg.RefreshCookie.Secure,
 				MaxAge: cfg.RefreshCookie.MaxAge,
@@ -245,9 +203,6 @@ func publicHandler(
 		),
 	))
 
-	// Chat gets the same chain minus the cookie interceptor: the refresh cookie
-	// belongs to the sign-in procedures and to nothing else, and an interceptor
-	// that touches it here would widen its path for no reason.
 	mux.Handle(chatv1connect.NewChatServiceHandler(chatProxy,
 		connect.WithInterceptors(
 			middleware.NewCorrelationInterceptor(),
@@ -259,8 +214,7 @@ func publicHandler(
 	))
 
 	return middleware.Chain(
-		// The caller's address is captured here, where the connection is still
-		// visible; Connect no longer exposes it by the time an interceptor runs.
+
 		guard.ClientIPMiddleware(cfg.RateLimit.TrustedProxies),
 		middleware.Correlation,
 		middleware.Recovery(log),
@@ -269,19 +223,15 @@ func publicHandler(
 	)(mux)
 }
 
-// adminHandler builds the internal listener.
 func adminHandler(keys *authn.Cache, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
-	// Readiness depends on having keys: without them every authenticated request
-	// would fail, so an instance in that state must not be in rotation.
 	health.New(log, []health.Checker{jwksChecker{keys}}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }
 
-// jwksChecker reports whether the gateway can verify tokens at all.
 type jwksChecker struct{ keys *authn.Cache }
 
 func (c jwksChecker) Name() string { return "jwks" }
@@ -293,12 +243,8 @@ func (c jwksChecker) Check(context.Context) error {
 	return nil
 }
 
-// internalTransport is the transport used for service-to-service calls.
 func internalTransport() *http.Transport {
-	// Cloned from the default rather than built from zero, so timeouts and pool
-	// sizes stay whatever the standard library considers sane. The assertion is
-	// checked because DefaultTransport is a package variable anything could have
-	// replaced.
+
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		base = &http.Transport{}
@@ -313,9 +259,6 @@ func internalTransport() *http.Transport {
 	return t
 }
 
-// unencryptedHTTP2 enables h2c alongside HTTP/1.1: gRPC clients need HTTP/2,
-// while Connect's JSON and gRPC-Web transports — what the browser speaks — use
-// HTTP/1.1.
 func unencryptedHTTP2() *http.Protocols {
 	p := new(http.Protocols)
 	p.SetHTTP1(true)
@@ -331,8 +274,6 @@ func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger,
 	}
 }
 
-// shutdown stops both listeners with a deadline: without one a single stuck
-// request keeps the process alive until the orchestrator kills it.
 func shutdown(timeout time.Duration, log *slog.Logger, servers ...*http.Server) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

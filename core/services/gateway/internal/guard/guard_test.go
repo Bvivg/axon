@@ -43,7 +43,6 @@ func (s staticKeys) PublicKey(keyID string) (*rsa.PublicKey, bool) {
 	return k, ok
 }
 
-// token mints an access token the way auth would.
 func token(t *testing.T, mutate func(gojwt.MapClaims)) string {
 	t.Helper()
 
@@ -71,12 +70,11 @@ func token(t *testing.T, mutate func(gojwt.MapClaims)) string {
 	return raw
 }
 
-// stubAuth records what reached it and answers successfully.
 type stubAuth struct {
 	authv1connect.UnimplementedAuthServiceHandler
 
 	calls int
-	// sawClaims records whether the guard put verified claims on the context.
+
 	sawClaims bool
 }
 
@@ -98,8 +96,6 @@ func (s *stubAuth) GetMe(
 	return connect.NewResponse(&authv1.GetMeResponse{}), nil
 }
 
-// harness wires the guard in front of a stub handler over a real HTTP server,
-// so header handling and interceptor ordering are exercised as they run.
 type harness struct {
 	client authv1connect.AuthServiceClient
 	stub   *stubAuth
@@ -153,7 +149,6 @@ func newHarness(t *testing.T, l limits) *harness {
 	}
 }
 
-// login calls a public procedure, optionally with a token.
 func (h *harness) login(accessToken string) error {
 	req := connect.NewRequest(&authv1.LoginRequest{})
 	if accessToken != "" {
@@ -163,7 +158,6 @@ func (h *harness) login(accessToken string) error {
 	return err
 }
 
-// getMe calls the protected procedure.
 func (h *harness) getMe(accessToken string) error {
 	req := connect.NewRequest(&authv1.GetMeRequest{})
 	if accessToken != "" {
@@ -239,9 +233,6 @@ func TestProtectedProcedureRejectsBadTokens(t *testing.T) {
 	})
 }
 
-// A bad token on a public procedure is not a reason to refuse — the procedure
-// did not need one. It is a reason not to credit the caller with an identity
-// they failed to prove.
 func TestBadTokenOnAPublicProcedureIsIgnored(t *testing.T) {
 	h := newHarness(t, limits{})
 
@@ -253,7 +244,6 @@ func TestBadTokenOnAPublicProcedureIsIgnored(t *testing.T) {
 	}
 }
 
-// Sign-in is on the tight budget, so a normal browsing budget must not apply.
 func TestSensitiveProcedureUsesTheTightBudget(t *testing.T) {
 	h := newHarness(t, limits{standard: 1000, sensitive: 3})
 
@@ -269,8 +259,6 @@ func TestSensitiveProcedureUsesTheTightBudget(t *testing.T) {
 	}
 }
 
-// The two budgets are separate: grinding on login must not lock a signed-in
-// user out of ordinary calls.
 func TestBudgetsAreIndependent(t *testing.T) {
 	h := newHarness(t, limits{standard: 100, sensitive: 2})
 
@@ -286,9 +274,6 @@ func TestBudgetsAreIndependent(t *testing.T) {
 	}
 }
 
-// An authenticated caller is limited by account, not by address: otherwise
-// everyone behind one NAT shares a budget, and one user on a phone gets a fresh
-// one every time their address changes.
 func TestAuthenticatedCallersAreLimitedIndependently(t *testing.T) {
 	h := newHarness(t, limits{standard: 2})
 
@@ -304,7 +289,6 @@ func TestAuthenticatedCallersAreLimitedIndependently(t *testing.T) {
 		t.Fatal("the first caller was not throttled")
 	}
 
-	// Same address, different account.
 	if err := h.getMe(second); err != nil {
 		t.Fatalf("a second account was throttled by the first one's traffic: %v", err)
 	}

@@ -11,14 +11,12 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 )
 
-// Chat forwards ChatService calls to the chat service.
 type Chat struct {
 	client chatv1connect.ChatServiceClient
 }
 
 var _ chatv1connect.ChatServiceHandler = (*Chat)(nil)
 
-// NewChat returns a forwarding handler over the given client.
 func NewChat(client chatv1connect.ChatServiceClient) (*Chat, error) {
 	if client == nil {
 		return nil, errors.New("proxy: chat client is required")
@@ -68,7 +66,6 @@ func (c *Chat) ListMessages(
 	return c.client.ListMessages(ctx, forward(ctx, req))
 }
 
-// NewChatClient builds the Connect client the gateway forwards chat through.
 func NewChatClient(
 	httpClient *http.Client,
 	baseURL string,

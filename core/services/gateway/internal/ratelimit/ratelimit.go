@@ -1,7 +1,3 @@
-// Package ratelimit throttles requests per caller.
-//
-// Limiting lives on the gateway because that is the trust boundary: everything
-// behind it is internal traffic that has already been through here.
 package ratelimit
 
 import (
@@ -12,17 +8,10 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// idleTTL is how long a caller's bucket is kept after their last request.
-//
-// Eviction is not housekeeping, it is the difference between a limiter and a
-// memory leak: without it, one bucket per distinct IP accumulates forever, and
-// the component meant to protect the service becomes the way to exhaust it.
 const idleTTL = 10 * time.Minute
 
-// sweepInterval is how often idle buckets are collected.
 const sweepInterval = time.Minute
 
-// Limiter is a token bucket per caller.
 type Limiter struct {
 	limit rate.Limit
 	burst int
@@ -38,23 +27,14 @@ type bucket struct {
 	lastSeen time.Time
 }
 
-// Config configures a Limiter.
 type Config struct {
-	// PerMinute is the sustained rate allowed per caller.
 	PerMinute int
 
-	// Burst is how many requests may arrive at once before throttling starts.
-	// Defaults to a tenth of the per-minute rate, minimum one: a client that
-	// batches a few calls on page load should not be punished for it, while a
-	// flood still gets shaped.
 	Burst int
 
-	// Now overrides the clock. Tests set it; production leaves it nil.
 	Now func() time.Time
 }
 
-// New returns a Limiter. A non-positive rate disables limiting entirely, which
-// is what a development environment wants and what production must never have.
 func New(cfg Config) *Limiter {
 	now := cfg.Now
 	if now == nil {
@@ -81,7 +61,6 @@ func New(cfg Config) *Limiter {
 	}
 }
 
-// Allow reports whether the caller may proceed, consuming a token when so.
 func (l *Limiter) Allow(key string) bool {
 	if l.limit == rate.Inf {
 		return true
@@ -102,7 +81,6 @@ func (l *Limiter) Allow(key string) bool {
 	return b.limiter.AllowN(now, 1)
 }
 
-// Start sweeps idle buckets until ctx is cancelled.
 func (l *Limiter) Start(ctx context.Context) {
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
@@ -117,8 +95,6 @@ func (l *Limiter) Start(ctx context.Context) {
 	}
 }
 
-// Sweep drops buckets nobody has touched recently. Start calls it on a ticker;
-// it is exported so a test can drive eviction without waiting a minute.
 func (l *Limiter) Sweep() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -131,8 +107,6 @@ func (l *Limiter) Sweep() {
 	}
 }
 
-// Tracked reports how many callers currently have a bucket. Used by tests and
-// by the metric that would notice eviction silently stopping.
 func (l *Limiter) Tracked() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()

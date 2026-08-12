@@ -9,8 +9,6 @@ import (
 	"github.com/bvivg/axon/core/services/gateway/internal/policy"
 )
 
-// The closed default is the whole point: adding an RPC and forgetting this file
-// must make it unreachable, not public.
 func TestUnlistedProceduresAreClosed(t *testing.T) {
 	for _, procedure := range []string{
 		"/axon.auth.v1.AuthService/DeleteEverything",
@@ -62,8 +60,6 @@ func TestAuthProcedures(t *testing.T) {
 	}
 }
 
-// Sign-in and registration must never share the ordinary budget: one large
-// enough for normal browsing is large enough to grind a password list.
 func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 	for _, procedure := range []string{
 		authv1connect.AuthServiceLoginProcedure,
@@ -76,8 +72,6 @@ func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 	}
 }
 
-// Every procedure named here has to exist in the generated contract, or the
-// table is protecting something that no longer has that name.
 func TestPolicyMatchesTheContract(t *testing.T) {
 	known := map[string]bool{
 		authv1connect.AuthServiceRegisterProcedure:      true,

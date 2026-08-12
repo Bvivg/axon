@@ -38,7 +38,6 @@ func TestTokensRefillOverTime(t *testing.T) {
 		t.Fatal("a second immediate request was allowed with a burst of one")
 	}
 
-	// 60/minute is one per second.
 	clock = clock.Add(time.Second)
 
 	if !l.Allow("caller") {
@@ -46,7 +45,6 @@ func TestTokensRefillOverTime(t *testing.T) {
 	}
 }
 
-// One caller exhausting their budget must not affect anyone else.
 func TestCallersAreIndependent(t *testing.T) {
 	clock := time.Now()
 	l := ratelimit.New(ratelimit.Config{
@@ -65,8 +63,6 @@ func TestCallersAreIndependent(t *testing.T) {
 	}
 }
 
-// Without eviction the component meant to protect the service becomes the way
-// to exhaust it: one bucket per distinct address, kept forever.
 func TestIdleBucketsAreEvicted(t *testing.T) {
 	clock := time.Now()
 	l := ratelimit.New(ratelimit.Config{
@@ -80,7 +76,6 @@ func TestIdleBucketsAreEvicted(t *testing.T) {
 		t.Fatalf("tracking %d callers, want 100", got)
 	}
 
-	// Well past the idle window, with one caller still active.
 	clock = clock.Add(time.Hour)
 	l.Allow("aa")
 
@@ -115,7 +110,7 @@ func TestClientIP(t *testing.T) {
 		{
 			name:       "no proxy, header ignored",
 			remoteAddr: "203.0.113.7:54321",
-			// Attacker-supplied. With no trusted proxies it must not be read.
+
 			forwardedFor:   "1.2.3.4",
 			trustedProxies: 0,
 			want:           "203.0.113.7",
@@ -128,8 +123,7 @@ func TestClientIP(t *testing.T) {
 			want:           "203.0.113.7",
 		},
 		{
-			// The attacker prepends entries hoping to be attributed to them.
-			// With one trusted hop, only the rightmost entry is ours.
+
 			name:           "spoofed entries are ignored",
 			remoteAddr:     "10.0.0.1:443",
 			forwardedFor:   "1.2.3.4, 5.6.7.8, 203.0.113.7",

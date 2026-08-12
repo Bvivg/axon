@@ -30,16 +30,11 @@ const (
 	upstreamClose = ws.StatusCode(4402)
 )
 
-// upstream stands in for the chat service: it records what reached it and
-// answers however a scenario needs.
 type upstreamService struct {
 	server *httptest.Server
 
-	// authorization is the header the last connection arrived with.
 	authorization chan string
 
-	// closeWith, when set, makes the upstream hang up with that code instead of
-	// echoing.
 	closeWith ws.StatusCode
 }
 
@@ -65,7 +60,6 @@ func newUpstream(t *testing.T) *upstreamService {
 			return
 		}
 
-		// Echo, so a test can watch a frame make the round trip.
 		for {
 			payload, err := conn.Read(r.Context())
 			if err != nil {
@@ -85,7 +79,6 @@ func (u *upstreamService) socketURL() string {
 	return "ws" + strings.TrimPrefix(u.server.URL, "http")
 }
 
-// harness is a gateway proxy in front of an upstream.
 type harness struct {
 	proxy    *httptest.Server
 	upstream *upstreamService
@@ -135,8 +128,6 @@ func newHarness(t *testing.T) *harness {
 	}
 }
 
-// dial connects the way a browser does: the token as a subprotocol offer, since
-// the WebSocket API gives a page no way to set a header.
 func (h *harness) dial(t *testing.T, token string) (*ws.Conn, error) {
 	t.Helper()
 
@@ -155,9 +146,6 @@ func (h *harness) dial(t *testing.T, token string) (*ws.Conn, error) {
 	})
 }
 
-// A page cannot set an Authorization header on an upgrade, so the token arrives
-// as a subprotocol offer — and the gateway turns it into a real header on the
-// hop to the service, which verifies it itself.
 func TestTheTokenBecomesAnAuthorizationHeaderUpstream(t *testing.T) {
 	h := newHarness(t)
 
@@ -178,8 +166,6 @@ func TestTheTokenBecomesAnAuthorizationHeaderUpstream(t *testing.T) {
 		t.Fatal("the upstream was never reached")
 	}
 
-	// Only the conversation protocol is negotiated back. The bearer offer was a
-	// way to carry a credential, not something either end speaks.
 	if got := conn.Subprotocol(); got != testProtocol {
 		t.Errorf("negotiated %q, want %q", got, testProtocol)
 	}
@@ -201,8 +187,6 @@ func TestAnUpgradeWithAForgedTokenIsRefused(t *testing.T) {
 	}
 }
 
-// An expired token is refused at the gateway, before anything internal is
-// dialled at all.
 func TestAnExpiredTokenNeverReachesTheService(t *testing.T) {
 	h := newHarness(t)
 
@@ -217,8 +201,6 @@ func TestAnExpiredTokenNeverReachesTheService(t *testing.T) {
 	}
 }
 
-// The upgrade carries credentials, so it is held to the same origin allow-list
-// as every other credentialed request.
 func TestAnUpgradeFromAnUnlistedOriginIsRefused(t *testing.T) {
 	h := newHarness(t)
 
@@ -235,8 +217,6 @@ func TestAnUpgradeFromAnUnlistedOriginIsRefused(t *testing.T) {
 	}
 }
 
-// Frames cross untouched in both directions. The gateway does not know what a
-// chat frame means and must not learn: the protocol belongs to the service.
 func TestFramesCrossInBothDirections(t *testing.T) {
 	h := newHarness(t)
 
@@ -262,9 +242,6 @@ func TestFramesCrossInBothDirections(t *testing.T) {
 	}
 }
 
-// The service's own close codes reach the browser as themselves. A client told
-// "the connection ended" rather than "your token expired" has no idea whether
-// reconnecting will help.
 func TestTheServicesCloseCodeReachesTheBrowser(t *testing.T) {
 	h := newHarness(t)
 	h.upstream.closeWith = upstreamClose
@@ -287,8 +264,6 @@ func TestTheServicesCloseCodeReachesTheBrowser(t *testing.T) {
 	}
 }
 
-// When the browser goes away the upstream connection goes with it, rather than
-// waiting for a keepalive to notice.
 func TestClosingTheBrowserSideReleasesTheUpstream(t *testing.T) {
 	h := newHarness(t)
 
@@ -300,8 +275,6 @@ func TestClosingTheBrowserSideReleasesTheUpstream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), readTimeout)
 	defer cancel()
 
-	// One round trip, so both directions are certainly running before the
-	// connection is taken away.
 	if err := conn.Write(ctx, []byte("ping")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -313,10 +286,6 @@ func TestClosingTheBrowserSideReleasesTheUpstream(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	// The upstream handler returns when its read fails, which releases the
-	// server's handler goroutine. Observed through the test server's own
-	// shutdown: Close blocks until outstanding handlers return, so a proxy that
-	// leaked the upstream connection would hang here.
 	done := make(chan struct{})
 	go func() {
 		h.upstream.server.Close()
@@ -330,7 +299,6 @@ func TestClosingTheBrowserSideReleasesTheUpstream(t *testing.T) {
 	}
 }
 
-// staticKeys is the key set the tests sign against.
 type staticKeys struct {
 	id  string
 	key *rsa.PublicKey
