@@ -103,6 +103,62 @@ services:
       retries: 12
       start_period: 40s
 
+  # The event bus. One broker, KRaft mode — no ZooKeeper — because a single
+  # broker is what a development machine should be asked to run, and the same
+  # image is what services/chat/integration and shared/integration start under
+  # testcontainers. One broker flavour per project: a compose stack on Redpanda
+  # and tests on Kafka would differ exactly where a difference is expensive.
+  kafka:
+    image: confluentinc/confluent-local:7.5.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      # Bound to every interface, advertised by name. Binding the inter-broker
+      # listener to the hostname instead would leave 127.0.0.1:29092 refusing
+      # connections, and the image's own readiness check goes there — so the
+      # broker comes up, serves traffic, and is still reported unhealthy.
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
+      # Two addresses for the same broker: services on the compose network
+      # reach it as kafka:29092, and anything on the host as localhost:9092.
+      # A client is told which to use by the listener it connects through, so
+      # getting this wrong shows up as a connection that opens and then
+      # immediately fails to reach the leader.
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-59092}"
+      # A single broker cannot replicate anything, so every internal topic has
+      # to be told not to try. Left at the defaults, the cluster refuses to
+      # create its own consumer-offsets topic.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # chat.message is created on first publish. Fine while nothing consumes
+      # it; a consumer group would need the topic to exist before it subscribes,
+      # because auto-creation is asynchronous and a subscriber that arrives
+      # first sees no partitions and waits.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # A KRaft cluster id is 16 raw bytes in base64, not a name: the broker
+      # decodes it and refuses to start if it is not exactly that length. This
+      # one is fixed rather than generated so a restart rejoins the same cluster
+      # instead of finding a log directory that belongs to a different one.
+      CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
+    ports:
+      - "${KAFKA_HOST_PORT:-59092}:9092"
+    healthcheck:
+      # Through the in-network listener, not the host one. Bootstrapping on
+      # localhost:9092 works, but the broker answers with that listener's
+      # advertised address — the published host port, which does not exist
+      # inside the container — and the client then fails to reach the leader.
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
+      interval: 10s
+      # Generous because this starts a JVM every time it runs.
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
   chat:
     build:
       context: ..
@@ -123,6 +179,9 @@ services:
       # Used for exactly one call: reading the caller's own profile, with the
       # caller's own token, to snapshot a display name when they join a room.
       AUTH_SERVICE_URL: "http://auth:8081"
+      # The in-network address, not the published one: this is a service on the
+      # compose network, not something on the host.
+      KAFKA_BROKERS: "kafka:29092"
     ports:
       - "${CHAT_HOST_PORT:-8082}:8082"
       - "${CHAT_METRICS_HOST_PORT:-9092}:9092"
@@ -134,6 +193,11 @@ services:
       # Not merely started: the first thing chat does is fetch the key set, and
       # it refuses to start without it.
       auth:
+        condition: service_healthy
+      # Chat starts without a reachable broker — publishing is best-effort — but
+      # waiting saves a burst of publish failures in the first seconds of every
+      # `make up`.
+      kafka:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9092/healthz"]
@@ -230,9 +294,8 @@ services:
       postgres:
         condition: service_healthy
 
-# Kafka joins this file with the chat service, and LiveKit with calling. They are
-# not here yet because nothing would produce to or consume from them, and an
-# idle broker only slows down `docker compose up`.
+# LiveKit joins this file with the calling service, on the same principle Kafka
+# arrived on: when something actually uses it.
 
 volumes:
   postgres-data:

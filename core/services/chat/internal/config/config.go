@@ -21,6 +21,17 @@ type Config struct {
 	Postgres postgres.Config
 	JWT      JWTConfig
 	Auth     AuthConfig
+	Kafka    KafkaConfig
+}
+
+// KafkaConfig is where chat.message goes.
+//
+// An empty broker list is a valid configuration, not a broken one: the topic
+// has no consumer yet, and a deployment without a broker still delivers
+// messages to the people in the room. The service says so at startup and
+// publishes nowhere.
+type KafkaConfig struct {
+	Brokers []string
 }
 
 // JWTConfig is what this service needs to verify a token itself.
@@ -73,6 +84,9 @@ func Load() (Config, error) {
 		Auth: AuthConfig{
 			ServiceURL: l.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
 			Timeout:    l.DurationDefault("AUTH_SERVICE_TIMEOUT", 3*time.Second),
+		},
+		Kafka: KafkaConfig{
+			Brokers: l.StringSlice("KAFKA_BROKERS", nil),
 		},
 	}
 

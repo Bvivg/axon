@@ -37,10 +37,20 @@ type Store interface {
 	ListMessages(ctx context.Context, roomID uuid.UUID, page domain.Page) ([]domain.Message, bool, error)
 }
 
+// Events is told what happened, after it has happened.
+//
+// It returns nothing, and that is the contract rather than an omission: by the
+// time it is called the message is committed and on its way to the room, so
+// there is no failure here the caller could act on. See internal/events.
+type Events interface {
+	MessageSent(ctx context.Context, m domain.Message)
+}
+
 // Service is the chat service's behaviour.
 type Service struct {
-	store Store
-	log   *slog.Logger
+	store  Store
+	events Events
+	log    *slog.Logger
 
 	// newID generates message and room ids. Overridable so tests can predict
 	// them; production leaves it nil and gets uuid.New.
@@ -52,6 +62,11 @@ type Config struct {
 	Store  Store
 	Logger *slog.Logger
 
+	// Events announces messages onto the bus. Required — a deployment with no
+	// broker passes events.Discard rather than nothing, so this layer has no
+	// nil to check on every send.
+	Events Events
+
 	// NewID overrides id generation. Tests set it; production leaves it nil.
 	NewID func() uuid.UUID
 }
@@ -61,6 +76,8 @@ func New(cfg Config) (*Service, error) {
 	switch {
 	case cfg.Store == nil:
 		return nil, errors.New("service: store is required")
+	case cfg.Events == nil:
+		return nil, errors.New("service: an event publisher is required (use events.Discard for none)")
 	case cfg.Logger == nil:
 		return nil, errors.New("service: logger is required")
 	}
@@ -70,7 +87,7 @@ func New(cfg Config) (*Service, error) {
 		newID = uuid.New
 	}
 
-	return &Service{store: cfg.Store, log: cfg.Logger, newID: newID}, nil
+	return &Service{store: cfg.Store, events: cfg.Events, log: cfg.Logger, newID: newID}, nil
 }
 
 // CreateRoomInput opens a room.
@@ -259,10 +276,17 @@ func (s *Service) Send(ctx context.Context, in SendInput) (domain.Message, bool,
 	}
 
 	// A resend is not news. Logging it as one would make a flaky connection look
-	// like a chatty user.
+	// like a chatty user, and announcing it would make one message look like two
+	// to everything downstream.
 	if !duplicate {
 		s.log.InfoContext(ctx, "message sent",
 			"room_id", in.RoomID, "user_id", in.AuthorID, "seq", message.Seq)
+
+		// WithoutCancel because the message is already committed: the sender
+		// hanging up at this exact moment must not be what decides whether the
+		// rest of the system hears about it. The correlation id rides along, so
+		// the event is still traceable to the request that caused it.
+		s.events.MessageSent(context.WithoutCancel(ctx), message)
 	}
 
 	return message, duplicate, nil

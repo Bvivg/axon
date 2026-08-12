@@ -1,8 +1,10 @@
 package service_test
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,20 +16,46 @@ import (
 )
 
 type harness struct {
-	svc   *service.Service
-	store *fakeStore
+	svc    *service.Service
+	store  *fakeStore
+	events *recordingEvents
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
 	store := newFakeStore()
-	svc, err := service.New(service.Config{Store: store, Logger: logger.Discard()})
+	events := &recordingEvents{}
+
+	svc, err := service.New(service.Config{
+		Store:  store,
+		Events: events,
+		Logger: logger.Discard(),
+	})
 	if err != nil {
 		t.Fatalf("service.New: %v", err)
 	}
 
-	return &harness{svc: svc, store: store}
+	return &harness{svc: svc, store: store, events: events}
+}
+
+// recordingEvents stands in for the bus. What matters about it here is how many
+// times it is told something, not what it does with it.
+type recordingEvents struct {
+	mu   sync.Mutex
+	sent []domain.Message
+}
+
+func (e *recordingEvents) MessageSent(_ context.Context, m domain.Message) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.sent = append(e.sent, m)
+}
+
+func (e *recordingEvents) count() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.sent)
 }
 
 // openRoom creates a room and returns it with the id of whoever opened it.
@@ -260,6 +288,32 @@ func TestAResendIsReportedAsOne(t *testing.T) {
 	}
 	if again.ID != first.ID {
 		t.Errorf("resend produced %s, want the original %s", again.ID, first.ID)
+	}
+
+	// One message was said, so the bus hears about it once. Announcing the
+	// resend would make a flaky connection look like two messages to every
+	// consumer downstream.
+	if n := h.events.count(); n != 1 {
+		t.Errorf("the bus was told %d times about one message", n)
+	}
+}
+
+// The message is announced only once it exists. A send that never reached
+// storage is not an event.
+func TestNothingIsAnnouncedWhenTheSendFails(t *testing.T) {
+	h := newHarness(t)
+
+	room, owner := h.openRoom(t, "general")
+	h.store.failWith = errors.New("connection refused")
+
+	if _, _, err := h.svc.Send(t.Context(), service.SendInput{
+		RoomID: room.ID, AuthorID: owner, Body: "hello",
+	}); err == nil {
+		t.Fatal("a failing store produced no error")
+	}
+
+	if n := h.events.count(); n != 0 {
+		t.Errorf("the bus was told about %d messages that were never written", n)
 	}
 }
 

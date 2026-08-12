@@ -21,11 +21,13 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
+	"github.com/bvivg/axon/core/shared/pkg/kafka"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 
 	"github.com/bvivg/axon/core/services/chat/internal/config"
+	"github.com/bvivg/axon/core/services/chat/internal/events"
 	"github.com/bvivg/axon/core/services/chat/internal/identity"
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
 	"github.com/bvivg/axon/core/services/chat/internal/server"
@@ -113,8 +115,15 @@ func run() error {
 		return err
 	}
 
+	publisher, closeBus, err := buildEvents(cfg, log)
+	if err != nil {
+		return err
+	}
+	defer closeBus()
+
 	svc, err := service.New(service.Config{
 		Store:  repository.New(pool),
+		Events: publisher,
 		Logger: log,
 	})
 	if err != nil {
@@ -159,6 +168,35 @@ func run() error {
 	}
 
 	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
+}
+
+// buildEvents assembles the event publisher, or reports that there is no bus.
+//
+// No broker configured is a normal deployment rather than a broken one: nothing
+// consumes chat.message yet, and messages reach the room over the socket
+// regardless. Saying so out loud at startup is better than a nil that turns
+// into a check at every send.
+func buildEvents(cfg config.Config, log *slog.Logger) (service.Events, func(), error) {
+	if len(cfg.Kafka.Brokers) == 0 {
+		log.Warn("no kafka brokers configured; chat.message will not be published")
+		return events.Discard(), func() {}, nil
+	}
+
+	producer, err := kafka.NewProducer(kafka.ProducerConfig{
+		Brokers: cfg.Kafka.Brokers,
+		Service: cfg.Service,
+	}, log)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	log.Info("publishing chat events", "brokers", cfg.Kafka.Brokers)
+
+	return events.New(producer, log), func() {
+		if err := producer.Close(); err != nil {
+			log.Error("could not close the event producer", "error", err)
+		}
+	}, nil
 }
 
 // publicHandler builds the contract listener.

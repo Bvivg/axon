@@ -146,6 +146,10 @@ services:
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
       AUTH_SERVICE_URL: http://auth:8081
+      # No broker here, and none wanted: KAFKA_BROKERS unset makes the publisher
+      # a no-op. The suite reaches chat the way a client does, and a client
+      # never sees chat.message — the transport itself is covered against a real
+      # broker in shared/integration, which is where that belongs.
     depends_on:
       migrate-chat:
         condition: service_completed_successfully
