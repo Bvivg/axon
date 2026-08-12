@@ -3,10 +3,7 @@ version: "2"
 run:
   timeout: 5m
   tests: true
-  # Integration and e2e files sit behind build tags so `go test ./...` does not
-  # try to run them without a stack. Without listing the tags here the linter
-  # would not see those files at all, which is the worst of both worlds: code
-  # that is never linted and nobody noticing.
+
   build-tags:
     - e2e
     - integration
@@ -14,40 +11,37 @@ run:
 linters:
   default: standard
   enable:
-    # An unclosed response body leaks a connection from the pool.
+
     - bodyclose
-    # errors.Is/As instead of == and type assertions on wrapped errors.
+
     - errorlint
-    # Security-relevant patterns: weak randomness, unchecked file permissions.
+
     - gosec
     - misspell
-    # Returning nil after checking a non-nil error.
+
     - nilerr
-    # HTTP requests and SQL queries that ignore context cancellation.
+
     - noctx
     - unconvert
     - wastedassign
 
   settings:
     errcheck:
-      # A failed type assertion is as much a bug as an ignored error.
+
       check-type-assertions: true
     gosec:
       excludes:
-        # Integer conversion overflow: too noisy against int32 pool sizes that
-        # come from validated configuration.
+
         - G115
 
   exclusions:
     rules:
-      # Tests panic and assert deliberately; security linting there is noise.
+
       - path: _test\.go
         linters:
           - gosec
           - errcheck
 
-    # Generated code is not ours to fix: the only way to act on a finding there
-    # is to edit a file that the next `make proto` overwrites.
     generated: strict
 
 formatters:

@@ -1,21 +1,3 @@
-# The end-to-end stack: everything a real client touches, and a runner that
-# behaves like one.
-#
-# Two things make this file different from docker-compose.yml, and both are
-# deliberate:
-#
-#   1. Nothing is published to the host. All traffic stays on the compose
-#      network, so a run cannot collide with the development stack, with another
-#      run, or with whatever already owns port 8080 on the machine.
-#   2. Services are built at the `runtime` target — the image that actually
-#      ships. A green run against a hot-reload container says nothing about what
-#      gets deployed.
-#
-# Run it through the Makefile, which generates a throwaway signing key and tears
-# the stack down afterwards:
-#
-#   make test-e2e
-
 name: axon-e2e
 
 services:
@@ -31,9 +13,7 @@ services:
       GAME_DB_PASSWORD: game
       CALLING_DB_PASSWORD: calling
     volumes:
-      # A named volume rather than tmpfs: the init scripts run only when the
-      # volume is created, and `make test-e2e` drops it after every run, so each
-      # run starts from a freshly initialised cluster either way.
+
       - e2e-postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -52,9 +32,6 @@ services:
       timeout: 3s
       retries: 20
 
-  # Migrations run as their own step rather than being left to the service.
-  # Nothing applies them automatically, and an e2e stack that races the schema
-  # fails in a way that looks like a bug in the code under test.
   migrate-auth:
     image: migrate/migrate:v4.18.1
     restart: "no"
@@ -86,17 +63,14 @@ services:
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: axon
       JWT_ACTIVE_KEY_ID: dev-1
-      # Generated per run into core/deploy/.env.e2e by `make test-e2e`. No key
-      # is committed, not even a test one.
+
       JWT_PRIVATE_KEY_DEV_1: ${JWT_PRIVATE_KEY_DEV_1:?run make test-e2e, which generates a throwaway key}
       JWT_ISSUER: https://auth.axon.test
       JWT_ACCESS_TOKEN_TTL: 15m
       JWT_REFRESH_TOKEN_TTL: 720h
-      # Only the fake provider. Google and GitHub have no credentials here and
-      # are therefore absent from the registry, which is what the suite asserts
-      # they do when unconfigured.
+
       OAUTH_FAKE_ENABLED: "true"
-      # As the runner reaches it: on the compose network, not from a host.
+
       OAUTH_FAKE_AUTHORIZE_URL: http://auth:8081/oauth/fake/authorize
       OAUTH_REDIRECT_BASE_URL: http://localhost:3000/auth/callback
       OAUTH_ALLOWED_RETURN_ORIGINS: http://localhost:3000
@@ -106,8 +80,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # The runtime image is distroless: no shell, no wget, no curl. The binary
-      # answers its own probe instead.
+
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/healthz"]
       interval: 2s
       timeout: 3s
@@ -146,15 +119,10 @@ services:
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
       AUTH_SERVICE_URL: http://auth:8081
-      # Delivery between instances. There is only one instance here, and it
-      # still goes through Redis: the suite exercises the path the deployed
-      # shape uses, not a shortcut that exists only when there is one process.
+
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: axon
-      # No broker here, and none wanted: KAFKA_BROKERS unset makes the publisher
-      # a no-op. The suite reaches chat the way a client does, and a client
-      # never sees chat.message — the transport itself is covered against a real
-      # broker in shared/integration, which is where that belongs.
+
     depends_on:
       migrate-chat:
         condition: service_completed_successfully
@@ -189,12 +157,7 @@ services:
       CORS_ALLOWED_ORIGINS: http://localhost:3000
       RATE_LIMIT_PER_MINUTE: 600
       RATE_LIMIT_AUTH_PER_MINUTE: 60
-      # One proxy hop is trusted here, unlike in development. Every request in a
-      # run comes from the same container, so without this a single scenario
-      # would eat the budget for all the others; with it, each test forges its
-      # own address and gets its own bucket. It also means ratelimit.ClientIP's
-      # trusted-proxy path is exercised, which is how the gateway will actually
-      # run behind an ingress.
+
       TRUSTED_PROXIES: "1"
     depends_on:
       auth:
@@ -208,24 +171,16 @@ services:
       retries: 30
       start_period: 5s
 
-  # The runner. It reaches the stack exactly as a browser would: through the
-  # gateway, over the published contract, with no access to Postgres or to any
-  # service's internals.
   e2e:
     image: golang:1.26-alpine
     working_dir: /src/core/services/auth
     environment:
       GATEWAY_URL: http://gateway:8080
-      # The internal listener. Reachable here because the runner is on the
-      # compose network, which is exactly what the tests use it to prove: what
-      # lives on this port must not also be served on the public one.
+
       GATEWAY_ADMIN_URL: http://gateway:9090
-      # The fake provider's authorize endpoint, which the suite follows the way
-      # a browser would. It lives on auth's public listener rather than behind
-      # the gateway: the gateway serves the contract and nothing else.
+
       OAUTH_FAKE_AUTHORIZE_URL: http://auth:8081/oauth/fake/authorize
-      # Each service module resolves shared/ through its own replace directive;
-      # see the note in deploy/Dockerfile.service.
+
       GOWORK: "off"
       GOFLAGS: -mod=mod
     volumes:
@@ -237,20 +192,14 @@ services:
       gateway:
         condition: service_healthy
 
-  # A second runner, because a module is a module: chat's suite lives in its own
-  # one and compiles against its own go.mod. The two share the caches below, so
-  # the second run starts warm.
   e2e-chat:
     image: golang:1.26-alpine
     working_dir: /src/core/services/chat
     environment:
       GATEWAY_URL: http://gateway:8080
-      # The internal listener, where the probes are. Reachable here because the
-      # runner is on the compose network — which is also what the auth suite
-      # uses to prove nothing on this port is served publicly.
+
       GATEWAY_ADMIN_URL: http://gateway:9090
-      # Where the gateway terminates the browser's socket. The suite connects
-      # here exactly as a page would, token offered as a subprotocol.
+
       GATEWAY_SOCKET_URL: ws://gateway:8080/ws/chat
       GOWORK: "off"
       GOFLAGS: -mod=mod

@@ -1,26 +1,17 @@
-# Developer tooling that runs in containers instead of on the host: protobuf
-# generation, migrations and linting. Nothing here is part of the running stack,
-# which is why it lives in its own file.
-#
-# Run from the repository root via the Makefile targets, e.g. `make proto`.
-
 name: axon-tools
 
 services:
-  # Protobuf/Connect code generation. The whole repository is mounted because
-  # generated output is written outside the proto directory (Go under core/,
-  # TypeScript under ui/).
+
   buf:
     image: bufbuild/buf:1.61.0
     working_dir: /workspace
     volumes:
       - ../..:/workspace
-      # Cache remote plugin downloads between runs.
+
       - buf-cache:/home/nonroot/.cache/buf
-    # Overridden by the Makefile; `generate` is the common case.
+
     command: ["generate"]
 
-  # golangci-lint over the Go workspace. Pinned so CI and local runs agree.
   golangci-lint:
     image: golangci/golangci-lint:v2.9.0-alpine
     working_dir: /workspace/core
@@ -28,17 +19,9 @@ services:
       - ../..:/workspace
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
-    # The workspace root is not itself a module, so packages are named per
-    # module rather than with a bare ./... . The Makefile overrides this with the
-    # current module list; the default is here only so a bare `docker compose
-    # run golangci-lint` does something sensible. Configuration is picked up
-    # from /workspace/.golangci.yml by searching upwards.
+
     command: ["golangci-lint", "run", "./shared/...", "./services/auth/...", "./services/chat/...", "./services/gateway/...", "./services/game/..."]
 
-  # Node for the web client's checks: install, lint, typecheck, build. The
-  # running dev server is the `web` service in docker-compose.yml; this is for
-  # the one-shot commands, which need node_modules to persist between runs
-  # rather than the throwaway anonymous volume the dev service uses.
   node:
     image: node:22-alpine
     working_dir: /app

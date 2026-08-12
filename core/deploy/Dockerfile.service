@@ -1,27 +1,8 @@
 # syntax=docker/dockerfile:1.7
-#
-# Shared image definition for every Go service. The build context is core/, so
-# the Go workspace, shared/ and the service's own module are all visible:
-#
-#   docker build -f deploy/Dockerfile.service --build-arg SERVICE=auth \
-#     --target runtime -t axon/auth core/
-#
-# Targets:
-#   dev     — hot reload via air; source is bind-mounted by compose
-#   runtime — static binary on a distroless base, runs as nonroot
-
-# Must not fall behind the toolchain in core/go.work, or `go mod download` fails
-# with "go.mod requires go >= ...". Bump both together.
 ARG GO_VERSION=1.26
 
-# Pinned, not @latest. A floating version means a build that worked yesterday
-# can fail today because an upstream release started requiring a newer
-# toolchain — which is exactly how this line first broke.
 ARG AIR_VERSION=v1.67.3
 
-# ---------------------------------------------------------------------------
-# base — dependency resolution, shared by the dev and build stages
-# ---------------------------------------------------------------------------
 FROM golang:${GO_VERSION}-alpine AS base
 
 ARG SERVICE
@@ -29,15 +10,8 @@ WORKDIR /src
 
 RUN apk add --no-cache git
 
-# The workspace is deliberately switched off. core/go.work lists every service,
-# so honouring it here would force each image to carry every other service's
-# manifest — and adding a service would break the images of all the rest. Each
-# service module resolves shared/ through its own `replace` directive instead,
-# which is exactly the standalone build this image is meant to produce.
 ENV GOWORK=off
 
-# Manifests are copied before the source so a code change does not invalidate
-# the dependency layer.
 COPY shared/go.mod shared/go.sum ./shared/
 COPY services/${SERVICE}/go.mod services/${SERVICE}/go.sum* ./services/${SERVICE}/
 
@@ -46,9 +20,6 @@ WORKDIR /src/services/${SERVICE}
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download all
 
-# ---------------------------------------------------------------------------
-# dev — hot reload
-# ---------------------------------------------------------------------------
 FROM base AS dev
 
 ARG SERVICE
@@ -61,13 +32,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY shared/ /src/shared/
 COPY services/${SERVICE}/ /src/services/${SERVICE}/
 
-# air rebuilds on change; compose bind-mounts the source over this layer. Each
-# service ships its own .air.toml next to its go.mod.
 CMD ["air", "-c", ".air.toml"]
 
-# ---------------------------------------------------------------------------
-# build — static binary
-# ---------------------------------------------------------------------------
 FROM base AS build
 
 ARG SERVICE
@@ -76,8 +42,6 @@ ARG VERSION=dev
 COPY shared/ /src/shared/
 COPY services/${SERVICE}/ /src/services/${SERVICE}/
 
-# CGO is off so the result is a static binary that needs no libc in the runtime
-# image. Symbol tables are stripped; version is stamped in for /metrics.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build \
@@ -86,15 +50,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -o /out/service \
       ./cmd/${SERVICE}
 
-# ---------------------------------------------------------------------------
-# runtime — what actually ships
-# ---------------------------------------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 
 COPY --from=build /out/service /service
 
-# Distroless has no shell, so healthchecks are the orchestrator's job via the
-# service's own /healthz endpoint rather than a HEALTHCHECK instruction here.
 USER nonroot:nonroot
 
 ENTRYPOINT ["/service"]
