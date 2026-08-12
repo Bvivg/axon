@@ -24,6 +24,8 @@ interface Session {
 
   signedIn: (user: User, tokens: TokenPair | undefined) => void;
 
+  updateUser: (user: User) => void;
+
   signOut: () => Promise<void>;
 }
 
@@ -40,6 +42,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAccessToken(tokens);
     setUser(next);
     setStatus("authenticated");
+  }, []);
+
+  const updateUser = useCallback((next: User) => {
+    setUser(next);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -90,8 +96,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Session>(
-    () => ({ status, user, signedIn, signOut }),
-    [status, user, signedIn, signOut],
+    () => ({ status, user, signedIn, updateUser, signOut }),
+    [status, user, signedIn, updateUser, signOut],
   );
 
   return <SessionContext value={value}>{children}</SessionContext>;

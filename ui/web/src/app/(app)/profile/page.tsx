@@ -1,18 +1,13 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileTab } from "@/components/profile/profile-tab";
+import { SessionsTab } from "@/components/profile/sessions-tab";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 
 export default function ProfilePage() {
-  const { status, user, signOut } = useSession();
+  const { status, user } = useSession();
 
   useRequireSession();
 
@@ -25,47 +20,21 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-12">
-      <Card>
-        <CardHeader>
-          <CardTitle>{user.displayName || user.email}</CardTitle>
-          <CardDescription>You are signed in.</CardDescription>
-        </CardHeader>
+    <main className="mx-auto w-full max-w-2xl px-6 py-12">
+      <Tabs defaultValue="profile" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="profile">My profile</TabsTrigger>
+          <TabsTrigger value="sessions">Sessions</TabsTrigger>
+        </TabsList>
 
-        <CardContent className="space-y-6">
-          <dl className="space-y-3 text-sm">
-            <Row label="Email" value={user.email} />
-            <Row
-              label="Email verified"
-              value={user.emailVerified ? "yes" : "not yet"}
-            />
-            <Row label="User ID" value={user.id} mono />
-          </dl>
+        <TabsContent value="profile">
+          <ProfileTab user={user} />
+        </TabsContent>
 
-          <Button variant="outline" className="w-full" onClick={() => void signOut()}>
-            Sign out
-          </Button>
-        </CardContent>
-      </Card>
+        <TabsContent value="sessions">
+          <SessionsTab />
+        </TabsContent>
+      </Tabs>
     </main>
-  );
-}
-
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={mono ? "font-mono text-xs break-all" : "break-all"}>
-        {value}
-      </dd>
-    </div>
   );
 }
