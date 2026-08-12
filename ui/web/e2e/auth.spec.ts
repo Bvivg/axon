@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  expectProfile,
+  expectLobby,
   fakeAuthorizeUrl,
   gatewayHost,
+  goToProfile,
   newEmail,
   open,
   password,
@@ -11,6 +12,7 @@ import {
   refreshCookieName,
   refreshCookiePath,
   register,
+  signOut,
   submitCredentials,
 } from "./support";
 
@@ -26,16 +28,18 @@ import {
  * finds its way back to a session.
  */
 
-test("registration signs you in and lands on the profile", async ({ page }) => {
+test("registration signs you in and lands in the lobby", async ({ page }) => {
   const email = newEmail("register");
 
   await open(page, "/register");
   await submitCredentials(page, "Create account", email);
 
-  await expectProfile(page);
-  // The card is titled with the display name, and none was given — so the
-  // address on screen is the one the account was created with, read back from
-  // the server rather than echoed from the form.
+  await expectLobby(page);
+
+  // The profile card is titled with the display name, and none was given — so
+  // the address on screen is the one the account was created with, read back
+  // from the server rather than echoed from the form.
+  await goToProfile(page);
   await expect(page.getByRole("heading", { name: email })).toBeVisible();
 });
 
@@ -43,17 +47,18 @@ test("an existing account signs in with its password", async ({ page }) => {
   const email = newEmail("password");
 
   await register(page, email);
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login$/);
+  await goToProfile(page);
+  await signOut(page);
 
   await open(page, "/login");
   await submitCredentials(page, "Sign in", email);
 
-  await expectProfile(page);
+  await expectLobby(page);
+  await goToProfile(page);
   await expect(page.getByRole("heading", { name: email })).toBeVisible();
 });
 
-test("the fake provider carries the browser through to the profile", async ({
+test("the fake provider carries the browser through to the lobby", async ({
   page,
 }) => {
   // Collected from responses rather than from navigations: the provider answers
@@ -68,7 +73,8 @@ test("the fake provider carries the browser through to the profile", async ({
   // No consent screen to click: the fake provider's authorize endpoint is a
   // redirect with the identity baked into the code, so the browser comes
   // straight back to the callback route.
-  await expectProfile(page);
+  await expectLobby(page);
+  await goToProfile(page);
   await expect(
     page.getByRole("heading", { name: /@fake\.axon\.test$/ }),
   ).toBeVisible();
@@ -91,7 +97,7 @@ test("a reload keeps the session", async ({ page }) => {
   // stored in JavaScript.
   await page.reload();
 
-  await expectProfile(page);
+  await expectLobby(page);
 });
 
 test("the refresh token is out of the page's reach", async ({ page }) => {
@@ -138,6 +144,7 @@ test("the refresh token is out of the page's reach", async ({ page }) => {
 
 test("signing out puts the profile out of reach", async ({ page }) => {
   await register(page, newEmail("logout"));
+  await goToProfile(page);
 
   // Asserted before signing out, not only after. Without it this test also
   // passes when the session was never cookie-backed in the first place —
@@ -145,8 +152,7 @@ test("signing out puts the profile out of reach", async ({ page }) => {
   // configuration exists to avoid, and it would pass silently.
   expect(await refreshCookie(page), "no session to sign out of").toBeDefined();
 
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login$/);
+  await signOut(page);
 
   // The gateway expires the cookie on the way out, so there is nothing left to
   // restore a session from.
@@ -154,8 +160,43 @@ test("signing out puts the profile out of reach", async ({ page }) => {
 
   await open(page, "/profile");
 
-  await expect(page).toHaveURL(/\/login$/);
+  // Bounced, and told where they were headed: signing in from here comes back.
+  await expect(page).toHaveURL(/\/login\?next=%2Fprofile$/);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+test("the sign-in pages bounce somebody who is already signed in", async ({
+  page,
+}) => {
+  await register(page, newEmail("bounce"));
+
+  await open(page, "/login");
+  await expectLobby(page);
+
+  // The bounce replaces rather than pushes. Back must not land on the page that
+  // just redirected, because it would only redirect again — Back would stop
+  // working, and there is no worse thing for a browser to do.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/\/login/);
+
+  await open(page, "/register");
+  await expectLobby(page);
+});
+
+test("the front door is a signpost", async ({ page }) => {
+  await register(page, newEmail("front-door"));
+
+  await open(page, "/");
+  await expectLobby(page);
+
+  await goToProfile(page);
+  await signOut(page);
+
+  await open(page, "/");
+  await expect(page).toHaveURL(/\/login$/);
+  // Nothing to come back to: the root is not a destination anybody was on
+  // their way to.
+  await expect(page).not.toHaveURL(/next=/);
 });
 
 /**

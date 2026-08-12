@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 
 /** The cookie the gateway keeps the refresh token in. */
 export const refreshCookieName = "axon_refresh";
@@ -72,8 +72,12 @@ export async function submitCredentials(
   page: Page,
   action: "Create account" | "Sign in",
   email: string,
+  displayName?: string,
 ): Promise<void> {
   await page.getByLabel("Email").fill(email);
+  if (displayName !== undefined) {
+    await page.getByLabel("Display name (optional)").fill(displayName);
+  }
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: action }).click();
 }
@@ -87,11 +91,56 @@ export async function expectProfile(page: Page): Promise<void> {
   await expect(page.getByText("You are signed in.")).toBeVisible();
 }
 
-/** Registers a new account and leaves the browser signed in on the profile. */
-export async function register(page: Page, email: string): Promise<void> {
+/**
+ * Asserts the lobby is on screen — where signing in lands, and the page whose
+ * room list is a call the gateway only answers for a session.
+ */
+export async function expectLobby(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByRole("heading", { name: "Your rooms" })).toBeVisible();
+}
+
+/** Registers a new account and leaves the browser signed in on the lobby. */
+export async function register(
+  page: Page,
+  email: string,
+  displayName?: string,
+): Promise<void> {
   await open(page, "/register");
-  await submitCredentials(page, "Create account", email);
+  await submitCredentials(page, "Create account", email, displayName);
+  await expectLobby(page);
+}
+
+/**
+ * A second person, in their own browser context.
+ *
+ * A context is one set of cookies, and the session rests on a cookie — so two
+ * people means two contexts. Two pages in one context would share the session
+ * and quietly be the same person twice.
+ */
+export async function newPerson(
+  browser: Browser,
+  label: string,
+  displayName: string,
+): Promise<{ page: Page; close: () => Promise<void> }> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  await register(page, newEmail(label), displayName);
+
+  return { page, close: () => context.close() };
+}
+
+/** Walks from the lobby to the profile, the way the header link does. */
+export async function goToProfile(page: Page): Promise<void> {
+  await page.getByRole("link", { name: "Profile" }).click();
   await expectProfile(page);
+}
+
+/** Signs out from the profile, leaving the browser on the sign-in page. */
+export async function signOut(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/login$/);
 }
 
 /** Reads the refresh cookie out of the browser, or undefined if there is none. */
