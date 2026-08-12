@@ -49,7 +49,7 @@ export async function submitCredentials(
 
 export async function expectProfile(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/profile$/);
-  await expect(page.getByText("You are signed in.")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "My profile" })).toBeVisible();
 }
 
 export async function expectLobby(page: Page): Promise<void> {

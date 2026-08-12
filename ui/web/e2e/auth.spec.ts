@@ -25,7 +25,7 @@ test("registration signs you in and lands on Games", async ({ page }) => {
   await expectHome(page);
 
   await goToProfile(page);
-  await expect(page.getByRole("heading", { name: email })).toBeVisible();
+  await expect(page.getByLabel("Email")).toHaveValue(email);
 });
 
 test("an existing account signs in with its password", async ({ page }) => {
@@ -40,7 +40,7 @@ test("an existing account signs in with its password", async ({ page }) => {
 
   await expectHome(page);
   await goToProfile(page);
-  await expect(page.getByRole("heading", { name: email })).toBeVisible();
+  await expect(page.getByLabel("Email")).toHaveValue(email);
 });
 
 test("the fake provider carries the browser through to Games", async ({
@@ -55,9 +55,7 @@ test("the fake provider carries the browser through to Games", async ({
 
   await expectHome(page);
   await goToProfile(page);
-  await expect(
-    page.getByRole("heading", { name: /@fake\.axon\.test$/ }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Email")).toHaveValue(/@fake\.axon\.test$/);
 
   expect(
     seen.some((url) => url.startsWith(fakeAuthorizeUrl)),
