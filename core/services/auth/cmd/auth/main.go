@@ -21,6 +21,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
@@ -104,15 +105,34 @@ func run() error {
 		return err
 	}
 
+	avatarStore, err := avatar.NewStore(avatar.StoreConfig{
+		Endpoint:  cfg.Avatar.Endpoint,
+		AccessKey: cfg.Avatar.AccessKey,
+		SecretKey: cfg.Avatar.SecretKey,
+		Bucket:    cfg.Avatar.Bucket,
+		UseSSL:    cfg.Avatar.UseSSL,
+	})
+	if err != nil {
+		return err
+	}
+	avatarURLs := avatar.NewURLBuilder(cfg.Avatar.PublicURL, cfg.Avatar.Bucket)
+	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs)
+
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
 		RefreshTTL: cfg.JWT.RefreshTTL,
 		OAuth:      oauthCfg,
+		Avatar:     avatarPipeline,
 	})
 	if err != nil {
 		return err
 	}
 
-	handler, err := server.New(server.Config{Service: svc, Verifier: verifier, Logger: log})
+	handler, err := server.New(server.Config{
+		Service:    svc,
+		Verifier:   verifier,
+		Logger:     log,
+		AvatarURLs: avatarURLs,
+	})
 	if err != nil {
 		return err
 	}
@@ -193,6 +213,7 @@ func publicHandler(cfg config.Config, handler *server.Handler, metrics *middlewa
 
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(handler, interceptors))
+	mux.HandleFunc("POST /internal/avatar", handler.UploadAvatar)
 
 	if cfg.OAuth.FakeEnabled {
 		mux.Handle("GET "+oauth.FakeAuthorizePath, oauth.FakeAuthorizeHandler())

@@ -114,6 +114,8 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		return CompleteOAuthResult{}, err
 	}
 
+	user = s.importProviderAvatar(ctx, user, profile.AvatarURL)
+
 	tokens, err := s.issueTokens(ctx, user, uuid.New(), in.Device)
 	if err != nil {
 		return CompleteOAuthResult{}, err
@@ -188,7 +190,6 @@ func (s *Service) resolveOauthUser(
 		ID:          uuid.New(),
 		Email:       email,
 		DisplayName: displayName,
-		AvatarURL:   profile.AvatarURL,
 
 		EmailVerified: true,
 	}, account)

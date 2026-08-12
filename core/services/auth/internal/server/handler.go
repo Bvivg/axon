@@ -14,15 +14,17 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
 
 type Handler struct {
-	svc      *service.Service
-	verifier *authn.Verifier
-	log      *slog.Logger
-	now      func() time.Time
+	svc        *service.Service
+	verifier   *authn.Verifier
+	log        *slog.Logger
+	now        func() time.Time
+	avatarURLs avatar.URLBuilder
 }
 
 var _ authv1connect.AuthServiceHandler = (*Handler)(nil)
@@ -31,6 +33,8 @@ type Config struct {
 	Service  *service.Service
 	Verifier *authn.Verifier
 	Logger   *slog.Logger
+
+	AvatarURLs avatar.URLBuilder
 
 	Now func() time.Time
 }
@@ -50,7 +54,13 @@ func New(cfg Config) (*Handler, error) {
 		now = time.Now
 	}
 
-	return &Handler{svc: cfg.Service, verifier: cfg.Verifier, log: cfg.Logger, now: now}, nil
+	return &Handler{
+		svc:        cfg.Service,
+		verifier:   cfg.Verifier,
+		log:        cfg.Logger,
+		now:        now,
+		avatarURLs: cfg.AvatarURLs,
+	}, nil
 }
 
 func (h *Handler) Register(
@@ -70,7 +80,7 @@ func (h *Handler) Register(
 	}
 
 	return connect.NewResponse(&authv1.RegisterResponse{
-		User:   toProtoUser(res.User),
+		User:   toProtoUser(res.User, h.avatarURLs),
 		Tokens: toProtoTokens(res.Tokens, h.now()),
 	}), nil
 }
@@ -89,7 +99,7 @@ func (h *Handler) Login(
 	}
 
 	return connect.NewResponse(&authv1.LoginResponse{
-		User:   toProtoUser(res.User),
+		User:   toProtoUser(res.User, h.avatarURLs),
 		Tokens: toProtoTokens(res.Tokens, h.now()),
 	}), nil
 }
@@ -132,7 +142,7 @@ func (h *Handler) GetMe(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	return connect.NewResponse(&authv1.GetMeResponse{User: toProtoUser(user)}), nil
+	return connect.NewResponse(&authv1.GetMeResponse{User: toProtoUser(user, h.avatarURLs)}), nil
 }
 
 func (h *Handler) StartOAuth(
@@ -176,7 +186,7 @@ func (h *Handler) CompleteOAuth(
 	}
 
 	return connect.NewResponse(&authv1.CompleteOAuthResponse{
-		User:    toProtoUser(completed.User),
+		User:    toProtoUser(completed.User, h.avatarURLs),
 		Tokens:  toProtoTokens(completed.Tokens, h.now()),
 		Created: completed.Created,
 	}), nil
@@ -201,7 +211,7 @@ func (h *Handler) UpdateProfile(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	return connect.NewResponse(&authv1.UpdateProfileResponse{User: toProtoUser(user)}), nil
+	return connect.NewResponse(&authv1.UpdateProfileResponse{User: toProtoUser(user, h.avatarURLs)}), nil
 }
 
 func (h *Handler) ListSessions(

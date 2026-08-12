@@ -26,6 +26,16 @@ type Config struct {
 	JWT      JWTConfig
 	Password password.Params
 	OAuth    OAuthConfig
+	Avatar   AvatarConfig
+}
+
+type AvatarConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	UseSSL    bool
+	PublicURL string
 }
 
 type OAuthConfig struct {
@@ -63,6 +73,7 @@ func Load() (Config, error) {
 		JWT:      loadJWT(l),
 		Password: loadPasswordParams(l),
 		OAuth:    loadOAuth(l),
+		Avatar:   loadAvatar(l),
 	}
 
 	if cfg.Postgres.SearchPath == "" {
@@ -184,6 +195,17 @@ func applePrivateKey(l *config.Loader) string {
 		return ""
 	}
 	return string(pemBytes)
+}
+
+func loadAvatar(l *config.Loader) AvatarConfig {
+	return AvatarConfig{
+		Endpoint:  l.StringDefault("AVATARS_ENDPOINT", "minio:9000"),
+		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
+		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),
+		Bucket:    l.StringDefault("AVATARS_BUCKET", "avatars"),
+		UseSSL:    l.Bool("AVATARS_USE_SSL", false),
+		PublicURL: l.StringDefault("AVATARS_PUBLIC_URL", "http://localhost:59000"),
+	}
 }
 
 func loadPasswordParams(l *config.Loader) password.Params {

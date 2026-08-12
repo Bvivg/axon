@@ -7,12 +7,13 @@ import (
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
 const tokenType = "Bearer"
 
-func toProtoUser(u domain.User) *authv1.User {
+func toProtoUser(u domain.User, avatarURLs avatar.URLBuilder) *authv1.User {
 	out := &authv1.User{
 		Id:            u.ID.String(),
 		Email:         u.Email,
@@ -23,9 +24,6 @@ func toProtoUser(u domain.User) *authv1.User {
 	if u.DisplayName != "" {
 		out.DisplayName = &u.DisplayName
 	}
-	if u.AvatarURL != "" {
-		out.AvatarUrl = &u.AvatarURL
-	}
 	if u.FirstName != "" {
 		out.FirstName = &u.FirstName
 	}
@@ -34,6 +32,17 @@ func toProtoUser(u domain.User) *authv1.User {
 	}
 	if u.Nickname != "" {
 		out.Nickname = &u.Nickname
+	}
+	if u.AvatarURL != "" {
+		out.AvatarUrl = &u.AvatarURL
+
+		urls := avatarURLs.URLs(u.ID)
+		out.AvatarUrls = &authv1.AvatarURLs{
+			Small:    urls.Small,
+			Medium:   urls.Medium,
+			Large:    urls.Large,
+			Original: urls.Original,
+		}
 	}
 
 	return out

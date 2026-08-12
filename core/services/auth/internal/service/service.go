@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
@@ -43,6 +44,8 @@ type Config struct {
 
 	OAuth *OAuthConfig
 
+	Avatar *avatar.Pipeline
+
 	Now func() time.Time
 }
 
@@ -67,7 +70,8 @@ type Service struct {
 	refreshTTL time.Duration
 	now        func() time.Time
 
-	oauth *oauthDeps
+	oauth  *oauthDeps
+	avatar *avatar.Pipeline
 
 	dummyHash string
 }
@@ -109,6 +113,7 @@ func New(store Store, hasher *password.Hasher, issuer *jwt.Issuer, log *slog.Log
 		refreshTTL: cfg.RefreshTTL,
 		now:        now,
 		oauth:      deps,
+		avatar:     cfg.Avatar,
 		dummyHash:  dummyHash,
 	}, nil
 }

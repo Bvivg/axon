@@ -79,6 +79,7 @@ func FakeAuthorizeHandler() http.Handler {
 			Email:          email,
 			EmailVerified:  verified,
 			DisplayName:    query.Get("name"),
+			AvatarURL:      query.Get("avatar_url"),
 		})
 		if err != nil {
 			http.Error(w, "could not mint a code", http.StatusInternalServerError)
