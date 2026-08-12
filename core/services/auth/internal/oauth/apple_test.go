@@ -25,12 +25,8 @@ import (
 	authjwt "github.com/bvivg/axon/core/services/auth/internal/jwt"
 )
 
-// testAppleJWKSKeyID is the kid Apple's stand-in publishes and signs with.
 const testAppleJWKSKeyID = "apple-signing-key-1"
 
-// testRSAKey stands in for the key Apple signs id_tokens with. Generated once
-// per test binary: 2048-bit generation is slow enough to dominate the suite if
-// it happened per test.
 var testRSAKey = sync.OnceValue(func() *rsa.PrivateKey {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -39,8 +35,6 @@ var testRSAKey = sync.OnceValue(func() *rsa.PrivateKey {
 	return key
 })
 
-// rsaPEM renders that key as a PKCS#8 PEM, for the case where an operator
-// supplies the wrong kind of key file.
 func rsaPEM(t *testing.T) string {
 	t.Helper()
 
@@ -51,30 +45,16 @@ func rsaPEM(t *testing.T) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
 }
 
-// appleStub stands in for Apple: a token endpoint and a key set, over real HTTP
-// with real signatures.
-//
-// It is not a mock of the Provider interface. What is under test is the half of
-// the conversation this service holds — a form-encoded token request carrying a
-// signed assertion, and an id_token verified against a fetched key set — and a
-// mock of Provider would exercise none of it.
 type appleStub struct {
 	server *httptest.Server
 
-	// claims is what the id_token carries. A test changes one and repeats the
-	// exchange to drive a particular refusal.
 	claims jwt.MapClaims
 
-	// signWith overrides the key the id_token is signed with, and keyID the kid
-	// it names: the two ways a token can fail to be Apple's.
 	signWith *rsa.PrivateKey
 	keyID    string
 
-	// status overrides the token endpoint's answer.
 	status int
 
-	// clientKey is the .p8 the provider under test signs its client secret with,
-	// so a test can verify the assertion Apple would have received.
 	clientKey *ecdsa.PrivateKey
 
 	mu   sync.Mutex
@@ -91,9 +71,7 @@ func newAppleStub(t *testing.T) *appleStub {
 			"aud":   testAppleClientID,
 			"sub":   "001234.fedcba9876543210.1234",
 			"email": "person@example.com",
-			// Strings, not booleans: Apple has sent these as strings for years,
-			// and a verifier that only understands booleans reads "true" as
-			// false and refuses every sign-in.
+
 			"email_verified":   "true",
 			"is_private_email": "false",
 			"iat":              now.Add(-time.Minute).Unix(),
@@ -170,9 +148,6 @@ func newAppleStub(t *testing.T) *appleStub {
 	return stub
 }
 
-// provider builds the provider under test against this stub, with the real JWKS
-// cache pointed at the stub's key set — so the fetch and the RFC 7517 parsing
-// are part of what is being tested, not stubbed out of it.
 func (s *appleStub) provider(t *testing.T) *appleProvider {
 	t.Helper()
 
@@ -196,7 +171,6 @@ func (s *appleStub) provider(t *testing.T) *appleProvider {
 	return apple
 }
 
-// sentForm is the token request the provider made.
 func (s *appleStub) sentForm() url.Values {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -205,9 +179,6 @@ func (s *appleStub) sentForm() url.Values {
 
 const testAppleRedirectURL = "https://axon.test" + AppleCallbackPath
 
-// Apple's callback is a form POST, which is why it returns to a server route
-// rather than to the page every other provider comes back to. The scope is what
-// makes it so, and PKCE goes along as it does everywhere else.
 func TestAppleAuthorizationURLAsksForFormPost(t *testing.T) {
 	stub := newAppleStub(t)
 
@@ -225,8 +196,7 @@ func TestAppleAuthorizationURLAsksForFormPost(t *testing.T) {
 		"client_id":     testAppleClientID,
 		"redirect_uri":  testAppleRedirectURL,
 		"response_type": "code",
-		// Without form_post Apple never sends the name, and with the name scope
-		// it refuses anything else.
+
 		"response_mode":         "form_post",
 		"scope":                 appleScope,
 		"state":                 "a-state",
@@ -239,9 +209,6 @@ func TestAppleAuthorizationURLAsksForFormPost(t *testing.T) {
 	}
 }
 
-// The whole Apple exchange: a signed assertion in place of a client secret, a
-// code redeemed over a form POST, and a profile that exists only inside the
-// id_token.
 func TestAppleReadsTheProfileFromTheIDToken(t *testing.T) {
 	stub := newAppleStub(t)
 	stub.claims["is_private_email"] = "true"
@@ -265,8 +232,7 @@ func TestAppleReadsTheProfileFromTheIDToken(t *testing.T) {
 	if !profile.IsPrivateEmail {
 		t.Error("is_private_email was not carried through")
 	}
-	// Apple never tells this service the name — it goes to whoever received the
-	// callback, which is the client, and comes back on the request instead.
+
 	if profile.DisplayName != "" {
 		t.Errorf("display name = %q, want none: the id_token does not carry one", profile.DisplayName)
 	}
@@ -284,8 +250,6 @@ func TestAppleReadsTheProfileFromTheIDToken(t *testing.T) {
 		}
 	}
 
-	// The client secret Apple received has to verify against the .p8 this
-	// deployment holds, or every exchange fails with invalid_client.
 	assertion, err := jwt.Parse(form.Get("client_secret"),
 		func(*jwt.Token) (any, error) { return &stub.clientKey.PublicKey, nil },
 		jwt.WithValidMethods([]string{"ES256"}),
@@ -300,7 +264,6 @@ func TestAppleReadsTheProfileFromTheIDToken(t *testing.T) {
 	}
 }
 
-// The same claims as booleans, which is the other form Apple sends.
 func TestAppleAcceptsBooleanClaims(t *testing.T) {
 	stub := newAppleStub(t)
 	stub.claims["email_verified"] = true
@@ -315,9 +278,6 @@ func TestAppleAcceptsBooleanClaims(t *testing.T) {
 	}
 }
 
-// Accounts are matched by address, so an address the provider has not verified
-// is an account takeover waiting for the right victim. Apple is no exception,
-// however unlikely it is to send one.
 func TestAppleRefusesAnUnverifiedAddress(t *testing.T) {
 	for name, claim := range map[string]any{
 		`the string "false"`: "false",
@@ -340,9 +300,6 @@ func TestAppleRefusesAnUnverifiedAddress(t *testing.T) {
 	}
 }
 
-// An id_token is the entire trust decision here: nothing else in the exchange is
-// authenticated. Every one of these must end the sign-in rather than produce a
-// profile.
 func TestAppleRefusesAnIDTokenItCannotTrust(t *testing.T) {
 	otherKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -350,16 +307,11 @@ func TestAppleRefusesAnIDTokenItCannotTrust(t *testing.T) {
 	}
 
 	for name, break_ := range map[string]func(*appleStub){
-		// The signature is the point. A token signed by anyone else is a forgery
-		// however well-formed its claims are.
+
 		"signed by another key": func(s *appleStub) { s.signWith = otherKey },
 
-		// A kid nobody published cannot be resolved, and guessing is not an
-		// option.
 		"signed by a key that is not published": func(s *appleStub) { s.keyID = "some-other-key" },
 
-		// An id_token Apple issued to a different application. Accepting it
-		// would let another Services ID sign people in here.
 		"issued for another audience": func(s *appleStub) { s.claims["aud"] = "com.example.someone-else" },
 
 		"issued by someone other than Apple": func(s *appleStub) { s.claims["iss"] = "https://not-apple.example" },
@@ -385,8 +337,6 @@ func TestAppleRefusesAnIDTokenItCannotTrust(t *testing.T) {
 	}
 }
 
-// Without an address there is nothing to match the account on, and the sign-in
-// cannot be completed either way.
 func TestAppleRefusesAProfileWithNoAddress(t *testing.T) {
 	stub := newAppleStub(t)
 	delete(stub.claims, "email")
@@ -397,8 +347,6 @@ func TestAppleRefusesAProfileWithNoAddress(t *testing.T) {
 	}
 }
 
-// invalid_client is what Apple answers when the assertion or its key is wrong.
-// It is an operator's problem and invisible unless it is carried out.
 func TestAppleReportsARejectedExchange(t *testing.T) {
 	stub := newAppleStub(t)
 	stub.status = http.StatusBadRequest
@@ -412,9 +360,6 @@ func TestAppleReportsARejectedExchange(t *testing.T) {
 	}
 }
 
-// Four values, not two, and a partly-filled entry counts as absent for the same
-// reason it does everywhere else: a provider that looks available and fails at
-// the exchange breaks in the middle of somebody's sign-in.
 func TestAppleIsRegisteredOnlyWithAllFourCredentials(t *testing.T) {
 	full, _ := appleTestConfig(t)
 
@@ -443,8 +388,6 @@ func TestAppleIsRegisteredOnlyWithAllFourCredentials(t *testing.T) {
 	}
 }
 
-// With all four, Apple is a provider like any other — except for where it sends
-// the browser back to, which is the whole reason it needed its own type.
 func TestAppleIsAvailableWithAllFourCredentials(t *testing.T) {
 	cfg, _ := appleTestConfig(t)
 
@@ -470,8 +413,6 @@ func TestAppleIsAvailableWithAllFourCredentials(t *testing.T) {
 		t.Errorf("Available() = %v, want [apple]", available)
 	}
 
-	// Not /auth/callback/apple: a route handler on the page's own path would
-	// catch the redirect it issues and bounce the flow off itself.
 	authorizeURL := provider.AuthorizationURL("a-state", "a-challenge")
 	parsed, err := url.Parse(authorizeURL)
 	if err != nil {
@@ -482,9 +423,6 @@ func TestAppleIsAvailableWithAllFourCredentials(t *testing.T) {
 	}
 }
 
-// The key cache reports failed refreshes, and a provider that cannot say when it
-// has stopped being able to verify tokens is worse than one that refuses to
-// start.
 func TestAppleNeedsALoggerForItsKeyCache(t *testing.T) {
 	cfg, _ := appleTestConfig(t)
 
@@ -497,8 +435,6 @@ func TestAppleNeedsALoggerForItsKeyCache(t *testing.T) {
 	}
 }
 
-// A base URL that is not absolute has no origin to hang Apple's route off, and
-// guessing one would send people somewhere nobody registered with Apple.
 func TestAppleNeedsAnAbsoluteRedirectBase(t *testing.T) {
 	cfg, _ := appleTestConfig(t)
 

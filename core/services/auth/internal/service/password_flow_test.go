@@ -42,16 +42,13 @@ func TestRegisterCreatesAnAccount(t *testing.T) {
 	}
 }
 
-// Unlike login, registration may say the address is taken: it is already
-// visibly in use to whoever owns it, and hiding that would leave the caller
-// with an unexplainable failure.
 func TestRegisterRejectsDuplicateEmail(t *testing.T) {
 	h := newHarness(t)
 
 	h.register(t, "bob@example.com", validPassword)
 
 	_, err := h.svc.Register(context.Background(), service.RegisterInput{
-		// Different casing, same account.
+
 		Email:    "BOB@example.com",
 		Password: validPassword,
 	})
@@ -97,7 +94,7 @@ func TestLogin(t *testing.T) {
 	registered := h.register(t, "bob@example.com", validPassword)
 
 	res, err := h.svc.Login(context.Background(), service.LoginInput{
-		// Casing must not matter.
+
 		Email:    "BOB@Example.com",
 		Password: validPassword,
 	})
@@ -113,8 +110,6 @@ func TestLogin(t *testing.T) {
 	}
 }
 
-// A wrong password and an unknown address must be indistinguishable, or login
-// becomes a way to find out which addresses have accounts.
 func TestLoginFailuresAreIndistinguishable(t *testing.T) {
 	h := newHarness(t)
 
@@ -136,13 +131,6 @@ func TestLoginFailuresAreIndistinguishable(t *testing.T) {
 	}
 }
 
-// Identical error messages are pointless if the response time still says whether
-// the address exists. The unknown-email path has to spend the same work a real
-// verification does.
-//
-// The bound is deliberately loose — this is a shared CI machine, not a lab — but
-// it still catches the regression cleanly: without the placeholder verification
-// the unknown-email path is a map lookup, orders of magnitude faster than argon2.
 func TestUnknownEmailCostsTheSameAsAWrongPassword(t *testing.T) {
 	h := newHarness(t)
 
@@ -171,9 +159,6 @@ func TestUnknownEmailCostsTheSameAsAWrongPassword(t *testing.T) {
 	}
 }
 
-// An account that only ever signed in through a provider has no password at all.
-// It must answer like any other failed sign-in, so the response does not reveal
-// how the account was created.
 func TestLoginAgainstAnOauthOnlyAccount(t *testing.T) {
 	h := newHarness(t)
 
@@ -193,15 +178,12 @@ func TestLoginAgainstAnOauthOnlyAccount(t *testing.T) {
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("Login error = %v, want ErrInvalidCredentials", err)
 	}
-	// Same reasoning as above: a fast "no password here" would leak that the
-	// account exists and is provider-only.
+
 	if elapsed < time.Millisecond {
 		t.Fatalf("the no-password path returned in %v without doing any work", elapsed)
 	}
 }
 
-// A corrupted hash is an operational failure. Reporting it as a wrong password
-// would hide a real problem behind a routine-looking response.
 func TestUnreadableStoredHashIsNotAWrongPassword(t *testing.T) {
 	h := newHarness(t)
 
@@ -243,7 +225,6 @@ func TestMe(t *testing.T) {
 func TestNewValidatesItsDependencies(t *testing.T) {
 	h := newHarness(t)
 
-	// A zero refresh lifetime would issue instantly-dead tokens.
 	if _, err := service.New(h.store, nil, nil, nil, service.Config{}); err == nil {
 		t.Fatal("a service with no dependencies was constructed")
 	}

@@ -12,12 +12,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 )
 
-// A user and its credential appear together or not at all. A failure between
-// them would leave an account nobody can sign in to and nobody can register
-// again either: the email is taken, but there is no password to check against.
-//
-// The rollback is the assertion. It is invisible from the service layer, which
-// sees one call, and from e2e, which sees one error.
 func TestRegistrationRollsBackOnADuplicateEmail(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -26,8 +20,6 @@ func TestRegistrationRollsBackOnADuplicateEmail(t *testing.T) {
 
 	first := createUser(t, repo)
 
-	// The same address again. CreateUser fails inside the transaction, after
-	// nothing and before the credential.
 	_, err := repo.CreateUserWithPassword(ctx, domain.User{
 		ID:    uuid.New(),
 		Email: first.Email,
@@ -36,7 +28,6 @@ func TestRegistrationRollsBackOnADuplicateEmail(t *testing.T) {
 		t.Fatalf("err = %v, want ErrEmailTaken", err)
 	}
 
-	// Exactly one user with that address, and it still has its credential.
 	if n := countUsers(t, first.Email); n != 1 {
 		t.Errorf("%d users hold %q, want 1", n, first.Email)
 	}
@@ -45,8 +36,6 @@ func TestRegistrationRollsBackOnADuplicateEmail(t *testing.T) {
 	}
 }
 
-// Email uniqueness is the database's job, not the service's. A check-then-insert
-// in Go loses the race that this constraint cannot.
 func TestEmailUniquenessIsEnforcedByTheDatabase(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -59,10 +48,6 @@ func TestEmailUniquenessIsEnforcedByTheDatabase(t *testing.T) {
 	}
 }
 
-// An OAuth sign-in creates the user and the provider link together, for the
-// mirror-image reason: a user without the link is unreachable, because the next
-// sign-in from the same provider identity finds nothing and tries to register
-// again against an address that is now taken.
 func TestOauthRegistrationLinksTheAccountAtomically(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -90,15 +75,6 @@ func TestOauthRegistrationLinksTheAccountAtomically(t *testing.T) {
 	}
 }
 
-// A provider identity stays with whoever claimed it first, and two different
-// things follow from that.
-//
-// Signing in again is routine and must not error: the same user re-links on
-// every sign-in, and the provider's current email is written through. Somebody
-// else claiming the identity is refused — and the refusal is reported, which is
-// the part that used to be missing. The conditional update matches no row, which
-// is not a database error, so a caller that only checked err was told the link
-// had been made and went on to act on it.
 func TestAProviderIdentityNeverMovesToAnotherUser(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -118,8 +94,6 @@ func TestAProviderIdentityNeverMovesToAnotherUser(t *testing.T) {
 		t.Fatalf("first link: %v", err)
 	}
 
-	// The same person signing in again: the email is refreshed from the
-	// provider, and nothing else changes.
 	link.Email = "renamed-" + owner.Email
 	if err := repo.LinkOauthAccount(ctx, link); err != nil {
 		t.Fatalf("re-linking the same identity to the same user failed: %v", err)
@@ -128,9 +102,6 @@ func TestAProviderIdentityNeverMovesToAnotherUser(t *testing.T) {
 		t.Errorf("email = %q, want the provider's current one %q", stored.Email, link.Email)
 	}
 
-	// Someone else claiming it: the ON CONFLICT update is skipped, no row is
-	// touched, and that has to reach the caller as a refusal rather than as
-	// silence. What matters is both the error and the row afterwards.
 	link.UserID = other.ID
 	link.Email = other.Email
 	if err := repo.LinkOauthAccount(ctx, link); !errors.Is(err, domain.ErrOauthIdentityClaimed) {
@@ -156,7 +127,6 @@ func mustLoadLink(t *testing.T, repo *repository.Repository, providerUserID stri
 	return account
 }
 
-// createUser makes an account with a unique address and a password.
 func createUser(t *testing.T, repo *repository.Repository) domain.User {
 	t.Helper()
 

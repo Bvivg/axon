@@ -11,13 +11,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
 
-// fakeStore is an in-memory Store. Per rules/testing.md the service's rules are
-// unit-tested without a database; the repository's own SQL is covered by
-// integration tests instead.
-//
-// It is not a mock that records calls: the interesting behaviour here is state
-// over several operations — refresh, then refresh again with the same token — and
-// call assertions would not capture that.
 type fakeStore struct {
 	mu sync.Mutex
 
@@ -28,17 +21,10 @@ type fakeStore struct {
 	tokensByHash map[string]uuid.UUID
 	oauth        map[string]domain.OauthAccount
 
-	// failOn forces a specific method to return an error, for the paths where
-	// the service has to react to a storage failure.
 	failOn map[string]error
 
-	// beforeRotate runs inside RotateRefreshToken before it takes effect. It is
-	// how a concurrent exchange is simulated deterministically, without hoping a
-	// goroutine interleaves the right way.
 	beforeRotate func()
 
-	// beforeLink is the same trick for LinkOauthAccount: it opens the window
-	// between finding no link for an identity and writing one.
 	beforeLink func()
 }
 
@@ -150,7 +136,7 @@ func (s *fakeStore) UpdateUserProfile(_ context.Context, id uuid.UUID, displayNa
 	if !ok {
 		return domain.User{}, domain.ErrUserNotFound
 	}
-	// Mirrors the SQL: only fills what is empty, never overwrites a chosen value.
+
 	if u.DisplayName == "" {
 		u.DisplayName = displayName
 	}
@@ -223,8 +209,7 @@ func (s *fakeStore) RefreshTokenByHash(_ context.Context, hash string) (domain.R
 	if !ok {
 		return domain.RefreshToken{}, domain.ErrRefreshTokenInvalid
 	}
-	// Spent and revoked tokens are returned, exactly as the real store does:
-	// reuse detection depends on seeing them.
+
 	return s.tokens[id], nil
 }
 
@@ -244,8 +229,7 @@ func (s *fakeStore) RotateRefreshToken(_ context.Context, spentID uuid.UUID, nex
 	if !ok {
 		return false, nil
 	}
-	// The same condition the SQL puts in its WHERE clause, which is what makes
-	// the winner of a race well-defined.
+
 	if spent.Used() || spent.Revoked() {
 		return false, nil
 	}
@@ -322,9 +306,7 @@ func (s *fakeStore) LinkOauthAccount(_ context.Context, a domain.OauthAccount) e
 	}
 
 	key := oauthKey(a.Provider, a.ProviderUserID)
-	// Mirrors the SQL: an existing link never moves to a different user, and the
-	// refusal is reported. The conditional update matches no row in this case,
-	// so the real store sees a row count of zero and says so.
+
 	if existing, ok := s.oauth[key]; ok && existing.UserID != a.UserID {
 		return domain.ErrOauthIdentityClaimed
 	}
@@ -335,8 +317,6 @@ func (s *fakeStore) LinkOauthAccount(_ context.Context, a domain.OauthAccount) e
 	return nil
 }
 
-// linkDirectly plants a link without going through LinkOauthAccount, for tests
-// that need the store already in a state the service refuses to create.
 func (s *fakeStore) linkDirectly(a domain.OauthAccount) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -351,8 +331,6 @@ func oauthKey(p domain.Provider, providerUserID string) string {
 	return p.String() + "\x00" + providerUserID
 }
 
-// tokenByHash reads a stored token directly, for assertions about state the
-// service does not return.
 func (s *fakeStore) tokenByHash(hash string) (domain.RefreshToken, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -364,7 +342,6 @@ func (s *fakeStore) tokenByHash(hash string) (domain.RefreshToken, bool) {
 	return s.tokens[id], true
 }
 
-// liveTokensForUser counts a user's tokens that are neither spent nor revoked.
 func (s *fakeStore) liveTokensForUser(userID uuid.UUID, now time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

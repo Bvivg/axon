@@ -11,7 +11,6 @@ import (
 
 const oauthAccountColumns = `provider, provider_user_id, user_id, email, linked_at`
 
-// OauthAccountByProviderID resolves a provider identity to a linked account.
 func (r *Repository) OauthAccountByProviderID(ctx context.Context, provider domain.Provider, providerUserID string) (domain.OauthAccount, error) {
 	const query = `
 		SELECT ` + oauthAccountColumns + `
@@ -28,17 +27,6 @@ func (r *Repository) OauthAccountByProviderID(ctx context.Context, provider doma
 	return a, nil
 }
 
-// LinkOauthAccount attaches a provider identity to a user.
-//
-// A repeated link for the same identity is not an error — it happens whenever
-// someone signs in again — but the identity never moves to a different user:
-// the WHERE clause on the update keeps it with whoever claimed it first, and an
-// attempt to move it fails with domain.ErrOauthIdentityClaimed.
-//
-// The row count is what makes that refusal visible. A conditional DO UPDATE
-// whose WHERE clause matches nothing updates no row and reports no error, so
-// without this check the caller is told the link exists when it does not — and
-// then acts on it.
 func (r *Repository) LinkOauthAccount(ctx context.Context, a domain.OauthAccount) error {
 	const query = `
 		INSERT INTO oauth_accounts (provider, provider_user_id, user_id, email)
@@ -52,18 +40,12 @@ func (r *Repository) LinkOauthAccount(ctx context.Context, a domain.OauthAccount
 		return fmt.Errorf("repository: link oauth account: %w", err)
 	}
 
-	// Zero rows has one cause here: the identity exists and belongs to somebody
-	// else. An insert affects one row, and so does the update when the identity
-	// is already this user's — Postgres counts it whether or not the email
-	// actually changed.
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("repository: link oauth account: %w", domain.ErrOauthIdentityClaimed)
 	}
 	return nil
 }
 
-// OauthAccountsForUser lists the providers a user has linked, so the client can
-// show what is connected.
 func (r *Repository) OauthAccountsForUser(ctx context.Context, userID uuid.UUID) ([]domain.OauthAccount, error) {
 	const query = `
 		SELECT ` + oauthAccountColumns + `

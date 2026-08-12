@@ -1,17 +1,5 @@
 //go:build integration
 
-// Package integration exercises the repository against a real Postgres.
-//
-// It sits between the unit tests, which cover pure logic with no database at
-// all, and the e2e suite, which drives the whole stack through the gateway.
-// What belongs here is everything that is genuinely about the database and
-// invisible from either side: constraint behaviour, transaction boundaries,
-// concurrency, and the permission model.
-//
-// A test that could pass against a mock belongs in a unit test. A test about
-// what a client experiences belongs in e2e.
-//
-//	make test-integration
 package integration
 
 import (
@@ -36,8 +24,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 )
 
-// Passwords for the throwaway container. They exist only inside a container
-// that lives for the length of one test run.
 const (
 	superuser    = "axon"
 	superpass    = "axon"
@@ -46,13 +32,8 @@ const (
 	chatPassword = "chat"
 )
 
-// pool is the connection the tests use: the auth_service role, not the
-// superuser. Testing through the role the service actually uses is the only way
-// the permission model is under test rather than merely configured.
 var pool *postgres.Pool
 
-// startupTimeout bounds bringing the container up and migrating it. Pulling the
-// image on a cold machine is the slow part.
 const startupTimeout = 3 * time.Minute
 
 func TestMain(m *testing.M) {
@@ -72,9 +53,7 @@ func run(m *testing.M) (int, error) {
 		tcpostgres.WithDatabase(database),
 		tcpostgres.WithUsername(superuser),
 		tcpostgres.WithPassword(superpass),
-		// The same script the real stack runs. Reusing it is the point: a test
-		// against a hand-rolled schema would prove nothing about the permissions
-		// the deployed database actually grants.
+
 		tcpostgres.WithInitScripts("../../../deploy/postgres/init/01-schemas.sh"),
 		testcontainers.WithEnv(map[string]string{
 			"AUTH_DB_PASSWORD":    authPassword,
@@ -125,8 +104,6 @@ func run(m *testing.M) (int, error) {
 	return m.Run(), nil
 }
 
-// applyMigrations runs the service's own migrations, with the service's own
-// role. It doubles as a check that they apply to an empty database at all.
 func applyMigrations(dsn string) error {
 	m, err := migrate.New("file://../migrations", "pgx5://"+dsn[len("postgres://"):])
 	if err != nil {
@@ -145,17 +122,9 @@ func applyMigrations(dsn string) error {
 	return nil
 }
 
-// newRepo returns a repository over a database with no rows in it.
-//
-// Truncating between tests rather than starting a container per test keeps the
-// suite to one container: the container is the expensive part, and an empty
-// table is an empty table however it got that way.
 func newRepo(t *testing.T) *repository.Repository {
 	t.Helper()
 
-	// CASCADE because credentials, refresh_tokens and oauth_accounts all
-	// reference users. RESTART IDENTITY is deliberately absent: every key here
-	// is a UUID, so there is no sequence to reset.
 	_, err := pool.Exec(t.Context(),
 		`TRUNCATE users, credentials, refresh_tokens, oauth_accounts CASCADE`)
 	if err != nil {

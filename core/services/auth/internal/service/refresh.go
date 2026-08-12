@@ -11,23 +11,9 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/token"
 )
 
-// Refresh exchanges a refresh token for a new pair.
-//
-// The rotation is what makes a stolen refresh token detectable. Each exchange
-// spends the presented token and issues a successor in the same family, so a
-// token can legitimately be used exactly once. If a spent one comes back, there
-// are two live holders of the same chain and no way to tell which is the thief —
-// so the entire family is revoked and both are signed out. Making the real user
-// sign in again is a far better outcome than leaving an attacker with a session.
-//
-// Detection has to cover both orderings. A token presented after it was already
-// exchanged is caught by the state check; two exchanges racing each other are
-// caught by the rotation reporting which one won. Without the second case, two
-// concurrent requests with one stolen token could each hand out a live successor.
 func (s *Service) Refresh(ctx context.Context, presented string) (Result, error) {
 	if presented == "" {
-		// An empty value is not a real token, and not worth telling apart from
-		// one that simply does not exist.
+
 		return Result{}, domain.ErrRefreshTokenInvalid
 	}
 
@@ -38,21 +24,17 @@ func (s *Service) Refresh(ctx context.Context, presented string) (Result, error)
 
 	stored, err := s.store.RefreshTokenByHash(ctx, hash)
 	if err != nil {
-		// Unknown tokens arrive as ErrRefreshTokenInvalid from the store.
+
 		return Result{}, err
 	}
 
 	now := s.now().UTC()
 
-	// Already spent: this is the replay case.
 	if stored.Used() {
 		s.revokeCompromisedFamily(ctx, stored, "a spent refresh token was presented again")
 		return Result{}, domain.ErrRefreshTokenReused
 	}
 
-	// Revoked or expired is ordinary rejection, not a security event. Revoked
-	// covers the token the legitimate user still held when a family was killed,
-	// so it must not itself trigger another revocation.
 	if stored.Revoked() || stored.Expired(now) {
 		return Result{}, domain.ErrRefreshTokenInvalid
 	}
@@ -75,8 +57,7 @@ func (s *Service) Refresh(ctx context.Context, presented string) (Result, error)
 		return Result{}, err
 	}
 	if !won {
-		// Someone else spent this token between the read above and the write. One
-		// of the two is not the owner; treat it the same as a replay.
+
 		s.revokeCompromisedFamily(ctx, stored, "two exchanges raced for one refresh token")
 		return Result{}, domain.ErrRefreshTokenReused
 	}
@@ -101,14 +82,6 @@ func (s *Service) Refresh(ctx context.Context, presented string) (Result, error)
 	}, nil
 }
 
-// revokeCompromisedFamily kills every token descended from the same sign-in and
-// records it at warn level.
-//
-// The log line matters as much as the revocation: this is the signal that a
-// token leaked, and it should be visible without anyone going looking for it.
-// A failure to revoke is logged at error and not returned — the caller is being
-// refused either way, and reporting the storage failure instead would tell an
-// attacker their replay hit something unexpected.
 func (s *Service) revokeCompromisedFamily(ctx context.Context, t domain.RefreshToken, reason string) {
 	revoked, err := s.store.RevokeFamily(ctx, t.FamilyID, s.now().UTC())
 	if err != nil {
@@ -128,15 +101,9 @@ func (s *Service) revokeCompromisedFamily(ctx context.Context, t domain.RefreshT
 	)
 }
 
-// Logout revokes the family the presented token belongs to, signing that
-// sign-in out everywhere it was refreshed to.
-//
-// It is idempotent and says nothing about whether the token existed. A logout
-// that reported "no such token" would be a way to probe which tokens are live.
 func (s *Service) Logout(ctx context.Context, presented string) error {
 	if presented == "" {
-		// Nothing to revoke, and nothing to report: the caller is already signed
-		// out as far as this token is concerned.
+
 		return nil
 	}
 
@@ -166,7 +133,6 @@ func (s *Service) Logout(ctx context.Context, presented string) error {
 	return nil
 }
 
-// LogoutEverywhere revokes every live token a user has, across all sign-ins.
 func (s *Service) LogoutEverywhere(ctx context.Context, userID uuid.UUID) error {
 	revoked, err := s.store.RevokeAllForUser(ctx, userID, s.now().UTC())
 	if err != nil {
@@ -177,10 +143,6 @@ func (s *Service) LogoutEverywhere(ctx context.Context, userID uuid.UUID) error 
 	return nil
 }
 
-// issueTokens starts a new refresh family and issues the first pair in it.
-//
-// A fresh family per sign-in is deliberate: two devices are two chains, so
-// revoking one because its token was replayed does not sign the other out.
 func (s *Service) issueTokens(ctx context.Context, user domain.User, familyID uuid.UUID) (domain.TokenPair, error) {
 	refresh, err := token.New()
 	if err != nil {

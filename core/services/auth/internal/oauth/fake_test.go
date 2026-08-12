@@ -12,8 +12,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 )
 
-// newFakeProvider returns the fake provider pointed at a live authorize handler,
-// so a test walks the same redirect a browser would.
 func newFakeProvider(t *testing.T) oauth.Provider {
 	t.Helper()
 
@@ -36,8 +34,6 @@ func newFakeProvider(t *testing.T) oauth.Provider {
 	return provider
 }
 
-// authorize follows the authorization URL the way a browser would, stopping at
-// the redirect so the test can read the callback parameters out of it.
 func authorize(t *testing.T, rawURL string) url.Values {
 	t.Helper()
 
@@ -69,16 +65,12 @@ func authorize(t *testing.T, rawURL string) url.Values {
 	return location.Query()
 }
 
-// The whole point of the fake provider: a real redirect, a real code, and a real
-// exchange, with no third party involved.
 func TestFakeProviderCompletesTheFlow(t *testing.T) {
 	provider := newFakeProvider(t)
 
 	authURL := provider.AuthorizationURL("the-state", oauth.Challenge("a-verifier"))
 	callback := authorize(t, authURL)
 
-	// The state must come back untouched, or the caller cannot match the
-	// callback to the sign-in that started it.
 	if got := callback.Get("state"); got != "the-state" {
 		t.Errorf("state = %q, want it returned unchanged", got)
 	}
@@ -100,8 +92,6 @@ func TestFakeProviderCompletesTheFlow(t *testing.T) {
 	}
 }
 
-// A test needs to be able to sign in as a particular person, and to sign in as
-// the same person twice.
 func TestFakeProviderHonoursTheRequestedIdentity(t *testing.T) {
 	provider := newFakeProvider(t)
 
@@ -126,8 +116,6 @@ func TestFakeProviderHonoursTheRequestedIdentity(t *testing.T) {
 	}
 }
 
-// The unverified path has to be reachable, or the refusal it triggers can only
-// be tested against the real providers.
 func TestFakeProviderCanReturnAnUnverifiedAddress(t *testing.T) {
 	provider := newFakeProvider(t)
 

@@ -12,12 +12,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-// An account created by a provider sign-in has no credential row at all.
-//
-// A nullable password column would make this state easy to overlook, and the
-// consequence of overlooking it is a password check against an empty hash. The
-// separate table is what makes "this person has no password" representable, and
-// this asserts it is what actually happens.
 func TestOauthAccountHasNoCredential(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -43,8 +37,6 @@ func TestOauthAccountHasNoCredential(t *testing.T) {
 	}
 }
 
-// Linking a provider to an account that already has a password must leave the
-// password alone: it adds a way in, it does not replace one.
 func TestLinkingAProviderLeavesThePasswordIntact(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -75,7 +67,6 @@ func TestLinkingAProviderLeavesThePasswordIntact(t *testing.T) {
 	}
 }
 
-// One person can hold several providers, and each resolves back to them.
 func TestSeveralProvidersCanPointAtOneAccount(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -118,13 +109,6 @@ func TestSeveralProvidersCanPointAtOneAccount(t *testing.T) {
 	}
 }
 
-// The refusal to move an identity, reached through the transaction that creates
-// an account:
-// nothing is left behind when the identity turns out to be taken.
-//
-// This is the path a first sign-in takes, and it used to commit a user with no
-// link at all — an account nobody could reach again, holding an address nobody
-// could register.
 func TestCreatingAnAccountForATakenIdentityLeavesNothingBehind(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -161,9 +145,6 @@ func TestCreatingAnAccountForATakenIdentityLeavesNothingBehind(t *testing.T) {
 	}
 }
 
-// The same subject at two different providers is two different people as far as
-// the primary key is concerned. Collapsing them would let anyone who can pick
-// their own id at one provider impersonate a user of another.
 func TestTheSameSubjectAtTwoProvidersIsTwoIdentities(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -202,12 +183,6 @@ func TestTheSameSubjectAtTwoProvidersIsTwoIdentities(t *testing.T) {
 	}
 }
 
-// Two devices signing in with one provider identity at the same moment. The
-// database has to settle it: one account, not two, whichever transaction
-// commits first.
-//
-// A check-then-insert in Go loses this race, which is why the uniqueness lives
-// in the schema.
 func TestConcurrentFirstSignInsProduceOneAccount(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()

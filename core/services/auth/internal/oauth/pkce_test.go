@@ -23,8 +23,6 @@ func TestVerifiersAreUnique(t *testing.T) {
 	}
 }
 
-// RFC 7636 requires 43 to 128 characters, unreserved. Base64url of 32 bytes is
-// 43 with no padding, which is both the minimum length and 256 bits of entropy.
 func TestVerifierIsWellFormed(t *testing.T) {
 	verifier, err := oauth.NewVerifier()
 	if err != nil {
@@ -35,8 +33,6 @@ func TestVerifierIsWellFormed(t *testing.T) {
 		t.Errorf("length = %d, want between 43 and 128", len(verifier))
 	}
 
-	// Padding would need percent-encoding in a query string, and some providers
-	// reject it outright.
 	for _, r := range verifier {
 		switch {
 		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9':
@@ -47,8 +43,6 @@ func TestVerifierIsWellFormed(t *testing.T) {
 	}
 }
 
-// The whole point of S256 is that the challenge does not reveal the verifier.
-// A challenge equal to its verifier would be "plain" by another name.
 func TestChallengeIsTheHashNotTheVerifier(t *testing.T) {
 	verifier, err := oauth.NewVerifier()
 	if err != nil {

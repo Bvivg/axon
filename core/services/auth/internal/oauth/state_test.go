@@ -13,8 +13,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 )
 
-// newStore returns a store over an in-process Redis, plus the server so a test
-// can move its clock to force an expiry.
 func newStore(t *testing.T, cfg oauth.StateStoreConfig) (*oauth.StateStore, *miniredis.Miniredis) {
 	t.Helper()
 
@@ -69,8 +67,6 @@ func TestStateRoundTrips(t *testing.T) {
 	}
 }
 
-// The property the callback's safety rests on. A state that can be presented
-// twice is a state an attacker can replay.
 func TestStateIsSingleUse(t *testing.T) {
 	store, _ := newStore(t, oauth.StateStoreConfig{})
 
@@ -88,8 +84,6 @@ func TestStateIsSingleUse(t *testing.T) {
 	}
 }
 
-// Two callbacks racing on one state: exactly one may win. A GET followed by a
-// DEL would let both through, which is why Take uses GETDEL.
 func TestConcurrentTakesHaveOneWinner(t *testing.T) {
 	store, _ := newStore(t, oauth.StateStoreConfig{})
 
@@ -141,8 +135,6 @@ func TestUnknownStateIsRefused(t *testing.T) {
 	}
 }
 
-// A sign-in nobody finished must not stay completable indefinitely: an
-// intercepted state should be stale long before it is useful.
 func TestStateExpires(t *testing.T) {
 	store, server := newStore(t, oauth.StateStoreConfig{TTL: time.Minute})
 

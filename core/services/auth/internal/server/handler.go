@@ -1,8 +1,3 @@
-// Package server exposes the auth service over Connect.
-//
-// It is a translation layer and nothing else: requests become service inputs,
-// domain errors become Connect codes, domain types become wire types. No rule
-// about how authentication works lives here.
 package server
 
 import (
@@ -22,7 +17,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
 
-// Handler implements the generated AuthService interface.
 type Handler struct {
 	svc      *service.Service
 	verifier *authn.Verifier
@@ -32,17 +26,14 @@ type Handler struct {
 
 var _ authv1connect.AuthServiceHandler = (*Handler)(nil)
 
-// Config configures a Handler.
 type Config struct {
 	Service  *service.Service
 	Verifier *authn.Verifier
 	Logger   *slog.Logger
 
-	// Now overrides the clock. Tests set it; production leaves it nil.
 	Now func() time.Time
 }
 
-// New returns a Handler.
 func New(cfg Config) (*Handler, error) {
 	switch {
 	case cfg.Service == nil:
@@ -61,7 +52,6 @@ func New(cfg Config) (*Handler, error) {
 	return &Handler{svc: cfg.Service, verifier: cfg.Verifier, log: cfg.Logger, now: now}, nil
 }
 
-// Register creates an account and signs it in.
 func (h *Handler) Register(
 	ctx context.Context,
 	req *connect.Request[authv1.RegisterRequest],
@@ -83,7 +73,6 @@ func (h *Handler) Register(
 	}), nil
 }
 
-// Login exchanges credentials for tokens.
 func (h *Handler) Login(
 	ctx context.Context,
 	req *connect.Request[authv1.LoginRequest],
@@ -102,7 +91,6 @@ func (h *Handler) Login(
 	}), nil
 }
 
-// RefreshToken rotates a refresh token and issues a new pair.
 func (h *Handler) RefreshToken(
 	ctx context.Context,
 	req *connect.Request[authv1.RefreshTokenRequest],
@@ -117,7 +105,6 @@ func (h *Handler) RefreshToken(
 	}), nil
 }
 
-// Logout revokes the refresh chain the token belongs to.
 func (h *Handler) Logout(
 	ctx context.Context,
 	req *connect.Request[authv1.LogoutRequest],
@@ -128,11 +115,6 @@ func (h *Handler) Logout(
 	return connect.NewResponse(&authv1.LogoutResponse{}), nil
 }
 
-// GetMe returns the caller's profile.
-//
-// The subject comes from the token on the request, never from the body — the
-// contract has no field for a user id precisely so this method cannot be asked
-// for somebody else's account.
 func (h *Handler) GetMe(
 	ctx context.Context,
 	req *connect.Request[authv1.GetMeRequest],
@@ -150,7 +132,6 @@ func (h *Handler) GetMe(
 	return connect.NewResponse(&authv1.GetMeResponse{User: toProtoUser(user)}), nil
 }
 
-// StartOAuth begins an authorization code flow.
 func (h *Handler) StartOAuth(
 	ctx context.Context,
 	req *connect.Request[authv1.StartOAuthRequest],
@@ -171,7 +152,6 @@ func (h *Handler) StartOAuth(
 	}), nil
 }
 
-// CompleteOAuth finishes an authorization code flow.
 func (h *Handler) CompleteOAuth(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteOAuthRequest],
@@ -198,13 +178,6 @@ func (h *Handler) CompleteOAuth(
 	}), nil
 }
 
-// authenticate verifies the bearer token on a request.
-//
-// The gateway already verified it, and this verifies it again. That is
-// deliberate: rules/security.md puts resource-level authorization in the service
-// that owns the resource, and a service that trusts a header because "the
-// gateway must have checked" is one misrouted request away from trusting anyone.
-// Verification is local against the key set, so the cost is a signature check.
 func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {
 	raw, err := authn.BearerToken(headers)
 	if err != nil {

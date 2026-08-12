@@ -44,25 +44,20 @@ func TestAllowedDestinationsPassThrough(t *testing.T) {
 	}
 }
 
-// The attack this exists to stop: an attacker chooses the destination, walks a
-// victim through a real sign-in, and reads the authorization code out of their
-// own logs.
 func TestDestinationsOutsideTheAllowListAreRefused(t *testing.T) {
 	policy := newPolicy(t)
 
 	for _, target := range []string{
 		"https://evil.example/collect",
-		// Exact matching, not prefix or suffix: both of these contain the
-		// allowed origin as a substring.
+
 		"http://localhost:3000.evil.example",
 		"http://evil.example/?next=http://localhost:3000",
-		// Same host, different scheme and port.
+
 		"https://localhost:3000",
 		"http://localhost:30001",
-		// Protocol-relative: a browser reads this as absolute, so treating it as
-		// a path would be an open redirect.
+
 		"//evil.example/collect",
-		// Relative: no origin to check at all.
+
 		"/lobby",
 		"javascript:alert(1)",
 	} {
@@ -72,8 +67,6 @@ func TestDestinationsOutsideTheAllowListAreRefused(t *testing.T) {
 	}
 }
 
-// Most sign-ins name no destination. That is not an error; it resolves to the
-// first configured origin so the caller still lands somewhere.
 func TestNoDestinationResolvesToTheFallback(t *testing.T) {
 	policy := newPolicy(t)
 
@@ -107,8 +100,6 @@ func TestSeveralOriginsAreAllowed(t *testing.T) {
 	}
 }
 
-// An empty list has no safe reading. Allowing nothing breaks every sign-in;
-// allowing everything is the vulnerability. Configuration has to say which.
 func TestAnEmptyAllowListIsRefused(t *testing.T) {
 	for _, origins := range [][]string{nil, {}, {""}, {"not a url"}} {
 		if _, err := oauth.NewReturnToPolicy(origins); err == nil {
