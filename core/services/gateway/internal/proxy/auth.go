@@ -10,6 +10,8 @@ import (
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+
+	"github.com/bvivg/axon/core/services/gateway/internal/guard"
 )
 
 type Auth struct {
@@ -74,6 +76,27 @@ func (a *Auth) CompleteOAuth(
 	return a.client.CompleteOAuth(ctx, forward(ctx, req))
 }
 
+func (a *Auth) UpdateProfile(
+	ctx context.Context,
+	req *connect.Request[authv1.UpdateProfileRequest],
+) (*connect.Response[authv1.UpdateProfileResponse], error) {
+	return a.client.UpdateProfile(ctx, forward(ctx, req))
+}
+
+func (a *Auth) ListSessions(
+	ctx context.Context,
+	req *connect.Request[authv1.ListSessionsRequest],
+) (*connect.Response[authv1.ListSessionsResponse], error) {
+	return a.client.ListSessions(ctx, forward(ctx, req))
+}
+
+func (a *Auth) RevokeSession(
+	ctx context.Context,
+	req *connect.Request[authv1.RevokeSessionRequest],
+) (*connect.Response[authv1.RevokeSessionResponse], error) {
+	return a.client.RevokeSession(ctx, forward(ctx, req))
+}
+
 func forward[T any](ctx context.Context, req *connect.Request[T]) *connect.Request[T] {
 	out := connect.NewRequest(req.Msg)
 
@@ -81,7 +104,13 @@ func forward[T any](ctx context.Context, req *connect.Request[T]) *connect.Reque
 		out.Header().Set(authn.Header, v)
 	}
 
-	_ = ctx
+	if v := req.Header().Get("User-Agent"); v != "" {
+		out.Header().Set("User-Agent", v)
+	}
+
+	if ip := guard.ClientIPFromContext(ctx); ip != "" {
+		out.Header().Set(authn.ClientIPHeader, ip)
+	}
 
 	return out
 }
