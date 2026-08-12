@@ -148,6 +148,8 @@ func scanRefreshToken(row scanRow) (domain.RefreshToken, error) {
 		&t.ExpiresAt,
 		&usedAt,
 		&revokedAt,
+		&t.UserAgent,
+		&t.IP,
 	)
 	if err != nil {
 		return domain.RefreshToken{}, err
