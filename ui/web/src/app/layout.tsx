@@ -15,8 +15,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className="min-h-screen antialiased">
-        {/* Query first: the session provider restores by making calls, and
-            components below it read the cache those calls fill. */}
         <QueryProvider>
           <SessionProvider>{children}</SessionProvider>
         </QueryProvider>

@@ -6,14 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 
-/**
- * Games, at the address everything else answers to.
- *
- * The engine behind this exists — a shared Game interface and Tic-Tac-Toe
- * built against it, per the roadmap — but nothing between it and a browser
- * does yet: no session service, no Connect handler, no board. This is that
- * honestly, an empty state rather than a page pretending the wiring is there.
- */
 export default function GamesHomePage() {
   const { status } = useSession();
 

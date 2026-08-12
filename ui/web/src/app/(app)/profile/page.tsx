@@ -11,15 +11,6 @@ import {
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 
-/**
- * The protected page. It proves the whole chain end to end: the access token
- * the gateway issued opens a procedure the policy marks as authenticated.
- *
- * The guard is client-side because the access token lives in memory — a server
- * component has no way to read it, and putting it somewhere the server could
- * read is the arrangement this design exists to avoid. The real enforcement is
- * on the gateway; this only decides what to render.
- */
 export default function ProfilePage() {
   const { status, user, signOut } = useSession();
 
@@ -51,8 +42,6 @@ export default function ProfilePage() {
             <Row label="User ID" value={user.id} mono />
           </dl>
 
-          {/* No redirect here: losing the session is what the guard above
-              watches for, and it sends them to sign in. */}
           <Button variant="outline" className="w-full" onClick={() => void signOut()}>
             Sign out
           </Button>

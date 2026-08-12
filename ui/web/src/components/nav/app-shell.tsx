@@ -9,25 +9,6 @@ import { navItems, sectionFor, type NavItem } from "@/components/nav/items";
 import { SearchPanel } from "@/components/nav/search-panel";
 import { cn } from "@/lib/utils";
 
-/**
- * The chrome every signed-in page shares: a sidebar on a screen wide enough to
- * spare the width, a floating bar on one that is not. Both carry the same four
- * destinations plus search, so switching viewport size never loses a place
- * anything lived.
- *
- * The sidebar is sticky and at least one viewport tall on its own (`sticky
- * top-0 min-h-screen self-start`) rather than stretched to match the content
- * column. Plain flex stretch would tie its height to whichever page is on
- * screen — as tall as the content on a long one, scrolling out of view with
- * it — instead of the nav being the one fixed thing while pages scroll
- * underneath it.
- *
- * Search sits apart from the four destinations on purpose — on the sidebar
- * it's pushed to the bottom by `mt-auto`, on the bar it's a separate circle
- * with a gap of its own — because it is not a fifth destination. It does not
- * navigate anywhere on its own; what it searches is decided by whichever of
- * the four you're standing on.
- */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const section = sectionFor(pathname);

@@ -16,14 +16,6 @@ const placeholders: Record<Section, string> = {
   profile: "Search settings",
 };
 
-/**
- * The one search action, aimed wherever the active section aims it.
- *
- * A centred palette rather than a popover anchored to the trigger: the
- * trigger lives in two different places (the sidebar, the floating mobile
- * button), and a palette reads the same regardless of which one opened it —
- * one behaviour instead of two positioning problems.
- */
 export function SearchPanel({ section, onClose }: { section: Section; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,8 +79,6 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="px-3 py-8 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-// Games has no backend yet (roadmap stage 4): the box is real, joining is not.
-// Saying so beats a spinner that never resolves.
 function GamesSearch({ query }: { query: string }) {
   if (!query.trim()) {
     return <Empty>Type a game&apos;s code to join a session.</Empty>;
@@ -101,7 +91,6 @@ function GamesSearch({ query }: { query: string }) {
   );
 }
 
-// Calling has no backend yet either (roadmap stage 5, LiveKit).
 function CallsSearch({ query }: { query: string }) {
   if (!query.trim()) {
     return <Empty>Search recent calls by nickname or email.</Empty>;
@@ -109,10 +98,6 @@ function CallsSearch({ query }: { query: string }) {
   return <Empty>Calling isn&apos;t set up yet — nothing to find for &quot;{query}&quot;.</Empty>;
 }
 
-// Chats is the one section with something real to search: the rooms this
-// account already belongs to, from the same query the lobby renders. Finding
-// someone with no shared room yet needs a contacts endpoint chat does not have
-// — noted rather than faked.
 function ChatsSearch({ query, onNavigate }: { query: string; onNavigate: () => void }) {
   const rooms = useRooms();
   const router = useRouter();
@@ -164,9 +149,6 @@ interface SettingEntry {
   action: "sign-out" | "account";
 }
 
-// The profile page has exactly one real surface today: the account card and
-// the sign-out button. The list matches that rather than listing settings
-// that do not exist yet.
 const settings: SettingEntry[] = [
   { label: "Account", hint: "Email, display name and verification status", action: "account" },
   { label: "Sign out", hint: "End this session on this device", action: "sign-out" },

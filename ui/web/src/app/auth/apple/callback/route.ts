@@ -1,37 +1,9 @@
-/**
- * Where Apple returns the browser.
- *
- * Apple is the one provider that does not come back to /auth/callback/<provider>
- * with the others. Asking for the name and email scopes makes its callback an
- * HTML form POST, and a client page cannot receive one — hence a route handler.
- *
- * It sits at its own path rather than at /auth/callback/apple deliberately: a
- * handler mounted on the page's path would also catch the redirect it issues,
- * and the flow would bounce off itself. Here the POST is turned into an ordinary
- * GET of the existing callback page, which then completes the sign-in exactly as
- * it does for every other provider.
- *
- * The address must match OAUTH_APPLE_* on the auth service, which derives it as
- * <web origin>/auth/apple/callback, and must be registered as a Return URL in
- * the Apple developer console.
- */
-
-/** The page that finishes every provider sign-in. */
 const callbackPage = "/auth/callback/apple";
 
-/**
- * Apple's `user` field, sent with the first authorization only.
- *
- * It is a JSON string in the form body, and it is the single opportunity to
- * learn the person's name: Apple never repeats it, and the id_token does not
- * carry it. The email in it is ignored — the signed id_token is where the
- * address comes from.
- */
 interface AppleUser {
   name?: { firstName?: string; lastName?: string };
 }
 
-/** Bounds the name so a hostile POST cannot produce an enormous redirect URL. */
 const maxNameLength = 128;
 
 export async function POST(request: Request): Promise<Response> {
@@ -49,8 +21,6 @@ export async function POST(request: Request): Promise<Response> {
     query.set("state", state);
   }
 
-  // Apple reports a refusal in the same POST rather than by failing the
-  // exchange, and its own wording is what the page shows.
   const error = field(form, "error");
   if (error) {
     query.set("error", error);
@@ -65,13 +35,6 @@ export async function POST(request: Request): Promise<Response> {
 
   query.set("code", code);
 
-  // Apple's one and only mention of the person's name. The callback page passes
-  // it to CompleteOAuth, which has a field for exactly this; there is nowhere
-  // else to keep it, because the page is reached by a redirect and this handler
-  // holds no session. It rides in the query as the code and the state do —
-  // self-asserted, not a credential, and useful only while the account is being
-  // created — with the length bounded above so a hostile POST cannot turn it
-  // into an enormous URL. Every sign-in after the first carries no name at all.
   const name = displayName(field(form, "user"));
   if (name) {
     query.set("name", name);
@@ -80,7 +43,6 @@ export async function POST(request: Request): Promise<Response> {
   return seeOther(query);
 }
 
-/** displayName reads the name out of Apple's `user` field, if it sent one. */
 function displayName(raw: string): string {
   if (!raw) {
     return "";
@@ -90,8 +52,7 @@ function displayName(raw: string): string {
   try {
     user = JSON.parse(raw) as AppleUser;
   } catch {
-    // A malformed field costs the name, not the sign-in: the identity itself
-    // comes from the id_token and does not depend on this at all.
+
     return "";
   }
 
@@ -108,14 +69,6 @@ function field(form: FormData, name: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/**
- * seeOther sends the browser on with a GET.
- *
- * 303 rather than 302 because the method has to change: the browser arrived
- * here with a POST, and 302 leaves re-issuing it as the request method up to the
- * browser. The location is relative so this works behind whatever host and
- * scheme the deployment terminates on.
- */
 function seeOther(query: URLSearchParams): Response {
   return new Response(null, {
     status: 303,

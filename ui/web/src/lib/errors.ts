@@ -1,13 +1,5 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 
-/**
- * Turns a failed call into something worth showing a person.
- *
- * The mapping is deliberately coarse. In particular a failed sign-in says only
- * that the pair did not work: the server goes out of its way not to reveal
- * whether the address exists, and a friendlier message here would give away
- * exactly what it withholds.
- */
 export function describe(err: unknown): string {
   const connectErr = ConnectError.from(err);
 
@@ -23,8 +15,7 @@ export function describe(err: unknown): string {
 
     case Code.InvalidArgument:
     case Code.FailedPrecondition:
-      // These carry a reason the server wrote for a person to read — which
-      // field was rejected, which provider is not available.
+
       return capitalise(connectErr.rawMessage);
 
     case Code.Unavailable:

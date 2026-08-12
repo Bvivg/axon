@@ -6,22 +6,12 @@ import type { Room } from "@/gen/axon/chat/v1/chat_pb";
 import { chatClient } from "@/lib/connect/clients";
 import type { WireMessage } from "@/lib/ws/protocol";
 
-/**
- * Server state for chat: rooms and history.
- *
- * What arrives on the socket is not in here. Query cache is for state the
- * server owns and this client asks for; live messages are pushed, and mixing
- * the two would mean every arriving message invalidating a query that then
- * re-fetches what it was just handed.
- */
-
 export const chatKeys = {
   rooms: ["chat", "rooms"] as const,
   room: (id: string) => ["chat", "room", id] as const,
   history: (id: string) => ["chat", "history", id] as const,
 };
 
-/** useRooms lists the rooms the signed-in user belongs to. */
 export function useRooms() {
   return useQuery({
     queryKey: chatKeys.rooms,
@@ -32,7 +22,6 @@ export function useRooms() {
   });
 }
 
-/** useRoom reads one room and its members. */
 export function useRoom(roomID: string) {
   return useQuery({
     queryKey: chatKeys.room(roomID),
@@ -41,19 +30,11 @@ export function useRoom(roomID: string) {
       return { room: resp.room, members: resp.members };
     },
     enabled: roomID !== "",
-    // Members change when somebody joins, which arrives on no channel this
-    // client watches. Refetching on focus is the cheap way to notice.
+
     refetchOnWindowFocus: true,
   });
 }
 
-/**
- * useHistory reads the most recent page of a room.
- *
- * It runs once per room and then stays put: everything after this page arrives
- * on the socket, and a refetch would fight with it. staleTime of Infinity says
- * so rather than relying on nothing happening to trigger one.
- */
 export function useHistory(roomID: string) {
   return useQuery({
     queryKey: chatKeys.history(roomID),
@@ -75,7 +56,6 @@ export function useHistory(roomID: string) {
   });
 }
 
-/** useCreateRoom opens a room and puts the caller in it. */
 export function useCreateRoom() {
   const queryClient = useQueryClient();
 
@@ -90,7 +70,6 @@ export function useCreateRoom() {
   });
 }
 
-/** useJoinRoom adds the caller to a room they know the id of. */
 export function useJoinRoom() {
   const queryClient = useQueryClient();
 

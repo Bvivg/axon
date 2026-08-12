@@ -11,17 +11,6 @@ import { describe } from "@/lib/errors";
 import { takePendingFlow, toProvider } from "@/lib/auth/oauth";
 import { useSession } from "@/lib/auth/session";
 
-/**
- * Where a provider returns the browser.
- *
- * The address is fixed by OAUTH_REDIRECT_BASE_URL on the auth service and has
- * to be registered in each provider's console, so the route name is part of the
- * deployment contract rather than a free choice.
- *
- * Nothing sensitive arrives here: the authorization code is single-use, bound to
- * the state, and useless without the PKCE verifier, which never left the server.
- * The tokens come back in the CompleteOAuth response, not in this URL.
- */
 export default function OAuthCallbackPage() {
   const params = useParams<{ provider: string }>();
   const search = useSearchParams();
@@ -30,9 +19,6 @@ export default function OAuthCallbackPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  // React runs effects twice in development's strict mode. The code is
-  // single-use, so the second run would fail against a state the first one
-  // already spent, and the user would see an error after a sign-in that worked.
   const started = useRef(false);
 
   useEffect(() => {
@@ -43,9 +29,6 @@ export default function OAuthCallbackPage() {
 
     const slug = params.provider;
 
-    // Everything runs inside the async body rather than in the effect itself:
-    // the checks below all end in setError, and calling setState synchronously
-    // from an effect is a cascading render React rightly complains about.
     void (async () => {
       const provider = toProvider(slug);
       if (provider === undefined) {
@@ -53,8 +36,6 @@ export default function OAuthCallbackPage() {
         return;
       }
 
-      // A provider that refused reports it here rather than by failing the
-      // exchange, and its own wording beats anything invented for it.
       const denied = search.get("error");
       if (denied) {
         setError(`${providerRefusal(denied)} (${denied})`);
@@ -74,18 +55,13 @@ export default function OAuthCallbackPage() {
         return;
       }
       if (pending.state !== state) {
-        // The server enforces this too — the state is single-use and bound to
-        // its provider. Checking here as well means a callback URL pasted into
-        // the address bar never reaches the network.
+
         setError("This callback does not belong to the sign-in you started.");
         return;
       }
 
       try {
-        // Present only when Apple sent a name, which it does on the first
-        // authorization and never again; /auth/apple/callback puts it here on
-        // its way past. For every other provider the name comes from the
-        // provider itself, and this is absent.
+
         const displayName = search.get("name") ?? undefined;
 
         const result = await authClient.completeOAuth({ provider, code, state, displayName });

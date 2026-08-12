@@ -15,8 +15,7 @@ import {
 } from "@/components/ui/card";
 
 export default function LoginPage() {
-  // Somebody who is already signed in has no business on this page; the guard
-  // takes them where they were going, without leaving this page behind them.
+
   useRedirectWhenSignedIn();
 
   return (

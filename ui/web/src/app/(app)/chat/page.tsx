@@ -20,13 +20,6 @@ import { useSession } from "@/lib/auth/session";
 import { describe } from "@/lib/errors";
 import { useCreateRoom, useJoinRoom, useRooms } from "@/lib/query/chat";
 
-/**
- * The lobby: the rooms this account belongs to, and the two ways into one more.
- *
- * Rooms are open — anybody signed in may join one whose id they have — so
- * joining by id is the whole invitation mechanism for now. Private rooms are a
- * feature this service does not have rather than one it half has.
- */
 export default function ChatLobbyPage() {
   const { status } = useSession();
   const router = useRouter();

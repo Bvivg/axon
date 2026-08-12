@@ -6,11 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 
-/**
- * Calls, last on the roadmap for a reason: LiveKit and the calling service's
- * thin orchestration layer (rooms, tokens, webhooks) don't exist yet. This is
- * that stated plainly rather than a page that looks wired up and is not.
- */
 export default function CallsPage() {
   const { status } = useSession();
 
