@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  expectLobby,
+  expectHome,
   fakeAuthorizeUrl,
   gatewayHost,
   goToProfile,
@@ -28,13 +28,13 @@ import {
  * finds its way back to a session.
  */
 
-test("registration signs you in and lands in the lobby", async ({ page }) => {
+test("registration signs you in and lands on Games", async ({ page }) => {
   const email = newEmail("register");
 
   await open(page, "/register");
   await submitCredentials(page, "Create account", email);
 
-  await expectLobby(page);
+  await expectHome(page);
 
   // The profile card is titled with the display name, and none was given — so
   // the address on screen is the one the account was created with, read back
@@ -53,12 +53,12 @@ test("an existing account signs in with its password", async ({ page }) => {
   await open(page, "/login");
   await submitCredentials(page, "Sign in", email);
 
-  await expectLobby(page);
+  await expectHome(page);
   await goToProfile(page);
   await expect(page.getByRole("heading", { name: email })).toBeVisible();
 });
 
-test("the fake provider carries the browser through to the lobby", async ({
+test("the fake provider carries the browser through to Games", async ({
   page,
 }) => {
   // Collected from responses rather than from navigations: the provider answers
@@ -73,7 +73,7 @@ test("the fake provider carries the browser through to the lobby", async ({
   // No consent screen to click: the fake provider's authorize endpoint is a
   // redirect with the identity baked into the code, so the browser comes
   // straight back to the callback route.
-  await expectLobby(page);
+  await expectHome(page);
   await goToProfile(page);
   await expect(
     page.getByRole("heading", { name: /@fake\.axon\.test$/ }),
@@ -97,7 +97,7 @@ test("a reload keeps the session", async ({ page }) => {
   // stored in JavaScript.
   await page.reload();
 
-  await expectLobby(page);
+  await expectHome(page);
 });
 
 test("the refresh token is out of the page's reach", async ({ page }) => {
@@ -171,7 +171,7 @@ test("the sign-in pages bounce somebody who is already signed in", async ({
   await register(page, newEmail("bounce"));
 
   await open(page, "/login");
-  await expectLobby(page);
+  await expectHome(page);
 
   // The bounce replaces rather than pushes. Back must not land on the page that
   // just redirected, because it would only redirect again — Back would stop
@@ -180,22 +180,24 @@ test("the sign-in pages bounce somebody who is already signed in", async ({
   await expect(page).not.toHaveURL(/\/login/);
 
   await open(page, "/register");
-  await expectLobby(page);
+  await expectHome(page);
 });
 
-test("the front door is a signpost", async ({ page }) => {
-  await register(page, newEmail("front-door"));
+test("the root is Games for a session, and sign-in for none", async ({ page }) => {
+  await register(page, newEmail("root"));
 
+  // Not a redirect: "/" is the Games page itself now, guarded the same way
+  // every other page behind an account is.
   await open(page, "/");
-  await expectLobby(page);
+  await expectHome(page);
 
   await goToProfile(page);
   await signOut(page);
 
   await open(page, "/");
   await expect(page).toHaveURL(/\/login$/);
-  // Nothing to come back to: the root is not a destination anybody was on
-  // their way to.
+  // Nothing to come back to: signing in from here already lands on "/", so
+  // carrying it as a next value would say the same thing twice.
   await expect(page).not.toHaveURL(/next=/);
 });
 

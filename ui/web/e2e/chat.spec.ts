@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import {
   expectLobby,
+  goToProfile,
   newEmail,
   newPerson,
   open,
@@ -20,8 +21,19 @@ import {
  * that a room is not somewhere you can simply navigate to.
  */
 
+/**
+ * Walks from wherever the nav is to the chat lobby, the way clicking the
+ * Chats tab would. register() now lands on Games, not here, so this is the
+ * step every scenario needs before it can open or join a room.
+ */
+async function goToChats(page: Page): Promise<void> {
+  await page.getByRole("link", { name: "Chats" }).click();
+  await expectLobby(page);
+}
+
 /** Opens a room and returns its id, which is also the invitation. */
 async function createRoom(page: Page, name: string): Promise<string> {
+  await goToChats(page);
   await page.getByLabel("Name").fill(name);
   await page.getByRole("button", { name: "Create" }).click();
 
@@ -33,6 +45,7 @@ async function createRoom(page: Page, name: string): Promise<string> {
 
 /** Joins a room somebody else opened, by the id they passed on. */
 async function joinRoom(page: Page, roomID: string): Promise<void> {
+  await goToChats(page);
   await page.getByLabel("Room ID").fill(roomID);
   await page.getByRole("button", { name: "Join" }).click();
 
@@ -141,10 +154,9 @@ test("a room is out of reach without a session, and reachable again after signin
   await register(page, email, "Ada");
   const roomID = await createRoom(page, "members only");
 
-  // The room page itself has no link to the profile — "All rooms" is the only
-  // way out of it — so signing out is reached directly, the way a bookmark or a
-  // second tab would.
-  await open(page, "/profile");
+  // The room page carries no link to the profile of its own, but the nav
+  // shell wraps it same as every other page behind an account.
+  await goToProfile(page);
   await signOut(page);
 
   // Typed into the address bar with no session. The address is kept, so signing

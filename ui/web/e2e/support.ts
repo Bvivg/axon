@@ -92,15 +92,24 @@ export async function expectProfile(page: Page): Promise<void> {
 }
 
 /**
- * Asserts the lobby is on screen — where signing in lands, and the page whose
- * room list is a call the gateway only answers for a session.
+ * Asserts the chat lobby is on screen — the room list, a call the gateway
+ * only answers for a session.
  */
 export async function expectLobby(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/chat$/);
   await expect(page.getByRole("heading", { name: "Your rooms" })).toBeVisible();
 }
 
-/** Registers a new account and leaves the browser signed in on the lobby. */
+/**
+ * Asserts Games — the root, and where signing in lands with nowhere else to
+ * be (lib/auth/guards.ts's homePath).
+ */
+export async function expectHome(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Games are coming" })).toBeVisible();
+}
+
+/** Registers a new account and leaves the browser signed in on Games. */
 export async function register(
   page: Page,
   email: string,
@@ -108,7 +117,7 @@ export async function register(
 ): Promise<void> {
   await open(page, "/register");
   await submitCredentials(page, "Create account", email, displayName);
-  await expectLobby(page);
+  await expectHome(page);
 }
 
 /**
