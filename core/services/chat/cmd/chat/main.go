@@ -25,13 +25,16 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/redis"
 
 	"github.com/bvivg/axon/core/services/chat/internal/config"
 	"github.com/bvivg/axon/core/services/chat/internal/events"
 	"github.com/bvivg/axon/core/services/chat/internal/identity"
+	"github.com/bvivg/axon/core/services/chat/internal/pubsub"
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
 	"github.com/bvivg/axon/core/services/chat/internal/server"
 	"github.com/bvivg/axon/core/services/chat/internal/service"
+	chatws "github.com/bvivg/axon/core/services/chat/internal/ws"
 )
 
 // version is stamped in at build time.
@@ -130,6 +133,39 @@ func run() error {
 		return err
 	}
 
+	cache, err := redis.Connect(ctx, cfg.Redis, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Error("could not close the redis client", "error", err)
+		}
+	}()
+
+	// Delivery between instances. Redis is required rather than optional: a
+	// second instance without it looks healthy and quietly delivers nothing to
+	// the people connected to the first one, which is worse than not starting.
+	bus, err := pubsub.NewRedis(cache, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := bus.Close(); err != nil {
+			log.Error("could not close the message bus", "error", err)
+		}
+	}()
+
+	socket, err := chatws.New(chatws.Config{
+		Service:  svc,
+		Verifier: verifier,
+		Bus:      bus,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
 	handler, err := server.New(server.Config{
 		Service:  svc,
 		Verifier: verifier,
@@ -144,14 +180,14 @@ func run() error {
 
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(handler, metrics, log),
+		Handler:           publicHandler(handler, socket, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(pool, metrics, log),
+		Handler:           adminHandler(pool, cache, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -204,8 +240,20 @@ func buildEvents(cfg config.Config, log *slog.Logger) (service.Events, func(), e
 // "Public" names the listener that carries the contract, not one the internet
 // reaches: clients arrive through the gateway, which is where CORS, throttling
 // and the policy live.
-func publicHandler(handler *server.Handler, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func publicHandler(
+	handler *server.Handler,
+	socket *chatws.Handler,
+	metrics *middleware.Metrics,
+	log *slog.Logger,
+) http.Handler {
 	mux := http.NewServeMux()
+
+	// The socket carries no Connect interceptors: they are built around a call
+	// that begins, answers and ends, and this one does none of those on the
+	// schedule they assume. Correlation and recovery still apply, from the
+	// HTTP chain below.
+	mux.Handle(chatws.Path, socket)
+
 	mux.Handle(chatv1connect.NewChatServiceHandler(handler,
 		connect.WithInterceptors(
 			middleware.NewCorrelationInterceptor(),
@@ -223,10 +271,18 @@ func publicHandler(handler *server.Handler, metrics *middleware.Metrics, log *sl
 }
 
 // adminHandler builds the internal listener: probes and metrics.
-func adminHandler(pool *postgres.Pool, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func adminHandler(
+	pool *postgres.Pool,
+	cache *redis.Client,
+	metrics *middleware.Metrics,
+	log *slog.Logger,
+) http.Handler {
 	mux := http.NewServeMux()
 
-	health.New(log, []health.Checker{pool}).Register(mux)
+	// Redis is in readiness, not only liveness: without it this instance still
+	// answers, but nothing it is told reaches anybody connected elsewhere. An
+	// instance that cannot deliver should not be taking sockets.
+	health.New(log, []health.Checker{pool, cache}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/policy"
 )
@@ -86,6 +87,13 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		authv1connect.AuthServiceGetMeProcedure:         true,
 		authv1connect.AuthServiceStartOAuthProcedure:    true,
 		authv1connect.AuthServiceCompleteOAuthProcedure: true,
+
+		chatv1connect.ChatServiceCreateRoomProcedure:   true,
+		chatv1connect.ChatServiceListRoomsProcedure:    true,
+		chatv1connect.ChatServiceGetRoomProcedure:      true,
+		chatv1connect.ChatServiceJoinRoomProcedure:     true,
+		chatv1connect.ChatServiceLeaveRoomProcedure:    true,
+		chatv1connect.ChatServiceListMessagesProcedure: true,
 	}
 
 	for _, procedure := range policy.Procedures() {

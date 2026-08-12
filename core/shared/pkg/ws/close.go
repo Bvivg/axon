@@ -61,3 +61,14 @@ func CloseCodeFor(err error) (StatusCode, string) {
 	// end, and error text is for our logs.
 	return StatusInternalError, "internal error"
 }
+
+// CloseStatus reports the code a connection was closed with, or -1 when err is
+// not a close at all.
+//
+// The counterpart to CloseCodeFor: one end decides what to say, the other has
+// to be able to read it. Applications need this for their own codes above 4000
+// — an expired credential and a peer that simply hung up are both "the socket
+// ended", and only the code tells them apart.
+func CloseStatus(err error) StatusCode {
+	return websocket.CloseStatus(err)
+}

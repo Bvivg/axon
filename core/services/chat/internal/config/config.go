@@ -9,6 +9,7 @@ import (
 
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/redis"
 )
 
 // ServiceName is what this service calls itself in logs and metrics.
@@ -19,6 +20,7 @@ type Config struct {
 	config.Base
 
 	Postgres postgres.Config
+	Redis    redis.Config
 	JWT      JWTConfig
 	Auth     AuthConfig
 	Kafka    KafkaConfig
@@ -75,6 +77,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		Base:     config.LoadBase(l, ServiceName),
 		Postgres: postgres.LoadConfig(l),
+		Redis:    redis.LoadConfig(l),
 		JWT: JWTConfig{
 			JWKSURL:             l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 			JWKSRefreshInterval: l.DurationDefault("JWKS_REFRESH_INTERVAL", 15*time.Minute),

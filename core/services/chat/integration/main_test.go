@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,11 +29,13 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/redis"
 
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
 )
@@ -51,6 +54,11 @@ const (
 // superuser. Testing through the role the service actually uses is the only way
 // the permission model is under test rather than merely configured.
 var pool *postgres.Pool
+
+// cache is the Redis the fan-out tests use. A real one rather than an in-memory
+// stand-in: what those tests are about is two processes agreeing through a
+// broker, and a fake would only agree with itself.
+var cache *redis.Client
 
 // startupTimeout bounds bringing the container up and migrating it. Pulling the
 // image on a cold machine is the slow part.
@@ -122,6 +130,33 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("connect: %w", err)
 	}
 	defer pool.Close()
+
+	redisContainer, err := tcredis.Run(ctx, "redis:7-alpine")
+	if err != nil {
+		return 0, fmt.Errorf("start redis: %w", err)
+	}
+	defer func() {
+		if err := testcontainers.TerminateContainer(redisContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: terminate redis: %v\n", err)
+		}
+	}()
+
+	redisAddr, err := redisContainer.ConnectionString(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("redis address: %w", err)
+	}
+
+	cache, err = redis.Connect(ctx, redis.Config{
+		Addr: strings.TrimPrefix(redisAddr, "redis://"),
+	}, logger.Discard())
+	if err != nil {
+		return 0, fmt.Errorf("connect redis: %w", err)
+	}
+	defer func() {
+		if err := cache.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: close redis: %v\n", err)
+		}
+	}()
 
 	return m.Run(), nil
 }
