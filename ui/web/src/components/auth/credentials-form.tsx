@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/connect/clients";
 import { describe } from "@/lib/errors";
+import { currentNext } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 
 export type Mode = "login" | "register";
@@ -59,7 +60,9 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
       // into an HttpOnly cookie by the gateway on the way here, which is why
       // there is nothing to store and nothing to accidentally log.
       signedIn(result.user, result.tokens);
-      router.replace("/profile");
+      // Where they were headed before being bounced to sign in, or the lobby.
+      // replace, so Back does not land on a form that will only redirect again.
+      router.replace(currentNext());
     } catch (err) {
       setError(describe(err));
       setPending(false);

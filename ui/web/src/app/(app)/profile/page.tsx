@@ -1,9 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -11,7 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
+import { cn } from "@/lib/utils";
 
 /**
  * The protected page. It proves the whole chain end to end: the access token
@@ -24,13 +25,8 @@ import { useSession } from "@/lib/auth/session";
  */
 export default function ProfilePage() {
   const { status, user, signOut } = useSession();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (status === "anonymous") {
-      router.replace("/login");
-    }
-  }, [status, router]);
+  useRequireSession();
 
   if (status !== "authenticated" || !user) {
     return (
@@ -49,6 +45,13 @@ export default function ProfilePage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
+          <Link
+            className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+            href="/chat"
+          >
+            Go to chat
+          </Link>
+
           <dl className="space-y-3 text-sm">
             <Row label="Email" value={user.email} />
             <Row
@@ -58,11 +61,9 @@ export default function ProfilePage() {
             <Row label="User ID" value={user.id} mono />
           </dl>
 
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => void signOut().then(() => router.replace("/login"))}
-          >
+          {/* No redirect here: losing the session is what the guard above
+              watches for, and it sends them to sign in. */}
+          <Button variant="outline" className="w-full" onClick={() => void signOut()}>
             Sign out
           </Button>
         </CardContent>

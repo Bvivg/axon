@@ -1,6 +1,7 @@
 import { createClient } from "@connectrpc/connect";
 
 import { AuthService } from "@/gen/axon/auth/v1/auth_pb";
+import { ChatService } from "@/gen/axon/chat/v1/chat_pb";
 import { authenticate } from "@/lib/connect/interceptors";
 import { bareTransport, newTransport } from "@/lib/connect/transport";
 
@@ -17,3 +18,10 @@ export const authClient = createClient(AuthService, bareTransport);
  * refreshes it when it has expired.
  */
 export const apiClient = createClient(AuthService, newTransport([authenticate]));
+
+/**
+ * chatClient is rooms, membership and history. Everything a client waits for
+ * rather than asks for — messages arriving — is on the socket instead; see
+ * lib/ws/use-chat-socket.
+ */
+export const chatClient = createClient(ChatService, newTransport([authenticate]));
