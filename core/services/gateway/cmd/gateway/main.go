@@ -138,6 +138,17 @@ func run() error {
 		return err
 	}
 
+	presenceSocket, err := wsproxy.New(wsproxy.Config{
+		Upstream: cfg.PresenceSocketURL,
+		Protocol: presenceSubprotocol,
+		Verifier: verifier,
+		Origins:  cfg.CORS.AllowedOrigins,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
 	chatProxy, err := proxy.NewChat(chatClient)
 	if err != nil {
 		return err
@@ -156,7 +167,7 @@ func run() error {
 
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, avatarUpload, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, presenceSocket, avatarUpload, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -182,9 +193,11 @@ func run() error {
 }
 
 const (
-	chatSocketPath   = "/ws/chat"
-	chatSubprotocol  = "axon.chat.v1"
-	avatarUploadPath = "/api/avatar"
+	chatSocketPath      = "/ws/chat"
+	chatSubprotocol     = "axon.chat.v1"
+	presenceSocketPath  = "/ws/presence"
+	presenceSubprotocol = "axon.presence.v1"
+	avatarUploadPath    = "/api/avatar"
 )
 
 func publicHandler(
@@ -192,6 +205,7 @@ func publicHandler(
 	authProxy authv1connect.AuthServiceHandler,
 	chatProxy chatv1connect.ChatServiceHandler,
 	chatSocket http.Handler,
+	presenceSocket http.Handler,
 	avatarUpload http.Handler,
 	policyGuard connect.Interceptor,
 	metrics *middleware.Metrics,
@@ -200,6 +214,7 @@ func publicHandler(
 	mux := http.NewServeMux()
 
 	mux.Handle(chatSocketPath, chatSocket)
+	mux.Handle(presenceSocketPath, presenceSocket)
 	mux.Handle("POST "+avatarUploadPath, avatarUpload)
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,

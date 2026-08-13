@@ -19,6 +19,8 @@ type Config struct {
 
 	ChatSocketURL string
 
+	PresenceSocketURL string
+
 	JWKSURL string
 
 	JWKSRefreshInterval time.Duration
@@ -37,7 +39,10 @@ type CORSConfig struct {
 	AllowedOrigins []string
 }
 
-const chatSocketPath = "/ws"
+const (
+	chatSocketPath     = "/ws"
+	presenceSocketPath = "/ws/presence"
+)
 
 func socketURL(base, path string) string {
 	switch {
@@ -99,6 +104,7 @@ func Load() (Config, error) {
 	}
 
 	cfg.ChatSocketURL = socketURL(cfg.ChatServiceURL, chatSocketPath)
+	cfg.PresenceSocketURL = socketURL(cfg.ChatServiceURL, presenceSocketPath)
 
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
