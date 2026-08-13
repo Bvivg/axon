@@ -56,6 +56,7 @@ func toProtoSession(s domain.Session) *authv1.Session {
 		StartedAt:  timestamppb.New(s.StartedAt),
 		LastUsedAt: timestamppb.New(s.LastUsedAt),
 		Current:    s.Current,
+		Online:     s.Online,
 	}
 }
 

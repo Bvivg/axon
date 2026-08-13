@@ -39,12 +39,18 @@ type Store interface {
 	LinkOauthAccount(ctx context.Context, a domain.OauthAccount) error
 }
 
+type PresenceChecker interface {
+	Online(ctx context.Context, sessionIDs []string) (map[string]bool, error)
+}
+
 type Config struct {
 	RefreshTTL time.Duration
 
 	OAuth *OAuthConfig
 
 	Avatar *avatar.Pipeline
+
+	Presence PresenceChecker
 
 	Now func() time.Time
 }
@@ -70,8 +76,9 @@ type Service struct {
 	refreshTTL time.Duration
 	now        func() time.Time
 
-	oauth  *oauthDeps
-	avatar *avatar.Pipeline
+	oauth    *oauthDeps
+	avatar   *avatar.Pipeline
+	presence PresenceChecker
 
 	dummyHash string
 }
@@ -114,6 +121,7 @@ func New(store Store, hasher *password.Hasher, issuer *jwt.Issuer, log *slog.Log
 		now:        now,
 		oauth:      deps,
 		avatar:     cfg.Avatar,
+		presence:   cfg.Presence,
 		dummyHash:  dummyHash,
 	}, nil
 }

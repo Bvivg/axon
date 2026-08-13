@@ -4,12 +4,79 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
+	goredis "github.com/redis/go-redis/v9"
+
+	"github.com/bvivg/axon/core/shared/pkg/presence"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
+
+func withPresence(t *testing.T) (harnessOption, *presence.Tracker) {
+	t.Helper()
+
+	mr := miniredis.RunT(t)
+	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+
+	tracker := presence.NewTracker(client)
+
+	return func(cfg *service.Config) {
+		cfg.Presence = tracker
+	}, tracker
+}
+
+func TestListSessionsReflectsLivePresence(t *testing.T) {
+	opt, tracker := withPresence(t)
+	h := newHarness(t, opt)
+	registered := h.register(t, "ada@example.com", validPassword)
+	family := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+
+	if err := tracker.Touch(context.Background(), family.String(), time.Minute); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+
+	sessions, err := h.svc.ListSessions(context.Background(), registered.User.ID, family)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 1 || !sessions[0].Online {
+		t.Errorf("session online = %v, want true", sessions[0].Online)
+	}
+}
+
+func TestListSessionsOfflineWhenPresenceExpired(t *testing.T) {
+	opt, _ := withPresence(t)
+	h := newHarness(t, opt)
+	registered := h.register(t, "ada@example.com", validPassword)
+	family := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+
+	sessions, err := h.svc.ListSessions(context.Background(), registered.User.ID, family)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if sessions[0].Online {
+		t.Error("a session with no presence touch was marked online")
+	}
+}
+
+func TestListSessionsWithoutPresenceTrackerDefaultsOffline(t *testing.T) {
+	h := newHarness(t)
+	registered := h.register(t, "ada@example.com", validPassword)
+	family := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+
+	sessions, err := h.svc.ListSessions(context.Background(), registered.User.ID, family)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if sessions[0].Online {
+		t.Error("a session was marked online with no presence tracker configured")
+	}
+}
 
 func TestListSessionsMarksTheCallersOwnSession(t *testing.T) {
 	h := newHarness(t)

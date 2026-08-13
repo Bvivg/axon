@@ -17,6 +17,25 @@ func (s *Service) ListSessions(ctx context.Context, userID, currentFamilyID uuid
 	for i := range sessions {
 		sessions[i].Current = sessions[i].FamilyID == currentFamilyID
 	}
+
+	if s.presence == nil || len(sessions) == 0 {
+		return sessions, nil
+	}
+
+	ids := make([]string, len(sessions))
+	for i, session := range sessions {
+		ids[i] = session.FamilyID.String()
+	}
+
+	online, err := s.presence.Online(ctx, ids)
+	if err != nil {
+		s.log.WarnContext(ctx, "could not check session presence", "user_id", userID, "error", err)
+		return sessions, nil
+	}
+
+	for i := range sessions {
+		sessions[i].Online = online[sessions[i].FamilyID.String()]
+	}
 	return sessions, nil
 }
 

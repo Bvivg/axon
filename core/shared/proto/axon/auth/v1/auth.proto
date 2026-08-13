@@ -169,6 +169,8 @@ message Session {
   google.protobuf.Timestamp last_used_at = 5;
 
   bool current = 6;
+
+  bool online = 7;
 }
 
 message RevokeSessionRequest {

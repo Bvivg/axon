@@ -19,6 +19,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
@@ -122,6 +123,7 @@ func run() error {
 		RefreshTTL: cfg.JWT.RefreshTTL,
 		OAuth:      oauthCfg,
 		Avatar:     avatarPipeline,
+		Presence:   presence.NewTracker(cache),
 	})
 	if err != nil {
 		return err

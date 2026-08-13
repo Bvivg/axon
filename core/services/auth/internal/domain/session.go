@@ -21,4 +21,5 @@ type Session struct {
 	LastUsedAt time.Time
 
 	Current bool
+	Online  bool
 }
