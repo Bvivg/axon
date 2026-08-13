@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/utils";
@@ -7,11 +8,15 @@ export function Avatar({
   alt,
   fallback,
   className,
+  sizes = "48px",
+  priority,
   ...props
 }: {
   src?: string;
   alt: string;
   fallback: string;
+  sizes?: string;
+  priority?: boolean;
 } & Omit<ComponentProps<"div">, "children">) {
   return (
     <div
@@ -22,7 +27,15 @@ export function Avatar({
       {...props}
     >
       {src ? (
-        <img src={src} alt={alt} className="h-full w-full object-cover" />
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          sizes={sizes}
+          priority={priority}
+          unoptimized
+          className="object-cover"
+        />
       ) : (
         <span className="font-medium">{fallback}</span>
       )}

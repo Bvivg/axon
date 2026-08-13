@@ -7,12 +7,16 @@ import { useState, type ReactNode } from "react";
 
 import { navItems, sectionFor, type NavItem } from "@/components/nav/items";
 import { SearchPanel } from "@/components/nav/search-panel";
+import { Avatar } from "@/components/ui/avatar";
+import { useSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const section = sectionFor(pathname);
   const [searchOpen, setSearchOpen] = useState(false);
+  const { user } = useSession();
+  const avatarSrc = user?.avatarUrls?.small || user?.avatarUrl;
 
   return (
     <div className="flex w-full bg-background">
@@ -29,7 +33,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Link>
 
         {navItems.map((item) => (
-          <SidebarTab key={item.href} item={item} active={item.isActive(pathname)} />
+          <SidebarTab
+            key={item.href}
+            item={item}
+            active={item.isActive(pathname)}
+            avatarSrc={item.section === "profile" ? avatarSrc : undefined}
+          />
         ))}
 
         <div className="mt-auto pt-4">
@@ -45,7 +54,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="pointer-events-auto flex flex-1 items-center justify-between rounded-full border border-border bg-card/95 px-1 py-1.5 shadow-lg backdrop-blur"
         >
           {navItems.map((item) => (
-            <MobileTab key={item.href} item={item} active={item.isActive(pathname)} />
+            <MobileTab
+              key={item.href}
+              item={item}
+              active={item.isActive(pathname)}
+              avatarSrc={item.section === "profile" ? avatarSrc : undefined}
+            />
           ))}
         </nav>
 
@@ -61,7 +75,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function SidebarTab({ item, active }: { item: NavItem; active: boolean }) {
+function SidebarTab({
+  item,
+  active,
+  avatarSrc,
+}: {
+  item: NavItem;
+  active: boolean;
+  avatarSrc?: string;
+}) {
   const Icon = item.icon;
   return (
     <Link
@@ -74,13 +96,25 @@ function SidebarTab({ item, active }: { item: NavItem; active: boolean }) {
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
     >
-      <Icon className="size-5" />
+      {avatarSrc ? (
+        <Avatar src={avatarSrc} alt="" fallback="" sizes="20px" className="size-5" />
+      ) : (
+        <Icon className="size-5" />
+      )}
       {item.label}
     </Link>
   );
 }
 
-function MobileTab({ item, active }: { item: NavItem; active: boolean }) {
+function MobileTab({
+  item,
+  active,
+  avatarSrc,
+}: {
+  item: NavItem;
+  active: boolean;
+  avatarSrc?: string;
+}) {
   const Icon = item.icon;
   return (
     <Link
@@ -91,7 +125,11 @@ function MobileTab({ item, active }: { item: NavItem; active: boolean }) {
         active ? "text-primary" : "text-muted-foreground",
       )}
     >
-      <Icon className="size-5" />
+      {avatarSrc ? (
+        <Avatar src={avatarSrc} alt="" fallback="" sizes="20px" className="size-5" />
+      ) : (
+        <Icon className="size-5" />
+      )}
       {item.label}
     </Link>
   );

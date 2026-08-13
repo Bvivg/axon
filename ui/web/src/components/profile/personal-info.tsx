@@ -1,17 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { User } from "@/gen/axon/auth/v1/auth_pb";
@@ -22,7 +18,7 @@ import { useUpdateProfile } from "@/lib/query/profile";
 
 const maxAvatarBytes = 5 * 1024 * 1024;
 
-export function ProfileTab({ user }: { user: User }) {
+export function PersonalInfo({ user }: { user: User }) {
   const { updateUser, signOut } = useSession();
   const updateProfile = useUpdateProfile();
 
@@ -86,54 +82,81 @@ export function ProfileTab({ user }: { user: User }) {
   }
 
   const displayName = user.displayName || user.email;
+  const initial = displayName.slice(0, 1).toUpperCase();
+  const avatarSrc = user.avatarUrls?.medium || user.avatarUrl;
+  const avatarLarge = user.avatarUrls?.original || user.avatarUrls?.large || avatarSrc;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-2xl px-6 py-12">
       <Card>
         <CardHeader>
-          <CardTitle>Avatar</CardTitle>
-          <CardDescription>
-            Imported from Google or GitHub when you sign in, unless you upload
-            your own.
-          </CardDescription>
+          <CardTitle>Personal info</CardTitle>
         </CardHeader>
-        <CardContent className="flex items-center gap-4">
-          <Avatar
-            src={user.avatarUrls?.medium || user.avatarUrl}
-            alt={displayName}
-            fallback={displayName.slice(0, 1).toUpperCase()}
-            className="h-16 w-16 text-xl"
-          />
-          <div className="space-y-2">
-            {avatarError ? <Alert>{avatarError}</Alert> : null}
-            <input
-              ref={fileInput}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => void pickAvatar(e)}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={avatarPending}
-              onClick={() => fileInput.current?.click()}
-            >
-              {avatarPending ? "Uploading…" : "Change avatar"}
-            </Button>
+        <CardContent className="space-y-6">
+          <div className="flex items-center gap-4">
+            {avatarSrc && avatarLarge ? (
+              <Dialog>
+                <DialogTrigger
+                  aria-label="View avatar"
+                  className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  <Avatar
+                    src={avatarSrc}
+                    alt={displayName}
+                    fallback={initial}
+                    className="h-16 w-16 text-xl"
+                    sizes="64px"
+                    priority
+                  />
+                </DialogTrigger>
+                <DialogContent className="w-[min(90vw,32rem)]">
+                  <DialogClose
+                    aria-label="Close"
+                    className="absolute -top-10 right-0 text-sm text-white/80 outline-none hover:text-white"
+                  >
+                    Close
+                  </DialogClose>
+                  <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-muted">
+                    <Image
+                      src={avatarLarge}
+                      alt={displayName}
+                      fill
+                      unoptimized
+                      sizes="90vw"
+                      className="object-cover"
+                    />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            ) : (
+              <Avatar
+                src={avatarSrc}
+                alt={displayName}
+                fallback={initial}
+                className="h-16 w-16 text-xl"
+              />
+            )}
+            <div className="space-y-2">
+              {avatarError ? <Alert>{avatarError}</Alert> : null}
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => void pickAvatar(e)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={avatarPending}
+                onClick={() => fileInput.current?.click()}
+              >
+                {avatarPending ? "Uploading…" : "Change avatar"}
+              </Button>
+            </div>
           </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>My profile</CardTitle>
-          <CardDescription>
-            Update your email and how your name appears to others.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
           <form className="space-y-4" onSubmit={(e) => void submit(e)}>
             {error ? <Alert>{error}</Alert> : null}
             {saved ? (
@@ -191,7 +214,11 @@ export function ProfileTab({ user }: { user: User }) {
         </CardContent>
       </Card>
 
-      <Button variant="outline" className="w-full" onClick={() => void signOut()}>
+      <Button
+        variant="outline"
+        className="mt-6 w-full"
+        onClick={() => void signOut()}
+      >
         Sign out
       </Button>
     </div>
