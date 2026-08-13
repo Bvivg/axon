@@ -8,9 +8,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 )
 
-// testParams keeps the memory cost low so the suite does not spend seconds
-// proving what it could prove in milliseconds. Correctness does not depend on
-// the cost; only the price of an offline attack does.
 func testParams() password.Params {
 	p := password.DefaultParams()
 	p.Memory = 8 * 1024
@@ -69,8 +66,6 @@ func TestWrongPasswordDoesNotVerify(t *testing.T) {
 	}
 }
 
-// A leaked table must not reveal which accounts share a password, which is what
-// a per-hash random salt buys.
 func TestSamePasswordHashesDifferently(t *testing.T) {
 	h := newHasher(t)
 
@@ -89,7 +84,6 @@ func TestSamePasswordHashesDifferently(t *testing.T) {
 		t.Fatal("two hashes of the same password are identical; the salt is not random")
 	}
 
-	// Both still have to verify — different, not broken.
 	for i, encoded := range []string{first, second} {
 		ok, err := h.Verify(pw, encoded)
 		if err != nil {
@@ -113,20 +107,15 @@ func TestEncodedFormat(t *testing.T) {
 		t.Fatalf("encoded hash does not start with the PHC prefix: %q", encoded)
 	}
 
-	// $ + argon2id + v + params + salt + key
 	if got := len(strings.Split(encoded, "$")); got != 6 {
 		t.Fatalf("encoded hash has %d fields, want 6: %q", got, encoded)
 	}
 
-	// The parameters have to travel with the hash, otherwise the cost can never
-	// be raised without invalidating every stored password.
 	if !strings.Contains(encoded, "m=8192,t=1,p=") {
 		t.Fatalf("parameters are missing from the encoded hash: %q", encoded)
 	}
 }
 
-// A hash written under an older, cheaper configuration must keep verifying;
-// otherwise raising the cost would sign everybody out.
 func TestVerifyUsesTheStoredParameters(t *testing.T) {
 	weak := testParams()
 	weak.Memory = 8 * 1024
@@ -174,15 +163,11 @@ func TestNeedsRehash(t *testing.T) {
 		t.Error("a hash created with the current parameters was flagged for rehash")
 	}
 
-	// Unparseable is not "outdated" — that account needs a reset, and saying
-	// otherwise sends the caller down the wrong path.
 	if h.NeedsRehash("not a hash at all") {
 		t.Error("a malformed hash was reported as merely needing a rehash")
 	}
 }
 
-// A wrong password is a false result; only an unreadable stored hash is an
-// error. Conflating the two would report a corrupted column as a bad password.
 func TestMalformedHashIsAnErrorNotAMismatch(t *testing.T) {
 	h := newHasher(t)
 
@@ -243,8 +228,6 @@ func TestParamsValidate(t *testing.T) {
 				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			// A bad configuration has to fail at construction, not at the first
-			// registration.
 			if _, err := password.NewHasher(p); (err != nil) != tt.wantErr {
 				t.Fatalf("NewHasher() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -258,7 +241,7 @@ func TestDefaultParams(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Fatalf("the defaults do not pass their own validation: %v", err)
 	}
-	// RFC 9106's second recommended option.
+
 	if p.Memory != 64*1024 {
 		t.Errorf("Memory = %d KiB, want 65536", p.Memory)
 	}
@@ -270,8 +253,6 @@ func TestDefaultParams(t *testing.T) {
 	}
 }
 
-// Long passwords are allowed up to the domain limit, and argon2id has no silent
-// truncation the way bcrypt does at 72 bytes.
 func TestLongPasswordIsNotTruncated(t *testing.T) {
 	h := newHasher(t)
 

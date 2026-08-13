@@ -16,23 +16,13 @@ import (
 	"github.com/bvivg/axon/core/services/gateway/internal/cookie"
 )
 
-// issuedToken is what the stub hands back on every successful sign-in.
 const issuedToken = "refresh-token-from-auth"
 
-// The tests drive a real Connect handler through a real client rather than
-// hand-building an AnyRequest. The interceptor's whole job is to sit between
-// HTTP headers and a decoded message, so a test that skipped either half would
-// be testing the parts that cannot break.
-
-// stub stands in for the auth service. It records the refresh token it was
-// handed, which is how the request half of the interceptor is observed.
 type stub struct {
 	authv1connect.UnimplementedAuthServiceHandler
 
-	// seen is the refresh token the last request carried.
 	seen string
 
-	// fail makes every procedure return an error.
 	fail bool
 }
 
@@ -89,16 +79,13 @@ func (s *stub) Logout(
 	return connect.NewResponse(&authv1.LogoutResponse{}), nil
 }
 
-// errStub is the failure the stub returns; its content is never asserted on.
 var errStub = errors.New("the stub was told to fail")
 
-// harness is a running handler and a client that talks to it.
 type harness struct {
 	stub   *stub
 	client authv1connect.AuthServiceClient
 }
 
-// newHarness serves the stub behind the interceptor.
 func newHarness(t *testing.T, cfg cookie.Config) *harness {
 	t.Helper()
 
@@ -116,13 +103,10 @@ func newHarness(t *testing.T, cfg cookie.Config) *harness {
 	return h
 }
 
-// defaultConfig is what the gateway runs with in development.
 func defaultConfig() cookie.Config {
 	return cookie.Config{MaxAge: 720 * time.Hour}
 }
 
-// browser marks a request as coming from one, and optionally attaches the
-// cookie the browser would be holding.
 func browser[T any](req *connect.Request[T], refreshCookie string) *connect.Request[T] {
 	req.Header().Set("Origin", "http://localhost:3000")
 	if refreshCookie != "" {
@@ -134,7 +118,6 @@ func browser[T any](req *connect.Request[T], refreshCookie string) *connect.Requ
 	return req
 }
 
-// refreshCookie returns the refresh cookie a response set, or nil if it set none.
 func refreshCookie(t *testing.T, header http.Header) *http.Cookie {
 	t.Helper()
 
@@ -146,8 +129,6 @@ func refreshCookie(t *testing.T, header http.Header) *http.Cookie {
 	return nil
 }
 
-// A browser signing in gets the token in a cookie and not in the body. This is
-// the case the package exists for.
 func TestBrowserSignInMovesTheTokenIntoACookie(t *testing.T) {
 	h := newHarness(t, defaultConfig())
 
@@ -169,8 +150,6 @@ func TestBrowserSignInMovesTheTokenIntoACookie(t *testing.T) {
 	}
 }
 
-// Every procedure that mints a pair has to be covered. One of them left out is
-// one path on which the token still reaches the page.
 func TestEveryIssuingProcedureSetsTheCookie(t *testing.T) {
 	calls := map[string]func(*harness) (http.Header, string, error){
 		"Register": func(h *harness) (http.Header, string, error) {
@@ -221,8 +200,6 @@ func TestEveryIssuingProcedureSetsTheCookie(t *testing.T) {
 	}
 }
 
-// A client that is not a browser keeps the behaviour it was written against.
-// This is what lets connect-swift and the e2e suite hold the token themselves.
 func TestNonBrowserClientsKeepTheTokenInTheBody(t *testing.T) {
 	h := newHarness(t, defaultConfig())
 
@@ -239,7 +216,6 @@ func TestNonBrowserClientsKeepTheTokenInTheBody(t *testing.T) {
 	}
 }
 
-// The cookie's attributes are the protection, not the cookie itself.
 func TestCookieAttributes(t *testing.T) {
 	h := newHarness(t, cookie.Config{Secure: true, MaxAge: 48 * time.Hour})
 
@@ -273,8 +249,6 @@ func TestCookieAttributes(t *testing.T) {
 	}
 }
 
-// Secure follows configuration, because a developer on plain HTTP would
-// otherwise never see the cookie stored at all.
 func TestSecureFollowsConfiguration(t *testing.T) {
 	h := newHarness(t, defaultConfig())
 
@@ -288,8 +262,6 @@ func TestSecureFollowsConfiguration(t *testing.T) {
 	}
 }
 
-// The browser sends no refresh token in the body — it cannot, it has never seen
-// one — so the interceptor has to supply it.
 func TestRefreshReadsTheTokenFromTheCookie(t *testing.T) {
 	h := newHarness(t, defaultConfig())
 
@@ -303,8 +275,6 @@ func TestRefreshReadsTheTokenFromTheCookie(t *testing.T) {
 	}
 }
 
-// For a browser the cookie is the only source. A body value is not a fallback:
-// two ways to present one credential means an attacker picks the weaker.
 func TestABrowserBodyTokenIsIgnored(t *testing.T) {
 	h := newHarness(t, defaultConfig())
 
@@ -321,7 +291,6 @@ func TestABrowserBodyTokenIsIgnored(t *testing.T) {
 	}
 }
 
-// Logout takes the token from the cookie too, and then takes the cookie away.
 func TestLogoutClearsTheCookie(t *testing.T) {
 	h := newHarness(t, defaultConfig())
 
@@ -344,8 +313,6 @@ func TestLogoutClearsTheCookie(t *testing.T) {
 	}
 }
 
-// A call that failed changed nothing, and the cookie has to say so. A logout
-// that did not happen must not look like one that did.
 func TestAFailedCallLeavesTheCookieAlone(t *testing.T) {
 	for _, name := range []string{"Login", "Logout"} {
 		t.Run(name, func(t *testing.T) {

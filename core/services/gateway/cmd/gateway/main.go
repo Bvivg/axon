@@ -1,10 +1,3 @@
-// Command gateway is the public entry point to Axon.
-//
-// It terminates client traffic, decides who may call what and how often, and
-// forwards to the services behind it. Everything past this process is internal
-// traffic that has already been through the policy here.
-//
-// This file is wiring only.
 package main
 
 import (
@@ -21,36 +14,28 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 
+	"github.com/bvivg/axon/core/services/gateway/internal/avatarproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/config"
 	"github.com/bvivg/axon/core/services/gateway/internal/cookie"
 	"github.com/bvivg/axon/core/services/gateway/internal/cors"
 	"github.com/bvivg/axon/core/services/gateway/internal/guard"
 	"github.com/bvivg/axon/core/services/gateway/internal/proxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
+	"github.com/bvivg/axon/core/services/gateway/internal/wsproxy"
 )
 
-// version is stamped in at build time.
 var version = "dev"
 
-// sensitiveBurst is how many sign-in attempts may arrive back to back before
-// throttling starts.
-//
-// The limiter's default burst is a tenth of the per-minute rate, which is right
-// for browsing traffic but degenerates to one at the rates the sensitive tier
-// runs at — and a burst of one means the second mistyped password returns "too
-// many requests" instead of "wrong password". Five is a person correcting a
-// typo; the sustained rate is what actually shapes a brute-force attempt.
 const sensitiveBurst = 5
 
 func main() {
-	// Exits when started with -healthcheck. The runtime image is distroless and
-	// has no shell for a container healthcheck to use, so the binary probes
-	// itself.
+
 	health.RunProbeIfRequested()
 
 	if err := run(); err != nil {
@@ -89,9 +74,7 @@ func run() error {
 		return err
 	}
 
-	// Fetched once before serving, so a wrong URL or an auth service that never
-	// came up fails at startup instead of as a wave of 401s.
-	if err := keys.Refresh(ctx); err != nil {
+	if err := keys.WaitUntilReady(ctx, authn.DefaultStartupTimeout); err != nil {
 		return fmt.Errorf("initial jwks fetch: %w", err)
 	}
 	go keys.Start(ctx)
@@ -127,8 +110,7 @@ func run() error {
 
 	upstream := &http.Client{
 		Timeout: cfg.UpstreamTimeout,
-		// h2c to the internal service: gRPC needs HTTP/2, and there is no TLS
-		// inside the compose network to negotiate it with.
+
 		Transport: internalTransport(),
 	}
 
@@ -141,9 +123,51 @@ func run() error {
 		return err
 	}
 
+	chatClient := proxy.NewChatClient(upstream, cfg.ChatServiceURL,
+		connect.WithInterceptors(middleware.NewCorrelationInterceptor()),
+	)
+
+	chatSocket, err := wsproxy.New(wsproxy.Config{
+		Upstream: cfg.ChatSocketURL,
+		Protocol: chatSubprotocol,
+		Verifier: verifier,
+		Origins:  cfg.CORS.AllowedOrigins,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
+	presenceSocket, err := wsproxy.New(wsproxy.Config{
+		Upstream: cfg.PresenceSocketURL,
+		Protocol: presenceSubprotocol,
+		Verifier: verifier,
+		Origins:  cfg.CORS.AllowedOrigins,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
+	chatProxy, err := proxy.NewChat(chatClient)
+	if err != nil {
+		return err
+	}
+
+	avatarUpload, err := avatarproxy.New(avatarproxy.Config{
+		Upstream: cfg.AuthServiceURL + "/internal/avatar",
+		Verifier: verifier,
+		Limiter:  sensitive,
+		Client:   upstream,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, presenceSocket, avatarUpload, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -168,27 +192,39 @@ func run() error {
 	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
 }
 
-// publicHandler builds the listener clients reach.
+const (
+	chatSocketPath      = "/ws/chat"
+	chatSubprotocol     = "axon.chat.v1"
+	presenceSocketPath  = "/ws/presence"
+	presenceSubprotocol = "axon.presence.v1"
+	avatarUploadPath    = "/api/avatar"
+)
+
 func publicHandler(
 	cfg config.Config,
 	authProxy authv1connect.AuthServiceHandler,
+	chatProxy chatv1connect.ChatServiceHandler,
+	chatSocket http.Handler,
+	presenceSocket http.Handler,
+	avatarUpload http.Handler,
 	policyGuard connect.Interceptor,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
 
+	mux.Handle(chatSocketPath, chatSocket)
+	mux.Handle(presenceSocketPath, presenceSocket)
+	mux.Handle("POST "+avatarUploadPath, avatarUpload)
+
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(
 			middleware.NewCorrelationInterceptor(),
 			middleware.NewRecoveryInterceptor(log),
 			metrics.Interceptor(),
-			// The policy runs after correlation and recovery so a refusal is
-			// still logged with an id, and before logging so the outcome the
-			// log records is the one the client got.
+
 			policyGuard,
-			// After the policy: a call refused for want of a token or for
-			// exceeding its budget has no business touching the cookie.
+
 			cookie.New(cookie.Config{
 				Secure: cfg.RefreshCookie.Secure,
 				MaxAge: cfg.RefreshCookie.MaxAge,
@@ -197,9 +233,18 @@ func publicHandler(
 		),
 	))
 
+	mux.Handle(chatv1connect.NewChatServiceHandler(chatProxy,
+		connect.WithInterceptors(
+			middleware.NewCorrelationInterceptor(),
+			middleware.NewRecoveryInterceptor(log),
+			metrics.Interceptor(),
+			policyGuard,
+			middleware.NewLoggingInterceptor(log),
+		),
+	))
+
 	return middleware.Chain(
-		// The caller's address is captured here, where the connection is still
-		// visible; Connect no longer exposes it by the time an interceptor runs.
+
 		guard.ClientIPMiddleware(cfg.RateLimit.TrustedProxies),
 		middleware.Correlation,
 		middleware.Recovery(log),
@@ -208,19 +253,15 @@ func publicHandler(
 	)(mux)
 }
 
-// adminHandler builds the internal listener.
 func adminHandler(keys *authn.Cache, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
-	// Readiness depends on having keys: without them every authenticated request
-	// would fail, so an instance in that state must not be in rotation.
 	health.New(log, []health.Checker{jwksChecker{keys}}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }
 
-// jwksChecker reports whether the gateway can verify tokens at all.
 type jwksChecker struct{ keys *authn.Cache }
 
 func (c jwksChecker) Name() string { return "jwks" }
@@ -232,12 +273,8 @@ func (c jwksChecker) Check(context.Context) error {
 	return nil
 }
 
-// internalTransport is the transport used for service-to-service calls.
 func internalTransport() *http.Transport {
-	// Cloned from the default rather than built from zero, so timeouts and pool
-	// sizes stay whatever the standard library considers sane. The assertion is
-	// checked because DefaultTransport is a package variable anything could have
-	// replaced.
+
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		base = &http.Transport{}
@@ -252,9 +289,6 @@ func internalTransport() *http.Transport {
 	return t
 }
 
-// unencryptedHTTP2 enables h2c alongside HTTP/1.1: gRPC clients need HTTP/2,
-// while Connect's JSON and gRPC-Web transports — what the browser speaks — use
-// HTTP/1.1.
 func unencryptedHTTP2() *http.Protocols {
 	p := new(http.Protocols)
 	p.SetHTTP1(true)
@@ -270,8 +304,6 @@ func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger,
 	}
 }
 
-// shutdown stops both listeners with a deadline: without one a single stuck
-// request keeps the process alive until the orchestrator kills it.
 func shutdown(timeout time.Duration, log *slog.Logger, servers ...*http.Server) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

@@ -6,9 +6,6 @@ import (
 	"time"
 )
 
-// delay is tested with the randomness passed in, so the arithmetic is checked
-// exactly rather than described statistically.
-
 func TestDelayGrowsByTheFactor(t *testing.T) {
 	b := Backoff{Initial: 100 * time.Millisecond, Max: time.Minute, Factor: 2}
 
@@ -34,8 +31,6 @@ func TestDelayIsCappedAtMax(t *testing.T) {
 	}
 }
 
-// A large attempt count overflows the exponential to +Inf. The cap has to
-// survive that, otherwise a long outage ends in a nonsensical delay.
 func TestDelaySurvivesOverflow(t *testing.T) {
 	b := Backoff{Initial: time.Second, Max: 30 * time.Second, Factor: 2}
 
@@ -52,8 +47,6 @@ func TestDelayTreatsNegativeAttemptsAsTheFirst(t *testing.T) {
 	}
 }
 
-// Jitter only ever subtracts, so Max stays a ceiling instead of a value the
-// delay wanders above.
 func TestJitterOnlySubtracts(t *testing.T) {
 	b := Backoff{Initial: time.Second, Max: time.Minute, Factor: 2, Jitter: 0.5}
 
@@ -65,8 +58,6 @@ func TestJitterOnlySubtracts(t *testing.T) {
 	}
 }
 
-// The exported Delay draws its own randomness, so it is checked for bounds and
-// for actually varying.
 func TestDelayStaysWithinItsJitterWindow(t *testing.T) {
 	b := Backoff{Initial: time.Second, Max: time.Minute, Factor: 2, Jitter: 0.2}
 

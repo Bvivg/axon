@@ -1,16 +1,5 @@
 //go:build integration
 
-// Package integration exercises the shared transport packages against real
-// infrastructure.
-//
-// It sits between the unit tests, which cover everything provable without a
-// broker — topic parsing, header encoding, correlation plumbing, backoff — and
-// the services' own e2e suites. What belongs here is what only a real broker
-// can show: that a consumer group forms, that offsets are committed exactly
-// when the code says they are, and that a correlation ID written into a header
-// on one side comes back out of it on the other.
-//
-//	make test-integration
 package integration
 
 import (
@@ -28,14 +17,8 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/kafka"
 )
 
-// brokers is the throwaway cluster every test in this package shares. One
-// broker per package rather than per test: the container is the expensive part,
-// and tests keep out of each other's way by using their own topics and their
-// own consumer groups instead.
 var brokers []string
 
-// startupTimeout bounds pulling the image and getting the broker to the point
-// where it accepts connections. Pulling on a cold machine is the slow part.
 const startupTimeout = 3 * time.Minute
 
 func TestMain(m *testing.M) {
@@ -70,14 +53,8 @@ func run(m *testing.M) (int, error) {
 	return m.Run(), nil
 }
 
-// topicSeq keeps generated topic names unique inside one run.
 var topicSeq atomic.Int64
 
-// newTopic creates a topic and waits until the cluster reports a leader for it.
-//
-// Topics are created explicitly rather than left to the broker's auto-creation:
-// auto-creation is asynchronous, and a consumer that subscribes a moment too
-// early sees no partitions and quietly waits forever.
 func newTopic(t *testing.T, domain, event string) kafka.Topic {
 	t.Helper()
 

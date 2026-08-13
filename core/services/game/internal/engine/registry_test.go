@@ -9,9 +9,6 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 )
 
-// stubGame is the smallest thing the registry can hold. The registry's job is
-// bookkeeping, so testing it against a real game would only add ways for the
-// test to fail for reasons that have nothing to do with the registry.
 type stubGame struct {
 	key engine.Key
 }
@@ -99,8 +96,6 @@ func TestRegistryRefusesToReplaceAGame(t *testing.T) {
 		t.Fatalf("first Register(): %v", err)
 	}
 
-	// A silent overwrite would mean a build hosting a game nobody wired on
-	// purpose, and no way to notice.
 	err := registry.Register(stubDefinition(testKey, 2, 4))
 	if !errors.Is(err, engine.ErrDuplicateGame) {
 		t.Fatalf("second Register() error = %v, want %v", err, engine.ErrDuplicateGame)
@@ -148,8 +143,6 @@ func TestRegistryKeysAreStable(t *testing.T) {
 	}
 }
 
-// Init cannot refuse a roster — the interface gives it no way to — so the check
-// lives here, and this is the test that it does.
 func TestRegistryNewStateChecksTheRoster(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -175,8 +168,7 @@ func TestRegistryNewStateChecksTheRoster(t *testing.T) {
 			wantErr: engine.ErrPlayerCount,
 		},
 		{
-			// Seat lookup answers with the first match, so the second seat would
-			// be unreachable and the game unplayable.
+
 			name:    "the same player twice",
 			players: []engine.PlayerID{alice, alice},
 			wantErr: engine.ErrDuplicatePlayer,

@@ -1,17 +1,5 @@
 //go:build integration
 
-// Package integration exercises the repository against a real Postgres.
-//
-// It sits between the unit tests, which cover pure logic with no database at
-// all, and the e2e suite, which drives the whole stack through the gateway.
-// What belongs here is everything that is genuinely about the database and
-// invisible from either side: constraint behaviour, transaction boundaries,
-// concurrency, and the permission model.
-//
-// A test that could pass against a mock belongs in a unit test. A test about
-// what a client experiences belongs in e2e.
-//
-//	make test-integration
 package integration
 
 import (
@@ -25,7 +13,10 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	miniogo "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/testcontainers/testcontainers-go"
+	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
@@ -33,11 +24,10 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 )
 
-// Passwords for the throwaway container. They exist only inside a container
-// that lives for the length of one test run.
 const (
 	superuser    = "axon"
 	superpass    = "axon"
@@ -46,13 +36,19 @@ const (
 	chatPassword = "chat"
 )
 
-// pool is the connection the tests use: the auth_service role, not the
-// superuser. Testing through the role the service actually uses is the only way
-// the permission model is under test rather than merely configured.
+const (
+	minioUser     = "axon"
+	minioPassword = "axon12345"
+	avatarsBucket = "avatars"
+)
+
 var pool *postgres.Pool
 
-// startupTimeout bounds bringing the container up and migrating it. Pulling the
-// image on a cold machine is the slow part.
+var (
+	avatarPipeline  *avatar.Pipeline
+	avatarPublicURL string
+)
+
 const startupTimeout = 3 * time.Minute
 
 func TestMain(m *testing.M) {
@@ -72,9 +68,7 @@ func run(m *testing.M) (int, error) {
 		tcpostgres.WithDatabase(database),
 		tcpostgres.WithUsername(superuser),
 		tcpostgres.WithPassword(superpass),
-		// The same script the real stack runs. Reusing it is the point: a test
-		// against a hand-rolled schema would prove nothing about the permissions
-		// the deployed database actually grants.
+
 		tcpostgres.WithInitScripts("../../../deploy/postgres/init/01-schemas.sh"),
 		testcontainers.WithEnv(map[string]string{
 			"AUTH_DB_PASSWORD":    authPassword,
@@ -122,11 +116,72 @@ func run(m *testing.M) (int, error) {
 	}
 	defer pool.Close()
 
+	minioContainer, err := startMinio(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if err := testcontainers.TerminateContainer(minioContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: terminate minio container: %v\n", err)
+		}
+	}()
+
 	return m.Run(), nil
 }
 
-// applyMigrations runs the service's own migrations, with the service's own
-// role. It doubles as a check that they apply to an empty database at all.
+func startMinio(ctx context.Context) (*tcminio.MinioContainer, error) {
+	minioContainer, err := tcminio.Run(ctx, "minio/minio:RELEASE.2025-04-22T22-12-26Z",
+		tcminio.WithUsername(minioUser),
+		tcminio.WithPassword(minioPassword),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("start minio: %w", err)
+	}
+
+	endpoint, err := minioContainer.ConnectionString(ctx)
+	if err != nil {
+		return minioContainer, fmt.Errorf("minio connection string: %w", err)
+	}
+
+	client, err := miniogo.New(endpoint, &miniogo.Options{
+		Creds: credentials.NewStaticV4(minioUser, minioPassword, ""),
+	})
+	if err != nil {
+		return minioContainer, fmt.Errorf("minio client: %w", err)
+	}
+
+	if err := client.MakeBucket(ctx, avatarsBucket, miniogo.MakeBucketOptions{}); err != nil {
+		return minioContainer, fmt.Errorf("make bucket: %w", err)
+	}
+
+	policy := fmt.Sprintf(`{
+		"Version": "2012-10-17",
+		"Statement": [{
+			"Effect": "Allow",
+			"Principal": {"AWS": ["*"]},
+			"Action": ["s3:GetObject"],
+			"Resource": ["arn:aws:s3:::%s/*"]
+		}]
+	}`, avatarsBucket)
+	if err := client.SetBucketPolicy(ctx, avatarsBucket, policy); err != nil {
+		return minioContainer, fmt.Errorf("set bucket policy: %w", err)
+	}
+
+	store, err := avatar.NewStore(avatar.StoreConfig{
+		Endpoint:  endpoint,
+		AccessKey: minioUser,
+		SecretKey: minioPassword,
+		Bucket:    avatarsBucket,
+	})
+	if err != nil {
+		return minioContainer, fmt.Errorf("avatar store: %w", err)
+	}
+
+	avatarPublicURL = "http://" + endpoint
+	avatarPipeline = avatar.NewPipeline(store, avatar.NewURLBuilder(avatarPublicURL, avatarsBucket))
+	return minioContainer, nil
+}
+
 func applyMigrations(dsn string) error {
 	m, err := migrate.New("file://../migrations", "pgx5://"+dsn[len("postgres://"):])
 	if err != nil {
@@ -145,17 +200,9 @@ func applyMigrations(dsn string) error {
 	return nil
 }
 
-// newRepo returns a repository over a database with no rows in it.
-//
-// Truncating between tests rather than starting a container per test keeps the
-// suite to one container: the container is the expensive part, and an empty
-// table is an empty table however it got that way.
 func newRepo(t *testing.T) *repository.Repository {
 	t.Helper()
 
-	// CASCADE because credentials, refresh_tokens and oauth_accounts all
-	// reference users. RESTART IDENTITY is deliberately absent: every key here
-	// is a UUID, so there is no sequence to reset.
 	_, err := pool.Exec(t.Context(),
 		`TRUNCATE users, credentials, refresh_tokens, oauth_accounts CASCADE`)
 	if err != nil {

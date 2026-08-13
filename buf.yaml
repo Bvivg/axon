@@ -1,6 +1,3 @@
-# Buf workspace. Kept at the repository root so every generated-output path
-# below is a plain repo-relative path, and so `buf` can be run from a single
-# mount point inside its container.
 version: v2
 
 modules:

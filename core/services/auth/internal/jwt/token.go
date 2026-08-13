@@ -11,12 +11,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 )
 
-// Issuer mints access tokens.
-//
-// Only issuing lives here, because only this service holds a private key.
-// Verification is shared/pkg/authn, used unchanged by every service including
-// this one: two verifiers that disagree about what a valid token is would be a
-// security bug waiting for the right input.
 type Issuer struct {
 	keys     *KeySet
 	issuer   string
@@ -25,18 +19,15 @@ type Issuer struct {
 	now      func() time.Time
 }
 
-// IssuerConfig configures an Issuer.
 type IssuerConfig struct {
 	Keys     *KeySet
 	Issuer   string
 	Audience string
 	TTL      time.Duration
 
-	// Now overrides the clock. Tests set it; production leaves it nil.
 	Now func() time.Time
 }
 
-// NewIssuer validates the configuration and returns an Issuer.
 func NewIssuer(cfg IssuerConfig) (*Issuer, error) {
 	switch {
 	case cfg.Keys == nil:
@@ -63,17 +54,16 @@ func NewIssuer(cfg IssuerConfig) (*Issuer, error) {
 	}, nil
 }
 
-// TTL returns the lifetime issued tokens get.
 func (i *Issuer) TTL() time.Duration { return i.ttl }
 
-// Issue signs an access token for the user and returns it with its expiry.
-func (i *Issuer) Issue(userID uuid.UUID, email string) (string, time.Time, error) {
+func (i *Issuer) Issue(userID uuid.UUID, email string, familyID uuid.UUID) (string, time.Time, error) {
 	now := i.now().UTC()
 	expiresAt := now.Add(i.ttl)
 
 	claims := jwt.MapClaims{
 		"sub":   userID.String(),
 		"jti":   uuid.NewString(),
+		"fid":   familyID.String(),
 		"iss":   i.issuer,
 		"aud":   i.audience,
 		"iat":   now.Unix(),
@@ -83,8 +73,6 @@ func (i *Issuer) Issue(userID uuid.UUID, email string) (string, time.Time, error
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 
-	// The key id goes in the header so a verifier knows which published key to
-	// check against without trying each one — and so a rotation works at all.
 	active := i.keys.Active()
 	token.Header["kid"] = active.ID
 
@@ -96,6 +84,4 @@ func (i *Issuer) Issue(userID uuid.UUID, email string) (string, time.Time, error
 	return signed, expiresAt, nil
 }
 
-// Algorithm is re-exported so callers do not have to import authn just to name
-// the signing algorithm in a log line or a test.
 const Algorithm = authn.Algorithm

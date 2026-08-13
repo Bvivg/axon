@@ -9,8 +9,6 @@ import (
 	"connectrpc.com/connect"
 )
 
-// The flow rules/testing.md names first: register, sign in, reach a protected
-// method with what that produced.
 func TestRegisterThenLoginThenGetMe(t *testing.T) {
 	c := newCaller(t)
 
@@ -27,9 +25,6 @@ func TestRegisterThenLoginThenGetMe(t *testing.T) {
 		t.Errorf("email = %q, want %q", user.GetEmail(), acct.email)
 	}
 
-	// A separate sign-in must produce a token that works just as well: the two
-	// paths issue tokens through different code, and only one of them is
-	// exercised by registration.
 	tokens, err := c.login(acct.email, testPassword)
 	if err != nil {
 		t.Fatalf("login: %v", err)
@@ -39,8 +34,6 @@ func TestRegisterThenLoginThenGetMe(t *testing.T) {
 	}
 }
 
-// Email is normalised before it is stored, so a differently-cased address is
-// the same account — including for the uniqueness constraint.
 func TestEmailIsCaseInsensitive(t *testing.T) {
 	c := newCaller(t)
 	acct := c.register(t)
@@ -59,9 +52,6 @@ func TestDuplicateRegistrationIsRejected(t *testing.T) {
 	requireCode(t, err, connect.CodeAlreadyExists)
 }
 
-// Sign-in must not tell an attacker whether an address has an account. The code
-// and the message have to be identical, not merely similar: a difference in
-// either turns login into a membership oracle.
 func TestFailedLoginDoesNotRevealWhetherTheAccountExists(t *testing.T) {
 	c := newCaller(t)
 	acct := c.register(t)
@@ -97,14 +87,6 @@ func TestRefreshRotatesTheToken(t *testing.T) {
 	}
 }
 
-// The reason refresh tokens are rotated at all. A token presented twice means
-// either a replay or a leak, and the only safe reading is the second one — so
-// the whole chain descended from it dies, including the successor held by
-// whoever is legitimate. They sign in again; an attacker holding a stolen token
-// gets nothing.
-//
-// There is no way to observe this short of the full stack: it spans the service
-// layer, two tables and a transaction.
 func TestReplayingASpentRefreshTokenRevokesTheWholeChain(t *testing.T) {
 	c := newCaller(t)
 	acct := c.register(t)
@@ -116,11 +98,9 @@ func TestReplayingASpentRefreshTokenRevokesTheWholeChain(t *testing.T) {
 		t.Fatalf("first refresh: %v", err)
 	}
 
-	// The replay itself is refused.
 	_, replay := c.refresh(spent)
 	requireCode(t, replay, connect.CodeUnauthenticated)
 
-	// And the successor, which was valid a moment ago, is now dead too.
 	_, afterRevocation := c.refresh(successor.GetRefreshToken())
 	requireCode(t, afterRevocation, connect.CodeUnauthenticated)
 }
@@ -137,9 +117,6 @@ func TestLogoutInvalidatesTheRefreshToken(t *testing.T) {
 	requireCode(t, err, connect.CodeUnauthenticated)
 }
 
-// Logout is answered the same way whatever it is given: telling a caller that
-// the token they presented was unknown is a small oracle, and there is nothing
-// useful for a client to do with the distinction.
 func TestLogoutIsIdempotent(t *testing.T) {
 	c := newCaller(t)
 	acct := c.register(t)
@@ -152,7 +129,6 @@ func TestLogoutIsIdempotent(t *testing.T) {
 	}
 }
 
-// The gateway refuses these itself, before anything reaches auth.
 func TestProtectedProcedureRejectsBadTokens(t *testing.T) {
 	c := newCaller(t)
 	acct := c.register(t)
@@ -174,10 +150,6 @@ func TestProtectedProcedureRejectsBadTokens(t *testing.T) {
 	}
 }
 
-// Sign-in runs on the tight budget. The exact threshold is a configuration
-// detail, so the assertion is the behaviour: a caller who keeps trying is
-// eventually refused, and refused with the code that says so rather than with a
-// credential error.
 func TestSignInIsRateLimited(t *testing.T) {
 	c := newCaller(t)
 
@@ -187,15 +159,13 @@ func TestSignInIsRateLimited(t *testing.T) {
 	for range attempts {
 		_, err := c.login(email(), testPassword)
 		if connect.CodeOf(err) == connect.CodeResourceExhausted {
-			// A caller throttled on their very first request proves nothing:
-			// the budget has to be something they can spend before it runs out.
+
 			if allowed == 0 {
 				t.Fatal("the first request from a fresh caller was throttled")
 			}
 			return
 		}
-		// Anything other than a credential failure means the test stopped
-		// measuring what it set out to measure.
+
 		requireCode(t, err, connect.CodeUnauthenticated)
 		allowed++
 	}
@@ -203,13 +173,10 @@ func TestSignInIsRateLimited(t *testing.T) {
 	t.Fatalf("%d failed sign-ins from one address were never throttled", attempts)
 }
 
-// A throttled caller must not take anyone else down with them.
 func TestThrottlingIsPerCaller(t *testing.T) {
 	noisy := newCaller(t)
 	quiet := newCaller(t)
 
-	// Establish the quiet caller before the noisy one starts, so the account
-	// exists without competing for a budget later.
 	acct := quiet.register(t)
 
 	throttled := false

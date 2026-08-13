@@ -25,16 +25,11 @@ func TestOauthSignInCreatesAnAccount(t *testing.T) {
 		t.Error("a successful sign-in returned no tokens")
 	}
 
-	// The provider vouched for the address, so asking the person to prove it
-	// again would be asking them to repeat something already done.
 	if !result.User.EmailVerified {
 		t.Error("an address verified by the provider was not recorded as verified")
 	}
 }
 
-// Apple gives the name to the client and never to this service, so the client
-// passes it back on the request. It fills a gap, and only a gap: what the
-// provider itself said about the person is not up for revision by the browser.
 func TestTheClientsNameIsUsedOnlyWhenTheProviderGaveNone(t *testing.T) {
 	for name, tc := range map[string]struct {
 		fromProvider string
@@ -45,8 +40,7 @@ func TestTheClientsNameIsUsedOnlyWhenTheProviderGaveNone(t *testing.T) {
 		"the provider's name wins":    {fromProvider: "Ada L.", fromClient: "Someone Else", want: "Ada L."},
 		"neither has one":             {},
 		"the client sends whitespace": {fromClient: "   ", want: ""},
-		// Every sign-in after an account exists, and every sign-in at a provider
-		// that sends no name: nothing to carry, nothing to record.
+
 		"only the provider has one": {fromProvider: "Ada Lovelace", want: "Ada Lovelace"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -68,8 +62,6 @@ func TestTheClientsNameIsUsedOnlyWhenTheProviderGaveNone(t *testing.T) {
 	}
 }
 
-// The name is not the caller's own input and is decided on by nothing, so an
-// unusable one costs the name rather than the sign-in.
 func TestAnUnusableNameFromTheClientDoesNotFailTheSignIn(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -84,9 +76,6 @@ func TestAnUnusableNameFromTheClientDoesNotFailTheSignIn(t *testing.T) {
 	}
 }
 
-// A name arrives with the first authorization only, and by then the account may
-// well exist — linked from another provider, or created by registration. It has
-// no business renaming anyone.
 func TestTheClientsNameDoesNotRenameAnExistingAccount(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -112,9 +101,6 @@ func TestTheClientsNameDoesNotRenameAnExistingAccount(t *testing.T) {
 	}
 }
 
-// The same person coming back is one account, not two. The match is on the
-// provider's subject identifier, so it holds even if they change their address
-// at the provider.
 func TestReturningUserResolvesToTheSameAccount(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -134,11 +120,6 @@ func TestReturningUserResolvesToTheSameAccount(t *testing.T) {
 	}
 }
 
-// Someone who registered with a password and later signs in with a provider is
-// the same person, and gets the same account rather than a duplicate.
-//
-// This branch is only safe because an unverified address never reaches it. That
-// is what the next test is about.
 func TestProviderSignInLinksToAnExistingPasswordAccount(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -154,8 +135,6 @@ func TestProviderSignInLinksToAnExistingPasswordAccount(t *testing.T) {
 		t.Errorf("a second account was created for %s", email)
 	}
 
-	// The password still works: linking a provider adds a way in, it does not
-	// take one away.
 	if _, err := h.svc.Login(t.Context(), service.LoginInput{
 		Email:    email,
 		Password: validPassword,
@@ -164,8 +143,6 @@ func TestProviderSignInLinksToAnExistingPasswordAccount(t *testing.T) {
 	}
 }
 
-// The account takeover this refusal exists to prevent: register victim@ at a
-// provider that never confirms addresses, sign in here, inherit their account.
 func TestAnUnverifiedAddressCannotClaimAnAccount(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -181,7 +158,6 @@ func TestAnUnverifiedAddressCannotClaimAnAccount(t *testing.T) {
 		t.Fatalf("err = %v, want ErrOauthEmailUnverified", err)
 	}
 
-	// And nothing was linked on the way to failing.
 	if _, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderFake, "attacker-subject"); err == nil {
 		t.Error("a link was created despite the sign-in being refused")
 	}
@@ -193,15 +169,6 @@ func TestAnUnverifiedAddressCannotClaimAnAccount(t *testing.T) {
 	}
 }
 
-// Linking to an account matched by address is safe only while the identity is
-// still unclaimed. It can stop being unclaimed between the lookup that found
-// nothing and the write that links it — two devices signing in at once, or
-// someone racing the flow on purpose.
-//
-// The store refuses to move the identity either way. What is under test here is
-// that the refusal ends the sign-in: letting the person into the address-matched
-// account regardless would seat them in an account the identity does not point
-// at, and the next sign-in would resolve the same identity to the other one.
 func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -214,8 +181,6 @@ func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 	matched := h.register(t, email, validPassword)
 	other := h.register(t, claimant, validPassword)
 
-	// Planted after resolveOauthUser has looked and found nothing, which is
-	// exactly the window the store's conditional update closes.
 	h.store.beforeLink = func() {
 		h.store.beforeLink = nil
 		h.store.linkDirectly(domain.OauthAccount{
@@ -231,7 +196,6 @@ func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 		t.Fatalf("err = %v, want ErrOauthIdentityClaimed", err)
 	}
 
-	// The identity stayed with whoever claimed it first.
 	link, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderFake, subject)
 	if err != nil {
 		t.Fatalf("look up the contested identity: %v", err)
@@ -240,8 +204,6 @@ func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 		t.Errorf("the identity moved to %s, want %s", link.UserID, other.User.ID)
 	}
 
-	// And the account that merely shared an address is untouched: no session
-	// was issued for it, and its password still works.
 	if n := h.store.liveTokensForUser(matched.User.ID, h.clock); n != 1 {
 		t.Errorf("the address-matched account holds %d live tokens, want only the one from registration", n)
 	}
@@ -250,7 +212,6 @@ func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 	}
 }
 
-// A state may be spent once. A second callback carrying it is a replay.
 func TestStateCannotBeReplayed(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -279,9 +240,6 @@ func TestStateCannotBeReplayed(t *testing.T) {
 	}
 }
 
-// A state minted for one provider must not close a flow at another: otherwise
-// someone holding a state for a provider they control can spend it against one
-// they do not.
 func TestStateIsBoundToItsProvider(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
@@ -322,8 +280,6 @@ func TestStartOauthChecksTheDestination(t *testing.T) {
 		t.Fatalf("err = %v, want ErrOauthReturnToNotAllowed", err)
 	}
 
-	// Checked when the flow starts, so the callback uses what was agreed rather
-	// than anything it is handed.
 	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, webOrigin+"/lobby")
 	if err != nil {
 		t.Fatalf("StartOAuth: %v", err)
@@ -347,7 +303,6 @@ func TestStartOauthChecksTheDestination(t *testing.T) {
 func TestUnconfiguredProvidersAreRefused(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
-	// Apple is not implemented yet; GitHub has no credentials in this harness.
 	for _, provider := range []domain.Provider{domain.ProviderApple, domain.ProviderGitHub} {
 		if _, err := h.svc.StartOAuth(t.Context(), provider, ""); !errors.Is(err, domain.ErrProviderUnsupported) {
 			t.Errorf("StartOAuth(%q) = %v, want ErrProviderUnsupported", provider, err)
@@ -355,8 +310,6 @@ func TestUnconfiguredProvidersAreRefused(t *testing.T) {
 	}
 }
 
-// A deployment that configured no provider still serves the password flow. The
-// OAuth procedures have to say so rather than panic on a nil dependency.
 func TestOauthIsUnsupportedWhenNothingIsConfigured(t *testing.T) {
 	h := newHarness(t)
 
@@ -369,8 +322,6 @@ func TestOauthIsUnsupportedWhenNothingIsConfigured(t *testing.T) {
 	}
 }
 
-// Two sign-ins are two devices, so each starts its own refresh chain: revoking
-// one because its token was replayed must not sign the other out.
 func TestEachOauthSignInStartsItsOwnRefreshFamily(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 

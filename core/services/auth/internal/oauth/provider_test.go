@@ -1,9 +1,5 @@
 package oauth
 
-// This file is in the package rather than beside it: the provider endpoints are
-// package variables so a test can redirect them at a stand-in, and exporting
-// them purely for tests would put a mutable global on the package's API.
-
 import (
 	"context"
 	"encoding/json"
@@ -16,12 +12,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-// stubProvider stands in for a real identity provider: it answers the token
-// endpoint and whatever profile endpoints the provider under test calls.
-//
-// This is not a mock of the Provider interface. The code under test performs a
-// genuine OAuth2 exchange over HTTP and parses a genuine response body, which is
-// where the bugs in a provider integration actually live.
 type stubProvider struct {
 	server *httptest.Server
 	routes map[string]any
@@ -35,8 +25,7 @@ func newStub(t *testing.T, routes map[string]any) *stubProvider {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		// The exchange must carry the PKCE verifier. A provider would refuse
-		// without it, and so does this.
+
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return
@@ -72,7 +61,6 @@ func newStub(t *testing.T, routes map[string]any) *stubProvider {
 
 func (s *stubProvider) url(path string) string { return s.server.URL + path }
 
-// pointProviderAt rewires a provider's endpoints at the stub for one test.
 func pointProviderAt(t *testing.T, p Provider, stub *stubProvider) {
 	t.Helper()
 
@@ -124,9 +112,6 @@ func TestGoogleProfile(t *testing.T) {
 	}
 }
 
-// GitHub returns email: null for anyone who keeps their address private, which
-// is a setting rather than an edge case. The primary verified address from
-// /user/emails is the real answer.
 func TestGitHubTakesThePrimaryVerifiedAddress(t *testing.T) {
 	stub := newStub(t, map[string]any{
 		"/user": map[string]any{
@@ -151,7 +136,7 @@ func TestGitHubTakesThePrimaryVerifiedAddress(t *testing.T) {
 	if !profile.EmailVerified {
 		t.Error("the primary address is verified but did not come through as such")
 	}
-	// The numeric id, never the login: logins can be changed and reused.
+
 	if profile.ProviderUserID != "12345" {
 		t.Errorf("subject = %q, want the numeric id", profile.ProviderUserID)
 	}
@@ -160,9 +145,6 @@ func TestGitHubTakesThePrimaryVerifiedAddress(t *testing.T) {
 	}
 }
 
-// A verified secondary address must not stand in for an unverified primary.
-// Otherwise someone whose primary address is unconfirmed signs in as an identity
-// they did not choose.
 func TestGitHubRefusesAnUnverifiedPrimaryAddress(t *testing.T) {
 	stub := newStub(t, map[string]any{
 		"/user": map[string]any{"id": 99, "login": "someone"},
@@ -178,7 +160,6 @@ func TestGitHubRefusesAnUnverifiedPrimaryAddress(t *testing.T) {
 	}
 }
 
-// GitHub's display name is optional. Their own UI falls back to the login.
 func TestGitHubFallsBackToTheLogin(t *testing.T) {
 	stub := newStub(t, map[string]any{
 		"/user": map[string]any{"id": 7, "login": "octocat", "name": ""},
@@ -192,7 +173,6 @@ func TestGitHubFallsBackToTheLogin(t *testing.T) {
 	}
 }
 
-// An account with no addresses visible to us cannot be matched to a user.
 func TestGitHubRefusesAProfileWithNoAddress(t *testing.T) {
 	stub := newStub(t, map[string]any{
 		"/user":        map[string]any{"id": 7, "login": "octocat"},
@@ -205,9 +185,6 @@ func TestGitHubRefusesAProfileWithNoAddress(t *testing.T) {
 	}
 }
 
-// The check that makes matching on email safe at all. Without it, registering
-// victim@example.com at a provider that never confirms addresses is enough to
-// inherit their account here.
 func TestAnUnverifiedAddressIsRefused(t *testing.T) {
 	stub := newStub(t, map[string]any{
 		"/userinfo": map[string]any{
@@ -247,13 +224,11 @@ func TestAuthorizationURLCarriesPKCE(t *testing.T) {
 	}
 }
 
-// A provider having a bad day must fail the sign-in rather than be mistaken for
-// a bad token.
 func TestAProviderErrorIsNotMistakenForABadProfile(t *testing.T) {
 	stub := newStub(t, nil)
 
 	original := googleUserInfoURL
-	googleUserInfoURL = stub.url("/userinfo") // never registered: answers 404
+	googleUserInfoURL = stub.url("/userinfo")
 	t.Cleanup(func() { googleUserInfoURL = original })
 
 	provider := newGoogle("client", "secret", "http://localhost:3000/auth/callback/google")

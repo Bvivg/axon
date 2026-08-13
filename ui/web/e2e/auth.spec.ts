@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  expectProfile,
+  expectHome,
   fakeAuthorizeUrl,
   gatewayHost,
+  goToProfile,
   newEmail,
   open,
   password,
@@ -11,67 +12,50 @@ import {
   refreshCookieName,
   refreshCookiePath,
   register,
+  signOut,
   submitCredentials,
 } from "./support";
 
-/**
- * The browser half of stage 1.
- *
- * Every scenario here is one a real person performs, driven through the client
- * the way they would drive it. Nothing reaches around the UI to call the
- * gateway directly: a suite that does that is the Go suite, which already
- * exists and covers the contract. What is left over — and what only a browser
- * can answer — is whether the cookie the gateway sets is one a browser keeps,
- * whether a cross-origin call survives the preflight, and whether a reload
- * finds its way back to a session.
- */
-
-test("registration signs you in and lands on the profile", async ({ page }) => {
+test("registration signs you in and lands on Games", async ({ page }) => {
   const email = newEmail("register");
 
   await open(page, "/register");
   await submitCredentials(page, "Create account", email);
 
-  await expectProfile(page);
-  // The card is titled with the display name, and none was given — so the
-  // address on screen is the one the account was created with, read back from
-  // the server rather than echoed from the form.
-  await expect(page.getByRole("heading", { name: email })).toBeVisible();
+  await expectHome(page);
+
+  await goToProfile(page);
+  await expect(page.getByLabel("Email")).toHaveValue(email);
 });
 
 test("an existing account signs in with its password", async ({ page }) => {
   const email = newEmail("password");
 
   await register(page, email);
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login$/);
+  await goToProfile(page);
+  await signOut(page);
 
   await open(page, "/login");
   await submitCredentials(page, "Sign in", email);
 
-  await expectProfile(page);
-  await expect(page.getByRole("heading", { name: email })).toBeVisible();
+  await expectHome(page);
+  await goToProfile(page);
+  await expect(page.getByLabel("Email")).toHaveValue(email);
 });
 
-test("the fake provider carries the browser through to the profile", async ({
+test("the fake provider carries the browser through to Games", async ({
   page,
 }) => {
-  // Collected from responses rather than from navigations: the provider answers
-  // with a 302, which Chromium follows inside a single navigation. Only the
-  // response list shows that the browser really went to the auth service.
+
   const seen: string[] = [];
   page.on("response", (response) => seen.push(response.url()));
 
   await open(page, "/login");
   await page.getByRole("button", { name: "Continue with the test provider" }).click();
 
-  // No consent screen to click: the fake provider's authorize endpoint is a
-  // redirect with the identity baked into the code, so the browser comes
-  // straight back to the callback route.
-  await expectProfile(page);
-  await expect(
-    page.getByRole("heading", { name: /@fake\.axon\.test$/ }),
-  ).toBeVisible();
+  await expectHome(page);
+  await goToProfile(page);
+  await expect(page.getByLabel("Email")).toHaveValue(/@fake\.axon\.test$/);
 
   expect(
     seen.some((url) => url.startsWith(fakeAuthorizeUrl)),
@@ -86,35 +70,24 @@ test("the fake provider carries the browser through to the profile", async ({
 test("a reload keeps the session", async ({ page }) => {
   await register(page, newEmail("reload"));
 
-  // The access token died with the previous page: everything below is rebuilt
-  // from the refresh cookie alone. This is the single reason nothing has to be
-  // stored in JavaScript.
   await page.reload();
 
-  await expectProfile(page);
+  await expectHome(page);
 });
 
 test("the refresh token is out of the page's reach", async ({ page }) => {
   const email = newEmail("cookie");
   await register(page, email);
 
-  // Both halves matter. On its own, "document.cookie has no refresh token" also
-  // passes when there is no cookie anywhere — the cookie belongs to the
-  // gateway's origin, not the client's, so the page could never see it. What is
-  // worth asserting is that the session genuinely rests on a cookie *and* that
-  // the cookie is unreachable from script.
   const cookie = await refreshCookie(page);
   expect(cookie, "no refresh cookie was stored").toBeDefined();
   expect(cookie!.httpOnly).toBe(true);
   expect(cookie!.path).toBe(refreshCookiePath);
-  // Lax, and therefore only stored at all because the client and the gateway
-  // share a registrable domain — the arrangement production has and compose's
-  // default hostnames do not. See the header of docker-compose.web-e2e.yml.
+
   expect(cookie!.sameSite).toBe("Lax");
-  // Host-only: no leading dot, so a sibling host cannot read or overwrite it.
+
   expect(cookie!.domain).toBe(gatewayHost);
-  // Off in this stack only because the compose network is plain HTTP and the
-  // origin is not localhost. Asserted so the reason stays visible.
+
   expect(cookie!.secure).toBe(false);
 
   const visible = await page.evaluate(() => ({
@@ -126,48 +99,60 @@ test("the refresh token is out of the page's reach", async ({ page }) => {
   expect(visible.cookies).toBe("");
   expect(visible.cookies).not.toContain(refreshCookieName);
   expect(visible.cookies).not.toContain(cookie!.value);
-  // Nothing is persisted at all: the access token lives in a module variable
-  // and dies with the tab, and the OAuth flow removes its own key as it reads
-  // it.
+
   expect(visible.local).toEqual([]);
   expect(visible.session).toEqual([]);
-  // The password never lingers in storage either.
+
   expect(JSON.stringify(visible)).not.toContain(password);
   expect(JSON.stringify(visible)).not.toContain(email);
 });
 
 test("signing out puts the profile out of reach", async ({ page }) => {
   await register(page, newEmail("logout"));
+  await goToProfile(page);
 
-  // Asserted before signing out, not only after. Without it this test also
-  // passes when the session was never cookie-backed in the first place —
-  // which is exactly the failure mode the stack's SameSite and Secure
-  // configuration exists to avoid, and it would pass silently.
   expect(await refreshCookie(page), "no session to sign out of").toBeDefined();
 
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login$/);
+  await signOut(page);
 
-  // The gateway expires the cookie on the way out, so there is nothing left to
-  // restore a session from.
   expect(await refreshCookie(page)).toBeUndefined();
 
   await open(page, "/profile");
 
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/login\?next=%2Fprofile$/);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });
 
-/**
- * Apple's callback, which is a form POST and therefore lands on a route handler
- * rather than on the page every other provider returns to.
- *
- * The handler is the only place the person's name is ever seen: Apple sends it
- * once, in this body, and never again. There is no Apple sign-in to drive here —
- * no credentials, so the provider is not even registered — but the translation
- * from POST to redirect is the part that has no second source of truth, and it
- * is server-side, so a request is the honest way to reach it.
- */
+test("the sign-in pages bounce somebody who is already signed in", async ({
+  page,
+}) => {
+  await register(page, newEmail("bounce"));
+
+  await open(page, "/login");
+  await expectHome(page);
+
+  await page.goBack();
+  await expect(page).not.toHaveURL(/\/login/);
+
+  await open(page, "/register");
+  await expectHome(page);
+});
+
+test("the root is Games for a session, and sign-in for none", async ({ page }) => {
+  await register(page, newEmail("root"));
+
+  await open(page, "/");
+  await expectHome(page);
+
+  await goToProfile(page);
+  await signOut(page);
+
+  await open(page, "/");
+  await expect(page).toHaveURL(/\/login$/);
+
+  await expect(page).not.toHaveURL(/next=/);
+});
+
 test("Apple's form POST becomes a redirect carrying the code and the name", async ({
   request,
 }) => {
@@ -180,8 +165,6 @@ test("Apple's form POST becomes a redirect carrying the code and the name", asyn
     maxRedirects: 0,
   });
 
-  // 303 and not 302: the browser arrived with a POST, and only 303 obliges it
-  // to switch to GET for the page it is being sent to.
   expect(response.status()).toBe(303);
 
   const location = new URL(

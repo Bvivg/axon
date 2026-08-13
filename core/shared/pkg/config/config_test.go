@@ -35,7 +35,6 @@ func TestRequiredValuesLoad(t *testing.T) {
 	}
 }
 
-// The whole point of accumulating errors: one startup reports every problem.
 func TestAllErrorsReportedAtOnce(t *testing.T) {
 	l := config.NewLoaderFromMap(map[string]string{"PORT": "not-a-number"})
 
@@ -64,8 +63,6 @@ func TestMissingRequiredIsErrMissing(t *testing.T) {
 	}
 }
 
-// docker-compose renders an unset variable as an empty string, so empty and
-// absent have to mean the same thing.
 func TestEmptyValueTreatedAsAbsent(t *testing.T) {
 	l := config.NewLoaderFromMap(map[string]string{"DATABASE_URL": "   "})
 
@@ -96,7 +93,6 @@ func TestDefaultsApplyWhenAbsent(t *testing.T) {
 	}
 }
 
-// A typo in an optional variable must surface, not silently become the default.
 func TestMalformedOptionalValueIsAnError(t *testing.T) {
 	tests := map[string]map[string]string{
 		"int":      {"MAX_CONNS": "ten"},

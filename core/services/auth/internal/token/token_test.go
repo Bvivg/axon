@@ -43,8 +43,6 @@ func TestNewHasFullEntropy(t *testing.T) {
 	}
 }
 
-// The stored hash must match what Hash computes for the presented value, or a
-// legitimate refresh would never find its row.
 func TestHashMatchesTheGeneratedHash(t *testing.T) {
 	tok, err := token.New()
 	if err != nil {
@@ -60,7 +58,6 @@ func TestHashMatchesTheGeneratedHash(t *testing.T) {
 	}
 }
 
-// The token value must not be recoverable from what is stored.
 func TestHashDoesNotContainTheValue(t *testing.T) {
 	tok, err := token.New()
 	if err != nil {
@@ -113,7 +110,6 @@ func TestEqual(t *testing.T) {
 		t.Error("Equal reported different hashes as identical")
 	}
 
-	// Length differences must not be treated as a match either.
 	if token.Equal(tok.Hash, tok.Hash[:len(tok.Hash)-1]) {
 		t.Error("Equal reported a truncated hash as identical")
 	}

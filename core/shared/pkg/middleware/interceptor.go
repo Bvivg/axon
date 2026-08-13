@@ -11,13 +11,8 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/correlation"
 )
 
-// CorrelationInterceptor moves the correlation ID between the context and the
-// wire in both directions: on a handler it adopts the inbound header, and on an
-// outgoing call it writes the context's ID into the request header so the next
-// service downstream sees the same ID.
 type CorrelationInterceptor struct{}
 
-// NewCorrelationInterceptor returns an interceptor that propagates correlation IDs.
 func NewCorrelationInterceptor() *CorrelationInterceptor {
 	return &CorrelationInterceptor{}
 }
@@ -59,25 +54,20 @@ func (i *CorrelationInterceptor) WrapStreamingHandler(next connect.StreamingHand
 	}
 }
 
-// RecoveryInterceptor converts a panic in a handler into an internal error.
-// The client is told only that something broke; the stack goes to the log.
 type RecoveryInterceptor struct {
 	logger *slog.Logger
 }
 
-// NewRecoveryInterceptor returns an interceptor that recovers handler panics.
 func NewRecoveryInterceptor(log *slog.Logger) *RecoveryInterceptor {
 	return &RecoveryInterceptor{logger: log}
 }
 
 var _ connect.Interceptor = (*RecoveryInterceptor)(nil)
 
-// errInternal is what a recovered panic looks like on the wire.
 func errInternal() error {
 	return connect.NewError(connect.CodeInternal, errUnavailable{})
 }
 
-// errUnavailable carries a deliberately opaque message.
 type errUnavailable struct{}
 
 func (errUnavailable) Error() string { return "internal error" }
@@ -124,12 +114,10 @@ func (i *RecoveryInterceptor) log(ctx context.Context, procedure string, v any) 
 	)
 }
 
-// LoggingInterceptor logs one line per RPC on completion.
 type LoggingInterceptor struct {
 	logger *slog.Logger
 }
 
-// NewLoggingInterceptor returns an interceptor that logs completed RPCs.
 func NewLoggingInterceptor(log *slog.Logger) *LoggingInterceptor {
 	return &LoggingInterceptor{logger: log}
 }
@@ -169,9 +157,6 @@ func (i *LoggingInterceptor) log(ctx context.Context, spec connect.Spec, start t
 		"duration_ms", time.Since(start).Milliseconds(),
 	}
 
-	// A failed RPC is not automatically a server problem: an invalid argument
-	// or an unauthenticated call is the client's, and logging those at error
-	// level makes the error rate meaningless.
 	level := slog.LevelInfo
 	if err != nil {
 		attrs = append(attrs, "error", err.Error())
@@ -185,7 +170,6 @@ func (i *LoggingInterceptor) log(ctx context.Context, spec connect.Spec, start t
 	i.logger.Log(ctx, level, "rpc", attrs...)
 }
 
-// codeLabel renders the outcome of an RPC as a metric- and log-friendly label.
 func codeLabel(err error) string {
 	if err == nil {
 		return "ok"

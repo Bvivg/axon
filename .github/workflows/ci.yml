@@ -5,7 +5,6 @@ on:
     branches: [main]
   pull_request:
 
-# A new push to the same branch makes the previous run irrelevant.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -25,13 +24,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          # The workspace file is the single source of truth for the Go version,
-          # so CI cannot drift from local development.
+
           go-version-file: core/go.work
           cache-dependency-path: core/shared/go.sum
 
-      # Generated code is git-ignored and rebuilt on demand, so it has to exist
-      # before anything tries to compile against it.
       - uses: bufbuild/buf-setup-action@v1
         with:
           github_token: ${{ github.token }}
@@ -45,8 +41,6 @@ jobs:
       - name: Vet
         run: make vet
 
-      # -race is not optional: the services are concurrent by nature, and a data
-      # race that only shows up under load is the hardest kind of bug to chase.
       - name: Unit tests
         run: make test
 
@@ -72,11 +66,8 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: core
-          # Every module, listed explicitly: a pattern has to start at a module
-          # root in workspace mode. Keep in step with GO_MODULES in the Makefile
-          # and with the default command in docker-compose.tools.yml — a service
-          # missing from this list is a service nobody lints.
-          args: ./shared/... ./services/auth/... ./services/gateway/... ./services/game/...
+
+          args: ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/...
 
   proto:
     name: Contracts
@@ -84,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Breaking-change detection compares against main.
+
           fetch-depth: 0
 
       - name: Check for contracts
@@ -106,9 +97,6 @@ jobs:
         if: steps.contracts.outputs.present == 'true'
         run: buf lint
 
-      # The comparison needs something to compare against. buf treats a module
-      # with no .proto files as an error rather than as an empty baseline, so
-      # the very first contract would fail this step for want of a predecessor.
       - name: Check for contracts on the base branch
         id: baseline
         run: |
@@ -119,8 +107,6 @@ jobs:
             echo "main has no .proto files yet; nothing to break."
           fi
 
-      # A released contract is a promise. Additive changes are fine; anything
-      # that would break an existing client has to ship as a new version.
       - name: Check for breaking changes
         if: |
           steps.contracts.outputs.present == 'true'
@@ -138,28 +124,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The stack file declares `env_file: .env`, which is git-ignored and so
-      # absent on a fresh checkout. Compose refuses to read a file that is not
-      # there, so the example stands in — which incidentally checks that the
-      # example is complete enough to start from, the promise `make env` makes.
       - name: Create .env from the example
         run: make env
 
-      # Catches a malformed compose file or an unresolvable variable before it
-      # wastes anyone's time locally.
       - name: Validate compose files
         run: |
           docker compose -f core/deploy/docker-compose.yml config -q
           docker compose -f core/deploy/docker-compose.tools.yml config -q
-          # The e2e files require a signing key, so a placeholder stands in:
-          # this step checks they parse, not that the stacks run.
+
           JWT_PRIVATE_KEY_DEV_1=placeholder \
             docker compose -f core/deploy/docker-compose.e2e.yml config -q
           JWT_PRIVATE_KEY_DEV_1=placeholder \
             docker compose -f core/deploy/docker-compose.web-e2e.yml config -q
 
-  # Both of the jobs below wait on `go`: if the unit tests are red there is no
-  # point spending several minutes standing a database or a whole stack up.
   integration:
     name: Integration (testcontainers)
     runs-on: ubuntu-latest
@@ -193,18 +170,12 @@ jobs:
         with:
           github_token: ${{ github.token }}
 
-      # The runner container compiles the tests from the mounted source, and the
-      # service images build from it too, so the generated code has to be on disk
-      # before the stack goes up.
       - name: Generate contracts
         run: buf generate
 
       - name: E2E tests
         run: make test-e2e
 
-      # A red run without the services' logs is close to undebuggable, and the
-      # stack is torn down the moment the run ends — so make writes them out
-      # before tearing it down, whichever way the run went.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -217,7 +188,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [auth, gateway]
+        service: [auth, chat, gateway]
     steps:
       - uses: actions/checkout@v4
 
@@ -228,9 +199,6 @@ jobs:
       - name: Generate contracts
         run: buf generate
 
-      # The runtime target, not dev: this is the image that would ship, and a
-      # Dockerfile that only ever builds the hot-reload stage is a Dockerfile
-      # whose shipping path is untested.
       - name: Build ${{ matrix.service }}
         run: |
           docker build \
@@ -255,8 +223,6 @@ jobs:
           cache: npm
           cache-dependency-path: ui/web/package-lock.json
 
-      # The TypeScript client is generated from the same contracts as the Go
-      # one and is git-ignored, so nothing here compiles until it exists.
       - uses: bufbuild/buf-setup-action@v1
         with:
           github_token: ${{ github.token }}
@@ -271,18 +237,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # Separate from the build: `next build` type-checks too, but a type error
-      # reported as a build failure is slower to read than one reported as a
-      # type error.
       - name: Type-check
         run: npm run typecheck
 
       - name: Build
         run: npm run build
 
-  # The browser half of the client's coverage. It waits on `web` for the reason
-  # the Go e2e job waits on `go`: if the bundle does not build, standing a whole
-  # stack up to watch it fail costs minutes and tells nobody anything.
   web-e2e:
     name: Browser E2E (Playwright)
     runs-on: ubuntu-latest
@@ -294,13 +254,8 @@ jobs:
         with:
           github_token: ${{ github.token }}
 
-      # The client is built inside the stack from this checkout, and its
-      # TypeScript client is generated and git-ignored — so it has to be on disk
-      # before the image build starts.
       - name: Generate contracts
         run: buf generate
 
-      # No upload step to match the Go suite's: the report goes to stdout, and
-      # make prints the services' logs there too when the run is red.
       - name: Browser e2e tests
         run: make test-web-e2e

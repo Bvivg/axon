@@ -40,9 +40,6 @@ func TestMessageCorrelationID(t *testing.T) {
 	}
 }
 
-// The consumer's whole reason for existing, as far as observability goes: the
-// ID the producer put in the header has to come back out into the context the
-// handler runs under, or the trace ends at the bus.
 func TestMessageContextLiftsHeaderIntoContext(t *testing.T) {
 	msg := kafka.Message{Headers: kafka.Headers{correlation.Header: "from-header"}}
 
@@ -56,8 +53,6 @@ func TestMessageContextLiftsHeaderIntoContext(t *testing.T) {
 	}
 }
 
-// A message with no header still has to produce a usable ID: for that message
-// the consumer is the edge of the system.
 func TestMessageContextGeneratesWhenHeaderMissing(t *testing.T) {
 	var msg kafka.Message
 
@@ -71,8 +66,6 @@ func TestMessageContextGeneratesWhenHeaderMissing(t *testing.T) {
 	}
 }
 
-// The header wins over an ID that happens to be on the consumer's context:
-// the message's own ID is the one that ties it to whoever published it.
 func TestMessageContextPrefersHeaderOverContext(t *testing.T) {
 	msg := kafka.Message{Headers: kafka.Headers{correlation.Header: "from-header"}}
 	ctx := correlation.WithID(context.Background(), "from-context")

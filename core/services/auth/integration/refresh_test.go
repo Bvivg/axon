@@ -13,18 +13,6 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 )
 
-// The reason this suite exists.
-//
-// Two refreshes racing for the same token is not a hypothetical: a client whose
-// request times out and retries produces it, and so does a stolen token used
-// while its owner is still active. Exactly one must win. If both did, one token
-// would have handed out two live chains — which is the failure the whole
-// rotation scheme exists to prevent.
-//
-// The guarantee lives in a WHERE clause (`used_at IS NULL`) inside a
-// transaction. No unit test can observe it: with a mocked store there is no
-// database to arbitrate, and over HTTP the timing is not controllable. Here it
-// is a matter of pointing goroutines at one row.
 func TestOnlyOneRotationWinsARace(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -79,15 +67,11 @@ func TestOnlyOneRotationWinsARace(t *testing.T) {
 		t.Fatalf("%d of %d concurrent rotations won; exactly one must", wins, racers)
 	}
 
-	// And the database agrees: one spent token, one successor, nothing else.
 	if got := countTokens(t, user.ID); got != 2 {
 		t.Errorf("%d tokens exist for the user, want 2 (the spent one and its single successor)", got)
 	}
 }
 
-// A rotation that loses the race must leave nothing behind. The successor is
-// created in the same transaction as the mark, so a loser that still inserted
-// its successor would mean a live token descended from a spent one.
 func TestALostRotationIssuesNothing(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -118,7 +102,6 @@ func TestALostRotationIssuesNothing(t *testing.T) {
 	}
 }
 
-// Revoking a family must reach every token in it and nothing outside it.
 func TestRevokeFamilyStopsAtTheFamilyBoundary(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -155,16 +138,11 @@ func TestRevokeFamilyStopsAtTheFamilyBoundary(t *testing.T) {
 		}
 	}
 
-	// A user's other sign-ins are none of this family's business: revoking one
-	// compromised chain must not sign them out of every device they own.
 	if stored := mustLoad(t, repo, outside.TokenHash); stored.Revoked() {
 		t.Error("an unrelated session was revoked with the compromised family")
 	}
 }
 
-// Changing a password and signing every session out is one intent, so it has to
-// be one transaction: a password change that leaves old refresh tokens alive has
-// not locked anyone out, which is usually the whole reason for changing it.
 func TestSetPasswordAndRevokeSessionsIsAtomic(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
@@ -197,8 +175,6 @@ func TestSetPasswordAndRevokeSessionsIsAtomic(t *testing.T) {
 	}
 }
 
-// newToken builds a usable refresh token. The hash is a plain string because
-// nothing here verifies one: these tests are about rows and transactions.
 func newToken(userID, familyID uuid.UUID, hash string, now time.Time) domain.RefreshToken {
 	return domain.RefreshToken{
 		ID:        uuid.New(),

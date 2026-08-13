@@ -7,18 +7,13 @@ import (
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-// tokenType is the only scheme issued. It travels in the response so clients
-// build the Authorization header from what they were given rather than
-// hard-coding it.
 const tokenType = "Bearer"
 
-// toProtoUser converts a domain user into its wire form. Nothing
-// credential-shaped exists on domain.User, so there is no way for a hash to
-// leak through here by accident.
-func toProtoUser(u domain.User) *authv1.User {
+func toProtoUser(u domain.User, avatarURLs avatar.URLBuilder) *authv1.User {
 	out := &authv1.User{
 		Id:            u.ID.String(),
 		Email:         u.Email,
@@ -26,25 +21,49 @@ func toProtoUser(u domain.User) *authv1.User {
 		CreatedAt:     timestamppb.New(u.CreatedAt),
 	}
 
-	// Empty means unset in the domain; on the wire it is an absent optional, so
-	// a client can tell "no display name" from "display name is blank".
 	if u.DisplayName != "" {
 		out.DisplayName = &u.DisplayName
 	}
+	if u.FirstName != "" {
+		out.FirstName = &u.FirstName
+	}
+	if u.LastName != "" {
+		out.LastName = &u.LastName
+	}
+	if u.Nickname != "" {
+		out.Nickname = &u.Nickname
+	}
 	if u.AvatarURL != "" {
 		out.AvatarUrl = &u.AvatarURL
+
+		urls := avatarURLs.URLs(u.ID)
+		out.AvatarUrls = &authv1.AvatarURLs{
+			Small:    urls.Small,
+			Medium:   urls.Medium,
+			Large:    urls.Large,
+			Original: urls.Original,
+		}
 	}
 
 	return out
 }
 
-// toProtoTokens converts a token pair, turning the absolute expiry into the
-// seconds-remaining the contract exposes.
+func toProtoSession(s domain.Session) *authv1.Session {
+	return &authv1.Session{
+		Id:         s.FamilyID.String(),
+		UserAgent:  s.UserAgent,
+		Ip:         s.IP,
+		StartedAt:  timestamppb.New(s.StartedAt),
+		LastUsedAt: timestamppb.New(s.LastUsedAt),
+		Current:    s.Current,
+		Online:     s.Online,
+	}
+}
+
 func toProtoTokens(pair domain.TokenPair, now time.Time) *authv1.TokenPair {
 	expiresIn := int64(pair.AccessExpiresAt.Sub(now).Seconds())
 	if expiresIn < 0 {
-		// Should not happen, but a negative lifetime would make a client refresh
-		// in a loop rather than once.
+
 		expiresIn = 0
 	}
 
@@ -56,11 +75,6 @@ func toProtoTokens(pair domain.TokenPair, now time.Time) *authv1.TokenPair {
 	}
 }
 
-// fromProtoProvider maps the wire enum onto the domain provider.
-//
-// An unrecognised value returns false rather than a zero provider: a new client
-// sending a provider this build does not know must be refused, not silently
-// treated as the first one in the enum.
 func fromProtoProvider(p authv1.OauthProvider) (domain.Provider, bool) {
 	switch p {
 	case authv1.OauthProvider_OAUTH_PROVIDER_GOOGLE:

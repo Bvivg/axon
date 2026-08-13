@@ -173,6 +173,7 @@ axon/
 - `rules/git-ci.md` — коммиты, ветки, PR, GitHub Actions pipeline
 - `rules/observability.md` — структурированные логи, correlation ID, метрики, трейсинг, health checks
 - `rules/security.md` — секреты, gateway как граница доверия, rate limiting, JWT/JWKS
+- `rules/comments.md` — в коде не пишем комментарии (и почему)
 
 ## Открытые вопросы / TODO
 - Реализация `pathfinding.go` (BFS-валидация стен Quoridor)

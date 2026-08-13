@@ -41,8 +41,6 @@ func TestValidateEmail(t *testing.T) {
 	}
 }
 
-// A validation failure has to name its field, otherwise the client gets a 400
-// with nothing actionable in it.
 func TestValidateEmailReportsTheField(t *testing.T) {
 	_, err := domain.ValidateEmail("nope")
 
@@ -81,11 +79,8 @@ func TestValidatePassword(t *testing.T) {
 	}
 }
 
-// The maximum is measured in bytes because bytes are what argon2id hashes. A
-// multi-byte passphrase just under the byte limit must pass, and one over it
-// must not, even though both are well under 128 runes.
 func TestPasswordLimitIsMeasuredInBytes(t *testing.T) {
-	// Cyrillic is two bytes per rune.
+
 	within := strings.Repeat("п", domain.MaxPasswordLength/2)
 	if err := domain.ValidatePassword(within); err != nil {
 		t.Fatalf("password of %d bytes was refused: %v", len(within), err)
@@ -125,8 +120,6 @@ func TestValidateDisplayName(t *testing.T) {
 	}
 }
 
-// The display-name limit is in runes, not bytes: it is a human-facing length,
-// and cutting a Cyrillic name at 32 characters would be arbitrary.
 func TestDisplayNameLimitIsMeasuredInRunes(t *testing.T) {
 	name := strings.Repeat("б", domain.MaxDisplayNameLength)
 

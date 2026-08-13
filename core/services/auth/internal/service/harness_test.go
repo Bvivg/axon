@@ -21,8 +21,6 @@ const (
 	accessTTL     = 15 * time.Minute
 )
 
-// signingKey is generated once per test binary: 2048-bit generation is slow
-// enough that doing it per test would dominate the suite.
 var signingKey *rsa.PrivateKey
 
 func init() {
@@ -32,18 +30,13 @@ func init() {
 	}
 }
 
-// harness wires a Service against the in-memory store with a controllable clock.
 type harness struct {
 	svc   *service.Service
 	store *fakeStore
 
-	// clock is what the service reads; advance moves it.
 	clock time.Time
 }
 
-// harnessOption customises the service under test. Everything optional is
-// off by default, so a test that says nothing gets the smallest service that
-// can serve the password flow.
 type harnessOption func(*service.Config)
 
 func newHarness(t *testing.T, opts ...harnessOption) *harness {
@@ -54,8 +47,6 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		clock: time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC),
 	}
 
-	// The cheapest parameters that still pass validation: the suite runs argon2
-	// on nearly every case, and correctness does not depend on the cost.
 	params := password.DefaultParams()
 	params.Memory = 8 * 1024
 	params.Time = 1
@@ -100,10 +91,8 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 
 func (h *harness) now() time.Time { return h.clock }
 
-// advance moves the clock forward.
 func (h *harness) advance(d time.Duration) { h.clock = h.clock.Add(d) }
 
-// register is the shorthand every test starts from.
 func (h *harness) register(t *testing.T, email, pw string) service.Result {
 	t.Helper()
 
@@ -117,7 +106,6 @@ func (h *harness) register(t *testing.T, email, pw string) service.Result {
 	return res
 }
 
-// storedToken looks up the row behind a token value the service handed out.
 func (h *harness) storedToken(t *testing.T, value string) domain.RefreshToken {
 	t.Helper()
 

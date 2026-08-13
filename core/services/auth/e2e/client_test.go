@@ -17,29 +17,18 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 )
 
-// nextCaller hands out a distinct forged address per caller.
-//
-// Every request in a run leaves the same container, so without this the first
-// scenario to exhaust a rate-limit budget would fail all the others. The e2e
-// gateway is configured with TRUSTED_PROXIES=1 for exactly this, which also
-// means the trusted-proxy path through ratelimit.ClientIP is under test rather
-// than assumed — that is how the gateway will run behind an ingress.
 var nextCaller atomic.Uint32
 
-// caller is one client of the gateway, with its own rate-limit bucket.
 type caller struct {
 	client authv1connect.AuthServiceClient
 	addr   string
 }
 
-// newCaller returns a client whose requests are attributed to an address no
-// other caller uses.
 func newCaller(t *testing.T) *caller {
 	t.Helper()
 
 	n := nextCaller.Add(1)
-	// 10.0.0.0/8 is private and unroutable: nothing here reaches the internet,
-	// and an address that escaped into a log is obviously synthetic.
+
 	addr := fmt.Sprintf("10.%d.%d.%d", (n>>16)&0xff, (n>>8)&0xff, n&0xff)
 
 	c := &caller{addr: addr}
@@ -50,7 +39,6 @@ func newCaller(t *testing.T) *caller {
 	return c
 }
 
-// forwardedFor stamps the caller's address on every request.
 type forwardedFor struct {
 	addr string
 }
@@ -61,23 +49,18 @@ func (f forwardedFor) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
-// email returns an address no other test will use. Registrations accumulate for
-// the life of the stack, so a fixed address would make the second run of a test
-// fail on a conflict the test never intended to create.
 func email() string {
 	return "e2e-" + uuid.NewString() + "@axon.test"
 }
 
 const testPassword = "correct-horse-battery-staple"
 
-// account is a registered user and the tokens their registration produced.
 type account struct {
 	email  string
 	userID string
 	tokens *authv1.TokenPair
 }
 
-// register creates an account and fails the test if it cannot.
 func (c *caller) register(t *testing.T) *account {
 	t.Helper()
 
@@ -89,8 +72,6 @@ func (c *caller) register(t *testing.T) *account {
 	return acct
 }
 
-// registerAs registers a specific address and returns the error unchanged, for
-// the tests that are about what the error is.
 func (c *caller) registerAs(addr string) (*account, error) {
 	displayName := "E2E User"
 
@@ -110,8 +91,6 @@ func (c *caller) registerAs(addr string) (*account, error) {
 	}, nil
 }
 
-// login signs in and returns the error unchanged, because most callers are
-// testing what the error is.
 func (c *caller) login(email, password string) (*authv1.TokenPair, error) {
 	resp, err := c.client.Login(context.Background(), connect.NewRequest(&authv1.LoginRequest{
 		Email:    email,
@@ -123,8 +102,6 @@ func (c *caller) login(email, password string) (*authv1.TokenPair, error) {
 	return resp.Msg.GetTokens(), nil
 }
 
-// getMe calls the protected procedure with the given access token. An empty
-// token means none is sent at all.
 func (c *caller) getMe(accessToken string) (*authv1.User, error) {
 	req := connect.NewRequest(&authv1.GetMeRequest{})
 	if accessToken != "" {
@@ -138,7 +115,6 @@ func (c *caller) getMe(accessToken string) (*authv1.User, error) {
 	return resp.Msg.GetUser(), nil
 }
 
-// refresh exchanges a refresh token for a new pair.
 func (c *caller) refresh(refreshToken string) (*authv1.TokenPair, error) {
 	resp, err := c.client.RefreshToken(context.Background(), connect.NewRequest(&authv1.RefreshTokenRequest{
 		RefreshToken: refreshToken,
@@ -149,7 +125,6 @@ func (c *caller) refresh(refreshToken string) (*authv1.TokenPair, error) {
 	return resp.Msg.GetTokens(), nil
 }
 
-// logout revokes a refresh token.
 func (c *caller) logout(refreshToken string) error {
 	_, err := c.client.Logout(context.Background(), connect.NewRequest(&authv1.LogoutRequest{
 		RefreshToken: refreshToken,
@@ -157,7 +132,6 @@ func (c *caller) logout(refreshToken string) error {
 	return err
 }
 
-// requireCode fails unless err carries the expected Connect code.
 func requireCode(t *testing.T, err error, want connect.Code) {
 	t.Helper()
 

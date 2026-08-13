@@ -1,11 +1,3 @@
-# The local Axon stack. Everything runs in Docker: the host needs no Postgres,
-# no Redis and no Go toolchain beyond formatting and unit tests.
-#
-# Host ports are all configurable and default to a high, unusual range, because
-# 5432 and 6379 are almost always taken by something else on a developer
-# machine. Container-to-container traffic uses the standard ports over the
-# compose network and is unaffected.
-
 name: axon
 
 services:
@@ -16,11 +8,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-axon}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-axon}
       POSTGRES_DB: ${POSTGRES_DB:-axon}
-      # Fail fast on a misconfigured volume rather than silently initialising a
-      # second cluster.
+
       PGDATA: /var/lib/postgresql/data/pgdata
-      # Consumed by the init script below, which creates one login role per
-      # service. Each role can only reach its own schema.
+
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
       CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
       GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
@@ -29,12 +19,10 @@ services:
       - "${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # Runs once, when the data volume is first created. `make reset` drops the
-      # volume and replays it.
+
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      # The user is passed explicitly: pg_isready defaults to the OS user, which
-      # is not the database user here.
+
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-axon} -d ${POSTGRES_DB:-axon}"]
       interval: 5s
       timeout: 3s
@@ -46,11 +34,7 @@ services:
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-axon}
-    # Redis holds only reconstructible state — cache, presence, pub/sub fan-out —
-    # so persistence is off deliberately. Losing it costs latency, not data.
-    #
-    # A password is set even locally: the port is published on the host, and an
-    # unauthenticated Redis on a laptop is a well-known way to get owned.
+
     command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
     ports:
       - "${REDIS_HOST_PORT:-56379}:6379"
@@ -61,14 +45,46 @@ services:
       retries: 10
       start_period: 5s
 
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "${MINIO_HOST_PORT:-59000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-59001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing local/avatars &&
+        mc anonymous set download local/avatars
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
+    depends_on:
+      minio:
+        condition: service_healthy
+
   auth:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.service
-      # dev runs air against the bind-mounted source. The healthchecks below
-      # assume that image: they call wget, which the distroless runtime image
-      # does not have. docker-compose.e2e.yml is where the shipping images are
-      # exercised, and there the binary probes itself with -healthcheck.
+
       target: ${BUILD_TARGET:-dev}
       args:
         SERVICE: auth
@@ -76,35 +92,106 @@ services:
     env_file:
       - .env
     environment:
-      # The service connects as its own role, which can only reach the auth
-      # schema. The superuser DSN is for migrations and psql, never for a service.
+
       POSTGRES_DSN: ${AUTH_POSTGRES_DSN}
       HTTP_ADDR: ":8081"
-      # Probes, metrics and JWKS live on their own port so the operational
-      # surface is never reachable through whatever the gateway exposes.
+
       METRICS_ADDR: ":9091"
+      AVATARS_ENDPOINT: "minio:9000"
+      AVATARS_PUBLIC_URL: ${AVATARS_PUBLIC_URL:-http://localhost:59000}
     ports:
       - "${AUTH_HOST_PORT:-8081}:8081"
       - "${AUTH_METRICS_HOST_PORT:-9091}:9091"
     volumes:
-      # The whole workspace, so go.work resolves shared/ to the sibling on disk
-      # and a change there triggers a rebuild too.
+
       - ..:/src
     depends_on:
       postgres:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
-      # Liveness, not readiness: compose should hold dependents until the process
-      # is up, and /readyz would additionally wait on Postgres, which is already
-      # covered by depends_on.
+
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9091/healthz"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 40s
 
-  # The only service published to the outside world. Everything else is reachable
-  # only over the compose network.
+  kafka:
+    image: confluentinc/confluent-local:7.5.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
+
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-59092}"
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
+    ports:
+      - "${KAFKA_HOST_PORT:-59092}:9092"
+    healthcheck:
+
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
+      interval: 10s
+
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  chat:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: ${BUILD_TARGET:-dev}
+      args:
+        SERVICE: chat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DSN: ${CHAT_POSTGRES_DSN}
+      HTTP_ADDR: ":8082"
+      METRICS_ADDR: ":9092"
+
+      JWKS_URL: "http://auth:9091/.well-known/jwks.json"
+
+      AUTH_SERVICE_URL: "http://auth:8081"
+
+      KAFKA_BROKERS: "kafka:29092"
+    ports:
+      - "${CHAT_HOST_PORT:-8082}:8082"
+      - "${CHAT_METRICS_HOST_PORT:-9092}:9092"
+    volumes:
+      - ..:/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      auth:
+        condition: service_healthy
+
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9092/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
   gateway:
     build:
       context: ..
@@ -119,12 +206,10 @@ services:
       HTTP_ADDR: ":8080"
       METRICS_ADDR: ":9090"
       AUTH_SERVICE_URL: "http://auth:8081"
-      # The admin listener, which is internal. The document is public, but
-      # nothing outside needs to reach it directly.
+      CHAT_SERVICE_URL: "http://chat:8082"
+
       JWKS_URL: "http://auth:9091/.well-known/jwks.json"
-      # Reached directly in development, so X-Forwarded-For is ignored: trusting
-      # it without a proxy in front lets any caller forge their own address and
-      # hand themselves a private rate-limit bucket.
+
       TRUSTED_PROXIES: "0"
     ports:
       - "${GATEWAY_HOST_PORT:-18080}:8080"
@@ -134,6 +219,8 @@ services:
     depends_on:
       auth:
         condition: service_healthy
+      chat:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9090/healthz"]
       interval: 5s
@@ -141,9 +228,6 @@ services:
       retries: 12
       start_period: 40s
 
-  # The web client. Talks to the gateway from the browser, so it needs no
-  # network path of its own to any service — only the browser does, and the
-  # gateway's CORS allow-list is what decides whether it may.
   web:
     build:
       context: ../../ui/web
@@ -151,34 +235,22 @@ services:
       target: ${WEB_BUILD_TARGET:-dev}
     restart: unless-stopped
     environment:
-      # Read by the browser, not by this container: NEXT_PUBLIC_ variables are
-      # inlined into the bundle. So it has to be the address the host reaches
-      # the gateway on, never http://gateway:8080.
+
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${GATEWAY_HOST_PORT:-18080}
       NEXT_PUBLIC_OAUTH_PROVIDERS: ${NEXT_PUBLIC_OAUTH_PROVIDERS:-fake}
-      # Polling is slower but reliable across the bind mount; native file events
-      # do not cross the boundary on macOS or Windows.
+
       WATCHPACK_POLLING: "true"
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     volumes:
       - ../../ui/web:/app
-      # Masks the host's node_modules with the image's. Without it, the bind
-      # mount above hides everything npm installed during the build — and on
-      # macOS the host's copy would be the wrong platform anyway.
+
       - /app/node_modules
       - /app/.next
     depends_on:
       gateway:
         condition: service_healthy
 
-  # Migrations. Lives here rather than in the tools file because it needs the
-  # stack's network to reach Postgres. Behind a profile, so `up` ignores it:
-  #
-  #   make migrate-up S=auth
-  #
-  # It runs as the service's own role, which holds CREATE only on its own
-  # schema — a migration cannot reach across a schema boundary even by mistake.
   migrate:
     image: migrate/migrate:v4.18.1
     profiles: ["tools"]
@@ -188,9 +260,6 @@ services:
       postgres:
         condition: service_healthy
 
-# Kafka joins this file with the chat service, and LiveKit with calling. They are
-# not here yet because nothing would produce to or consume from them, and an
-# idle broker only slows down `docker compose up`.
-
 volumes:
   postgres-data:
+  minio-data:

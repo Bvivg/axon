@@ -25,8 +25,6 @@ func TestNewState(t *testing.T) {
 		t.Errorf("Winner = %d, want %d", state.Winner, engine.NoSeat)
 	}
 
-	// The roster is copied, so a caller who reuses its slice cannot reach into a
-	// position the engine treats as immutable.
 	roster[0] = carol
 	if state.Players[0] != alice {
 		t.Errorf("seat 0 followed the caller's slice to %q", state.Players[0])
@@ -64,8 +62,7 @@ func TestAdvanceAndFinishLeaveTheReceiverAlone(t *testing.T) {
 	if done.Status != engine.StatusWin || done.Winner != 1 {
 		t.Errorf("Finish(1) = status %q winner %d, want %q and 1", done.Status, done.Winner, engine.StatusWin)
 	}
-	// A finished game with a seat still "to move" is how a client ends up
-	// rendering whose turn it is under a final position.
+
 	if done.Turn != engine.NoSeat {
 		t.Errorf("Finish() left turn = %d, want %d", done.Turn, engine.NoSeat)
 	}
@@ -139,8 +136,6 @@ func TestStateOutcome(t *testing.T) {
 				t.Errorf("Outcome() winner = %q, want %q", *winner, tt.wantWinner)
 			}
 
-			// The pointer is to a copy: writing through it must not reach the
-			// position it came from.
 			*winner = carol
 			if _, again := tt.state.Outcome(); *again == carol {
 				t.Error("the winner pointer wrote through into the position")
@@ -172,8 +167,6 @@ func TestStateSeatAndCurrent(t *testing.T) {
 	}
 }
 
-// The whole representation exists to survive a trip through Postgres and the
-// wire, so the round trip is a test rather than an assumption.
 func TestStateAndMoveSurviveJSON(t *testing.T) {
 	state := newTestState().
 		Advance(json.RawMessage(`{"cells":[0,-1,1]}`), 1).

@@ -11,8 +11,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/correlation"
 )
 
-// Encoding a message is where the correlation ID leaves the process, so it is
-// worth testing on its own rather than only through a broker.
 func TestToKafkaStampsCorrelationID(t *testing.T) {
 	msg := Message{
 		Topic:   "chat.message",
@@ -39,9 +37,6 @@ func TestToKafkaStampsCorrelationID(t *testing.T) {
 	}
 }
 
-// Publishing must not edit the caller's map: a caller that reuses one Headers
-// value for several messages would otherwise carry the first message's
-// correlation ID into all of them.
 func TestToKafkaDoesNotMutateCallerHeaders(t *testing.T) {
 	headers := Headers{"content-type": "application/json"}
 	msg := Message{Topic: "chat.message", Headers: headers}
@@ -102,8 +97,6 @@ func TestFromKafkaDecodesTheMessage(t *testing.T) {
 	}
 }
 
-// Kafka allows repeated header keys. Preferring the first one means a later
-// duplicate cannot overwrite the correlation ID a trusted producer set.
 func TestFromKafkaKeepsTheFirstDuplicateHeader(t *testing.T) {
 	raw := kafkago.Message{
 		Topic: "chat.message",
@@ -118,8 +111,6 @@ func TestFromKafkaKeepsTheFirstDuplicateHeader(t *testing.T) {
 	}
 }
 
-// The whole path in one test: a context with an ID, encoded onto the wire,
-// decoded on the other side, and lifted back into a handler's context.
 func TestCorrelationSurvivesTheRoundTrip(t *testing.T) {
 	ctx := correlation.WithID(context.Background(), "trace-1")
 	_, id := correlation.Ensure(ctx)
@@ -143,8 +134,7 @@ func TestCorrelationSurvivesTheRoundTrip(t *testing.T) {
 }
 
 func TestRunWithoutHandler(t *testing.T) {
-	// A zero Consumer is enough: the check happens before anything touches the
-	// broker, which is exactly the guarantee being tested.
+
 	err := (&Consumer{}).Run(context.Background(), nil)
 
 	if !errors.Is(err, ErrNoHandler) {

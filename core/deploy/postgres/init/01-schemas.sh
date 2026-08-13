@@ -1,21 +1,6 @@
 #!/bin/sh
-# One database, one schema per service, one login role per schema.
-#
-# Each role gets USAGE and CREATE on its own schema and nothing anywhere else,
-# so a cross-schema JOIN fails at the database instead of at review time. That
-# is the difference between schema isolation being a rule and being enforced.
-#
-# Tables are not created here. Migrations own them, per service, under
-# services/<name>/migrations/, applied independently of each other.
-#
-# The Postgres entrypoint runs this once, when the data volume is first
-# created. An existing volume will not pick up changes — `make reset` drops the
-# volume and replays it.
 set -eu
 
-# Passwords come from the environment via docker-compose. Compose supplies
-# development defaults, so an empty value here means something is actually
-# misconfigured rather than merely unset.
 for var in AUTH_DB_PASSWORD CHAT_DB_PASSWORD GAME_DB_PASSWORD CALLING_DB_PASSWORD; do
 	eval "value=\${$var:-}"
 	if [ -z "$value" ]; then
@@ -24,11 +9,6 @@ for var in AUTH_DB_PASSWORD CHAT_DB_PASSWORD GAME_DB_PASSWORD CALLING_DB_PASSWOR
 	fi
 done
 
-# ON_ERROR_STOP matters: without it a half-initialised volume would look
-# healthy, and the failure would surface much later as a missing role.
-#
-# The schema name and role name are interpolated as identifiers (:"name") and
-# the password as a literal (:'name'), so psql quotes each correctly.
 init_service_schema() {
 	schema="$1"
 	password="$2"

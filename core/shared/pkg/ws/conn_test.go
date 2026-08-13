@@ -16,12 +16,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 )
 
-// These run against a real connection over loopback rather than a mock. A
-// WebSocket wrapper that is only tested against a fake proves nothing about
-// pings, close frames or read limits, which are the parts worth having.
-
-// echoServer sends every message straight back and closes with whatever code
-// the failure maps to, which is how a real endpoint is meant to behave.
 func echoServer(t *testing.T, opts ws.AcceptOptions) *httptest.Server {
 	t.Helper()
 
@@ -31,8 +25,6 @@ func echoServer(t *testing.T, opts ws.AcceptOptions) *httptest.Server {
 			return
 		}
 
-		// Bounded so a test that forgets to disconnect fails on its own
-		// deadline instead of hanging the server's shutdown.
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 
@@ -76,10 +68,8 @@ func TestConnRoundTrip(t *testing.T) {
 	}
 }
 
-// The peer has to learn why it was disconnected, and an over-long reason must
-// not cost it the close frame entirely.
 func TestCloseDeliversCodeAndTruncatedReason(t *testing.T) {
-	reason := strings.Repeat("ю", 100) // 200 bytes, well past what a close frame holds
+	reason := strings.Repeat("ю", 100)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := ws.Accept(w, r, ws.AcceptOptions{})
@@ -132,14 +122,11 @@ func TestReadLimitDisconnectsWithMessageTooBig(t *testing.T) {
 	}
 }
 
-// Keepalive is the reason a connection to a peer that vanished does not sit
-// there holding a session, so the pings have to actually go out.
 func TestKeepalivePingsThePeer(t *testing.T) {
 	var pings atomic.Int64
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The raw library here, not our Accept: counting pings is the point of
-		// the test and nothing in the wrapper exposes them.
+
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			OnPingReceived: func(_ context.Context, _ []byte) bool {
 				pings.Add(1)
@@ -167,8 +154,6 @@ func TestKeepalivePingsThePeer(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 
-	// Pongs are processed by the read machinery, so somebody has to be reading
-	// — the constraint the package documents.
 	dropped := make(chan error, 1)
 	go func() {
 		_, err := conn.Read(context.Background())
@@ -192,8 +177,6 @@ func TestKeepalivePingsThePeer(t *testing.T) {
 	<-dropped
 }
 
-// A WebSocket session outlives the request that opened it, so the correlation
-// ID has to survive the handshake or the session's logs float free.
 func TestCorrelationIDTravelsWithTheHandshake(t *testing.T) {
 	serverSide := make(chan string, 1)
 
@@ -253,7 +236,7 @@ func TestDialRetryConnectsAfterFailures(t *testing.T) {
 	if got := attempts.Load(); got != 3 {
 		t.Fatalf("server saw %d attempts, want 3", got)
 	}
-	// 5ms after the first failure plus 10ms after the second.
+
 	if elapsed < 15*time.Millisecond {
 		t.Fatalf("connected in %v, too fast to have waited out the backoff", elapsed)
 	}

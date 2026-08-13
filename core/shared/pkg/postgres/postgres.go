@@ -1,9 +1,3 @@
-// Package postgres builds the connection pool services use to reach Postgres.
-//
-// Postgres is the source of truth for every service that has durable state.
-// Each service owns its own schema and its own migrations; nothing reaches
-// across a schema boundary, so services stay independently deployable even
-// though they share one database in the local stack.
 package postgres
 
 import (
@@ -17,24 +11,19 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/config"
 )
 
-// Config describes the pool. Only DSN is required.
 type Config struct {
-	// DSN is the libpq/URL connection string.
 	DSN config.Secret
-	// SearchPath pins the service's schema, e.g. "auth". Set it so queries do
-	// not depend on the role's default search_path.
+
 	SearchPath string
-	// MaxConns bounds the pool. Services get a modest default because the
-	// database, not the service, is the scarce resource.
+
 	MaxConns int32
-	// MinConns keeps warm connections around.
+
 	MinConns int32
-	// MaxConnLifetime recycles connections so a long-lived pool eventually
-	// picks up failovers and configuration changes.
+
 	MaxConnLifetime time.Duration
-	// MaxConnIdleTime closes connections nobody is using.
+
 	MaxConnIdleTime time.Duration
-	// ConnectTimeout bounds the initial handshake.
+
 	ConnectTimeout time.Duration
 }
 
@@ -56,7 +45,6 @@ func (c *Config) applyDefaults() {
 	}
 }
 
-// LoadConfig reads the standard Postgres variables.
 func LoadConfig(l *config.Loader) Config {
 	return Config{
 		DSN:             l.Secret("POSTGRES_DSN"),
@@ -69,21 +57,18 @@ func LoadConfig(l *config.Loader) Config {
 	}
 }
 
-// Pool is a pgx pool that also satisfies health.Checker.
 type Pool struct {
 	*pgxpool.Pool
 
 	logger *slog.Logger
 }
 
-// Connect opens the pool and verifies it with a ping, so a bad DSN fails at
-// startup rather than on the first query.
 func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 	cfg.applyDefaults()
 
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN.Reveal())
 	if err != nil {
-		// The error from ParseConfig can echo the DSN, so it is not wrapped.
+
 		return nil, fmt.Errorf("parse POSTGRES_DSN: invalid connection string")
 	}
 
@@ -121,10 +106,8 @@ func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 	return &Pool{Pool: pool, logger: log}, nil
 }
 
-// Name implements health.Checker.
 func (p *Pool) Name() string { return "postgres" }
 
-// Check implements health.Checker.
 func (p *Pool) Check(ctx context.Context) error {
 	return p.Ping(ctx)
 }

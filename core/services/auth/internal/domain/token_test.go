@@ -35,7 +35,7 @@ func TestRefreshTokenUsable(t *testing.T) {
 			token: domain.RefreshToken{ExpiresAt: past},
 		},
 		{
-			// A token is dead the instant it expires, not a moment after.
+
 			name:  "expiring exactly now",
 			token: domain.RefreshToken{ExpiresAt: now},
 		},

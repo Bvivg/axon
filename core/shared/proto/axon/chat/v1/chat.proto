@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package axon.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service ChatService {
+
+  rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
+
+  rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
+
+  rpc GetRoom(GetRoomRequest) returns (GetRoomResponse);
+
+  rpc JoinRoom(JoinRoomRequest) returns (JoinRoomResponse);
+
+  rpc LeaveRoom(LeaveRoomRequest) returns (LeaveRoomResponse);
+
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+}
+
+message Room {
+  string id = 1;
+  string name = 2;
+
+  string created_by = 3;
+
+  google.protobuf.Timestamp created_at = 4;
+
+  int32 member_count = 5;
+}
+
+message Member {
+  string user_id = 1;
+
+  optional string display_name = 2;
+
+  google.protobuf.Timestamp joined_at = 3;
+}
+
+message Message {
+  string id = 1;
+  string room_id = 2;
+  string author_id = 3;
+  string body = 4;
+
+  int64 seq = 5;
+
+  google.protobuf.Timestamp sent_at = 6;
+
+  optional string client_id = 7;
+}
+
+message CreateRoomRequest {
+  string name = 1;
+}
+
+message CreateRoomResponse {
+  Room room = 1;
+}
+
+message ListRoomsRequest {}
+
+message ListRoomsResponse {
+  repeated Room rooms = 1;
+}
+
+message GetRoomRequest {
+  string room_id = 1;
+}
+
+message GetRoomResponse {
+  Room room = 1;
+  repeated Member members = 2;
+}
+
+message JoinRoomRequest {
+  string room_id = 1;
+}
+
+message JoinRoomResponse {
+  Room room = 1;
+
+  bool joined = 2;
+}
+
+message LeaveRoomRequest {
+  string room_id = 1;
+}
+
+message LeaveRoomResponse {}
+
+message ListMessagesRequest {
+  string room_id = 1;
+
+  optional int32 limit = 2;
+
+  optional int64 before_seq = 3;
+
+  optional int64 after_seq = 4;
+}
+
+message ListMessagesResponse {
+
+  repeated Message messages = 1;
+
+  bool has_more = 2;
+}

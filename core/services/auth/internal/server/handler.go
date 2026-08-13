@@ -1,8 +1,3 @@
-// Package server exposes the auth service over Connect.
-//
-// It is a translation layer and nothing else: requests become service inputs,
-// domain errors become Connect codes, domain types become wire types. No rule
-// about how authentication works lives here.
 package server
 
 import (
@@ -13,36 +8,37 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
 
-// Handler implements the generated AuthService interface.
 type Handler struct {
-	svc      *service.Service
-	verifier *authn.Verifier
-	log      *slog.Logger
-	now      func() time.Time
+	svc        *service.Service
+	verifier   *authn.Verifier
+	log        *slog.Logger
+	now        func() time.Time
+	avatarURLs avatar.URLBuilder
 }
 
 var _ authv1connect.AuthServiceHandler = (*Handler)(nil)
 
-// Config configures a Handler.
 type Config struct {
 	Service  *service.Service
 	Verifier *authn.Verifier
 	Logger   *slog.Logger
 
-	// Now overrides the clock. Tests set it; production leaves it nil.
+	AvatarURLs avatar.URLBuilder
+
 	Now func() time.Time
 }
 
-// New returns a Handler.
 func New(cfg Config) (*Handler, error) {
 	switch {
 	case cfg.Service == nil:
@@ -58,10 +54,15 @@ func New(cfg Config) (*Handler, error) {
 		now = time.Now
 	}
 
-	return &Handler{svc: cfg.Service, verifier: cfg.Verifier, log: cfg.Logger, now: now}, nil
+	return &Handler{
+		svc:        cfg.Service,
+		verifier:   cfg.Verifier,
+		log:        cfg.Logger,
+		now:        now,
+		avatarURLs: cfg.AvatarURLs,
+	}, nil
 }
 
-// Register creates an account and signs it in.
 func (h *Handler) Register(
 	ctx context.Context,
 	req *connect.Request[authv1.RegisterRequest],
@@ -72,18 +73,18 @@ func (h *Handler) Register(
 		Email:       msg.GetEmail(),
 		Password:    msg.GetPassword(),
 		DisplayName: msg.GetDisplayName(),
+		Device:      deviceFrom(req.Header()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
 	return connect.NewResponse(&authv1.RegisterResponse{
-		User:   toProtoUser(res.User),
+		User:   toProtoUser(res.User, h.avatarURLs),
 		Tokens: toProtoTokens(res.Tokens, h.now()),
 	}), nil
 }
 
-// Login exchanges credentials for tokens.
 func (h *Handler) Login(
 	ctx context.Context,
 	req *connect.Request[authv1.LoginRequest],
@@ -91,23 +92,23 @@ func (h *Handler) Login(
 	res, err := h.svc.Login(ctx, service.LoginInput{
 		Email:    req.Msg.GetEmail(),
 		Password: req.Msg.GetPassword(),
+		Device:   deviceFrom(req.Header()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
 	return connect.NewResponse(&authv1.LoginResponse{
-		User:   toProtoUser(res.User),
+		User:   toProtoUser(res.User, h.avatarURLs),
 		Tokens: toProtoTokens(res.Tokens, h.now()),
 	}), nil
 }
 
-// RefreshToken rotates a refresh token and issues a new pair.
 func (h *Handler) RefreshToken(
 	ctx context.Context,
 	req *connect.Request[authv1.RefreshTokenRequest],
 ) (*connect.Response[authv1.RefreshTokenResponse], error) {
-	res, err := h.svc.Refresh(ctx, req.Msg.GetRefreshToken())
+	res, err := h.svc.Refresh(ctx, req.Msg.GetRefreshToken(), deviceFrom(req.Header()))
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
@@ -117,7 +118,6 @@ func (h *Handler) RefreshToken(
 	}), nil
 }
 
-// Logout revokes the refresh chain the token belongs to.
 func (h *Handler) Logout(
 	ctx context.Context,
 	req *connect.Request[authv1.LogoutRequest],
@@ -128,11 +128,6 @@ func (h *Handler) Logout(
 	return connect.NewResponse(&authv1.LogoutResponse{}), nil
 }
 
-// GetMe returns the caller's profile.
-//
-// The subject comes from the token on the request, never from the body — the
-// contract has no field for a user id precisely so this method cannot be asked
-// for somebody else's account.
 func (h *Handler) GetMe(
 	ctx context.Context,
 	req *connect.Request[authv1.GetMeRequest],
@@ -147,10 +142,9 @@ func (h *Handler) GetMe(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	return connect.NewResponse(&authv1.GetMeResponse{User: toProtoUser(user)}), nil
+	return connect.NewResponse(&authv1.GetMeResponse{User: toProtoUser(user, h.avatarURLs)}), nil
 }
 
-// StartOAuth begins an authorization code flow.
 func (h *Handler) StartOAuth(
 	ctx context.Context,
 	req *connect.Request[authv1.StartOAuthRequest],
@@ -171,7 +165,6 @@ func (h *Handler) StartOAuth(
 	}), nil
 }
 
-// CompleteOAuth finishes an authorization code flow.
 func (h *Handler) CompleteOAuth(
 	ctx context.Context,
 	req *connect.Request[authv1.CompleteOAuthRequest],
@@ -186,25 +179,91 @@ func (h *Handler) CompleteOAuth(
 		Code:        req.Msg.GetCode(),
 		State:       req.Msg.GetState(),
 		DisplayName: req.Msg.GetDisplayName(),
+		Device:      deviceFrom(req.Header()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
 	return connect.NewResponse(&authv1.CompleteOAuthResponse{
-		User:    toProtoUser(completed.User),
+		User:    toProtoUser(completed.User, h.avatarURLs),
 		Tokens:  toProtoTokens(completed.Tokens, h.now()),
 		Created: completed.Created,
 	}), nil
 }
 
-// authenticate verifies the bearer token on a request.
-//
-// The gateway already verified it, and this verifies it again. That is
-// deliberate: rules/security.md puts resource-level authorization in the service
-// that owns the resource, and a service that trusts a header because "the
-// gateway must have checked" is one misrouted request away from trusting anyone.
-// Verification is local against the key set, so the cost is a signature check.
+func (h *Handler) UpdateProfile(
+	ctx context.Context,
+	req *connect.Request[authv1.UpdateProfileRequest],
+) (*connect.Response[authv1.UpdateProfileResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	user, err := h.svc.UpdateProfile(ctx, claims.UserID, domain.ProfilePatch{
+		Email:     req.Msg.Email,
+		FirstName: req.Msg.FirstName,
+		LastName:  req.Msg.LastName,
+		Nickname:  req.Msg.Nickname,
+	})
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.UpdateProfileResponse{User: toProtoUser(user, h.avatarURLs)}), nil
+}
+
+func (h *Handler) ListSessions(
+	ctx context.Context,
+	req *connect.Request[authv1.ListSessionsRequest],
+) (*connect.Response[authv1.ListSessionsResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	sessions, err := h.svc.ListSessions(ctx, claims.UserID, claims.FamilyID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	out := make([]*authv1.Session, len(sessions))
+	for i, s := range sessions {
+		out[i] = toProtoSession(s)
+	}
+
+	return connect.NewResponse(&authv1.ListSessionsResponse{Sessions: out}), nil
+}
+
+func (h *Handler) RevokeSession(
+	ctx context.Context,
+	req *connect.Request[authv1.RevokeSessionRequest],
+) (*connect.Response[authv1.RevokeSessionResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	sessionID, err := uuid.Parse(req.Msg.GetSessionId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, domain.ErrSessionNotFound)
+	}
+
+	if err := h.svc.RevokeSession(ctx, claims.UserID, sessionID); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.RevokeSessionResponse{}), nil
+}
+
+func deviceFrom(headers http.Header) domain.Device {
+	return domain.Device{
+		UserAgent: headers.Get("User-Agent"),
+		IP:        headers.Get(authn.ClientIPHeader),
+	}
+}
+
 func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {
 	raw, err := authn.BearerToken(headers)
 	if err != nil {

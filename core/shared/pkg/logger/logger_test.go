@@ -11,7 +11,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 )
 
-// decode reads the single JSON log line written to buf.
 func decode(t *testing.T, buf *bytes.Buffer) map[string]any {
 	t.Helper()
 
@@ -70,8 +69,6 @@ func TestCorrelationIDAbsentWhenContextHasNone(t *testing.T) {
 	}
 }
 
-// The context handler must survive With/WithGroup, otherwise a logger derived
-// from the root one silently stops emitting correlation IDs.
 func TestCorrelationIDSurvivesWith(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(logger.Options{Service: "chat", Output: &buf}).With("room_id", "r1")

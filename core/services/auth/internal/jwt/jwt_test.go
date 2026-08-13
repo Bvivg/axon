@@ -19,19 +19,12 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 )
 
-// Verification itself is covered in shared/pkg/authn, which is the only
-// implementation. What is tested here is the issuing half and the key set: that
-// a token this service mints is one the shared verifier accepts, that rotation
-// works, and that the JWKS document other services fetch is correct.
-
 const (
 	testIssuer   = "https://auth.axon.test"
 	testAudience = "axon"
 	testTTL      = 15 * time.Minute
 )
 
-// Keys are generated once per test binary: 2048-bit generation is slow enough
-// that doing it per test would dominate the suite.
 var (
 	sharedKey  *rsa.PrivateKey
 	sharedKey2 *rsa.PrivateKey
@@ -69,7 +62,6 @@ func issuer(t *testing.T, set *jwt.KeySet) *jwt.Issuer {
 	return iss
 }
 
-// verifier builds the shared verifier over a key source.
 func verifier(t *testing.T, keys authn.KeySource) *authn.Verifier {
 	t.Helper()
 
@@ -82,8 +74,6 @@ func verifier(t *testing.T, keys authn.KeySource) *authn.Verifier {
 	return v
 }
 
-// The contract between the two halves: what this service signs, the shared
-// verifier accepts.
 func TestIssuedTokensVerify(t *testing.T) {
 	set := keySet(t)
 	iss := issuer(t, set)
@@ -91,7 +81,7 @@ func TestIssuedTokensVerify(t *testing.T) {
 
 	userID := uuid.New()
 
-	raw, expiresAt, err := iss.Issue(userID, "bob@example.com")
+	raw, expiresAt, err := iss.Issue(userID, "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -122,11 +112,11 @@ func TestEachTokenHasItsOwnID(t *testing.T) {
 
 	userID := uuid.New()
 
-	first, _, err := iss.Issue(userID, "bob@example.com")
+	first, _, err := iss.Issue(userID, "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	second, _, err := iss.Issue(userID, "bob@example.com")
+	second, _, err := iss.Issue(userID, "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -145,12 +135,10 @@ func TestEachTokenHasItsOwnID(t *testing.T) {
 	}
 }
 
-// Without kid in the header a verifier cannot pick a key, and rotation is
-// impossible.
 func TestTokenNamesItsKey(t *testing.T) {
 	iss := issuer(t, keySet(t))
 
-	raw, _, err := iss.Issue(uuid.New(), "bob@example.com")
+	raw, _, err := iss.Issue(uuid.New(), "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -168,8 +156,6 @@ func TestTokenNamesItsKey(t *testing.T) {
 	}
 }
 
-// The point of publishing several keys: a token signed before a rotation still
-// verifies afterwards, so switching signing keys does not sign everyone out.
 func TestTokenFromARetiredKeyStillVerifies(t *testing.T) {
 	oldKey := jwt.PrivateKey{ID: "dev-1", Key: sharedKey}
 	newKey := jwt.PrivateKey{ID: "dev-2", Key: sharedKey2}
@@ -179,12 +165,11 @@ func TestTokenFromARetiredKeyStillVerifies(t *testing.T) {
 		t.Fatalf("NewKeySet: %v", err)
 	}
 
-	raw, _, err := issuer(t, before).Issue(uuid.New(), "bob@example.com")
+	raw, _, err := issuer(t, before).Issue(uuid.New(), "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
 
-	// After rotation dev-2 signs, dev-1 stays published.
 	after, err := jwt.NewKeySet(newKey, oldKey)
 	if err != nil {
 		t.Fatalf("NewKeySet: %v", err)
@@ -195,8 +180,6 @@ func TestTokenFromARetiredKeyStillVerifies(t *testing.T) {
 	}
 }
 
-// The JWKS document is the only thing other services have to go on, so what it
-// publishes has to be exactly what verifies a token.
 func TestJWKSRoundTripsThroughTheSharedParser(t *testing.T) {
 	set := keySet(t, jwt.PrivateKey{ID: "dev-2", Key: sharedKey2})
 
@@ -213,9 +196,7 @@ func TestJWKSRoundTripsThroughTheSharedParser(t *testing.T) {
 		t.Fatalf("parsed %d keys, want 2", len(parsed))
 	}
 
-	// A token signed here verifies against the keys as another service would
-	// have reconstructed them from the wire.
-	raw, _, err := issuer(t, set).Issue(uuid.New(), "bob@example.com")
+	raw, _, err := issuer(t, set).Issue(uuid.New(), "bob@example.com", uuid.New())
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -224,7 +205,6 @@ func TestJWKSRoundTripsThroughTheSharedParser(t *testing.T) {
 	}
 }
 
-// staticKeys adapts a parsed key map to authn.KeySource.
 type staticKeys map[string]*rsa.PublicKey
 
 func (s staticKeys) PublicKey(keyID string) (*rsa.PublicKey, bool) {
@@ -262,7 +242,7 @@ func TestJWKSDocument(t *testing.T) {
 		if k.Kty != "RSA" || k.Use != "sig" || k.Alg != jwt.Algorithm {
 			t.Errorf("key %q has kty=%q use=%q alg=%q", k.Kid, k.Kty, k.Use, k.Alg)
 		}
-		// 65537 is AQAB, not AAEAAQ: the shortest big-endian form.
+
 		if k.E != "AQAB" {
 			t.Errorf("key %q exponent = %q, want AQAB", k.Kid, k.E)
 		}
@@ -277,7 +257,6 @@ func TestJWKSDocument(t *testing.T) {
 	}
 }
 
-// Nothing private may reach the document every other service fetches.
 func TestJWKSCarriesNoPrivateMaterial(t *testing.T) {
 	raw, err := keySet(t).JWKS()
 	if err != nil {
@@ -311,8 +290,6 @@ func TestParsePrivateKeyPEM(t *testing.T) {
 	}
 	pkcs8 := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8Bytes})
 
-	// Both forms are what openssl produces, and neither is worth making an
-	// operator care about.
 	for name, data := range map[string][]byte{"pkcs1": pkcs1, "pkcs8": pkcs8} {
 		t.Run(name, func(t *testing.T) {
 			key, err := jwt.ParsePrivateKeyPEM(data)

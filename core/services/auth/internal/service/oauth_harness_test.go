@@ -16,9 +16,6 @@ import (
 
 const webOrigin = "http://localhost:3000"
 
-// withOAuth wires provider sign-in into the service under test, using the fake
-// provider over a real HTTP redirect. Nothing here is a mock of this service's
-// own code: the flow that runs is the flow that ships.
 func withOAuth(t *testing.T) harnessOption {
 	t.Helper()
 
@@ -33,8 +30,7 @@ func withOAuth(t *testing.T) harnessOption {
 		RedirectBaseURL:  webOrigin + "/auth/callback",
 		FakeEnabled:      true,
 		FakeAuthorizeURL: authorize.URL,
-		// Google is configured too, so a test can prove that a state minted for
-		// one provider cannot close a flow at another. Nothing calls out to it.
+
 		Google: oauth.ProviderConfig{ClientID: "an-id", ClientSecret: "a-secret"},
 	})
 	if err != nil {
@@ -60,9 +56,6 @@ func withOAuth(t *testing.T) harnessOption {
 	}
 }
 
-// signIn walks a whole provider sign-in: start, follow the redirect the way a
-// browser would, and complete. identity carries the query the fake provider
-// reads, so a test can choose who is signing in.
 func (h *harness) signIn(t *testing.T, identity url.Values) service.CompleteOAuthResult {
 	t.Helper()
 
@@ -79,8 +72,6 @@ func (h *harness) trySignIn(t *testing.T, identity url.Values) (service.Complete
 	return h.trySignInAs(t, identity, "")
 }
 
-// trySignInAs is trySignIn with a name of the kind a client supplies when the
-// provider gave it one and gave this service none — Apple, in practice.
 func (h *harness) trySignInAs(
 	t *testing.T,
 	identity url.Values,
@@ -103,8 +94,6 @@ func (h *harness) trySignInAs(
 	})
 }
 
-// follow performs the browser's half: request the authorization URL, stop at the
-// redirect, and read the code out of it.
 func (h *harness) follow(t *testing.T, authorizationURL string, identity url.Values) string {
 	t.Helper()
 
@@ -146,7 +135,6 @@ func (h *harness) follow(t *testing.T, authorizationURL string, identity url.Val
 	return code
 }
 
-// identity is shorthand for the fake provider's query parameters.
 func identity(subject, email string) url.Values {
 	return url.Values{"sub": {subject}, "email": {email}}
 }

@@ -7,10 +7,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/kafka"
 )
 
-// The topic contract from rules/infra.md is <domain>.<event>. These are the
-// spellings that have to be accepted and the ones that have to be refused
-// before they reach a broker with auto-creation enabled, where a typo becomes a
-// real topic that nobody consumes.
 func TestParseTopic(t *testing.T) {
 	valid := []string{
 		"chat.message",
@@ -73,8 +69,6 @@ func TestNewTopicJoinsSegments(t *testing.T) {
 	}
 }
 
-// A domain containing the separator would smuggle a third segment past
-// NewTopic if the result were not validated as a whole.
 func TestNewTopicRejectsSeparatorInSegments(t *testing.T) {
 	if _, err := kafka.NewTopic("chat.private", "message"); !errors.Is(err, kafka.ErrInvalidTopic) {
 		t.Fatalf("err = %v, want ErrInvalidTopic", err)

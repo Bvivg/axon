@@ -37,9 +37,6 @@ func TestConfiguredProvidersAreAvailable(t *testing.T) {
 	}
 }
 
-// A provider nobody set up must be absent, not present and broken. A registry
-// that returned an authorization URL with an empty client id would send the
-// person to a provider error page that says nothing about the real problem.
 func TestUnconfiguredProvidersAreUnsupported(t *testing.T) {
 	registry, err := oauth.NewRegistry(oauth.RegistryConfig{RedirectBaseURL: redirectBase})
 	if err != nil {
@@ -49,8 +46,7 @@ func TestUnconfiguredProvidersAreUnsupported(t *testing.T) {
 	for _, id := range []domain.Provider{
 		domain.ProviderGoogle,
 		domain.ProviderGitHub,
-		// Apple is deliberately not implemented yet. It has to fail the same way
-		// as anything else missing rather than half-work.
+
 		domain.ProviderApple,
 		domain.ProviderFake,
 	} {
@@ -64,8 +60,6 @@ func TestUnconfiguredProvidersAreUnsupported(t *testing.T) {
 	}
 }
 
-// Half-filled credentials are worse than none: the provider looks available and
-// then fails at the exchange, in the middle of someone's sign-in.
 func TestHalfConfiguredProvidersAreTreatedAsAbsent(t *testing.T) {
 	registry, err := oauth.NewRegistry(oauth.RegistryConfig{
 		RedirectBaseURL: redirectBase,
@@ -81,9 +75,6 @@ func TestHalfConfiguredProvidersAreTreatedAsAbsent(t *testing.T) {
 	}
 }
 
-// The fake provider accepts any identity presented to it. In production that is
-// not a testing convenience, it is an authentication bypass — so the service
-// refuses to start rather than logging a warning nobody reads.
 func TestTheFakeProviderIsRefusedInProduction(t *testing.T) {
 	_, err := oauth.NewRegistry(oauth.RegistryConfig{
 		RedirectBaseURL:  redirectBase,
@@ -130,8 +121,6 @@ func TestARedirectBaseURLIsRequired(t *testing.T) {
 	}
 }
 
-// The order is fixed rather than map order: a sign-in page whose buttons
-// reshuffle on every restart is a bug nobody files.
 func TestAvailableIsInAStableOrder(t *testing.T) {
 	registry, err := oauth.NewRegistry(oauth.RegistryConfig{
 		RedirectBaseURL:  redirectBase,
@@ -159,11 +148,9 @@ func TestAvailableIsInAStableOrder(t *testing.T) {
 	}
 }
 
-// Each provider gets its own callback route, so the client knows which flow it
-// is completing without being told separately.
 func TestEachProviderRedirectsToItsOwnRoute(t *testing.T) {
 	registry, err := oauth.NewRegistry(oauth.RegistryConfig{
-		// A trailing slash in configuration must not produce a doubled one.
+
 		RedirectBaseURL: redirectBase + "/",
 		Google:          configured(),
 		GitHub:          configured(),

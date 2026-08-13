@@ -3,10 +3,6 @@ import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/utils";
 
-// The shadcn convention: components live in the repository and are edited here
-// rather than imported from a package. @base-ui joins them when the first
-// component that needs a headless primitive does — a dialog or a select. A
-// button and an input do not.
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
   {

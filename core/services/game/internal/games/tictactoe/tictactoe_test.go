@@ -16,16 +16,10 @@ const (
 	carol engine.PlayerID = "carol"
 )
 
-// boardPayload mirrors the JSON the game stores. Declared here rather than
-// exported from the package under test on purpose: the payload's shape is a
-// stored contract, and a test that spells it out fails the day it changes
-// silently.
 type boardPayload struct {
 	Cells [tictactoe.Size * tictactoe.Size]int `json:"cells"`
 }
 
-// cell is one step of a scripted game: who plays where is decided by whose turn
-// it is, so only the square is scripted.
 type cell struct{ row, col int }
 
 func newGame(t *testing.T) (tictactoe.Game, engine.State) {
@@ -35,9 +29,6 @@ func newGame(t *testing.T) (tictactoe.Game, engine.State) {
 	return game, game.Init([]engine.PlayerID{alice, bob})
 }
 
-// play walks a scripted game, taking the player to move from the position
-// itself, and returns the final position along with the moves it recorded — the
-// same history the session layer would write to Postgres.
 func play(t *testing.T, game tictactoe.Game, state engine.State, script []cell) (engine.State, []engine.Move) {
 	t.Helper()
 
@@ -71,15 +62,12 @@ func decodeBoard(t *testing.T, state engine.State) boardPayload {
 	return board
 }
 
-// winForFirstSeat: the first seat takes the top row while the second answers in
-// the middle one.
 var winForFirstSeat = []cell{
 	{0, 0}, {1, 0},
 	{0, 1}, {1, 1},
 	{0, 2},
 }
 
-// drawnGame fills the board with nobody completing a line.
 var drawnGame = []cell{
 	{0, 0}, {1, 1},
 	{0, 1}, {0, 2},
@@ -137,7 +125,6 @@ func TestGameToAWin(t *testing.T) {
 		t.Errorf("IsTerminal() winner = %v, want %q", winner, alice)
 	}
 
-	// Nobody can move any more, including the player who was about to.
 	for _, player := range []engine.PlayerID{alice, bob} {
 		if moves := game.ValidMoves(final, player); moves != nil {
 			t.Errorf("ValidMoves(%s) after the win = %d moves, want none", player, len(moves))
@@ -263,10 +250,6 @@ func TestApplyMoveRejects(t *testing.T) {
 	}
 }
 
-// ApplyMove is required to be a pure function (rules/go-services.md). Purity is
-// checked rather than asserted in a comment: the session layer applies moves to
-// cached positions it keeps using afterwards, so a write through the input would
-// corrupt state nobody thought was in play.
 func TestApplyMoveLeavesTheInputAlone(t *testing.T) {
 	game, state := newGame(t)
 
@@ -288,13 +271,10 @@ func TestApplyMoveLeavesTheInputAlone(t *testing.T) {
 		t.Errorf("ApplyMove() changed the position it was given:\n before %s\n after  %s", before, after)
 	}
 
-	// Equal contents are not enough: sharing the payload's backing array would
-	// leave the next move free to write into the previous position.
 	if len(next.Data) > 0 && len(state.Data) > 0 && &next.Data[0] == &state.Data[0] {
 		t.Error("the new position shares its payload with the old one")
 	}
 
-	// The same, one level up: the recorded history must not shift either.
 	final, history := play(t, game, state, drawnGame)
 	if final.Ply != len(drawnGame) {
 		t.Fatalf("Ply = %d, want %d", final.Ply, len(drawnGame))
@@ -314,8 +294,6 @@ func TestValidMoves(t *testing.T) {
 		t.Fatalf("ValidMoves() in the opening position = %d, want %d", len(opening), tictactoe.Size*tictactoe.Size)
 	}
 
-	// Every suggested move must be one ApplyMove actually accepts — the client
-	// highlights these and is told not to duplicate the rules.
 	for _, move := range opening {
 		if move.Ply != state.Ply {
 			t.Errorf("suggested move carries ply %d, want %d", move.Ply, state.Ply)
@@ -343,9 +321,6 @@ func TestValidMoves(t *testing.T) {
 	}
 }
 
-// The session layer stores moves, not positions, and rebuilds state by replaying
-// them. This is that path end to end, with the history pushed through JSON the
-// way a Postgres round trip would push it.
 func TestReplayingAStoredHistoryRebuildsTheSamePosition(t *testing.T) {
 	game, opening := newGame(t)
 
@@ -381,9 +356,6 @@ func TestReplayingAStoredHistoryRebuildsTheSamePosition(t *testing.T) {
 	}
 }
 
-// The point of the registry is that a game is reached without naming its type.
-// A game played entirely through it is the check that tic-tac-toe is reachable
-// that way, and that its Definition matches what it actually needs.
 func TestPlayingThroughTheRegistry(t *testing.T) {
 	registry := engine.NewRegistry()
 	if err := registry.Register(tictactoe.Definition()); err != nil {
@@ -415,7 +387,6 @@ func TestPlayingThroughTheRegistry(t *testing.T) {
 		t.Errorf("IsTerminal() = %v, %v; want true and %q", over, winner, alice)
 	}
 
-	// A three-player roster is refused before Init ever sees it.
 	if _, err := registry.NewState(tictactoe.Key, []engine.PlayerID{alice, bob, carol}); !errors.Is(err, engine.ErrPlayerCount) {
 		t.Errorf("NewState() with three players = %v, want %v", err, engine.ErrPlayerCount)
 	}

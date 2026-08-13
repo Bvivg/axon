@@ -11,8 +11,6 @@ import (
 
 const allowed = "http://localhost:3000"
 
-// serve runs a request through the middleware over a handler that records
-// whether it was reached.
 func serve(t *testing.T, req *http.Request, origins ...string) (*httptest.ResponseRecorder, bool) {
 	t.Helper()
 
@@ -57,8 +55,6 @@ func TestPreflightFromAnAllowedOrigin(t *testing.T) {
 		t.Errorf("Allow-Credentials = %q, want true", got)
 	}
 
-	// connect-web sends these; a preflight that omits them fails in a way that
-	// looks like the server is down.
 	allowHeaders := h.Get("Access-Control-Allow-Headers")
 	for _, required := range []string{
 		"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms",
@@ -68,7 +64,6 @@ func TestPreflightFromAnAllowedOrigin(t *testing.T) {
 		}
 	}
 
-	// Without these a Connect client cannot read the trailers that carry errors.
 	exposed := h.Get("Access-Control-Expose-Headers")
 	for _, required := range []string{"Grpc-Status", "Grpc-Message", "X-Correlation-Id"} {
 		if !strings.Contains(exposed, required) {
@@ -105,9 +100,6 @@ func TestActualRequestFromAnAllowedOrigin(t *testing.T) {
 	}
 }
 
-// A disallowed origin is served without CORS headers rather than refused: the
-// browser then produces a clearer message than any status this could invent, and
-// a non-browser caller is unaffected by CORS in the first place.
 func TestActualRequestFromADisallowedOriginGetsNoHeaders(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/axon.auth.v1.AuthService/Login", nil)
 	req.Header.Set("Origin", "https://evil.example")
@@ -122,8 +114,6 @@ func TestActualRequestFromADisallowedOriginGetsNoHeaders(t *testing.T) {
 	}
 }
 
-// Origin is echoed, never wildcarded. A cache must not hand one origin's
-// response to another.
 func TestResponseVariesByOrigin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/x", nil)
 	req.Header.Set("Origin", allowed)
@@ -135,8 +125,6 @@ func TestResponseVariesByOrigin(t *testing.T) {
 	}
 }
 
-// A request with no Origin is not cross-origin at all: curl, a mobile client, a
-// health probe. It must pass through untouched.
 func TestRequestWithoutOriginIsUntouched(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/x", nil)
 
@@ -165,8 +153,6 @@ func TestMultipleAllowedOrigins(t *testing.T) {
 	}
 }
 
-// The echoed origin must be exact. A prefix or suffix match would let
-// localhost:3000.evil.example through.
 func TestOriginMatchingIsExact(t *testing.T) {
 	for _, origin := range []string{
 		"http://localhost:3000.evil.example",
