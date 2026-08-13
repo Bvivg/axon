@@ -48,8 +48,13 @@ export async function submitCredentials(
 }
 
 export async function expectProfile(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/\/profile$/);
-  await expect(page.getByRole("tab", { name: "My profile" })).toBeVisible();
+  await expect(page).toHaveURL(/\/profile\/my$/);
+  await expect(page.getByRole("heading", { name: "Personal info" })).toBeVisible();
+}
+
+export async function expectSessions(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/profile\/sessions$/);
+  await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible();
 }
 
 export async function expectLobby(page: Page): Promise<void> {
@@ -87,7 +92,13 @@ export async function newPerson(
 
 export async function goToProfile(page: Page): Promise<void> {
   await page.getByRole("link", { name: "Profile" }).click();
+  await page.getByRole("link", { name: "Personal info" }).click();
   await expectProfile(page);
+}
+
+export async function goToSessions(page: Page): Promise<void> {
+  await page.getByRole("link", { name: "Sessions" }).click();
+  await expectSessions(page);
 }
 
 export async function signOut(page: Page): Promise<void> {

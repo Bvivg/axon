@@ -1,6 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-import { goToProfile, newEmail, open, password, register, submitCredentials } from "./support";
+import {
+  expectSessions,
+  goToProfile,
+  newEmail,
+  open,
+  password,
+  register,
+  submitCredentials,
+} from "./support";
 
 test("editing first, last and nickname updates the displayed name", async ({ page }) => {
   await register(page, newEmail("editprofile"));
@@ -58,7 +66,8 @@ test("the sessions tab shows the active device and lets it be ended from elsewhe
   await register(page, email, "Ada");
   await goToProfile(page);
 
-  await page.getByRole("tab", { name: "Sessions" }).click();
+  await page.getByRole("link", { name: "Sessions" }).click();
+  await expectSessions(page);
   await expect(page.getByText("This device")).toBeVisible();
   await expect(page.getByRole("button", { name: "End session" })).toHaveCount(0);
 
@@ -69,7 +78,6 @@ test("the sessions tab shows the active device and lets it be ended from elsewhe
   await secondPage.waitForURL(/\/$/);
 
   await page.reload();
-  await page.getByRole("tab", { name: "Sessions" }).click();
   await expect(page.getByRole("button", { name: "End session" })).toHaveCount(1);
 
   await page.getByRole("button", { name: "End session" }).click();
@@ -79,6 +87,18 @@ test("the sessions tab shows the active device and lets it be ended from elsewhe
   await expect(secondPage).toHaveURL(/\/login/);
 
   await second.close();
+});
+
+test("the current device shows as online once the presence socket connects", async ({
+  page,
+}) => {
+  await register(page, newEmail("presence"));
+  await goToProfile(page);
+
+  await page.getByRole("link", { name: "Sessions" }).click();
+  await expectSessions(page);
+
+  await expect(page.getByText("Online")).toBeVisible({ timeout: 15_000 });
 });
 
 function onePixelPNG(): Buffer {
