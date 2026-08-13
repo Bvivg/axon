@@ -8,7 +8,6 @@ import { ProviderButtons } from "@/components/auth/provider-buttons";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -22,10 +21,6 @@ export default function RegisterPage() {
     <Card>
       <CardHeader>
         <CardTitle>Create account</CardTitle>
-        <CardDescription>
-          Registering signs you in straight away — there is no email to confirm
-          first.
-        </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-6">

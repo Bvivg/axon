@@ -2,7 +2,7 @@
 
 import { Gamepad2 } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 
@@ -28,10 +28,6 @@ export default function GamesHomePage() {
       <Card className="w-full">
         <CardHeader>
           <CardTitle>Games are coming</CardTitle>
-          <CardDescription>
-            The board and the matchmaking aren&apos;t here yet — this tab is
-            reserved for them.
-          </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           When a game is open, joining one by its code happens from the search

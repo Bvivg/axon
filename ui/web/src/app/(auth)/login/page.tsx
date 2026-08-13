@@ -8,7 +8,6 @@ import { ProviderButtons } from "@/components/auth/provider-buttons";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -22,7 +21,6 @@ export default function LoginPage() {
     <Card>
       <CardHeader>
         <CardTitle>Sign in</CardTitle>
-        <CardDescription>Welcome back.</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-6">

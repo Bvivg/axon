@@ -2,7 +2,7 @@
 
 import { Phone } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 
@@ -28,9 +28,6 @@ export default function CallsPage() {
       <Card className="w-full">
         <CardHeader>
           <CardTitle>Calling is coming</CardTitle>
-          <CardDescription>
-            Last on the roadmap, after games — this tab is reserved for it.
-          </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           Once it lands, the search button below finds somebody by nickname or

@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -77,11 +76,6 @@ export default function ChatLobbyPage() {
       <Card>
         <CardHeader>
           <CardTitle>Your rooms</CardTitle>
-          <CardDescription>
-            {rooms.data?.length
-              ? "Pick one to carry on."
-              : "None yet — open one below."}
-          </CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -133,10 +127,6 @@ export default function ChatLobbyPage() {
       <Card>
         <CardHeader>
           <CardTitle>Join one</CardTitle>
-          <CardDescription>
-            Paste a room id somebody sent you. Rooms are open to anyone signed
-            in.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="flex items-end gap-3" onSubmit={onJoin}>
