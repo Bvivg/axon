@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { PresenceBeacon } from "@/components/presence/presence-beacon";
 import { SessionProvider } from "@/lib/auth/session";
 import { QueryProvider } from "@/lib/query/provider";
 
@@ -16,7 +17,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body className="min-h-screen antialiased">
         <QueryProvider>
-          <SessionProvider>{children}</SessionProvider>
+          <SessionProvider>
+            <PresenceBeacon />
+            {children}
+          </SessionProvider>
         </QueryProvider>
       </body>
     </html>

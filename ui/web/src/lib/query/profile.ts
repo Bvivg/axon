@@ -28,6 +28,8 @@ export function useUpdateProfile() {
   });
 }
 
+const sessionsRefetchInterval = 10_000;
+
 export function useSessions() {
   return useQuery({
     queryKey: profileKeys.sessions,
@@ -35,6 +37,7 @@ export function useSessions() {
       const resp = await apiClient.listSessions({});
       return resp.sessions;
     },
+    refetchInterval: sessionsRefetchInterval,
   });
 }
 
