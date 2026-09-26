@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -89,6 +91,46 @@ func TestAMessageCrossesBetweenInstances(t *testing.T) {
 	}
 	if !got.SentAt.Equal(sent.SentAt) {
 		t.Errorf("sent_at = %s, want %s", got.SentAt, sent.SentAt)
+	}
+}
+
+func TestARichMessageCrossesWhole(t *testing.T) {
+	writer, reader := newBus(t), newBus(t)
+
+	roomID := uuid.New()
+
+	messages, stop, err := reader.Subscribe(t.Context(), roomID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer stop()
+
+	waitForSubscriber(t, roomID)
+
+	replyTo, forwardedFrom := uuid.New(), uuid.New()
+	sent := newTestMessage(roomID, 2, "the view")
+	sent.Kind = domain.MessageKindImage
+	sent.Payload = json.RawMessage(`{"url":"http://minio/a.jpg","width":10,"height":20}`)
+	sent.ReplyToID = &replyTo
+	sent.ForwardedFromID = &forwardedFrom
+
+	if err := writer.Publish(t.Context(), sent); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	got := receive(t, messages)
+
+	if got.Kind != domain.MessageKindImage {
+		t.Errorf("kind = %q, want image", got.Kind)
+	}
+	if !bytes.Equal(got.Payload, sent.Payload) {
+		t.Errorf("payload = %s, want %s", got.Payload, sent.Payload)
+	}
+	if got.ReplyToID == nil || *got.ReplyToID != replyTo {
+		t.Errorf("reply_to_id = %v, want %s", got.ReplyToID, replyTo)
+	}
+	if got.ForwardedFromID == nil || *got.ForwardedFromID != forwardedFrom {
+		t.Errorf("forwarded_from_id = %v, want %s", got.ForwardedFromID, forwardedFrom)
 	}
 }
 
