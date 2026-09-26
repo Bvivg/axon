@@ -586,6 +586,10 @@ func TestUnsubscribingStopsDelivery(t *testing.T) {
 	}
 
 	bc.send(ws.Inbound{Type: ws.TypeUnsubscribe, RoomID: roomID.String()})
+	bc.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
+	if refusal := bc.expect(ws.TypeError); refusal.Code != ws.ErrorNotAMember {
+		t.Fatalf("typing after unsubscribing was answered with %q, want %q", refusal.Code, ws.ErrorNotAMember)
+	}
 
 	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "unheard"})
 	ac.expect(ws.TypeAck)
