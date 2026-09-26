@@ -15,6 +15,7 @@ import (
 
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 	"github.com/bvivg/axon/core/services/chat/internal/identity"
+	"github.com/bvivg/axon/core/services/chat/internal/pubsub"
 	"github.com/bvivg/axon/core/services/chat/internal/service"
 )
 
@@ -26,6 +27,7 @@ type Handler struct {
 	svc      *service.Service
 	verifier *authn.Verifier
 	names    Names
+	signals  pubsub.SignalBus
 	log      *slog.Logger
 }
 
@@ -35,6 +37,7 @@ type Config struct {
 	Service  *service.Service
 	Verifier *authn.Verifier
 	Names    Names
+	Signals  pubsub.SignalBus
 	Logger   *slog.Logger
 }
 
@@ -46,6 +49,8 @@ func New(cfg Config) (*Handler, error) {
 		return nil, errors.New("server: token verifier is required")
 	case cfg.Names == nil:
 		return nil, errors.New("server: name resolver is required")
+	case cfg.Signals == nil:
+		return nil, errors.New("server: a room signal bus is required")
 	case cfg.Logger == nil:
 		return nil, errors.New("server: logger is required")
 	}
@@ -54,6 +59,7 @@ func New(cfg Config) (*Handler, error) {
 		svc:      cfg.Service,
 		verifier: cfg.Verifier,
 		names:    cfg.Names,
+		signals:  cfg.Signals,
 		log:      cfg.Logger,
 	}, nil
 }
@@ -76,7 +82,7 @@ func (h *Handler) CreateRoom(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	return connect.NewResponse(&chatv1.CreateRoomResponse{Room: toProtoRoom(room)}), nil
+	return connect.NewResponse(&chatv1.CreateRoomResponse{Room: toProtoRoom(room, claims.UserID)}), nil
 }
 
 func (h *Handler) ListRooms(
@@ -95,7 +101,7 @@ func (h *Handler) ListRooms(
 
 	out := make([]*chatv1.Room, 0, len(rooms))
 	for _, room := range rooms {
-		out = append(out, toProtoRoom(room))
+		out = append(out, toProtoRoom(room, claims.UserID))
 	}
 
 	return connect.NewResponse(&chatv1.ListRoomsResponse{Rooms: out}), nil
@@ -126,7 +132,7 @@ func (h *Handler) GetRoom(
 	}
 
 	return connect.NewResponse(&chatv1.GetRoomResponse{
-		Room:    toProtoRoom(view.Room),
+		Room:    toProtoRoom(view.Room, claims.UserID),
 		Members: members,
 	}), nil
 }
@@ -155,9 +161,88 @@ func (h *Handler) JoinRoom(
 	}
 
 	return connect.NewResponse(&chatv1.JoinRoomResponse{
-		Room:   toProtoRoom(room),
+		Room:   toProtoRoom(room, claims.UserID),
 		Joined: joined,
 	}), nil
+}
+
+func (h *Handler) HideRoom(
+	ctx context.Context,
+	req *connect.Request[chatv1.HideRoomRequest],
+) (*connect.Response[chatv1.HideRoomResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roomID, err := parseID("room_id", req.Msg.GetRoomId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	if err := h.svc.HideRoom(ctx, roomID, claims.UserID); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&chatv1.HideRoomResponse{}), nil
+}
+
+func (h *Handler) MarkRead(
+	ctx context.Context,
+	req *connect.Request[chatv1.MarkReadRequest],
+) (*connect.Response[chatv1.MarkReadResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roomID, err := parseID("room_id", req.Msg.GetRoomId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	seq := req.Msg.GetSeq()
+	if err := h.svc.MarkRead(ctx, roomID, claims.UserID, seq); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	if err := h.signals.PublishSignal(ctx, pubsub.Signal{
+		Kind:   pubsub.SignalRead,
+		RoomID: roomID,
+		UserID: claims.UserID,
+		Seq:    seq,
+	}); err != nil {
+		h.log.ErrorContext(ctx, "could not publish a read receipt", "room_id", roomID, "error", err)
+	}
+
+	return connect.NewResponse(&chatv1.MarkReadResponse{}), nil
+}
+
+func (h *Handler) GetDirectRoom(
+	ctx context.Context,
+	req *connect.Request[chatv1.GetDirectRoomRequest],
+) (*connect.Response[chatv1.GetDirectRoomResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	peerID, err := parseID("user_id", req.Msg.GetUserId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	room, err := h.svc.GetDirectRoom(ctx, claims.UserID, peerID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	resp := &chatv1.GetDirectRoomResponse{}
+	if room != nil {
+		resp.Room = toProtoRoom(*room, claims.UserID)
+	}
+
+	return connect.NewResponse(resp), nil
 }
 
 func (h *Handler) LeaveRoom(

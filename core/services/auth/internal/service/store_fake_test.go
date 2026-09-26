@@ -2,6 +2,8 @@ package service_test
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +23,10 @@ type fakeStore struct {
 	tokensByHash map[string]uuid.UUID
 	oauth        map[string]domain.OauthAccount
 
+	roles           map[uuid.UUID]domain.Role
+	rolePermissions map[uuid.UUID]map[string]bool
+	userRoles       map[uuid.UUID]map[uuid.UUID]bool
+
 	failOn map[string]error
 
 	beforeRotate func()
@@ -38,7 +44,24 @@ func newFakeStore() *fakeStore {
 		tokens:       make(map[uuid.UUID]domain.RefreshToken),
 		tokensByHash: make(map[string]uuid.UUID),
 		oauth:        make(map[string]domain.OauthAccount),
-		failOn:       make(map[string]error),
+
+		roles: map[uuid.UUID]domain.Role{
+			domain.RoleUser:  {ID: domain.RoleUser, Name: "user"},
+			domain.RoleAdmin: {ID: domain.RoleAdmin, Name: "admin"},
+		},
+		rolePermissions: map[uuid.UUID]map[string]bool{
+			domain.RoleUser: {
+				"user:manage": true, "session:manage": true, "chat:manage": true,
+				"game:manage": true, "calling:manage": true,
+			},
+			domain.RoleAdmin: {
+				"user:manage": true, "session:manage": true, "chat:manage": true,
+				"game:manage": true, "calling:manage": true, "rbac:manage": true,
+			},
+		},
+		userRoles: make(map[uuid.UUID]map[uuid.UUID]bool),
+
+		failOn: make(map[string]error),
 	}
 }
 
@@ -66,6 +89,7 @@ func (s *fakeStore) CreateUserWithPassword(_ context.Context, u domain.User, pas
 	s.users[u.ID] = u
 	s.usersByMail[u.Email] = u.ID
 	s.credentials[u.ID] = domain.Credential{UserID: u.ID, PasswordHash: passwordHash, UpdatedAt: now}
+	s.userRoles[u.ID] = map[uuid.UUID]bool{domain.RoleUser: true}
 
 	return u, nil
 }
@@ -86,6 +110,7 @@ func (s *fakeStore) CreateUserWithOauthAccount(_ context.Context, u domain.User,
 
 	s.users[u.ID] = u
 	s.usersByMail[u.Email] = u.ID
+	s.userRoles[u.ID] = map[uuid.UUID]bool{domain.RoleUser: true}
 
 	a.UserID = u.ID
 	a.LinkedAt = now
@@ -147,6 +172,25 @@ func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.Pro
 	s.users[id] = u
 
 	return u, nil
+}
+
+func (s *fakeStore) UpdateLastSeen(_ context.Context, id uuid.UUID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("UpdateLastSeen"); err != nil {
+		return err
+	}
+
+	u, ok := s.users[id]
+	if !ok {
+		return domain.ErrUserNotFound
+	}
+
+	u.LastSeenAt = &at
+	s.users[id] = u
+
+	return nil
 }
 
 func (s *fakeStore) SetAvatar(_ context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error) {
@@ -350,6 +394,39 @@ func (s *fakeStore) Sessions(_ context.Context, userID uuid.UUID, at time.Time) 
 	return out, nil
 }
 
+func (s *fakeStore) ActiveFamiliesForUsers(
+	_ context.Context,
+	userIDs []uuid.UUID,
+	at time.Time,
+) (map[uuid.UUID][]uuid.UUID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("ActiveFamiliesForUsers"); err != nil {
+		return nil, err
+	}
+
+	want := make(map[uuid.UUID]bool, len(userIDs))
+	for _, id := range userIDs {
+		want[id] = true
+	}
+
+	seen := make(map[[2]uuid.UUID]bool)
+	families := make(map[uuid.UUID][]uuid.UUID)
+	for _, t := range s.tokens {
+		if !want[t.UserID] || t.Revoked() || !t.ExpiresAt.After(at) {
+			continue
+		}
+		key := [2]uuid.UUID{t.UserID, t.FamilyID}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		families[t.UserID] = append(families[t.UserID], t.FamilyID)
+	}
+	return families, nil
+}
+
 func (s *fakeStore) RevokeAllForUser(_ context.Context, userID uuid.UUID, at time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -431,6 +508,131 @@ func (s *fakeStore) tokenByHash(hash string) (domain.RefreshToken, bool) {
 		return domain.RefreshToken{}, false
 	}
 	return s.tokens[id], true
+}
+
+func (s *fakeStore) ListRoles(_ context.Context) ([]domain.Role, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("ListRoles"); err != nil {
+		return nil, err
+	}
+
+	out := make([]domain.Role, 0, len(s.roles))
+	for _, r := range s.roles {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (s *fakeStore) RoleNamesForUser(_ context.Context, userID uuid.UUID) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("RoleNamesForUser"); err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for roleID := range s.userRoles[userID] {
+		names = append(names, s.roles[roleID].Name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func (s *fakeStore) AssignRole(_ context.Context, userID, roleID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("AssignRole"); err != nil {
+		return err
+	}
+	if _, ok := s.roles[roleID]; !ok {
+		return domain.ErrRoleNotFound
+	}
+	if _, ok := s.users[userID]; !ok {
+		return domain.ErrUserNotFound
+	}
+
+	if s.userRoles[userID] == nil {
+		s.userRoles[userID] = make(map[uuid.UUID]bool)
+	}
+	s.userRoles[userID][roleID] = true
+	return nil
+}
+
+func (s *fakeStore) RevokeRole(_ context.Context, userID, roleID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("RevokeRole"); err != nil {
+		return err
+	}
+	if !s.userRoles[userID][roleID] {
+		return domain.ErrRoleNotFound
+	}
+
+	delete(s.userRoles[userID], roleID)
+	return nil
+}
+
+func (s *fakeStore) UserHasPermission(_ context.Context, userID uuid.UUID, namespace, action string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("UserHasPermission"); err != nil {
+		return false, err
+	}
+
+	for roleID := range s.userRoles[userID] {
+		granted := s.rolePermissions[roleID]
+		if granted[namespace+":"+action] || granted[namespace+":manage"] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *fakeStore) SearchExact(_ context.Context, query string, excludeUserID uuid.UUID) ([]domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("SearchExact"); err != nil {
+		return nil, err
+	}
+
+	lowered := strings.ToLower(query)
+
+	var out []domain.User
+	for _, u := range s.users {
+		if u.ID == excludeUserID {
+			continue
+		}
+		if strings.ToLower(u.Email) == lowered || strings.ToLower(u.DisplayName) == lowered {
+			out = append(out, u)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID.String() < out[j].ID.String() })
+	return out, nil
+}
+
+func (s *fakeStore) UsersByIDs(_ context.Context, ids []uuid.UUID) ([]domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("UsersByIDs"); err != nil {
+		return nil, err
+	}
+
+	var out []domain.User
+	for _, id := range ids {
+		if u, ok := s.users[id]; ok {
+			out = append(out, u)
+		}
+	}
+	return out, nil
 }
 
 func (s *fakeStore) liveTokensForUser(userID uuid.UUID, now time.Time) int {

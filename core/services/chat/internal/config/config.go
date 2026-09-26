@@ -13,15 +13,25 @@ const ServiceName = "chat"
 type Config struct {
 	config.Base
 
-	Postgres postgres.Config
-	Redis    redis.Config
-	JWT      JWTConfig
-	Auth     AuthConfig
-	Kafka    KafkaConfig
+	Postgres    postgres.Config
+	Redis       redis.Config
+	JWT         JWTConfig
+	Auth        AuthConfig
+	Kafka       KafkaConfig
+	Attachments AttachmentConfig
 }
 
 type KafkaConfig struct {
 	Brokers []string
+}
+
+type AttachmentConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	UseSSL    bool
+	PublicURL string
 }
 
 type JWTConfig struct {
@@ -59,6 +69,7 @@ func Load() (Config, error) {
 		Kafka: KafkaConfig{
 			Brokers: l.StringSlice("KAFKA_BROKERS", nil),
 		},
+		Attachments: loadAttachments(l),
 	}
 
 	if cfg.Postgres.SearchPath == "" {
@@ -69,4 +80,15 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func loadAttachments(l *config.Loader) AttachmentConfig {
+	return AttachmentConfig{
+		Endpoint:  l.StringDefault("ATTACHMENTS_ENDPOINT", "minio:9000"),
+		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
+		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),
+		Bucket:    l.StringDefault("ATTACHMENTS_BUCKET", "chat-attachments"),
+		UseSSL:    l.Bool("ATTACHMENTS_USE_SSL", false),
+		PublicURL: l.StringDefault("ATTACHMENTS_PUBLIC_URL", "http://localhost:59000"),
+	}
 }

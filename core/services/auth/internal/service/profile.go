@@ -65,7 +65,11 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, patch dom
 	}
 
 	s.log.InfoContext(ctx, "profile updated", "user_id", userID)
-	return updated, nil
+	return s.attachRoles(ctx, updated), nil
+}
+
+func (s *Service) UpdateLastSeen(ctx context.Context, userID uuid.UUID) error {
+	return s.store.UpdateLastSeen(ctx, userID, s.now())
 }
 
 func resolveDisplayName(nickname, firstName, lastName, previous string) string {

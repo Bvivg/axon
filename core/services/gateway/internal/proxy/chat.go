@@ -66,6 +66,27 @@ func (c *Chat) ListMessages(
 	return c.client.ListMessages(ctx, forward(ctx, req))
 }
 
+func (c *Chat) HideRoom(
+	ctx context.Context,
+	req *connect.Request[chatv1.HideRoomRequest],
+) (*connect.Response[chatv1.HideRoomResponse], error) {
+	return c.client.HideRoom(ctx, forward(ctx, req))
+}
+
+func (c *Chat) GetDirectRoom(
+	ctx context.Context,
+	req *connect.Request[chatv1.GetDirectRoomRequest],
+) (*connect.Response[chatv1.GetDirectRoomResponse], error) {
+	return c.client.GetDirectRoom(ctx, forward(ctx, req))
+}
+
+func (c *Chat) MarkRead(
+	ctx context.Context,
+	req *connect.Request[chatv1.MarkReadRequest],
+) (*connect.Response[chatv1.MarkReadResponse], error) {
+	return c.client.MarkRead(ctx, forward(ctx, req))
+}
+
 func NewChatClient(
 	httpClient *http.Client,
 	baseURL string,

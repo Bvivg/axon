@@ -12,9 +12,17 @@ export const metadata: Metadata = {
   description: "Games, chat and calls over one gateway.",
 };
 
+const themeInitScript =
+  '(function(){try{var t=localStorage.getItem("axon-theme");' +
+  'if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t);}' +
+  "}catch(e){}})();";
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="min-h-screen antialiased">
         <QueryProvider>
           <SessionProvider>

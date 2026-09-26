@@ -14,7 +14,10 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	miniogo "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/testcontainers/testcontainers-go"
+	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -24,6 +27,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 
+	"github.com/bvivg/axon/core/services/chat/internal/attachment"
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
 )
 
@@ -35,9 +39,21 @@ const (
 	chatPassword = "chat"
 )
 
+const (
+	minioUser         = "axon"
+	minioPassword     = "axon12345"
+	attachmentsBucket = "chat-attachments"
+)
+
 var pool *postgres.Pool
 
 var cache *redis.Client
+
+var (
+	attachmentStore     *attachment.Store
+	attachmentURLs      attachment.URLBuilder
+	attachmentPublicURL string
+)
 
 const startupTimeout = 3 * time.Minute
 
@@ -133,7 +149,70 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 
+	minioContainer, err := startMinio(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if err := testcontainers.TerminateContainer(minioContainer); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: terminate minio container: %v\n", err)
+		}
+	}()
+
 	return m.Run(), nil
+}
+
+func startMinio(ctx context.Context) (*tcminio.MinioContainer, error) {
+	minioContainer, err := tcminio.Run(ctx, "pgsty/minio:RELEASE.2026-08-04T00-00-00Z",
+		tcminio.WithUsername(minioUser),
+		tcminio.WithPassword(minioPassword),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("start minio: %w", err)
+	}
+
+	endpoint, err := minioContainer.ConnectionString(ctx)
+	if err != nil {
+		return minioContainer, fmt.Errorf("minio connection string: %w", err)
+	}
+
+	client, err := miniogo.New(endpoint, &miniogo.Options{
+		Creds: credentials.NewStaticV4(minioUser, minioPassword, ""),
+	})
+	if err != nil {
+		return minioContainer, fmt.Errorf("minio client: %w", err)
+	}
+
+	if err := client.MakeBucket(ctx, attachmentsBucket, miniogo.MakeBucketOptions{}); err != nil {
+		return minioContainer, fmt.Errorf("make bucket: %w", err)
+	}
+
+	policy := fmt.Sprintf(`{
+		"Version": "2012-10-17",
+		"Statement": [{
+			"Effect": "Allow",
+			"Principal": {"AWS": ["*"]},
+			"Action": ["s3:GetObject"],
+			"Resource": ["arn:aws:s3:::%s/*"]
+		}]
+	}`, attachmentsBucket)
+	if err := client.SetBucketPolicy(ctx, attachmentsBucket, policy); err != nil {
+		return minioContainer, fmt.Errorf("set bucket policy: %w", err)
+	}
+
+	attachmentStore, err = attachment.NewStore(attachment.StoreConfig{
+		Endpoint:  endpoint,
+		AccessKey: minioUser,
+		SecretKey: minioPassword,
+		Bucket:    attachmentsBucket,
+	})
+	if err != nil {
+		return minioContainer, fmt.Errorf("attachment store: %w", err)
+	}
+
+	attachmentPublicURL = "http://" + endpoint
+	attachmentURLs = attachment.NewURLBuilder(attachmentPublicURL, attachmentsBucket)
+	return minioContainer, nil
 }
 
 func applyMigrations(dsn string) error {

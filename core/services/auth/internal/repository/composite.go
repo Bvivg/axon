@@ -17,7 +17,10 @@ func (r *Repository) CreateUserWithPassword(ctx context.Context, u domain.User, 
 		if created, err = tx.CreateUser(ctx, u); err != nil {
 			return err
 		}
-		return tx.SetCredential(ctx, created.ID, passwordHash)
+		if err := tx.SetCredential(ctx, created.ID, passwordHash); err != nil {
+			return err
+		}
+		return tx.AssignRole(ctx, created.ID, domain.RoleUser)
 	})
 	if err != nil {
 		return domain.User{}, err
@@ -35,7 +38,10 @@ func (r *Repository) CreateUserWithOauthAccount(ctx context.Context, u domain.Us
 		}
 
 		a.UserID = created.ID
-		return tx.LinkOauthAccount(ctx, a)
+		if err := tx.LinkOauthAccount(ctx, a); err != nil {
+			return err
+		}
+		return tx.AssignRole(ctx, created.ID, domain.RoleUser)
 	})
 	if err != nil {
 		return domain.User{}, err

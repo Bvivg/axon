@@ -57,7 +57,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 
 	s.log.InfoContext(ctx, "account registered", "user_id", user.ID)
 
-	return Result{User: user, Tokens: tokens}, nil
+	return Result{User: s.attachRoles(ctx, user), Tokens: tokens}, nil
 }
 
 type LoginInput struct {
@@ -111,7 +111,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 
 	s.log.InfoContext(ctx, "password sign-in", "user_id", user.ID)
 
-	return Result{User: user, Tokens: tokens}, nil
+	return Result{User: s.attachRoles(ctx, user), Tokens: tokens}, nil
 }
 
 func (s *Service) rehashIfNeeded(ctx context.Context, userID uuid.UUID, plaintext, stored string) {
@@ -133,5 +133,9 @@ func (s *Service) rehashIfNeeded(ctx context.Context, userID uuid.UUID, plaintex
 }
 
 func (s *Service) Me(ctx context.Context, userID uuid.UUID) (domain.User, error) {
-	return s.store.UserByID(ctx, userID)
+	user, err := s.store.UserByID(ctx, userID)
+	if err != nil {
+		return domain.User{}, err
+	}
+	return s.attachRoles(ctx, user), nil
 }

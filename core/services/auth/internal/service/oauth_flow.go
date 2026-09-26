@@ -129,7 +129,7 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 	)
 
 	return CompleteOAuthResult{
-		Result:   Result{User: user, Tokens: tokens},
+		Result:   Result{User: s.attachRoles(ctx, user), Tokens: tokens},
 		Created:  created,
 		ReturnTo: stored.ReturnTo,
 	}, nil

@@ -20,8 +20,17 @@ type User struct {
 
 	AvatarIsCustom bool
 
+	Roles []string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	LastSeenAt *time.Time
+}
+
+type PublicProfile struct {
+	User   User
+	Online bool
 }
 
 type ProfilePatch struct {

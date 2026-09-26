@@ -21,6 +21,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
+	"github.com/bvivg/axon/core/shared/pkg/revocation"
 
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/config"
@@ -119,11 +120,17 @@ func run() error {
 	avatarURLs := avatar.NewURLBuilder(cfg.Avatar.PublicURL, cfg.Avatar.Bucket)
 	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs)
 
+	revocationPublisher, err := revocation.NewPublisher(cache)
+	if err != nil {
+		return err
+	}
+
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
 		RefreshTTL: cfg.JWT.RefreshTTL,
 		OAuth:      oauthCfg,
 		Avatar:     avatarPipeline,
 		Presence:   presence.NewTracker(cache),
+		Revocation: revocationPublisher,
 	})
 	if err != nil {
 		return err

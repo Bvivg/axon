@@ -8,6 +8,16 @@ var (
 	ErrNotAMember = errors.New("chat: not a member of this room")
 
 	ErrMessageNotFound = errors.New("chat: message not found")
+
+	ErrDirectRoomNotJoinable = errors.New("chat: direct rooms cannot be joined")
+
+	ErrInvalidReplyTarget = errors.New("chat: reply target is not in this room")
+
+	ErrInvalidForwardTarget = errors.New("chat: forward target is not accessible")
+
+	ErrSystemKindNotSendable = errors.New("chat: system messages cannot be sent by a client")
+
+	ErrCannotMessageSelf = errors.New("chat: cannot open a direct room with yourself")
 )
 
 type ValidationError struct {

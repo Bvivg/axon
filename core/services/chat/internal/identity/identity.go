@@ -55,6 +55,22 @@ func New(cfg Config) (*Resolver, error) {
 	}, nil
 }
 
+func (r *Resolver) UpdateLastSeen(ctx context.Context, accessToken string) {
+	if accessToken == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	req := connect.NewRequest(&authv1.UpdateLastSeenRequest{})
+	req.Header().Set(authn.Header, "Bearer "+accessToken)
+
+	if _, err := r.client.UpdateLastSeen(ctx, req); err != nil {
+		r.log.WarnContext(ctx, "could not record last seen", "error", err)
+	}
+}
+
 func (r *Resolver) DisplayName(ctx context.Context, accessToken string) string {
 	if accessToken == "" {
 		return ""

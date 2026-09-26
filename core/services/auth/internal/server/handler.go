@@ -257,6 +257,163 @@ func (h *Handler) RevokeSession(
 	return connect.NewResponse(&authv1.RevokeSessionResponse{}), nil
 }
 
+func (h *Handler) GetUserByEmail(
+	ctx context.Context,
+	req *connect.Request[authv1.GetUserByEmailRequest],
+) (*connect.Response[authv1.GetUserByEmailResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	user, err := h.svc.UserByEmail(ctx, claims.UserID, req.Msg.GetEmail())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.GetUserByEmailResponse{User: toProtoUser(user, h.avatarURLs)}), nil
+}
+
+func (h *Handler) SearchUsers(
+	ctx context.Context,
+	req *connect.Request[authv1.SearchUsersRequest],
+) (*connect.Response[authv1.SearchUsersResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	users, err := h.svc.SearchUsers(ctx, claims.UserID, req.Msg.GetQuery())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	out := make([]*authv1.PublicProfile, len(users))
+	for i, u := range users {
+		out[i] = toProtoPublicProfile(u, h.avatarURLs)
+	}
+
+	return connect.NewResponse(&authv1.SearchUsersResponse{Users: out}), nil
+}
+
+func (h *Handler) GetUsersPublicProfiles(
+	ctx context.Context,
+	req *connect.Request[authv1.GetUsersPublicProfilesRequest],
+) (*connect.Response[authv1.GetUsersPublicProfilesResponse], error) {
+	if _, err := h.authenticate(req.Header()); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	ids := make([]uuid.UUID, 0, len(req.Msg.GetUserIds()))
+	for _, raw := range req.Msg.GetUserIds() {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+
+	users, err := h.svc.UsersPublicProfiles(ctx, ids)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	out := make([]*authv1.PublicProfile, len(users))
+	for i, u := range users {
+		out[i] = toProtoPublicProfile(u, h.avatarURLs)
+	}
+
+	return connect.NewResponse(&authv1.GetUsersPublicProfilesResponse{Users: out}), nil
+}
+
+func (h *Handler) UpdateLastSeen(
+	ctx context.Context,
+	req *connect.Request[authv1.UpdateLastSeenRequest],
+) (*connect.Response[authv1.UpdateLastSeenResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	if err := h.svc.UpdateLastSeen(ctx, claims.UserID); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.UpdateLastSeenResponse{}), nil
+}
+
+func (h *Handler) ListRoles(
+	ctx context.Context,
+	req *connect.Request[authv1.ListRolesRequest],
+) (*connect.Response[authv1.ListRolesResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roles, err := h.svc.ListRoles(ctx, claims.UserID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	out := make([]*authv1.Role, len(roles))
+	for i, r := range roles {
+		out[i] = toProtoRole(r)
+	}
+
+	return connect.NewResponse(&authv1.ListRolesResponse{Roles: out}), nil
+}
+
+func (h *Handler) AssignRole(
+	ctx context.Context,
+	req *connect.Request[authv1.AssignRoleRequest],
+) (*connect.Response[authv1.AssignRoleResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	userID, err := uuid.Parse(req.Msg.GetUserId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, domain.ErrUserNotFound)
+	}
+	roleID, err := uuid.Parse(req.Msg.GetRoleId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, domain.ErrRoleNotFound)
+	}
+
+	if err := h.svc.AssignRole(ctx, claims.UserID, userID, roleID); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.AssignRoleResponse{}), nil
+}
+
+func (h *Handler) RevokeRole(
+	ctx context.Context,
+	req *connect.Request[authv1.RevokeRoleRequest],
+) (*connect.Response[authv1.RevokeRoleResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	userID, err := uuid.Parse(req.Msg.GetUserId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, domain.ErrUserNotFound)
+	}
+	roleID, err := uuid.Parse(req.Msg.GetRoleId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, domain.ErrRoleNotFound)
+	}
+
+	if err := h.svc.RevokeRole(ctx, claims.UserID, userID, roleID); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.RevokeRoleResponse{}), nil
+}
+
 func deviceFrom(headers http.Header) domain.Device {
 	return domain.Device{
 		UserAgent: headers.Get("User-Agent"),

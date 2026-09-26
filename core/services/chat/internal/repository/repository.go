@@ -56,3 +56,12 @@ func (r *Repository) InTx(ctx context.Context, fn func(*Repository) error) error
 func noRows(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
 }
+
+func isUniqueViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+
+	return pgErr.Code == "23505" && pgErr.ConstraintName == constraint
+}

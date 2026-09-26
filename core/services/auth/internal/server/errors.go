@@ -76,6 +76,12 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrSessionNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("session not found"))
 
+	case errors.Is(err, domain.ErrRoleNotFound):
+		return connect.NewError(connect.CodeNotFound, errors.New("role not found"))
+
+	case errors.Is(err, domain.ErrPermissionDenied):
+		return connect.NewError(connect.CodePermissionDenied, errors.New("permission denied"))
+
 	case errors.Is(err, context.Canceled):
 		return connect.NewError(connect.CodeCanceled, errors.New("request canceled"))
 

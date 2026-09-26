@@ -33,6 +33,8 @@ type fakeRooms struct {
 	messages map[uuid.UUID][]domain.Message
 	nextSeq  map[uuid.UUID]int64
 
+	directRooms map[[2]uuid.UUID]uuid.UUID
+
 	duplicateFor string
 
 	sends int
@@ -40,9 +42,10 @@ type fakeRooms struct {
 
 func newFakeRooms() *fakeRooms {
 	return &fakeRooms{
-		members:  make(map[uuid.UUID]map[uuid.UUID]bool),
-		messages: make(map[uuid.UUID][]domain.Message),
-		nextSeq:  make(map[uuid.UUID]int64),
+		members:     make(map[uuid.UUID]map[uuid.UUID]bool),
+		messages:    make(map[uuid.UUID][]domain.Message),
+		nextSeq:     make(map[uuid.UUID]int64),
+		directRooms: make(map[[2]uuid.UUID]uuid.UUID),
 	}
 }
 
@@ -65,30 +68,69 @@ func (f *fakeRooms) Send(_ context.Context, in service.SendInput) (domain.Messag
 	if !f.members[in.RoomID][in.AuthorID] {
 		return domain.Message{}, false, domain.ErrNotAMember
 	}
-	body, err := domain.ValidateMessageBody(in.Body)
+
+	return f.appendLocked(in.RoomID, in.AuthorID, in.Body, in.ClientID)
+}
+
+func (f *fakeRooms) SendDirect(
+	_ context.Context,
+	in service.SendDirectInput,
+) (domain.Message, domain.Room, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.sends++
+
+	if in.FromUserID == in.ToUserID {
+		return domain.Message{}, domain.Room{}, false, domain.ErrCannotMessageSelf
+	}
+
+	min, max := domain.DirectPair(in.FromUserID, in.ToUserID)
+	pairKey := [2]uuid.UUID{min, max}
+
+	roomID, ok := f.directRooms[pairKey]
+	if !ok {
+		roomID = uuid.New()
+		f.directRooms[pairKey] = roomID
+		f.members[roomID] = map[uuid.UUID]bool{in.FromUserID: true, in.ToUserID: true}
+	}
+
+	m, duplicate, err := f.appendLocked(roomID, in.FromUserID, in.Body, in.ClientID)
+	if err != nil {
+		return domain.Message{}, domain.Room{}, false, err
+	}
+
+	room := domain.Room{ID: roomID, Kind: domain.RoomKindDirect, DirectUserMin: &min, DirectUserMax: &max}
+
+	return m, room, duplicate, nil
+}
+
+func (f *fakeRooms) appendLocked(roomID, authorID uuid.UUID, rawBody, clientID string) (domain.Message, bool, error) {
+	body, err := domain.ValidateMessageBody(rawBody)
 	if err != nil {
 		return domain.Message{}, false, err
 	}
 
-	if in.ClientID != "" && in.ClientID == f.duplicateFor {
-		for _, m := range f.messages[in.RoomID] {
-			if m.ClientID == in.ClientID {
+	if clientID != "" && clientID == f.duplicateFor {
+		for _, m := range f.messages[roomID] {
+			if m.ClientID == clientID {
 				return m, true, nil
 			}
 		}
 	}
 
-	f.nextSeq[in.RoomID]++
+	f.nextSeq[roomID]++
 	m := domain.Message{
 		ID:       uuid.New(),
-		RoomID:   in.RoomID,
-		AuthorID: in.AuthorID,
+		RoomID:   roomID,
+		AuthorID: authorID,
 		Body:     body,
-		ClientID: in.ClientID,
-		Seq:      f.nextSeq[in.RoomID],
+		ClientID: clientID,
+		Kind:     domain.MessageKindText,
+		Seq:      f.nextSeq[roomID],
 		SentAt:   time.Now().UTC(),
 	}
-	f.messages[in.RoomID] = append(f.messages[in.RoomID], m)
+	f.messages[roomID] = append(f.messages[roomID], m)
 
 	return m, false, nil
 }
@@ -122,11 +164,67 @@ func (f *fakeRooms) ListMessages(
 	return service.History{Messages: all}, nil
 }
 
+type fakeNames struct{}
+
+func (fakeNames) DisplayName(context.Context, string) string { return "" }
+
+type fakePresence struct {
+	mu       sync.Mutex
+	watchers map[string][]chan struct{}
+	watched  chan string
+}
+
+func newFakePresence() *fakePresence {
+	return &fakePresence{
+		watchers: make(map[string][]chan struct{}),
+		watched:  make(chan string, 16),
+	}
+}
+
+func (f *fakePresence) SubscribeChanged(_ context.Context, userID string) (<-chan struct{}, func(), error) {
+	ch := make(chan struct{}, 1)
+
+	f.mu.Lock()
+	f.watchers[userID] = append(f.watchers[userID], ch)
+	f.mu.Unlock()
+	f.watched <- userID
+
+	var once sync.Once
+	return ch, func() { once.Do(func() { close(ch) }) }, nil
+}
+
+func (f *fakePresence) change(userID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, ch := range f.watchers[userID] {
+		ch <- struct{}{}
+	}
+}
+
+func (f *fakePresence) waitWatched(t *testing.T, userID string) {
+	t.Helper()
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case got := <-f.watched:
+			if got == userID {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("%s was never watched", userID)
+		}
+	}
+}
+
 type harness struct {
-	server *httptest.Server
-	rooms  *fakeRooms
-	bus    pubsub.Bus
-	issue  func(t *testing.T, userID uuid.UUID, ttl time.Duration) string
+	server   *httptest.Server
+	rooms    *fakeRooms
+	bus      pubsub.Bus
+	signals  pubsub.SignalBus
+	presence *fakePresence
+	issue    func(t *testing.T, userID uuid.UUID, ttl time.Duration) string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -154,12 +252,17 @@ func newHarness(t *testing.T) *harness {
 
 	rooms := newFakeRooms()
 	bus := pubsub.NewMemory()
+	presence := newFakePresence()
 
 	handler, err := ws.New(ws.Config{
-		Service:  rooms,
-		Verifier: verifier,
-		Bus:      bus,
-		Logger:   logger.Discard(),
+		Service:     rooms,
+		Verifier:    verifier,
+		Bus:         bus,
+		Signals:     bus,
+		UserSignals: bus,
+		Names:       fakeNames{},
+		Presence:    presence,
+		Logger:      logger.Discard(),
 	})
 	if err != nil {
 		t.Fatalf("ws.New: %v", err)
@@ -169,9 +272,11 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(server.Close)
 
 	return &harness{
-		server: server,
-		rooms:  rooms,
-		bus:    bus,
+		server:   server,
+		rooms:    rooms,
+		bus:      bus,
+		signals:  bus,
+		presence: presence,
 		issue: func(t *testing.T, userID uuid.UUID, ttl time.Duration) string {
 			t.Helper()
 			return signToken(t, key, keyID, issuer, audience, userID, ttl)
@@ -481,6 +586,10 @@ func TestUnsubscribingStopsDelivery(t *testing.T) {
 	}
 
 	bc.send(ws.Inbound{Type: ws.TypeUnsubscribe, RoomID: roomID.String()})
+	bc.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
+	if refusal := bc.expect(ws.TypeError); refusal.Code != ws.ErrorNotAMember {
+		t.Fatalf("typing after unsubscribing was answered with %q, want %q", refusal.Code, ws.ErrorNotAMember)
+	}
 
 	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "unheard"})
 	ac.expect(ws.TypeAck)
@@ -536,6 +645,134 @@ func TestSubscribingTwiceDeliversOnce(t *testing.T) {
 	if got := bc.expect(ws.TypeMessage); got.Message.Body != "twice" {
 		t.Errorf("the next frame was %q, want twice — the room was subscribed twice",
 			got.Message.Body)
+	}
+}
+
+func TestAReadReceiptReachesTheOtherPersonButNotItsAuthor(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, bob := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+
+	ac := h.connect(t, alice)
+	bc := h.connect(t, bob)
+
+	ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	ac.expect(ws.TypeSubscribed)
+	bc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	bc.expect(ws.TypeSubscribed)
+
+	if err := h.signals.PublishSignal(t.Context(), pubsub.Signal{
+		Kind: pubsub.SignalRead, RoomID: roomID, UserID: bob, Seq: 3,
+	}); err != nil {
+		t.Fatalf("publish read receipt: %v", err)
+	}
+
+	got := ac.expect(ws.TypeRead)
+	if got.UserID != bob.String() {
+		t.Errorf("read receipt reports user %q, want %s", got.UserID, bob)
+	}
+	if got.RoomID != roomID.String() {
+		t.Errorf("read receipt reports room %q, want %s", got.RoomID, roomID)
+	}
+	if got.Seq != 3 {
+		t.Errorf("read receipt reports seq %d, want 3", got.Seq)
+	}
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "so alice knows the socket is still alive"})
+	ac.expect(ws.TypeAck)
+	ac.expect(ws.TypeMessage)
+	bc.expect(ws.TypeMessage)
+
+	if err := h.signals.PublishSignal(t.Context(), pubsub.Signal{
+		Kind: pubsub.SignalRead, RoomID: roomID, UserID: bob, Seq: 4,
+	}); err != nil {
+		t.Fatalf("publish read receipt: %v", err)
+	}
+	ac.expect(ws.TypeRead)
+}
+
+func TestTypingReachesTheOtherPersonButNotTheTypist(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, bob := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+
+	ac := h.connect(t, alice)
+	bc := h.connect(t, bob)
+
+	ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	ac.expect(ws.TypeSubscribed)
+	bc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	bc.expect(ws.TypeSubscribed)
+
+	ac.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
+
+	got := bc.expect(ws.TypeTyping)
+	if got.UserID != alice.String() || got.RoomID != roomID.String() {
+		t.Errorf("bob saw %s typing in %s, want %s in %s", got.UserID, got.RoomID, alice, roomID)
+	}
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "done typing"})
+	ac.expect(ws.TypeAck)
+}
+
+func TestTypingInARoomYouHaveNotOpenedIsRefused(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice := uuid.New()
+	h.rooms.join(roomID, alice)
+
+	ac := h.connect(t, alice)
+	ac.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
+
+	if refusal := ac.expect(ws.TypeError); refusal.Code != ws.ErrorNotAMember {
+		t.Errorf("code = %q, want %q", refusal.Code, ws.ErrorNotAMember)
+	}
+}
+
+func TestAFirstDirectMessageAnnouncesTheNewRoomToBothPeople(t *testing.T) {
+	h := newHarness(t)
+
+	alice, bob := uuid.New(), uuid.New()
+
+	ac := h.connect(t, alice)
+	bc := h.connect(t, bob)
+	otherTab := h.connect(t, alice)
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, ToUserID: bob.String(), ClientID: "c1", Body: "hi bob"})
+	ack := ac.expect(ws.TypeAck)
+
+	for name, c := range map[string]*client{"bob": bc, "alice's other tab": otherTab} {
+		got := c.expect(ws.TypeRoomAdded)
+		if got.RoomID != ack.RoomID {
+			t.Errorf("%s was told about room %q, want %q", name, got.RoomID, ack.RoomID)
+		}
+	}
+
+	if got := ac.expect(ws.TypeRoomAdded); got.RoomID != ack.RoomID {
+		t.Errorf("the sending tab was told about room %q, want %q", got.RoomID, ack.RoomID)
+	}
+}
+
+func TestAWatchedPersonsPresenceChangeIsPushed(t *testing.T) {
+	h := newHarness(t)
+
+	alice, bob := uuid.New(), uuid.New()
+	ac := h.connect(t, alice)
+
+	ac.send(ws.Inbound{Type: ws.TypeWatchPresence, ToUserID: bob.String()})
+	h.presence.waitWatched(t, bob.String())
+
+	h.presence.change(bob.String())
+
+	if got := ac.expect(ws.TypePresence); got.UserID != bob.String() {
+		t.Errorf("presence frame for %q, want %s", got.UserID, bob)
 	}
 }
 

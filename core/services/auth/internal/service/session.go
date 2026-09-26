@@ -50,5 +50,26 @@ func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID
 
 	s.log.InfoContext(ctx, "session revoked",
 		"user_id", userID, "family_id", sessionID, "tokens_revoked", revoked)
+
+	s.publishFamilyRevocation(ctx, sessionID)
+
 	return nil
+}
+
+func (s *Service) publishFamilyRevocation(ctx context.Context, familyID uuid.UUID) {
+	if s.revocation == nil {
+		return
+	}
+	if err := s.revocation.PublishFamily(ctx, familyID); err != nil {
+		s.log.WarnContext(ctx, "could not publish session revocation", "family_id", familyID, "error", err)
+	}
+}
+
+func (s *Service) publishUserRevocation(ctx context.Context, userID uuid.UUID) {
+	if s.revocation == nil {
+		return
+	}
+	if err := s.revocation.PublishUser(ctx, userID); err != nil {
+		s.log.WarnContext(ctx, "could not publish session revocation", "user_id", userID, "error", err)
+	}
 }

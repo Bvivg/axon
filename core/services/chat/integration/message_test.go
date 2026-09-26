@@ -91,7 +91,7 @@ func TestAResendReturnsTheMessageItAlreadyWrote(t *testing.T) {
 			again.ID, again.Seq, first.ID, first.Seq)
 	}
 
-	messages, _, err := r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 10})
+	messages, _, err := r.ListMessages(t.Context(), room.ID, owner, domain.Page{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestTheSameClientIDFromTwoPeopleIsTwoMessages(t *testing.T) {
 	say(t, r, room.ID, owner, "mine", "message-1")
 	say(t, r, room.ID, other, "theirs", "message-1")
 
-	messages, _, err := r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 10})
+	messages, _, err := r.ListMessages(t.Context(), room.ID, owner, domain.Page{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestMessagesWithoutAClientIDDoNotCollide(t *testing.T) {
 	say(t, r, room.ID, owner, "first", "")
 	say(t, r, room.ID, owner, "second", "")
 
-	messages, _, err := r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 10})
+	messages, _, err := r.ListMessages(t.Context(), room.ID, owner, domain.Page{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestConcurrentSendersLeaveNoGap(t *testing.T) {
 		t.Fatalf("concurrent send: %v", err)
 	}
 
-	messages, _, err := r.ListMessages(t.Context(), room.ID, domain.Page{Limit: senders + 10})
+	messages, _, err := r.ListMessages(t.Context(), room.ID, owner, domain.Page{Limit: senders + 10})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestPagingReadsBothWaysInOneOrder(t *testing.T) {
 		say(t, r, room.ID, owner, fmt.Sprintf("message %d", i), "")
 	}
 
-	page, more, err := r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 4})
+	page, more, err := r.ListMessages(t.Context(), room.ID, owner, domain.Page{Limit: 4})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestPagingReadsBothWaysInOneOrder(t *testing.T) {
 		t.Errorf("the most recent page = %v, want the last four in order", got)
 	}
 
-	page, more, err = r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 4, BeforeSeq: 7})
+	page, more, err = r.ListMessages(t.Context(), room.ID, owner, domain.Page{Limit: 4, BeforeSeq: 7})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestPagingReadsBothWaysInOneOrder(t *testing.T) {
 		t.Errorf("the page before 7 = %v, want 3..6", got)
 	}
 
-	page, more, err = r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 4, AfterSeq: 8})
+	page, more, err = r.ListMessages(t.Context(), room.ID, owner, domain.Page{Limit: 4, AfterSeq: 8})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}

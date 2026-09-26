@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -10,7 +11,7 @@ import (
 )
 
 const userColumns = `id, email, email_verified, display_name, avatar_url, ` +
-	`first_name, last_name, nickname, avatar_is_custom, created_at, updated_at`
+	`first_name, last_name, nickname, avatar_is_custom, created_at, updated_at, last_seen_at`
 
 func (r *Repository) CreateUser(ctx context.Context, u domain.User) (domain.User, error) {
 	const query = `
@@ -107,6 +108,15 @@ func (r *Repository) SetAvatar(ctx context.Context, id uuid.UUID, avatarURL stri
 	return updated, nil
 }
 
+func (r *Repository) UpdateLastSeen(ctx context.Context, id uuid.UUID, at time.Time) error {
+	const query = `UPDATE users SET last_seen_at = $2 WHERE id = $1`
+
+	if _, err := r.q.Exec(ctx, query, id, at); err != nil {
+		return fmt.Errorf("repository: update last seen: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 	const query = `UPDATE users SET email_verified = true, updated_at = now() WHERE id = $1`
 
@@ -166,6 +176,7 @@ func scanUser(row scanRow) (domain.User, error) {
 		&u.AvatarIsCustom,
 		&u.CreatedAt,
 		&u.UpdatedAt,
+		&u.LastSeenAt,
 	)
 	return u, err
 }

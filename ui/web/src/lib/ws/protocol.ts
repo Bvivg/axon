@@ -5,7 +5,12 @@ export const bearerPrefix = "axon.bearer.";
 export type Outgoing =
   | { type: "subscribe"; room_id: string; since?: number }
   | { type: "unsubscribe"; room_id: string }
-  | { type: "send"; room_id: string; client_id: string; body: string };
+  | { type: "typing"; room_id: string }
+  | { type: "watch_presence"; to_user_id: string }
+  | ({ type: "send"; client_id: string; body: string } & (
+      | { room_id: string }
+      | { to_user_id: string }
+    ));
 
 export interface WireMessage {
   id: string;
@@ -22,6 +27,10 @@ export type Incoming =
   | { type: "message"; message: WireMessage }
   | { type: "subscribed"; room_id: string; seq: number }
   | { type: "ack"; room_id: string; client_id: string; seq: number }
+  | { type: "read"; room_id: string; user_id: string; seq: number }
+  | { type: "typing"; room_id: string; user_id: string }
+  | { type: "presence"; user_id: string }
+  | { type: "room_added"; room_id: string }
   | { type: "error"; code: string; reason: string; client_id?: string };
 
 export const closeCodes = {
@@ -31,6 +40,8 @@ export const closeCodes = {
   tokenExpired: 4402,
 
   protocol: 4400,
+
+  sessionRevoked: 4403,
 } as const;
 
 export function parseFrame(data: string): Incoming | null {

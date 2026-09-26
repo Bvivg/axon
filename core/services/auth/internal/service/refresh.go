@@ -132,6 +132,9 @@ func (s *Service) Logout(ctx context.Context, presented string) error {
 		"family_id", stored.FamilyID,
 		"tokens_revoked", revoked,
 	)
+
+	s.publishFamilyRevocation(ctx, stored.FamilyID)
+
 	return nil
 }
 
@@ -142,6 +145,9 @@ func (s *Service) LogoutEverywhere(ctx context.Context, userID uuid.UUID) error 
 	}
 
 	s.log.InfoContext(ctx, "signed out everywhere", "user_id", userID, "tokens_revoked", revoked)
+
+	s.publishUserRevocation(ctx, userID)
+
 	return nil
 }
 

@@ -16,9 +16,15 @@ async function goToChats(page: Page): Promise<void> {
   await expectLobby(page);
 }
 
-async function createRoom(page: Page, name: string): Promise<string> {
+async function openNewChat(page: Page, tab: "Group" | "Join by ID"): Promise<void> {
   await goToChats(page);
-  await page.getByLabel("Name").fill(name);
+  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByRole("tab", { name: tab }).click();
+}
+
+async function createRoom(page: Page, name: string): Promise<string> {
+  await openNewChat(page, "Group");
+  await page.getByLabel("Group name").fill(name);
   await page.getByRole("button", { name: "Create" }).click();
 
   await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
@@ -28,7 +34,7 @@ async function createRoom(page: Page, name: string): Promise<string> {
 }
 
 async function joinRoom(page: Page, roomID: string): Promise<void> {
-  await goToChats(page);
+  await openNewChat(page, "Join by ID");
   await page.getByLabel("Room ID").fill(roomID);
   await page.getByRole("button", { name: "Join" }).click();
 
@@ -48,12 +54,13 @@ async function say(page: Page, body: string): Promise<void> {
 }
 
 async function expectSaid(page: Page, author: string, body: string) {
-  await expect(
-    page
-      .locator("article")
-      .filter({ hasText: body })
-      .getByText(author, { exact: true }),
-  ).toBeVisible();
+  const message = page.getByRole("article").filter({ hasText: body });
+  if (author === "You") {
+    await expect(message).toBeVisible();
+    await expect(message.getByText(body, { exact: true })).toBeVisible();
+    return;
+  }
+  await expect(message.getByText(author, { exact: true })).toBeVisible();
 }
 
 test("two people in one room see each other's messages as they are sent", async ({
@@ -93,10 +100,9 @@ test("a page opened cold shows what was said before it existed", async ({
 
   await say(ada.page, "said after it");
   await expectSaid(ada.page, "You", "said after it");
-  await expect(ada.page.locator("article")).toHaveCount(2);
+  await expect(ada.page.getByRole("article")).toHaveCount(2);
 
-  await ada.page.getByRole("link", { name: "All rooms" }).click();
-  await expectLobby(ada.page);
+  await goToChats(ada.page);
   await expect(
     ada.page.getByRole("link", { name: /before and after/ }),
   ).toBeVisible();
