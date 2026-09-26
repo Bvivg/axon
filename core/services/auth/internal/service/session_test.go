@@ -36,7 +36,7 @@ func TestListSessionsReflectsLivePresence(t *testing.T) {
 	registered := h.register(t, "ada@example.com", validPassword)
 	family := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
 
-	if err := tracker.Touch(context.Background(), family.String(), time.Minute); err != nil {
+	if err := tracker.Touch(context.Background(), family.String(), "tab-1", time.Minute); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 
@@ -46,6 +46,64 @@ func TestListSessionsReflectsLivePresence(t *testing.T) {
 	}
 	if len(sessions) != 1 || !sessions[0].Online {
 		t.Errorf("session online = %v, want true", sessions[0].Online)
+	}
+}
+
+func TestASessionStaysOnlineWhileAnyOfItsConnectionsIsOpen(t *testing.T) {
+	opt, tracker := withPresence(t)
+	h := newHarness(t, opt)
+	registered := h.register(t, "ada@example.com", validPassword)
+	family := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+
+	ctx := context.Background()
+	for _, conn := range []string{"tab-1", "tab-2"} {
+		if err := tracker.Touch(ctx, family.String(), conn, time.Minute); err != nil {
+			t.Fatalf("touch %s: %v", conn, err)
+		}
+	}
+
+	online := func() bool {
+		t.Helper()
+		sessions, err := h.svc.ListSessions(ctx, registered.User.ID, family)
+		if err != nil {
+			t.Fatalf("ListSessions: %v", err)
+		}
+		return len(sessions) == 1 && sessions[0].Online
+	}
+
+	if err := tracker.Clear(ctx, family.String(), "tab-1"); err != nil {
+		t.Fatalf("clear tab-1: %v", err)
+	}
+	if !online() {
+		t.Error("the session went offline while tab-2 was still open")
+	}
+
+	if err := tracker.Clear(ctx, family.String(), "tab-2"); err != nil {
+		t.Fatalf("clear tab-2: %v", err)
+	}
+	if online() {
+		t.Error("the session stayed online after every tab closed")
+	}
+}
+
+func TestAStaleConnectionDoesNotKeepTheSessionOnline(t *testing.T) {
+	opt, tracker := withPresence(t)
+	h := newHarness(t, opt)
+	registered := h.register(t, "ada@example.com", validPassword)
+	family := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+
+	ctx := context.Background()
+	if err := tracker.Touch(ctx, family.String(), "crashed-tab", 20*time.Millisecond); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+	time.Sleep(40 * time.Millisecond)
+
+	sessions, err := h.svc.ListSessions(ctx, registered.User.ID, family)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Online {
+		t.Error("a connection past its ttl still counts as online")
 	}
 }
 

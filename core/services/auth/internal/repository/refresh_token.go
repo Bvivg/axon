@@ -122,6 +122,40 @@ func (r *Repository) Sessions(ctx context.Context, userID uuid.UUID, at time.Tim
 	return sessions, nil
 }
 
+func (r *Repository) ActiveFamiliesForUsers(
+	ctx context.Context,
+	userIDs []uuid.UUID,
+	at time.Time,
+) (map[uuid.UUID][]uuid.UUID, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	const query = `
+		SELECT DISTINCT user_id, family_id
+		FROM refresh_tokens
+		WHERE user_id = ANY($1) AND revoked_at IS NULL AND expires_at > $2`
+
+	rows, err := r.q.Query(ctx, query, userIDs, at)
+	if err != nil {
+		return nil, fmt.Errorf("repository: active families for users: %w", err)
+	}
+	defer rows.Close()
+
+	families := make(map[uuid.UUID][]uuid.UUID)
+	for rows.Next() {
+		var userID, familyID uuid.UUID
+		if err := rows.Scan(&userID, &familyID); err != nil {
+			return nil, fmt.Errorf("repository: scan active family: %w", err)
+		}
+		families[userID] = append(families[userID], familyID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: active families for users: %w", err)
+	}
+	return families, nil
+}
+
 func (r *Repository) DeleteExpiredRefreshTokens(ctx context.Context, cutoff time.Time) (int64, error) {
 	const query = `DELETE FROM refresh_tokens WHERE expires_at < $1`
 

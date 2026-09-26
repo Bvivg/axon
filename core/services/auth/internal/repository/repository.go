@@ -62,6 +62,15 @@ func isUniqueViolation(err error, constraint string) bool {
 	return pgErr.Code == "23505" && pgErr.ConstraintName == constraint
 }
 
+func isForeignKeyViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+
+	return pgErr.Code == "23503" && pgErr.ConstraintName == constraint
+}
+
 func noRows(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
 }

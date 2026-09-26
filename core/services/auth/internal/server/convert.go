@@ -45,6 +45,64 @@ func toProtoUser(u domain.User, avatarURLs avatar.URLBuilder) *authv1.User {
 		}
 	}
 
+	out.Roles = u.Roles
+
+	return out
+}
+
+func toProtoPublicProfile(p domain.PublicProfile, avatarURLs avatar.URLBuilder) *authv1.PublicProfile {
+	u := p.User
+
+	out := &authv1.PublicProfile{
+		Id:     u.ID.String(),
+		Online: p.Online,
+	}
+
+	if u.LastSeenAt != nil {
+		out.LastSeenAt = timestamppb.New(*u.LastSeenAt)
+	}
+
+	if u.DisplayName != "" {
+		out.DisplayName = &u.DisplayName
+	}
+	if u.AvatarURL != "" {
+		out.AvatarUrl = &u.AvatarURL
+
+		urls := avatarURLs.URLs(u.ID)
+		out.AvatarUrls = &authv1.AvatarURLs{
+			Small:    urls.Small,
+			Medium:   urls.Medium,
+			Large:    urls.Large,
+			Original: urls.Original,
+		}
+	}
+
+	return out
+}
+
+func toProtoRole(r domain.Role) *authv1.Role {
+	permissions := make([]*authv1.Permission, len(r.Permissions))
+	for i, p := range r.Permissions {
+		permissions[i] = toProtoPermission(p)
+	}
+
+	return &authv1.Role{
+		Id:          r.ID.String(),
+		Name:        r.Name,
+		Permissions: permissions,
+	}
+}
+
+func toProtoPermission(p domain.Permission) *authv1.Permission {
+	out := &authv1.Permission{
+		Id:        p.ID.String(),
+		Namespace: p.Namespace,
+		Action:    p.Action,
+	}
+	if p.ParentID != nil {
+		parentID := p.ParentID.String()
+		out.ParentId = &parentID
+	}
 	return out
 }
 

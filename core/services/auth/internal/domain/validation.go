@@ -55,6 +55,14 @@ func ValidateDisplayName(name string) (string, error) {
 	return ValidateNameField("display_name", name)
 }
 
+func ValidateSearchQuery(query string) (string, error) {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return "", newValidationError("query", "is required")
+	}
+	return trimmed, nil
+}
+
 func ValidateNameField(field, value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {

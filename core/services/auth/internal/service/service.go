@@ -23,6 +23,7 @@ type Store interface {
 	UserByID(ctx context.Context, id uuid.UUID) (domain.User, error)
 	UpdateProfile(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate) (domain.User, error)
 	SetAvatar(ctx context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error)
+	UpdateLastSeen(ctx context.Context, id uuid.UUID, at time.Time) error
 
 	SetCredential(ctx context.Context, userID uuid.UUID, passwordHash string) error
 	CredentialByUserID(ctx context.Context, userID uuid.UUID) (domain.Credential, error)
@@ -34,13 +35,28 @@ type Store interface {
 	RevokeFamilyForUser(ctx context.Context, userID, familyID uuid.UUID, at time.Time) (int64, error)
 	RevokeAllForUser(ctx context.Context, userID uuid.UUID, at time.Time) (int64, error)
 	Sessions(ctx context.Context, userID uuid.UUID, at time.Time) ([]domain.Session, error)
+	ActiveFamiliesForUsers(ctx context.Context, userIDs []uuid.UUID, at time.Time) (map[uuid.UUID][]uuid.UUID, error)
 
 	OauthAccountByProviderID(ctx context.Context, p domain.Provider, providerUserID string) (domain.OauthAccount, error)
 	LinkOauthAccount(ctx context.Context, a domain.OauthAccount) error
+
+	ListRoles(ctx context.Context) ([]domain.Role, error)
+	RoleNamesForUser(ctx context.Context, userID uuid.UUID) ([]string, error)
+	AssignRole(ctx context.Context, userID, roleID uuid.UUID) error
+	RevokeRole(ctx context.Context, userID, roleID uuid.UUID) error
+	UserHasPermission(ctx context.Context, userID uuid.UUID, namespace, action string) (bool, error)
+
+	SearchExact(ctx context.Context, query string, excludeUserID uuid.UUID) ([]domain.User, error)
+	UsersByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.User, error)
 }
 
 type PresenceChecker interface {
 	Online(ctx context.Context, sessionIDs []string) (map[string]bool, error)
+}
+
+type RevocationPublisher interface {
+	PublishFamily(ctx context.Context, familyID uuid.UUID) error
+	PublishUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type Config struct {
@@ -51,6 +67,8 @@ type Config struct {
 	Avatar *avatar.Pipeline
 
 	Presence PresenceChecker
+
+	Revocation RevocationPublisher
 
 	Now func() time.Time
 }
@@ -76,9 +94,10 @@ type Service struct {
 	refreshTTL time.Duration
 	now        func() time.Time
 
-	oauth    *oauthDeps
-	avatar   *avatar.Pipeline
-	presence PresenceChecker
+	oauth      *oauthDeps
+	avatar     *avatar.Pipeline
+	presence   PresenceChecker
+	revocation RevocationPublisher
 
 	dummyHash string
 }
@@ -122,6 +141,7 @@ func New(store Store, hasher *password.Hasher, issuer *jwt.Issuer, log *slog.Log
 		oauth:      deps,
 		avatar:     cfg.Avatar,
 		presence:   cfg.Presence,
+		revocation: cfg.Revocation,
 		dummyHash:  dummyHash,
 	}, nil
 }

@@ -28,6 +28,10 @@ var (
 	ErrOauthReturnToNotAllowed = errors.New("auth: return_to is not an allowed destination")
 
 	ErrSessionNotFound = errors.New("auth: session not found")
+
+	ErrRoleNotFound = errors.New("auth: role not found")
+
+	ErrPermissionDenied = errors.New("auth: permission denied")
 )
 
 type ValidationError struct {
