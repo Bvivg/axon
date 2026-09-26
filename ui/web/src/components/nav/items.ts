@@ -1,48 +1,54 @@
-import { Gamepad2, MessageCircle, Phone, User, type LucideIcon } from "lucide-react";
+import { LayoutGrid, MessageSquare, Phone, User, type LucideIcon } from "lucide-react";
 
-export type Section = "games" | "calls" | "chats" | "profile";
+export enum Section {
+  Lobby = "lobby",
+  Chats = "chats",
+  Calls = "calls",
+  Profile = "profile",
+}
 
 export interface NavItem {
   section: Section;
   href: string;
   label: string;
   icon: LucideIcon;
-
-  isActive: (pathname: string) => boolean;
+  keys?: string[];
 }
 
 export const navItems: NavItem[] = [
-  {
-    section: "games",
-    href: "/",
-    label: "Games",
-    icon: Gamepad2,
+  { section: Section.Lobby, href: "/", label: "Lobby", icon: LayoutGrid, keys: ["G", "L"] },
+  { section: Section.Chats, href: "/chat", label: "Chats", icon: MessageSquare, keys: ["G", "C"] },
+  { section: Section.Calls, href: "/calls", label: "Calls", icon: Phone },
+];
 
-    isActive: (pathname) => pathname === "/",
-  },
-  {
-    section: "calls",
-    href: "/calls",
-    label: "Calls",
-    icon: Phone,
-    isActive: (pathname) => pathname === "/calls" || pathname.startsWith("/calls/"),
-  },
-  {
-    section: "chats",
-    href: "/chat",
-    label: "Chats",
-    icon: MessageCircle,
-    isActive: (pathname) => pathname === "/chat" || pathname.startsWith("/chat/"),
-  },
-  {
-    section: "profile",
-    href: "/profile",
-    label: "Profile",
-    icon: User,
-    isActive: (pathname) => pathname === "/profile" || pathname.startsWith("/profile/"),
-  },
+export const profileItem: NavItem = {
+  section: Section.Profile,
+  href: "/profile",
+  label: "Profile",
+  icon: User,
+};
+
+const sectionPrefixes: [Section, string][] = [
+  [Section.Chats, "/chat"],
+  [Section.Calls, "/calls"],
+  [Section.Profile, "/profile"],
 ];
 
 export function sectionFor(pathname: string): Section | null {
-  return navItems.find((item) => item.isActive(pathname))?.section ?? null;
+  if (pathname === "/") {
+    return Section.Lobby;
+  }
+  for (const [section, prefix] of sectionPrefixes) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+      return section;
+    }
+  }
+  return null;
 }
+
+export const sectionLabels: Record<Section, string> = {
+  [Section.Lobby]: "Lobby",
+  [Section.Chats]: "Chats",
+  [Section.Calls]: "Calls",
+  [Section.Profile]: "Profile",
+};

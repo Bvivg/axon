@@ -2,26 +2,36 @@
 
 import { useSyncExternalStore } from "react";
 
-export type Theme = "light" | "dark" | "system";
+export enum Theme {
+  Light = "light",
+  Dark = "dark",
+  System = "system",
+}
 
 export const themeStorageKey = "axon-theme";
+
+const darkQuery = "(prefers-color-scheme: dark)";
 
 const listeners = new Set<() => void>();
 
 function isTheme(value: string | null): value is Theme {
-  return value === "light" || value === "dark" || value === "system";
+  return value === Theme.Light || value === Theme.Dark || value === Theme.System;
 }
 
 function readStored(): Theme {
   if (typeof window === "undefined") {
-    return "system";
+    return Theme.System;
   }
-  const stored = window.localStorage.getItem(themeStorageKey);
-  return isTheme(stored) ? stored : "system";
+  try {
+    const stored = window.localStorage.getItem(themeStorageKey);
+    return isTheme(stored) ? stored : Theme.System;
+  } catch {
+    return Theme.System;
+  }
 }
 
 function applyToDocument(theme: Theme): void {
-  if (theme === "system") {
+  if (theme === Theme.System) {
     document.documentElement.removeAttribute("data-theme");
   } else {
     document.documentElement.setAttribute("data-theme", theme);
@@ -30,26 +40,62 @@ function applyToDocument(theme: Theme): void {
 
 let currentTheme = readStored();
 
+function notify(): void {
+  listeners.forEach((listener) => listener());
+}
+
+function persist(theme: Theme): void {
+  try {
+    window.localStorage.setItem(themeStorageKey, theme);
+  } catch {
+    return;
+  }
+}
+
 export function setTheme(theme: Theme): void {
   currentTheme = theme;
-  window.localStorage.setItem(themeStorageKey, theme);
+  persist(theme);
   applyToDocument(theme);
-  listeners.forEach((listener) => listener());
+  notify();
+}
+
+function systemPrefersDark(): boolean {
+  return window.matchMedia(darkQuery).matches;
+}
+
+function resolve(theme: Theme): Theme.Light | Theme.Dark {
+  if (theme !== Theme.System) {
+    return theme;
+  }
+  return systemPrefersDark() ? Theme.Dark : Theme.Light;
+}
+
+export function toggleTheme(): void {
+  setTheme(resolve(currentTheme) === Theme.Dark ? Theme.Light : Theme.Dark);
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function getSnapshot(): Theme {
-  return currentTheme;
-}
-
-function getServerSnapshot(): Theme {
-  return "system";
+  const media = window.matchMedia(darkQuery);
+  media.addEventListener("change", listener);
+  return () => {
+    listeners.delete(listener);
+    media.removeEventListener("change", listener);
+  };
 }
 
 export function useTheme(): Theme {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(
+    subscribe,
+    () => currentTheme,
+    () => Theme.System,
+  );
+}
+
+export function useResolvedTheme(): Theme.Light | Theme.Dark {
+  return useSyncExternalStore(
+    subscribe,
+    () => resolve(currentTheme),
+    () => Theme.Light,
+  );
 }

@@ -1,5 +1,5 @@
 import Image from "next/image";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,8 @@ export function Avatar({
   className,
   sizes = "48px",
   priority,
+  self = false,
+  children,
   ...props
 }: {
   src?: string;
@@ -17,28 +19,34 @@ export function Avatar({
   fallback: string;
   sizes?: string;
   priority?: boolean;
+  self?: boolean;
+  children?: ReactNode;
 } & Omit<ComponentProps<"div">, "children">) {
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-muted-foreground",
+        "relative flex shrink-0 items-center justify-center rounded-full font-semibold",
+        self ? "bg-foreground text-background" : "bg-muted text-foreground",
         className,
       )}
       {...props}
     >
       {src ? (
-        <Image
-          src={src}
-          alt={alt}
-          fill
-          sizes={sizes}
-          priority={priority}
-          unoptimized
-          className="object-cover"
-        />
+        <span className="absolute inset-0 overflow-hidden rounded-[inherit]">
+          <Image
+            src={src}
+            alt={alt}
+            fill
+            sizes={sizes}
+            priority={priority}
+            unoptimized
+            className="object-cover"
+          />
+        </span>
       ) : (
-        <span className="font-medium">{fallback}</span>
+        <span aria-hidden>{fallback}</span>
       )}
+      {children}
     </div>
   );
 }

@@ -43,7 +43,7 @@ export function RoomListItem({
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex items-center gap-3 border-b border-border px-4 py-3 transition-colors",
-        active ? "bg-primary/5" : "hover:bg-muted",
+        active ? "bg-signal/5" : "hover:bg-muted",
       )}
     >
       <span className="relative shrink-0">
@@ -71,12 +71,12 @@ export function RoomListItem({
         </div>
         <div className="flex items-center gap-1">
           {typing ? (
-            <p className="min-w-0 flex-1 truncate text-sm text-primary">typing…</p>
+            <p className="min-w-0 flex-1 truncate text-sm text-signal">typing…</p>
           ) : (
             <>
               {mine ? (
                 readByOthers ? (
-                  <CheckCheck aria-label="Read" className="size-3.5 shrink-0 text-primary" />
+                  <CheckCheck aria-label="Read" className="size-3.5 shrink-0 text-signal" />
                 ) : (
                   <Check aria-label="Sent" className="size-3.5 shrink-0 text-muted-foreground" />
                 )

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarFooter, SidebarMenu, SidebarMenuItem, sidebarMenuButtonClass } from "@/components/ui/sidebar";
 import { useSession } from "@/lib/auth/session";
-import { setTheme, useTheme, type Theme } from "@/lib/theme";
+import { setTheme, Theme, useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 export function NavUser() {
@@ -77,15 +77,15 @@ export function NavUser() {
                 value={theme}
                 onValueChange={(value) => setTheme(value as Theme)}
               >
-                <DropdownMenuRadioItem value="light">
+                <DropdownMenuRadioItem value={Theme.Light}>
                   <Sun />
                   Light
                 </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="dark">
+                <DropdownMenuRadioItem value={Theme.Dark}>
                   <Moon />
                   Dark
                 </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="system">
+                <DropdownMenuRadioItem value={Theme.System}>
                   <Monitor />
                   System
                 </DropdownMenuRadioItem>

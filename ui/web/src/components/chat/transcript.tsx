@@ -170,7 +170,7 @@ export const Transcript = memo(function Transcript({
                   className={cn(
                     "max-w-[75%] rounded-2xl px-3 py-2",
                     mine
-                      ? "rounded-br-sm bg-primary text-primary-foreground"
+                      ? "rounded-br-sm bg-signal text-signal-foreground"
                       : "rounded-bl-sm bg-muted text-foreground",
                   )}
                 >
@@ -181,7 +181,7 @@ export const Transcript = memo(function Transcript({
                   <div
                     className={cn(
                       "mt-0.5 flex items-center justify-end gap-1",
-                      mine ? "text-primary-foreground/70" : "text-muted-foreground",
+                      mine ? "text-signal-foreground/70" : "text-muted-foreground",
                     )}
                   >
                     <time className="text-[10px]" dateTime={message.sent_at}>

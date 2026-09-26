@@ -16,7 +16,7 @@ export function DropdownMenuContent({
   className,
   side = "bottom",
   align = "start",
-  sideOffset = 8,
+  sideOffset = 6,
   ...props
 }: ComponentProps<typeof BaseMenu.Popup> & {
   side?: "top" | "right" | "bottom" | "left";
@@ -28,7 +28,8 @@ export function DropdownMenuContent({
       <BaseMenu.Positioner side={side} align={align} sideOffset={sideOffset} className="z-50 outline-none">
         <BaseMenu.Popup
           className={cn(
-            "w-56 rounded-md border border-border bg-card p-1 text-card-foreground shadow-md outline-none",
+            "flex w-56 flex-col rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-overlay outline-none",
+            "origin-[var(--transform-origin)] transition-[opacity,translate] duration-200 ease-signal data-[ending-style]:opacity-0 data-[starting-style]:translate-y-1 data-[starting-style]:opacity-0",
             className,
           )}
           {...props}
@@ -43,31 +44,22 @@ export function DropdownMenuLabel({ className, ...props }: ComponentProps<"div">
 }
 
 export function DropdownMenuSeparator({ className, ...props }: ComponentProps<typeof BaseMenu.Separator>) {
-  return <BaseMenu.Separator className={cn("my-1 h-px bg-border", className)} {...props} />;
+  return <BaseMenu.Separator className={cn("-mx-1 my-1 h-px bg-border", className)} {...props} />;
 }
+
+const itemClass =
+  "flex h-[30px] cursor-default items-center gap-2.5 rounded-[5px] px-2 outline-none select-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
 
 export function DropdownMenuItem({ className, ...props }: ComponentProps<typeof BaseMenu.Item>) {
-  return (
-    <BaseMenu.Item
-      className={cn(
-        "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-muted focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <BaseMenu.Item className={cn(itemClass, className)} {...props} />;
 }
 
-export function DropdownMenuLinkItem({ className, ...props }: ComponentProps<typeof BaseMenu.LinkItem>) {
-  return (
-    <BaseMenu.LinkItem
-      className={cn(
-        "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-muted focus:bg-muted [&>svg]:size-4 [&>svg]:shrink-0",
-        className,
-      )}
-      {...props}
-    />
-  );
+export function DropdownMenuLinkItem({
+  className,
+  closeOnClick = true,
+  ...props
+}: ComponentProps<typeof BaseMenu.LinkItem>) {
+  return <BaseMenu.LinkItem className={cn(itemClass, className)} closeOnClick={closeOnClick} {...props} />;
 }
 
 export function DropdownMenuRadioGroup(props: ComponentProps<typeof BaseMenu.RadioGroup>) {
@@ -76,13 +68,7 @@ export function DropdownMenuRadioGroup(props: ComponentProps<typeof BaseMenu.Rad
 
 export function DropdownMenuRadioItem({ className, children, ...props }: ComponentProps<typeof BaseMenu.RadioItem>) {
   return (
-    <BaseMenu.RadioItem
-      className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none hover:bg-muted focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0",
-        className,
-      )}
-      {...props}
-    >
+    <BaseMenu.RadioItem className={cn(itemClass, "relative pl-8", className)} {...props}>
       <BaseMenu.RadioItemIndicator className="absolute left-2 flex size-3.5 items-center justify-center">
         <Check className="size-3.5" />
       </BaseMenu.RadioItemIndicator>

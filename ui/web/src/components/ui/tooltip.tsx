@@ -22,10 +22,11 @@ export function TooltipContent({
 }) {
   return (
     <BaseTooltip.Portal>
-      <BaseTooltip.Positioner side={side} sideOffset={sideOffset}>
+      <BaseTooltip.Positioner side={side} sideOffset={sideOffset} className="z-50">
         <BaseTooltip.Popup
           className={cn(
-            "z-50 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-card-foreground shadow-md",
+            "flex h-[26px] items-center gap-2 rounded-md bg-primary px-2 text-xs text-primary-foreground",
+            "transition-opacity duration-[120ms] ease-signal data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
             className,
           )}
           {...props}

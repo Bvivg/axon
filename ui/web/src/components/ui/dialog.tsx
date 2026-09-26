@@ -16,10 +16,11 @@ export function DialogContent({
 }: ComponentProps<typeof BaseDialog.Popup>) {
   return (
     <BaseDialog.Portal>
-      <BaseDialog.Backdrop className="fixed inset-0 z-50 bg-black/70" />
+      <BaseDialog.Backdrop className="fixed inset-0 z-50 bg-scrim transition-opacity duration-200 ease-signal data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
       <BaseDialog.Popup
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 outline-none",
+          "fixed top-1/2 left-1/2 z-50 w-[min(calc(100vw-2rem),28rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-overlay outline-none",
+          "transition-[opacity,translate] duration-200 ease-signal data-[ending-style]:opacity-0 data-[starting-style]:translate-y-[calc(-50%+4px)] data-[starting-style]:opacity-0",
           className,
         )}
         {...props}
@@ -27,5 +28,11 @@ export function DialogContent({
         {children}
       </BaseDialog.Popup>
     </BaseDialog.Portal>
+  );
+}
+
+export function DialogTitle({ className, ...props }: ComponentProps<typeof BaseDialog.Title>) {
+  return (
+    <BaseDialog.Title className={cn("text-lg font-semibold tracking-snug", className)} {...props} />
   );
 }

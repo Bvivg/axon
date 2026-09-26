@@ -21,7 +21,6 @@ export function describe(err: unknown): string {
 
     case Code.InvalidArgument:
     case Code.FailedPrecondition:
-
       return capitalise(connectErr.rawMessage);
 
     case Code.Unavailable:
@@ -30,6 +29,15 @@ export function describe(err: unknown): string {
     default:
       return "Something went wrong. Try again.";
   }
+}
+
+export function errorCode(err: unknown): string {
+  const code = ConnectError.from(err).code;
+  return (Code[code] ?? "unknown").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+export function isCode(err: unknown, code: Code): boolean {
+  return ConnectError.from(err).code === code;
 }
 
 function capitalise(text: string): string {
