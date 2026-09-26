@@ -44,3 +44,6 @@ pnpm-debug.log*
 *.xcuserstate
 xcuserdata/
 DerivedData/
+
+# Design handoff bundles, kept locally
+/design/
