@@ -70,6 +70,7 @@ func TestMessageSentCarriesTheWholeMessage(t *testing.T) {
 		Body:      m.Body,
 		Seq:       m.Seq,
 		SentAt:    m.SentAt,
+		Kind:      "text",
 	}
 	if payload != want {
 		t.Errorf("payload = %+v, want %+v", payload, want)

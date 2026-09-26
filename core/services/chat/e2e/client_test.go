@@ -53,6 +53,10 @@ type inbound struct {
 	Since    int64  `json:"since,omitempty"`
 	ClientID string `json:"client_id,omitempty"`
 	Body     string `json:"body,omitempty"`
+
+	Kind     string          `json:"kind,omitempty"`
+	Payload  json.RawMessage `json:"payload,omitempty"`
+	UploadID string          `json:"upload_id,omitempty"`
 }
 
 type outbound struct {
@@ -71,6 +75,9 @@ type outbound struct {
 		Seq      int64     `json:"seq"`
 		SentAt   time.Time `json:"sent_at"`
 		ClientID string    `json:"client_id,omitempty"`
+
+		Kind    string          `json:"kind"`
+		Payload json.RawMessage `json:"payload,omitempty"`
 	} `json:"message,omitempty"`
 }
 

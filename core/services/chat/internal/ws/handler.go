@@ -488,6 +488,10 @@ func (s *session) send(ctx context.Context, frame Inbound) bool {
 		return s.refuse(ctx, ErrorInvalid, "exactly one of room_id or to_user_id is required", frame.ClientID)
 	}
 
+	if len(frame.Payload) > 0 {
+		return s.report(ctx, domain.ErrClientPayload, frame.ClientID)
+	}
+
 	if frame.ToUserID != "" {
 		return s.sendDirect(ctx, frame)
 	}
@@ -503,7 +507,7 @@ func (s *session) send(ctx context.Context, frame Inbound) bool {
 		Body:            frame.Body,
 		ClientID:        frame.ClientID,
 		Kind:            frame.Kind,
-		Payload:         frame.Payload,
+		UploadID:        frame.UploadID,
 		ReplyToID:       frame.ReplyToID,
 		ForwardedFromID: frame.ForwardedFromID,
 	})
@@ -529,7 +533,7 @@ func (s *session) sendDirect(ctx context.Context, frame Inbound) bool {
 		Body:            frame.Body,
 		ClientID:        frame.ClientID,
 		Kind:            frame.Kind,
-		Payload:         frame.Payload,
+		UploadID:        frame.UploadID,
 		ReplyToID:       frame.ReplyToID,
 		ForwardedFromID: frame.ForwardedFromID,
 	})
@@ -580,7 +584,11 @@ func (s *session) report(ctx context.Context, err error, clientID string) bool {
 	case errors.Is(err, domain.ErrInvalidReplyTarget),
 		errors.Is(err, domain.ErrInvalidForwardTarget),
 		errors.Is(err, domain.ErrSystemKindNotSendable),
-		errors.Is(err, domain.ErrCannotMessageSelf):
+		errors.Is(err, domain.ErrCannotMessageSelf),
+		errors.Is(err, domain.ErrUploadNotFound),
+		errors.Is(err, domain.ErrUploadRequired),
+		errors.Is(err, domain.ErrUploadKindMismatch),
+		errors.Is(err, domain.ErrClientPayload):
 		return s.refuse(ctx, ErrorInvalid, err.Error(), clientID)
 	default:
 		if v, ok := domain.AsValidationError(err); ok {

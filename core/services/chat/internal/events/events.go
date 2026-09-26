@@ -43,6 +43,7 @@ type MessageSent struct {
 	Body      string    `json:"body"`
 	Seq       int64     `json:"seq"`
 	SentAt    time.Time `json:"sent_at"`
+	Kind      string    `json:"kind"`
 }
 
 func (p *Publisher) MessageSent(ctx context.Context, m domain.Message) {
@@ -53,6 +54,7 @@ func (p *Publisher) MessageSent(ctx context.Context, m domain.Message) {
 		Body:      m.Body,
 		Seq:       m.Seq,
 		SentAt:    m.SentAt,
+		Kind:      string(kindOrText(m.Kind)),
 	})
 	if err != nil {
 		p.log.ErrorContext(ctx, "could not encode a chat.message event",
@@ -78,3 +80,10 @@ func Discard() *Publisher {
 type discardSink struct{}
 
 func (discardSink) Publish(context.Context, kafka.Message) error { return nil }
+
+func kindOrText(kind domain.MessageKind) domain.MessageKind {
+	if kind == "" {
+		return domain.MessageKindText
+	}
+	return kind
+}

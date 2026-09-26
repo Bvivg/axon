@@ -28,6 +28,7 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/config"
 	"github.com/bvivg/axon/core/services/chat/internal/events"
 	"github.com/bvivg/axon/core/services/chat/internal/identity"
+	"github.com/bvivg/axon/core/services/chat/internal/media"
 	chatpresence "github.com/bvivg/axon/core/services/chat/internal/presence"
 	"github.com/bvivg/axon/core/services/chat/internal/pubsub"
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
@@ -201,10 +202,20 @@ func run() error {
 	}
 	attachmentURLs := attachment.NewURLBuilder(cfg.Attachments.PublicURL, cfg.Attachments.Bucket)
 
+	mediaTools := media.NewTools(media.ToolsConfig{
+		FFmpeg:  cfg.Media.FFmpeg,
+		FFprobe: cfg.Media.FFprobe,
+		Workers: cfg.Media.Workers,
+		Timeout: cfg.Media.Timeout,
+	})
+	if err := mediaTools.Check(); err != nil {
+		log.Warn("media processing is unavailable until ffmpeg is installed", "error", err)
+	}
+
 	attachmentUpload, err := server.NewAttachmentHandler(server.AttachmentConfig{
 		Verifier: verifier,
-		Store:    attachmentStore,
-		URLs:     attachmentURLs,
+		Pipeline: attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools),
+		Recorder: svc,
 		Logger:   log,
 	})
 	if err != nil {
@@ -222,7 +233,7 @@ func run() error {
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(pool, cache, metrics, log),
+		Handler:           adminHandler(pool, cache, mediaTools, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -297,12 +308,17 @@ func publicHandler(
 func adminHandler(
 	pool *postgres.Pool,
 	cache *redis.Client,
+	tools *media.Tools,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	health.New(log, []health.Checker{pool, cache}).Register(mux)
+	mediaCheck := health.CheckerFunc{
+		CheckerName: "media",
+		Fn:          func(context.Context) error { return tools.Check() },
+	}
+	health.New(log, []health.Checker{pool, cache, mediaCheck}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)

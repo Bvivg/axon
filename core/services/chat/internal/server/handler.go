@@ -284,6 +284,7 @@ func (h *Handler) ListMessages(
 		Limit:     int(req.Msg.GetLimit()),
 		BeforeSeq: req.Msg.GetBeforeSeq(),
 		AfterSeq:  req.Msg.GetAfterSeq(),
+		Kinds:     fromProtoMessageKinds(req.Msg.GetKinds()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)

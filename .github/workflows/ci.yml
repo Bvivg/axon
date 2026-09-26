@@ -41,6 +41,9 @@ jobs:
       - name: Vet
         run: make vet
 
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Unit tests
         run: make test
 
@@ -204,6 +207,7 @@ jobs:
           docker build \
             --file core/deploy/Dockerfile.service \
             --build-arg SERVICE=${{ matrix.service }} \
+            --build-arg RUNTIME_FLAVOR=${{ matrix.service == 'chat' && 'media' || 'static' }} \
             --target runtime \
             --tag axon/${{ matrix.service }}:${{ github.sha }} \
             core

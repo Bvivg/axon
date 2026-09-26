@@ -140,6 +140,7 @@ services:
       target: runtime
       args:
         SERVICE: chat
+        RUNTIME_FLAVOR: media
     restart: "no"
     environment:
       APP_ENV: test

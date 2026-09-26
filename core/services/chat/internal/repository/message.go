@@ -155,6 +155,11 @@ func (r *Repository) ListMessages(
 
 	limit := page.Limit + 1
 
+	kinds := make([]string, 0, len(page.Kinds))
+	for _, kind := range page.Kinds {
+		kinds = append(kinds, string(kind))
+	}
+
 	var (
 		query string
 		args  []any
@@ -166,18 +171,20 @@ func (r *Repository) ListMessages(
 			FROM messages m
 			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
 			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND ($2 = 0 OR m.seq < $2)
+				AND (cardinality($5::text[]) = 0 OR m.kind = ANY($5::text[]))
 			ORDER BY m.seq DESC
 			LIMIT $3`
-		args = []any{roomID, page.BeforeSeq, limit, callerID}
+		args = []any{roomID, page.BeforeSeq, limit, callerID, kinds}
 	} else {
 		query = `
 			SELECT m.id, m.room_id, m.author_id, m.body, m.client_id, m.seq, m.sent_at, m.kind, m.payload, m.reply_to_id, m.forwarded_from_id
 			FROM messages m
 			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
 			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND m.seq > $2
+				AND (cardinality($5::text[]) = 0 OR m.kind = ANY($5::text[]))
 			ORDER BY m.seq ASC
 			LIMIT $3`
-		args = []any{roomID, page.AfterSeq, limit, callerID}
+		args = []any{roomID, page.AfterSeq, limit, callerID, kinds}
 	}
 
 	rows, err := r.q.Query(ctx, query, args...)

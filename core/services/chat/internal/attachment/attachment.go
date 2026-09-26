@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const MaxUploadBytes = 25 << 20
+const MaxUploadBytes = 100 << 20
 
 const maxExtLength = 8
 
@@ -24,8 +24,12 @@ func (b URLBuilder) URL(key string) string {
 	return b.publicURL + "/" + b.bucket + "/" + key
 }
 
+func newObjectBase(userID uuid.UUID) string {
+	return userID.String() + "/" + uuid.NewString()
+}
+
 func NewObjectKey(userID uuid.UUID, filename string) string {
-	key := userID.String() + "/" + uuid.NewString()
+	key := newObjectBase(userID)
 	if ext := sanitizeExt(filename); ext != "" {
 		key += "." + ext
 	}

@@ -76,12 +76,23 @@ const (
 	MessageKindText       MessageKind = "text"
 	MessageKindVoice      MessageKind = "voice"
 	MessageKindAttachment MessageKind = "attachment"
+	MessageKindImage      MessageKind = "image"
+	MessageKindVideo      MessageKind = "video"
 	MessageKindSystem     MessageKind = "system"
 )
 
 func (k MessageKind) Valid() bool {
 	switch k {
-	case MessageKindText, MessageKindVoice, MessageKindAttachment, MessageKindSystem:
+	case MessageKindText, MessageKindVoice, MessageKindAttachment, MessageKindImage, MessageKindVideo, MessageKindSystem:
+		return true
+	default:
+		return false
+	}
+}
+
+func (k MessageKind) FromUpload() bool {
+	switch k {
+	case MessageKindVoice, MessageKindAttachment, MessageKindImage, MessageKindVideo:
 		return true
 	default:
 		return false
@@ -91,6 +102,8 @@ func (k MessageKind) Valid() bool {
 type VoicePayload struct {
 	DurationMS int64  `json:"duration_ms"`
 	URL        string `json:"url"`
+	Mime       string `json:"mime,omitempty"`
+	SizeBytes  int64  `json:"size_bytes,omitempty"`
 }
 
 type AttachmentPayload struct {
@@ -98,6 +111,33 @@ type AttachmentPayload struct {
 	Filename  string `json:"filename"`
 	Mime      string `json:"mime"`
 	SizeBytes int64  `json:"size_bytes"`
+}
+
+type ImagePayload struct {
+	URL          string `json:"url"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	SizeBytes    int64  `json:"size_bytes"`
+	Mime         string `json:"mime"`
+}
+
+type VideoPayload struct {
+	URL        string `json:"url"`
+	PosterURL  string `json:"poster_url"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	DurationMS int64  `json:"duration_ms"`
+	SizeBytes  int64  `json:"size_bytes"`
+	Mime       string `json:"mime"`
+}
+
+type Upload struct {
+	ID         uuid.UUID
+	UploaderID uuid.UUID
+	Kind       MessageKind
+	Payload    json.RawMessage
+	CreatedAt  time.Time
 }
 
 type SystemPayload struct {
@@ -131,6 +171,8 @@ type Page struct {
 	Limit     int
 	BeforeSeq int64
 	AfterSeq  int64
+
+	Kinds []MessageKind
 }
 
 func (p Page) Backward() bool { return p.AfterSeq == 0 }
