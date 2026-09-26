@@ -38,6 +38,23 @@ export function useRequireSession(): void {
   }, [status, router]);
 }
 
+export function useRequireRole(role: string): boolean {
+  const { status, user } = useSession();
+  const router = useRouter();
+
+  useRequireSession();
+
+  const authorized = status === "authenticated" && !!user?.roles.includes(role);
+
+  useEffect(() => {
+    if (status === "authenticated" && !authorized) {
+      router.replace(homePath);
+    }
+  }, [status, authorized, router]);
+
+  return authorized;
+}
+
 export function useRedirectWhenSignedIn(): void {
   const { status } = useSession();
   const router = useRouter();

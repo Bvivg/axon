@@ -13,6 +13,12 @@ export function describe(err: unknown): string {
     case Code.ResourceExhausted:
       return "Too many attempts. Wait a minute and try again.";
 
+    case Code.NotFound:
+      return "Not found.";
+
+    case Code.PermissionDenied:
+      return "You don't have permission to do that.";
+
     case Code.InvalidArgument:
     case Code.FailedPrecondition:
 
