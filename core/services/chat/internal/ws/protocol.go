@@ -18,6 +18,8 @@ const (
 	TypeUnsubscribe = "unsubscribe"
 
 	TypeSend = "send"
+
+	TypeWatchPresence = "watch_presence"
 )
 
 const (
@@ -28,7 +30,15 @@ const (
 	TypeAck = "ack"
 
 	TypeError = "error"
+
+	TypeRead = "read"
+
+	TypePresence = "presence"
+
+	TypeRoomAdded = "room_added"
 )
+
+const TypeTyping = "typing"
 
 const (
 	CloseUnauthenticated ws.StatusCode = 4401
@@ -36,6 +46,8 @@ const (
 	CloseTokenExpired ws.StatusCode = 4402
 
 	CloseProtocol ws.StatusCode = 4400
+
+	CloseSessionRevoked ws.StatusCode = 4403
 )
 
 const (
@@ -48,13 +60,21 @@ const (
 
 type Inbound struct {
 	Type   string `json:"type"`
-	RoomID string `json:"room_id"`
+	RoomID string `json:"room_id,omitempty"`
+
+	ToUserID string `json:"to_user_id,omitempty"`
 
 	Since int64 `json:"since,omitempty"`
 
 	ClientID string `json:"client_id,omitempty"`
 
 	Body string `json:"body,omitempty"`
+
+	Kind    string          `json:"kind,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+
+	ReplyToID       string `json:"reply_to_id,omitempty"`
+	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
 }
 
 type Outbound struct {
@@ -64,6 +84,8 @@ type Outbound struct {
 
 	RoomID string `json:"room_id,omitempty"`
 	Seq    int64  `json:"seq,omitempty"`
+
+	UserID string `json:"user_id,omitempty"`
 
 	ClientID string `json:"client_id,omitempty"`
 	Code     string `json:"code,omitempty"`
@@ -78,10 +100,16 @@ type Message struct {
 	Seq      int64     `json:"seq"`
 	SentAt   time.Time `json:"sent_at"`
 	ClientID string    `json:"client_id,omitempty"`
+
+	Kind    string          `json:"kind"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+
+	ReplyToID       string `json:"reply_to_id,omitempty"`
+	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
 }
 
 func toWire(m domain.Message) Message {
-	return Message{
+	wire := Message{
 		ID:       m.ID.String(),
 		RoomID:   m.RoomID.String(),
 		AuthorID: m.AuthorID.String(),
@@ -89,7 +117,20 @@ func toWire(m domain.Message) Message {
 		Seq:      m.Seq,
 		SentAt:   m.SentAt,
 		ClientID: m.ClientID,
+		Kind:     string(m.Kind),
 	}
+
+	if m.Kind != domain.MessageKindText {
+		wire.Payload = m.Payload
+	}
+	if m.ReplyToID != nil {
+		wire.ReplyToID = m.ReplyToID.String()
+	}
+	if m.ForwardedFromID != nil {
+		wire.ForwardedFromID = m.ForwardedFromID.String()
+	}
+
+	return wire
 }
 
 func messageFrame(m domain.Message, recipient string) Outbound {
@@ -106,6 +147,22 @@ func ackFrame(m domain.Message) Outbound {
 
 func subscribedFrame(roomID string, seq int64) Outbound {
 	return Outbound{Type: TypeSubscribed, RoomID: roomID, Seq: seq}
+}
+
+func readFrame(roomID, userID string, seq int64) Outbound {
+	return Outbound{Type: TypeRead, RoomID: roomID, UserID: userID, Seq: seq}
+}
+
+func typingFrame(roomID, userID string) Outbound {
+	return Outbound{Type: TypeTyping, RoomID: roomID, UserID: userID}
+}
+
+func roomAddedFrame(roomID string) Outbound {
+	return Outbound{Type: TypeRoomAdded, RoomID: roomID}
+}
+
+func presenceFrame(userID string) Outbound {
+	return Outbound{Type: TypePresence, UserID: userID}
 }
 
 func errorFrame(code, reason, clientID string) Outbound {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,14 +16,19 @@ type Store interface {
 	CreateRoom(ctx context.Context, room domain.Room, creator domain.Member) (domain.Room, error)
 	RoomByID(ctx context.Context, id uuid.UUID) (domain.Room, error)
 	RoomsForUser(ctx context.Context, userID uuid.UUID) ([]domain.Room, error)
+	DirectRoomBetween(ctx context.Context, userA, userB uuid.UUID) (domain.Room, error)
+	GetOrCreateDirectRoom(ctx context.Context, newRoom domain.Room, memberA, memberB domain.Member) (domain.Room, error)
 
 	AddMember(ctx context.Context, roomID uuid.UUID, m domain.Member) (bool, error)
 	RemoveMember(ctx context.Context, roomID, userID uuid.UUID) error
 	Members(ctx context.Context, roomID uuid.UUID) ([]domain.Member, error)
 	IsMember(ctx context.Context, roomID, userID uuid.UUID) (bool, error)
+	HideRoom(ctx context.Context, roomID, userID uuid.UUID) error
+	MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) error
 
 	AppendMessage(ctx context.Context, m domain.Message) (domain.Message, bool, error)
-	ListMessages(ctx context.Context, roomID uuid.UUID, page domain.Page) ([]domain.Message, bool, error)
+	MessageByID(ctx context.Context, id uuid.UUID) (domain.Message, error)
+	ListMessages(ctx context.Context, roomID, callerID uuid.UUID, page domain.Page) ([]domain.Message, bool, error)
 }
 
 type Events interface {
@@ -77,7 +83,7 @@ func (s *Service) CreateRoom(ctx context.Context, in CreateRoomInput) (domain.Ro
 	}
 
 	room, err := s.store.CreateRoom(ctx,
-		domain.Room{ID: s.newID(), Name: name, CreatedBy: in.UserID},
+		domain.Room{ID: s.newID(), Name: name, CreatedBy: in.UserID, Kind: domain.RoomKindOpen},
 		domain.Member{UserID: in.UserID, DisplayName: domain.ValidateDisplayName(in.DisplayName)},
 	)
 	if err != nil {
@@ -120,6 +126,18 @@ func (s *Service) GetRoom(ctx context.Context, roomID, userID uuid.UUID) (RoomVi
 	return RoomView{Room: room, Members: members}, nil
 }
 
+func (s *Service) GetDirectRoom(ctx context.Context, callerID, peerID uuid.UUID) (*domain.Room, error) {
+	room, err := s.store.DirectRoomBetween(ctx, callerID, peerID)
+	switch {
+	case err == nil:
+		return &room, nil
+	case errors.Is(err, domain.ErrRoomNotFound):
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("service: get direct room: %w", err)
+	}
+}
+
 type JoinRoomInput struct {
 	RoomID      uuid.UUID
 	UserID      uuid.UUID
@@ -130,6 +148,10 @@ func (s *Service) JoinRoom(ctx context.Context, in JoinRoomInput) (domain.Room, 
 	room, err := s.store.RoomByID(ctx, in.RoomID)
 	if err != nil {
 		return domain.Room{}, false, fmt.Errorf("service: join room: %w", err)
+	}
+
+	if room.Kind == domain.RoomKindDirect {
+		return domain.Room{}, false, domain.ErrDirectRoomNotJoinable
 	}
 
 	joined, err := s.store.AddMember(ctx, in.RoomID, domain.Member{
@@ -158,6 +180,32 @@ func (s *Service) LeaveRoom(ctx context.Context, roomID, userID uuid.UUID) error
 	return nil
 }
 
+func (s *Service) HideRoom(ctx context.Context, roomID, userID uuid.UUID) error {
+	if err := s.requireMember(ctx, roomID, userID); err != nil {
+		return err
+	}
+
+	if err := s.store.HideRoom(ctx, roomID, userID); err != nil {
+		return fmt.Errorf("service: hide room: %w", err)
+	}
+
+	s.log.InfoContext(ctx, "room hidden", "room_id", roomID, "user_id", userID)
+
+	return nil
+}
+
+func (s *Service) MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) error {
+	if err := s.requireMember(ctx, roomID, userID); err != nil {
+		return err
+	}
+
+	if err := s.store.MarkRead(ctx, roomID, userID, seq); err != nil {
+		return fmt.Errorf("service: mark read: %w", err)
+	}
+
+	return nil
+}
+
 type History struct {
 	Messages []domain.Message
 
@@ -178,7 +226,7 @@ func (s *Service) ListMessages(
 		return History{}, err
 	}
 
-	messages, more, err := s.store.ListMessages(ctx, roomID, page)
+	messages, more, err := s.store.ListMessages(ctx, roomID, userID, page)
 	if err != nil {
 		return History{}, fmt.Errorf("service: list messages: %w", err)
 	}
@@ -192,10 +240,158 @@ type SendInput struct {
 	Body     string
 
 	ClientID string
+
+	Kind    string
+	Payload json.RawMessage
+
+	ReplyToID       string
+	ForwardedFromID string
 }
 
 func (s *Service) Send(ctx context.Context, in SendInput) (domain.Message, bool, error) {
-	body, err := domain.ValidateMessageBody(in.Body)
+	if err := s.requireMember(ctx, in.RoomID, in.AuthorID); err != nil {
+		return domain.Message{}, false, err
+	}
+
+	return s.appendValidated(ctx, in.RoomID, in.AuthorID, sendCore{
+		Body:            in.Body,
+		ClientID:        in.ClientID,
+		Kind:            in.Kind,
+		Payload:         in.Payload,
+		ReplyToID:       in.ReplyToID,
+		ForwardedFromID: in.ForwardedFromID,
+	})
+}
+
+type SendDirectInput struct {
+	FromUserID      uuid.UUID
+	FromDisplayName string
+	ToUserID        uuid.UUID
+
+	Body     string
+	ClientID string
+
+	Kind    string
+	Payload json.RawMessage
+
+	ReplyToID       string
+	ForwardedFromID string
+}
+
+func (s *Service) SendDirect(ctx context.Context, in SendDirectInput) (domain.Message, domain.Room, bool, error) {
+	if in.FromUserID == in.ToUserID {
+		return domain.Message{}, domain.Room{}, false, domain.ErrCannotMessageSelf
+	}
+
+	room, err := s.store.GetOrCreateDirectRoom(ctx,
+		domain.Room{ID: s.newID(), Name: "", CreatedBy: in.FromUserID, Kind: domain.RoomKindDirect},
+		domain.Member{UserID: in.FromUserID, DisplayName: domain.ValidateDisplayName(in.FromDisplayName)},
+		domain.Member{UserID: in.ToUserID, DisplayName: ""},
+	)
+	if err != nil {
+		return domain.Message{}, domain.Room{}, false, fmt.Errorf("service: open direct room: %w", err)
+	}
+
+	message, duplicate, err := s.appendValidated(ctx, room.ID, in.FromUserID, sendCore{
+		Body:            in.Body,
+		ClientID:        in.ClientID,
+		Kind:            in.Kind,
+		Payload:         in.Payload,
+		ReplyToID:       in.ReplyToID,
+		ForwardedFromID: in.ForwardedFromID,
+	})
+	if err != nil {
+		return domain.Message{}, domain.Room{}, false, err
+	}
+
+	return message, room, duplicate, nil
+}
+
+func (s *Service) AppendSystemEvent(
+	ctx context.Context,
+	roomID uuid.UUID,
+	event string,
+	actorID, targetID *uuid.UUID,
+) (domain.Message, error) {
+	payload := domain.SystemPayload{Event: event}
+	if actorID != nil {
+		actor := actorID.String()
+		payload.ActorID = &actor
+	}
+	if targetID != nil {
+		target := targetID.String()
+		payload.TargetID = &target
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return domain.Message{}, fmt.Errorf("service: marshal system payload: %w", err)
+	}
+	validated, err := domain.ValidatePayload(domain.MessageKindSystem, raw)
+	if err != nil {
+		return domain.Message{}, err
+	}
+
+	author := uuid.Nil
+	if actorID != nil {
+		author = *actorID
+	}
+
+	message, duplicate, err := s.store.AppendMessage(ctx, domain.Message{
+		ID:       s.newID(),
+		RoomID:   roomID,
+		AuthorID: author,
+		Body:     "",
+		Kind:     domain.MessageKindSystem,
+		Payload:  validated,
+	})
+	if err != nil {
+		return domain.Message{}, fmt.Errorf("service: append system event: %w", err)
+	}
+
+	if !duplicate {
+		s.log.InfoContext(ctx, "system event", "room_id", roomID, "event", event)
+		s.events.MessageSent(context.WithoutCancel(ctx), message)
+	}
+
+	return message, nil
+}
+
+type sendCore struct {
+	Body     string
+	ClientID string
+
+	Kind    string
+	Payload json.RawMessage
+
+	ReplyToID       string
+	ForwardedFromID string
+}
+
+func (s *Service) appendValidated(
+	ctx context.Context,
+	roomID, authorID uuid.UUID,
+	in sendCore,
+) (domain.Message, bool, error) {
+	kind, err := domain.ValidateMessageKind(in.Kind)
+	if err != nil {
+		return domain.Message{}, false, err
+	}
+	if kind == domain.MessageKindSystem {
+		return domain.Message{}, false, domain.ErrSystemKindNotSendable
+	}
+
+	var body string
+	if kind == domain.MessageKindText {
+		body, err = domain.ValidateMessageBody(in.Body)
+	} else {
+		body, err = domain.ValidateCaption(in.Body)
+	}
+	if err != nil {
+		return domain.Message{}, false, err
+	}
+
+	payload, err := domain.ValidatePayload(kind, in.Payload)
 	if err != nil {
 		return domain.Message{}, false, err
 	}
@@ -205,29 +401,94 @@ func (s *Service) Send(ctx context.Context, in SendInput) (domain.Message, bool,
 		return domain.Message{}, false, err
 	}
 
-	if err := s.requireMember(ctx, in.RoomID, in.AuthorID); err != nil {
+	replyToID, err := s.resolveReplyTarget(ctx, roomID, in.ReplyToID)
+	if err != nil {
+		return domain.Message{}, false, err
+	}
+
+	forwardedFromID, err := s.resolveForwardSource(ctx, authorID, in.ForwardedFromID)
+	if err != nil {
 		return domain.Message{}, false, err
 	}
 
 	message, duplicate, err := s.store.AppendMessage(ctx, domain.Message{
-		ID:       s.newID(),
-		RoomID:   in.RoomID,
-		AuthorID: in.AuthorID,
-		Body:     body,
-		ClientID: clientID,
+		ID:              s.newID(),
+		RoomID:          roomID,
+		AuthorID:        authorID,
+		Body:            body,
+		ClientID:        clientID,
+		Kind:            kind,
+		Payload:         payload,
+		ReplyToID:       replyToID,
+		ForwardedFromID: forwardedFromID,
 	})
 	if err != nil {
 		return domain.Message{}, false, fmt.Errorf("service: send message: %w", err)
 	}
 
 	if !duplicate {
-		s.log.InfoContext(ctx, "message sent",
-			"room_id", in.RoomID, "user_id", in.AuthorID, "seq", message.Seq)
+		s.log.InfoContext(ctx, "message sent", "room_id", roomID, "user_id", authorID, "seq", message.Seq)
 
 		s.events.MessageSent(context.WithoutCancel(ctx), message)
 	}
 
 	return message, duplicate, nil
+}
+
+func (s *Service) resolveReplyTarget(ctx context.Context, roomID uuid.UUID, raw string) (*uuid.UUID, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return nil, domain.ErrInvalidReplyTarget
+	}
+
+	target, err := s.store.MessageByID(ctx, id)
+	switch {
+	case err == nil:
+	case errors.Is(err, domain.ErrMessageNotFound):
+		return nil, domain.ErrInvalidReplyTarget
+	default:
+		return nil, fmt.Errorf("service: resolve reply target: %w", err)
+	}
+
+	if target.RoomID != roomID {
+		return nil, domain.ErrInvalidReplyTarget
+	}
+
+	return &id, nil
+}
+
+func (s *Service) resolveForwardSource(ctx context.Context, authorID uuid.UUID, raw string) (*uuid.UUID, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return nil, domain.ErrInvalidForwardTarget
+	}
+
+	source, err := s.store.MessageByID(ctx, id)
+	switch {
+	case err == nil:
+	case errors.Is(err, domain.ErrMessageNotFound):
+		return nil, domain.ErrInvalidForwardTarget
+	default:
+		return nil, fmt.Errorf("service: resolve forward source: %w", err)
+	}
+
+	member, err := s.store.IsMember(ctx, source.RoomID, authorID)
+	if err != nil {
+		return nil, fmt.Errorf("service: check forward access: %w", err)
+	}
+	if !member {
+		return nil, domain.ErrInvalidForwardTarget
+	}
+
+	return &id, nil
 }
 
 func (s *Service) requireMember(ctx context.Context, roomID, userID uuid.UUID) error {

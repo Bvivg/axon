@@ -136,10 +136,43 @@ func TestJoiningTwiceIsNotAnErrorAndRefreshesTheName(t *testing.T) {
 	}
 }
 
+func TestRoomsForUserCarriesHowFarTheOthersHaveRead(t *testing.T) {
+	r := newRepo(t)
+
+	room, owner := newRoom(t, r, "general")
+	reader := uuid.New()
+	if _, err := r.AddMember(t.Context(), room.ID, domain.Member{UserID: reader, DisplayName: "Reader"}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	say(t, r, room.ID, owner, "one", "c-1")
+	second := say(t, r, room.ID, owner, "two", "c-2")
+	third := say(t, r, room.ID, owner, "three", "c-3")
+
+	if err := r.MarkRead(t.Context(), room.ID, reader, second.Seq); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+
+	for who, want := range map[uuid.UUID]int64{owner: second.Seq, reader: third.Seq} {
+		rooms, err := r.RoomsForUser(t.Context(), who)
+		if err != nil {
+			t.Fatalf("RoomsForUser: %v", err)
+		}
+		if len(rooms) != 1 || rooms[0].OthersReadSeq != want {
+			t.Errorf("others read up to %+v, want %d", rooms, want)
+		}
+	}
+}
+
 func TestLeavingKeepsTheHistory(t *testing.T) {
 	r := newRepo(t)
 
 	room, owner := newRoom(t, r, "general")
+
+	stayer := uuid.New()
+	if _, err := r.AddMember(t.Context(), room.ID, domain.Member{UserID: stayer, DisplayName: "Stayer"}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
 
 	if _, _, err := r.AppendMessage(t.Context(), domain.Message{
 		ID:       uuid.New(),
@@ -162,7 +195,7 @@ func TestLeavingKeepsTheHistory(t *testing.T) {
 		t.Error("still a member after leaving")
 	}
 
-	messages, _, err := r.ListMessages(t.Context(), room.ID, domain.Page{Limit: 10})
+	messages, _, err := r.ListMessages(t.Context(), room.ID, stayer, domain.Page{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}

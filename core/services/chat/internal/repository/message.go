@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
-const messageColumns = `id, room_id, author_id, body, client_id, seq, sent_at`
+const messageColumns = `id, room_id, author_id, body, client_id, seq, sent_at, kind, payload, reply_to_id, forwarded_from_id`
 
 func (r *Repository) AppendMessage(ctx context.Context, m domain.Message) (domain.Message, bool, error) {
 	var (
@@ -36,33 +37,64 @@ func (r *Repository) AppendMessage(ctx context.Context, m domain.Message) (domai
 		}
 
 		const query = `
-			INSERT INTO messages (id, room_id, author_id, body, client_id, seq)
-			VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO messages (id, room_id, author_id, body, client_id, seq, kind, payload, reply_to_id, forwarded_from_id)
+			VALUES ($1, $2, $3, $4, $5, $6, COALESCE(NULLIF($7, ''), 'text'), COALESCE($8::jsonb, '{}'::jsonb), $9, $10)
 			ON CONFLICT (room_id, author_id, client_id) WHERE client_id <> '' DO NOTHING
 			RETURNING ` + messageColumns
 
-		row := tx.q.QueryRow(ctx, query, m.ID, m.RoomID, m.AuthorID, m.Body, m.ClientID, seq)
+		row := tx.q.QueryRow(ctx, query,
+			m.ID, m.RoomID, m.AuthorID, m.Body, m.ClientID, seq,
+			string(m.Kind), []byte(m.Payload), m.ReplyToID, m.ForwardedFromID)
 
 		stored, err = scanMessage(row)
 		switch {
 		case err == nil:
-			return nil
 		case !noRows(err):
 			return fmt.Errorf("repository: append message: %w", err)
+		default:
+			existing, err := tx.messageByClientID(ctx, m.RoomID, m.AuthorID, m.ClientID)
+			if err != nil {
+				return err
+			}
+			stored, duplicate = existing, true
+			return nil
 		}
 
-		existing, err := tx.messageByClientID(ctx, m.RoomID, m.AuthorID, m.ClientID)
-		if err != nil {
+		if err := tx.unhideRoomForSender(ctx, m.RoomID, m.AuthorID); err != nil {
 			return err
 		}
-		stored, duplicate = existing, true
-		return nil
+
+		return tx.advanceReadSeq(ctx, m.RoomID, m.AuthorID, stored.Seq)
 	})
 	if err != nil {
 		return domain.Message{}, false, err
 	}
 
 	return stored, duplicate, nil
+}
+
+func (r *Repository) advanceReadSeq(ctx context.Context, roomID, userID uuid.UUID, seq int64) error {
+	const query = `
+		UPDATE room_members
+		SET last_read_seq = GREATEST(last_read_seq, $3)
+		WHERE room_id = $1 AND user_id = $2`
+
+	if _, err := r.q.Exec(ctx, query, roomID, userID, seq); err != nil {
+		return fmt.Errorf("repository: advance read position: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) unhideRoomForSender(ctx context.Context, roomID, userID uuid.UUID) error {
+	const query = `
+		UPDATE room_members
+		SET hidden_at = NULL
+		WHERE room_id = $1 AND user_id = $2 AND hidden_at IS NOT NULL`
+
+	if _, err := r.q.Exec(ctx, query, roomID, userID); err != nil {
+		return fmt.Errorf("repository: unhide room for sender: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) nextSeq(ctx context.Context, roomID uuid.UUID) (int64, error) {
@@ -102,9 +134,22 @@ func (r *Repository) messageByClientID(
 	return m, nil
 }
 
+func (r *Repository) MessageByID(ctx context.Context, id uuid.UUID) (domain.Message, error) {
+	const query = `SELECT ` + messageColumns + ` FROM messages WHERE id = $1`
+
+	m, err := scanMessage(r.q.QueryRow(ctx, query, id))
+	if err != nil {
+		if noRows(err) {
+			return domain.Message{}, domain.ErrMessageNotFound
+		}
+		return domain.Message{}, fmt.Errorf("repository: message by id: %w", err)
+	}
+	return m, nil
+}
+
 func (r *Repository) ListMessages(
 	ctx context.Context,
-	roomID uuid.UUID,
+	roomID, callerID uuid.UUID,
 	page domain.Page,
 ) ([]domain.Message, bool, error) {
 
@@ -117,20 +162,22 @@ func (r *Repository) ListMessages(
 
 	if page.Backward() {
 		query = `
-			SELECT ` + messageColumns + `
-			FROM messages
-			WHERE room_id = $1 AND ($2 = 0 OR seq < $2)
-			ORDER BY seq DESC
+			SELECT m.id, m.room_id, m.author_id, m.body, m.client_id, m.seq, m.sent_at, m.kind, m.payload, m.reply_to_id, m.forwarded_from_id
+			FROM messages m
+			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
+			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND ($2 = 0 OR m.seq < $2)
+			ORDER BY m.seq DESC
 			LIMIT $3`
-		args = []any{roomID, page.BeforeSeq, limit}
+		args = []any{roomID, page.BeforeSeq, limit, callerID}
 	} else {
 		query = `
-			SELECT ` + messageColumns + `
-			FROM messages
-			WHERE room_id = $1 AND seq > $2
-			ORDER BY seq ASC
+			SELECT m.id, m.room_id, m.author_id, m.body, m.client_id, m.seq, m.sent_at, m.kind, m.payload, m.reply_to_id, m.forwarded_from_id
+			FROM messages m
+			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
+			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND m.seq > $2
+			ORDER BY m.seq ASC
 			LIMIT $3`
-		args = []any{roomID, page.AfterSeq, limit}
+		args = []any{roomID, page.AfterSeq, limit, callerID}
 	}
 
 	rows, err := r.q.Query(ctx, query, args...)
@@ -168,9 +215,22 @@ type scannable interface {
 }
 
 func scanMessage(row scannable) (domain.Message, error) {
-	var m domain.Message
-	err := row.Scan(&m.ID, &m.RoomID, &m.AuthorID, &m.Body, &m.ClientID, &m.Seq, &m.SentAt)
-	return m, err
+	var (
+		m       domain.Message
+		kind    string
+		payload []byte
+	)
+	err := row.Scan(
+		&m.ID, &m.RoomID, &m.AuthorID, &m.Body, &m.ClientID, &m.Seq, &m.SentAt,
+		&kind, &payload, &m.ReplyToID, &m.ForwardedFromID,
+	)
+	if err != nil {
+		return domain.Message{}, err
+	}
+
+	m.Kind = domain.MessageKind(kind)
+	m.Payload = json.RawMessage(payload)
+	return m, nil
 }
 
 func reverse(messages []domain.Message) {

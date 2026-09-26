@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,17 +24,24 @@ import (
 )
 
 const (
-	subprotocol  = "axon.chat.v1"
-	bearerPrefix = "axon.bearer."
+	subprotocol         = "axon.chat.v1"
+	presenceSubprotocol = "axon.presence.v1"
+	bearerPrefix        = "axon.bearer."
 
-	typeSubscribe   = "subscribe"
-	typeUnsubscribe = "unsubscribe"
-	typeSend        = "send"
+	typeSubscribe     = "subscribe"
+	typeUnsubscribe   = "unsubscribe"
+	typeSend          = "send"
+	typeWatchPresence = "watch_presence"
 
 	typeMessage    = "message"
 	typeSubscribed = "subscribed"
 	typeAck        = "ack"
 	typeError      = "error"
+	typeRead       = "read"
+	typePresence   = "presence"
+	typeRoomAdded  = "room_added"
+
+	typeTyping = "typing"
 
 	errorNotAMember = "not_a_member"
 )
@@ -41,6 +49,7 @@ const (
 type inbound struct {
 	Type     string `json:"type"`
 	RoomID   string `json:"room_id,omitempty"`
+	ToUserID string `json:"to_user_id,omitempty"`
 	Since    int64  `json:"since,omitempty"`
 	ClientID string `json:"client_id,omitempty"`
 	Body     string `json:"body,omitempty"`
@@ -50,6 +59,7 @@ type outbound struct {
 	Type     string `json:"type"`
 	RoomID   string `json:"room_id,omitempty"`
 	Seq      int64  `json:"seq,omitempty"`
+	UserID   string `json:"user_id,omitempty"`
 	ClientID string `json:"client_id,omitempty"`
 	Code     string `json:"code,omitempty"`
 	Reason   string `json:"reason,omitempty"`
@@ -71,6 +81,7 @@ type user struct {
 	email  string
 	token  string
 	chat   chatv1connect.ChatServiceClient
+	auth   authv1connect.AuthServiceClient
 	dialer *http.Client
 }
 
@@ -97,15 +108,14 @@ func newUser(t *testing.T) *user {
 	}
 
 	token := registered.Msg.GetTokens().GetAccessToken()
+	authed := &http.Client{Transport: bearer{token: token, addr: addr}}
 
 	return &user{
-		id:    registered.Msg.GetUser().GetId(),
-		email: address,
-		token: token,
-		chat: chatv1connect.NewChatServiceClient(
-			&http.Client{Transport: bearer{token: token, addr: addr}},
-			gatewayURL,
-		),
+		id:     registered.Msg.GetUser().GetId(),
+		email:  address,
+		token:  token,
+		chat:   chatv1connect.NewChatServiceClient(authed, gatewayURL),
+		auth:   authv1connect.NewAuthServiceClient(authed, gatewayURL),
 		dialer: httpClient,
 	}
 }
@@ -221,4 +231,35 @@ func (s *socket) subscribe(roomID string, since int64) int64 {
 
 	s.send(inbound{Type: typeSubscribe, RoomID: roomID, Since: since})
 	return s.expect(typeSubscribed).Seq
+}
+
+func (u *user) goOnline(t *testing.T) *ws.Conn {
+	t.Helper()
+
+	url := strings.TrimSuffix(gatewaySocketURL, "/ws/chat") + "/ws/presence"
+	conn, err := ws.Dial(context.Background(), url, ws.DialOptions{
+		Subprotocols: []string{presenceSubprotocol, bearerPrefix + u.token},
+		Options:      ws.Options{Logger: logger.Discard()},
+	})
+	if err != nil {
+		t.Fatalf("open the presence socket: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.CloseNow() })
+
+	return conn
+}
+
+func (u *user) profileOf(t *testing.T, userID string) *authv1.PublicProfile {
+	t.Helper()
+
+	resp, err := u.auth.GetUsersPublicProfiles(context.Background(), connect.NewRequest(&authv1.GetUsersPublicProfilesRequest{
+		UserIds: []string{userID},
+	}))
+	if err != nil {
+		t.Fatalf("get public profile of %s: %v", userID, err)
+	}
+	if len(resp.Msg.GetUsers()) != 1 {
+		t.Fatalf("got %d profiles for %s, want 1", len(resp.Msg.GetUsers()), userID)
+	}
+	return resp.Msg.GetUsers()[0]
 }

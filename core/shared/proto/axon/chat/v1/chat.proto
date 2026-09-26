@@ -17,6 +17,18 @@ service ChatService {
   rpc LeaveRoom(LeaveRoomRequest) returns (LeaveRoomResponse);
 
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+
+  rpc HideRoom(HideRoomRequest) returns (HideRoomResponse);
+
+  rpc GetDirectRoom(GetDirectRoomRequest) returns (GetDirectRoomResponse);
+
+  rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
+}
+
+enum RoomKind {
+  ROOM_KIND_UNSPECIFIED = 0;
+  ROOM_KIND_OPEN = 1;
+  ROOM_KIND_DIRECT = 2;
 }
 
 message Room {
@@ -28,6 +40,14 @@ message Room {
   google.protobuf.Timestamp created_at = 4;
 
   int32 member_count = 5;
+
+  RoomKind kind = 6;
+
+  optional string peer_user_id = 7;
+
+  int64 unread_count = 8;
+
+  optional int64 others_read_seq = 9;
 }
 
 message Member {
@@ -36,6 +56,35 @@ message Member {
   optional string display_name = 2;
 
   google.protobuf.Timestamp joined_at = 3;
+
+  int64 last_read_seq = 4;
+}
+
+enum MessageKind {
+  MESSAGE_KIND_UNSPECIFIED = 0;
+  MESSAGE_KIND_TEXT = 1;
+  MESSAGE_KIND_VOICE = 2;
+  MESSAGE_KIND_ATTACHMENT = 3;
+  MESSAGE_KIND_SYSTEM = 4;
+}
+
+message VoicePayload {
+  int64 duration_ms = 1;
+  string url = 2;
+}
+
+message AttachmentPayload {
+  string url = 1;
+  string filename = 2;
+  string mime = 3;
+  int64 size_bytes = 4;
+}
+
+message SystemPayload {
+  string event = 1;
+
+  optional string actor_id = 2;
+  optional string target_id = 3;
 }
 
 message Message {
@@ -49,6 +98,17 @@ message Message {
   google.protobuf.Timestamp sent_at = 6;
 
   optional string client_id = 7;
+
+  MessageKind kind = 8;
+
+  optional string reply_to_id = 9;
+  optional string forwarded_from_id = 10;
+
+  oneof payload {
+    VoicePayload voice = 11;
+    AttachmentPayload attachment = 12;
+    SystemPayload system = 13;
+  }
 }
 
 message CreateRoomRequest {
@@ -105,4 +165,26 @@ message ListMessagesResponse {
   repeated Message messages = 1;
 
   bool has_more = 2;
+}
+
+message HideRoomRequest {
+  string room_id = 1;
+}
+
+message HideRoomResponse {}
+
+message MarkReadRequest {
+  string room_id = 1;
+
+  int64 seq = 2;
+}
+
+message MarkReadResponse {}
+
+message GetDirectRoomRequest {
+  string user_id = 1;
+}
+
+message GetDirectRoomResponse {
+  optional Room room = 1;
 }

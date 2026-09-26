@@ -72,12 +72,91 @@ func (s *fakeStore) RoomsForUser(_ context.Context, userID uuid.UUID) ([]domain.
 
 	var rooms []domain.Room
 	for id, room := range s.rooms {
-		if _, ok := s.members[id][userID]; ok {
-			room.MemberCount = len(s.members[id])
-			rooms = append(rooms, room)
+		member, ok := s.members[id][userID]
+		if !ok || member.HiddenAt != nil {
+			continue
 		}
+		room.MemberCount = len(s.members[id])
+
+		floor := member.LastReadSeq
+		if member.ClearedThroughSeq > floor {
+			floor = member.ClearedThroughSeq
+		}
+		for _, m := range s.messages[id] {
+			if m.Seq > floor {
+				room.UnreadCount++
+			}
+		}
+
+		for otherID, other := range s.members[id] {
+			if otherID != userID && other.LastReadSeq > room.OthersReadSeq {
+				room.OthersReadSeq = other.LastReadSeq
+			}
+		}
+
+		rooms = append(rooms, room)
 	}
 	return rooms, nil
+}
+
+func (s *fakeStore) DirectRoomBetween(_ context.Context, userA, userB uuid.UUID) (domain.Room, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return domain.Room{}, s.failWith
+	}
+
+	min, max := domain.DirectPair(userA, userB)
+	for id, room := range s.rooms {
+		if room.Kind != domain.RoomKindDirect || room.DirectUserMin == nil || room.DirectUserMax == nil {
+			continue
+		}
+		if *room.DirectUserMin == min && *room.DirectUserMax == max {
+			room.MemberCount = len(s.members[id])
+			return room, nil
+		}
+	}
+	return domain.Room{}, domain.ErrRoomNotFound
+}
+
+func (s *fakeStore) GetOrCreateDirectRoom(
+	_ context.Context,
+	newRoom domain.Room,
+	memberA, memberB domain.Member,
+) (domain.Room, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return domain.Room{}, s.failWith
+	}
+
+	min, max := domain.DirectPair(memberA.UserID, memberB.UserID)
+	for id, room := range s.rooms {
+		if room.Kind != domain.RoomKindDirect || room.DirectUserMin == nil || room.DirectUserMax == nil {
+			continue
+		}
+		if *room.DirectUserMin == min && *room.DirectUserMax == max {
+			room.MemberCount = len(s.members[id])
+			return room, nil
+		}
+	}
+
+	newRoom.CreatedAt = time.Now()
+	newRoom.DirectUserMin = &min
+	newRoom.DirectUserMax = &max
+	newRoom.MemberCount = 2
+	s.rooms[newRoom.ID] = newRoom
+
+	memberA.JoinedAt = time.Now()
+	memberB.JoinedAt = time.Now()
+	s.members[newRoom.ID] = map[uuid.UUID]domain.Member{
+		memberA.UserID: memberA,
+		memberB.UserID: memberB,
+	}
+
+	return newRoom, nil
 }
 
 func (s *fakeStore) AddMember(_ context.Context, roomID uuid.UUID, m domain.Member) (bool, error) {
@@ -138,6 +217,55 @@ func (s *fakeStore) IsMember(_ context.Context, roomID, userID uuid.UUID) (bool,
 	return ok, nil
 }
 
+func (s *fakeStore) HideRoom(_ context.Context, roomID, userID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return s.failWith
+	}
+
+	member, ok := s.members[roomID][userID]
+	if !ok {
+		return domain.ErrNotAMember
+	}
+
+	var maxSeq int64
+	for _, m := range s.messages[roomID] {
+		if m.Seq > maxSeq {
+			maxSeq = m.Seq
+		}
+	}
+
+	now := time.Now()
+	member.HiddenAt = &now
+	member.ClearedThroughSeq = maxSeq
+	s.members[roomID][userID] = member
+
+	return nil
+}
+
+func (s *fakeStore) MarkRead(_ context.Context, roomID, userID uuid.UUID, seq int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return s.failWith
+	}
+
+	member, ok := s.members[roomID][userID]
+	if !ok {
+		return domain.ErrNotAMember
+	}
+
+	if seq > member.LastReadSeq {
+		member.LastReadSeq = seq
+		s.members[roomID][userID] = member
+	}
+
+	return nil
+}
+
 func (s *fakeStore) AppendMessage(_ context.Context, m domain.Message) (domain.Message, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -162,12 +290,40 @@ func (s *fakeStore) AppendMessage(_ context.Context, m domain.Message) (domain.M
 	m.SentAt = time.Now()
 	s.messages[m.RoomID] = append(s.messages[m.RoomID], m)
 
+	if author, ok := s.members[m.RoomID][m.AuthorID]; ok {
+		if author.HiddenAt != nil {
+			author.HiddenAt = nil
+		}
+		if m.Seq > author.LastReadSeq {
+			author.LastReadSeq = m.Seq
+		}
+		s.members[m.RoomID][m.AuthorID] = author
+	}
+
 	return m, false, nil
+}
+
+func (s *fakeStore) MessageByID(_ context.Context, id uuid.UUID) (domain.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return domain.Message{}, s.failWith
+	}
+
+	for _, messages := range s.messages {
+		for _, m := range messages {
+			if m.ID == id {
+				return m, nil
+			}
+		}
+	}
+	return domain.Message{}, domain.ErrMessageNotFound
 }
 
 func (s *fakeStore) ListMessages(
 	_ context.Context,
-	roomID uuid.UUID,
+	roomID, callerID uuid.UUID,
 	page domain.Page,
 ) ([]domain.Message, bool, error) {
 	s.mu.Lock()
@@ -177,8 +333,13 @@ func (s *fakeStore) ListMessages(
 		return nil, false, s.failWith
 	}
 
+	clearedThrough := s.members[roomID][callerID].ClearedThroughSeq
+
 	var selected []domain.Message
 	for _, m := range s.messages[roomID] {
+		if m.Seq <= clearedThrough {
+			continue
+		}
 		switch {
 		case page.BeforeSeq != 0 && m.Seq >= page.BeforeSeq:
 		case page.AfterSeq != 0 && m.Seq <= page.AfterSeq:

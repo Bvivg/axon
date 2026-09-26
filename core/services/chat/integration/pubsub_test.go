@@ -182,18 +182,82 @@ func TestStoppingTheLastListenerClosesTheChannel(t *testing.T) {
 
 func waitForSubscriber(t *testing.T, roomID uuid.UUID) {
 	t.Helper()
+	waitForChannel(t, "chat:room:"+roomID.String())
+}
+
+func waitForChannel(t *testing.T, channel string) {
+	t.Helper()
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		counts, err := cache.PubSubNumSub(t.Context(), "chat:room:"+roomID.String()).Result()
+		counts, err := cache.PubSubNumSub(t.Context(), channel).Result()
 		if err != nil {
 			t.Fatalf("PUBSUB NUMSUB: %v", err)
 		}
-		if counts["chat:room:"+roomID.String()] > 0 {
+		if counts[channel] > 0 {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Fatal("redis never reported a subscriber on the room's channel")
+	t.Fatalf("redis never reported a subscriber on %s", channel)
+}
+
+func TestSignalsCrossBetweenInstancesOnTheirOwnTopics(t *testing.T) {
+	writer, reader := newBus(t), newBus(t)
+
+	roomID, userID := uuid.New(), uuid.New()
+
+	roomSignals, stopRoom, err := reader.SubscribeSignals(t.Context(), roomID)
+	if err != nil {
+		t.Fatalf("SubscribeSignals: %v", err)
+	}
+	defer stopRoom()
+
+	userSignals, stopUser, err := reader.SubscribeUserSignals(t.Context(), userID)
+	if err != nil {
+		t.Fatalf("SubscribeUserSignals: %v", err)
+	}
+	defer stopUser()
+
+	waitForChannel(t, "chat:room:"+roomID.String()+":signals")
+	waitForChannel(t, "chat:user:"+userID.String()+":signals")
+
+	typing := pubsub.Signal{Kind: pubsub.SignalTyping, RoomID: roomID, UserID: uuid.New()}
+	if err := writer.PublishSignal(t.Context(), typing); err != nil {
+		t.Fatalf("PublishSignal: %v", err)
+	}
+
+	added := pubsub.Signal{Kind: pubsub.SignalRoomAdded, RoomID: uuid.New(), UserID: uuid.New()}
+	if err := writer.PublishUserSignal(t.Context(), userID, added); err != nil {
+		t.Fatalf("PublishUserSignal: %v", err)
+	}
+
+	if got := receiveSignal(t, roomSignals); got != typing {
+		t.Errorf("room topic delivered %+v, want %+v", got, typing)
+	}
+	if got := receiveSignal(t, userSignals); got != added {
+		t.Errorf("user topic delivered %+v, want %+v", got, added)
+	}
+
+	select {
+	case extra := <-roomSignals:
+		t.Errorf("the room topic also delivered %+v", extra)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func receiveSignal(t *testing.T, ch <-chan pubsub.Signal) pubsub.Signal {
+	t.Helper()
+
+	select {
+	case sig, ok := <-ch:
+		if !ok {
+			t.Fatal("the subscription closed before a signal arrived")
+		}
+		return sig
+	case <-time.After(5 * time.Second):
+		t.Fatal("no signal arrived")
+		return pubsub.Signal{}
+	}
 }

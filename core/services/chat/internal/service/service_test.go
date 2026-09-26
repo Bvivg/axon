@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -323,6 +324,41 @@ func TestListRoomsReturnsOnlyTheCallersOwn(t *testing.T) {
 	}
 	if len(rooms) != 1 || rooms[0].ID != mine.ID {
 		t.Fatalf("listed %d rooms, want only the caller's own", len(rooms))
+	}
+}
+
+func TestListRoomsReportsHowFarTheOthersHaveRead(t *testing.T) {
+	h := newHarness(t)
+
+	room, owner := h.openRoom(t, "general")
+	reader := uuid.New()
+	if _, _, err := h.svc.JoinRoom(t.Context(), service.JoinRoomInput{
+		RoomID: room.ID, UserID: reader, DisplayName: "Reader",
+	}); err != nil {
+		t.Fatalf("JoinRoom: %v", err)
+	}
+
+	var last domain.Message
+	for i, body := range []string{"one", "two", "three"} {
+		m, _, err := h.svc.Send(t.Context(), service.SendInput{
+			RoomID: room.ID, AuthorID: owner, Body: body, ClientID: fmt.Sprintf("c-%d", i),
+		})
+		if err != nil {
+			t.Fatalf("Send(%q): %v", body, err)
+		}
+		last = m
+	}
+
+	if err := h.svc.MarkRead(t.Context(), room.ID, reader, last.Seq-1); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+
+	rooms, err := h.svc.ListRooms(t.Context(), owner)
+	if err != nil {
+		t.Fatalf("ListRooms: %v", err)
+	}
+	if len(rooms) != 1 || rooms[0].OthersReadSeq != last.Seq-1 {
+		t.Fatalf("the owner sees the others read up to %+v, want %d", rooms, last.Seq-1)
 	}
 }
 

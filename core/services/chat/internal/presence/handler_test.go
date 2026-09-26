@@ -41,7 +41,7 @@ func newFakeTracker() *fakeTracker {
 	}
 }
 
-func (f *fakeTracker) Touch(_ context.Context, sessionID string, ttl time.Duration) error {
+func (f *fakeTracker) Touch(_ context.Context, sessionID, _ string, ttl time.Duration) error {
 	f.mu.Lock()
 	f.touches = append(f.touches, touch{sessionID: sessionID, ttl: ttl})
 	f.mu.Unlock()
@@ -49,12 +49,42 @@ func (f *fakeTracker) Touch(_ context.Context, sessionID string, ttl time.Durati
 	return nil
 }
 
-func (f *fakeTracker) Clear(_ context.Context, sessionID string) error {
+func (f *fakeTracker) Clear(_ context.Context, sessionID, _ string) error {
 	f.mu.Lock()
 	f.cleared = append(f.cleared, sessionID)
 	f.mu.Unlock()
 	f.clearedC <- struct{}{}
 	return nil
+}
+
+func (f *fakeTracker) PublishChanged(context.Context, string) error {
+	return nil
+}
+
+type fakeLastSeen struct {
+	mu       sync.Mutex
+	recorded []string
+	seenC    chan struct{}
+}
+
+func newFakeLastSeen() *fakeLastSeen {
+	return &fakeLastSeen{seenC: make(chan struct{}, 16)}
+}
+
+func (f *fakeLastSeen) UpdateLastSeen(_ context.Context, accessToken string) {
+	f.mu.Lock()
+	f.recorded = append(f.recorded, accessToken)
+	f.mu.Unlock()
+	f.seenC <- struct{}{}
+}
+
+func (f *fakeLastSeen) waitRecorded(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.seenC:
+	case <-time.After(5 * time.Second):
+		t.Fatal("last seen was never recorded")
+	}
 }
 
 func (f *fakeTracker) waitTouched(t *testing.T) {
@@ -87,9 +117,10 @@ func (f *fakeTracker) sessionIDs() []string {
 }
 
 type harness struct {
-	server  *httptest.Server
-	tracker *fakeTracker
-	issue   func(t *testing.T, userID, familyID uuid.UUID, ttl time.Duration) string
+	server   *httptest.Server
+	tracker  *fakeTracker
+	lastSeen *fakeLastSeen
+	issue    func(t *testing.T, userID, familyID uuid.UUID, ttl time.Duration) string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -116,10 +147,12 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	tracker := newFakeTracker()
+	lastSeen := newFakeLastSeen()
 
 	handler, err := presence.New(presence.Config{
 		Verifier: verifier,
 		Tracker:  tracker,
+		LastSeen: lastSeen,
 		Logger:   logger.Discard(),
 	})
 	if err != nil {
@@ -130,8 +163,9 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(server.Close)
 
 	return &harness{
-		server:  server,
-		tracker: tracker,
+		server:   server,
+		tracker:  tracker,
+		lastSeen: lastSeen,
 		issue: func(t *testing.T, userID, familyID uuid.UUID, ttl time.Duration) string {
 			t.Helper()
 			return signToken(t, key, keyID, issuer, audience, userID, familyID, ttl)
@@ -191,6 +225,7 @@ func TestDisconnectingClearsPresence(t *testing.T) {
 	}
 
 	h.tracker.waitCleared(t)
+	h.lastSeen.waitRecorded(t)
 
 	h.tracker.mu.Lock()
 	cleared := append([]string(nil), h.tracker.cleared...)
@@ -198,6 +233,39 @@ func TestDisconnectingClearsPresence(t *testing.T) {
 
 	if len(cleared) == 0 || cleared[0] != familyID.String() {
 		t.Errorf("cleared sessions = %v, want to include %q", cleared, familyID.String())
+	}
+}
+
+func TestAnExpiringTokenRotatesTheSocketWithoutGoingOffline(t *testing.T) {
+	h := newHarness(t)
+
+	userID, familyID := uuid.New(), uuid.New()
+	conn, err := h.dial(t, h.issue(t, userID, familyID, 5*time.Second+500*time.Millisecond))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.CloseNow() })
+
+	h.tracker.waitTouched(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	if _, err := conn.Read(ctx); err == nil {
+		t.Fatal("the socket stayed open past the token's expiry")
+	} else if code := sharedws.CloseStatus(err); code != presence.CloseTokenExpired {
+		t.Errorf("closed with %d, want %d", code, presence.CloseTokenExpired)
+	}
+
+	h.lastSeen.waitRecorded(t)
+	time.Sleep(200 * time.Millisecond)
+
+	h.tracker.mu.Lock()
+	cleared := len(h.tracker.cleared)
+	h.tracker.mu.Unlock()
+
+	if cleared != 0 {
+		t.Errorf("presence was cleared %d times on a token rotation, want 0", cleared)
 	}
 }
 

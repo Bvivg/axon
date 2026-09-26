@@ -40,6 +40,15 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 
 	case errors.Is(err, domain.ErrMessageNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("message not found"))
+
+	case errors.Is(err, domain.ErrDirectRoomNotJoinable):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("direct rooms cannot be joined"))
+
+	case errors.Is(err, domain.ErrInvalidReplyTarget),
+		errors.Is(err, domain.ErrInvalidForwardTarget),
+		errors.Is(err, domain.ErrCannotMessageSelf),
+		errors.Is(err, domain.ErrSystemKindNotSendable):
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
 	log.ErrorContext(ctx, "unhandled error", "error", err)

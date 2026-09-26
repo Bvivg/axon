@@ -22,7 +22,9 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
+	"github.com/bvivg/axon/core/shared/pkg/revocation"
 
+	"github.com/bvivg/axon/core/services/chat/internal/attachment"
 	"github.com/bvivg/axon/core/services/chat/internal/config"
 	"github.com/bvivg/axon/core/services/chat/internal/events"
 	"github.com/bvivg/axon/core/services/chat/internal/identity"
@@ -144,11 +146,23 @@ func run() error {
 		}
 	}()
 
+	revocationSubscriber, err := revocation.NewSubscriber(cache)
+	if err != nil {
+		return err
+	}
+
+	presenceTracker := presence.NewTracker(cache)
+
 	socket, err := chatws.New(chatws.Config{
-		Service:  svc,
-		Verifier: verifier,
-		Bus:      bus,
-		Logger:   log,
+		Service:     svc,
+		Verifier:    verifier,
+		Bus:         bus,
+		Signals:     bus,
+		UserSignals: bus,
+		Names:       names,
+		Revocation:  revocationSubscriber,
+		Presence:    presenceTracker,
+		Logger:      log,
 	})
 	if err != nil {
 		return err
@@ -156,7 +170,8 @@ func run() error {
 
 	presenceSocket, err := chatpresence.New(chatpresence.Config{
 		Verifier: verifier,
-		Tracker:  presence.NewTracker(cache),
+		Tracker:  presenceTracker,
+		LastSeen: names,
 		Logger:   log,
 	})
 	if err != nil {
@@ -167,6 +182,29 @@ func run() error {
 		Service:  svc,
 		Verifier: verifier,
 		Names:    names,
+		Signals:  bus,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
+	attachmentStore, err := attachment.NewStore(attachment.StoreConfig{
+		Endpoint:  cfg.Attachments.Endpoint,
+		AccessKey: cfg.Attachments.AccessKey,
+		SecretKey: cfg.Attachments.SecretKey,
+		Bucket:    cfg.Attachments.Bucket,
+		UseSSL:    cfg.Attachments.UseSSL,
+	})
+	if err != nil {
+		return err
+	}
+	attachmentURLs := attachment.NewURLBuilder(cfg.Attachments.PublicURL, cfg.Attachments.Bucket)
+
+	attachmentUpload, err := server.NewAttachmentHandler(server.AttachmentConfig{
+		Verifier: verifier,
+		Store:    attachmentStore,
+		URLs:     attachmentURLs,
 		Logger:   log,
 	})
 	if err != nil {
@@ -177,7 +215,7 @@ func run() error {
 
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(handler, socket, presenceSocket, metrics, log),
+		Handler:           publicHandler(handler, socket, presenceSocket, attachmentUpload, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -230,6 +268,7 @@ func publicHandler(
 	handler *server.Handler,
 	socket *chatws.Handler,
 	presenceSocket *chatpresence.Handler,
+	attachmentUpload *server.AttachmentHandler,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
 ) http.Handler {
@@ -237,6 +276,7 @@ func publicHandler(
 
 	mux.Handle(chatws.Path, socket)
 	mux.Handle(chatpresence.Path, presenceSocket)
+	mux.Handle("POST "+server.AttachmentUploadPath, attachmentUpload)
 
 	mux.Handle(chatv1connect.NewChatServiceHandler(handler,
 		connect.WithInterceptors(
