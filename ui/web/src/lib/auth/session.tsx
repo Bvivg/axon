@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
@@ -32,6 +33,7 @@ interface Session {
 const SessionContext = createContext<Session | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<SessionStatus>("restoring");
   const [user, setUser] = useState<User | null>(null);
 
@@ -59,9 +61,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
 
     clearAccessToken();
+    queryClient.clear();
     setUser(null);
     setStatus("anonymous");
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     let cancelled = false;
