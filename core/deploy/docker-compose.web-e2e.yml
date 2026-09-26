@@ -64,7 +64,9 @@ services:
       - >
         mc alias set local http://minio:9000 axon axon12345 &&
         mc mb --ignore-existing local/avatars &&
-        mc anonymous set download local/avatars
+        mc anonymous set download local/avatars &&
+        mc mb --ignore-existing local/chat-attachments &&
+        mc anonymous set download local/chat-attachments
     depends_on:
       minio:
         condition: service_healthy
@@ -156,6 +158,11 @@ services:
       JWT_AUDIENCE: axon
       AUTH_SERVICE_URL: http://auth:8081
 
+      ATTACHMENTS_ENDPOINT: "minio:9000"
+      ATTACHMENTS_PUBLIC_URL: "http://minio:9000"
+      MINIO_ROOT_USER: axon
+      MINIO_ROOT_PASSWORD: axon12345
+
     depends_on:
       migrate-chat:
         condition: service_completed_successfully
@@ -163,6 +170,8 @@ services:
         condition: service_healthy
       auth:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/healthz"]
       interval: 2s

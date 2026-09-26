@@ -72,7 +72,9 @@ services:
       - >
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
         mc mb --ignore-existing local/avatars &&
-        mc anonymous set download local/avatars
+        mc anonymous set download local/avatars &&
+        mc mb --ignore-existing local/chat-attachments &&
+        mc anonymous set download local/chat-attachments
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
@@ -171,6 +173,9 @@ services:
       AUTH_SERVICE_URL: "http://auth:8081"
 
       KAFKA_BROKERS: "kafka:29092"
+
+      ATTACHMENTS_ENDPOINT: "minio:9000"
+      ATTACHMENTS_PUBLIC_URL: ${ATTACHMENTS_PUBLIC_URL:-http://localhost:59000}
     ports:
       - "${CHAT_HOST_PORT:-8082}:8082"
       - "${CHAT_METRICS_HOST_PORT:-9092}:9092"
@@ -185,6 +190,9 @@ services:
 
       kafka:
         condition: service_healthy
+
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9092/healthz"]
       interval: 5s
@@ -241,7 +249,7 @@ services:
 
       WATCHPACK_POLLING: "true"
     ports:
-      - "${WEB_HOST_PORT:-3000}:3000"
+      - "${WEB_HOST_PORT:-3003}:3000"
     volumes:
       - ../../ui/web:/app
 

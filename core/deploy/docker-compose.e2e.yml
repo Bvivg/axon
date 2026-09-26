@@ -65,7 +65,9 @@ services:
       - >
         mc alias set local http://minio:9000 axon axon12345 &&
         mc mb --ignore-existing local/avatars &&
-        mc anonymous set download local/avatars
+        mc anonymous set download local/avatars &&
+        mc mb --ignore-existing local/chat-attachments &&
+        mc anonymous set download local/chat-attachments
     depends_on:
       minio:
         condition: service_healthy
@@ -154,11 +156,18 @@ services:
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: axon
 
+      ATTACHMENTS_ENDPOINT: "minio:9000"
+      ATTACHMENTS_PUBLIC_URL: "http://minio:9000"
+      MINIO_ROOT_USER: axon
+      MINIO_ROOT_PASSWORD: axon12345
+
     depends_on:
       migrate-chat:
         condition: service_completed_successfully
       auth:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/healthz"]
       interval: 2s
@@ -211,6 +220,8 @@ services:
       GATEWAY_ADMIN_URL: http://gateway:9090
 
       OAUTH_FAKE_AUTHORIZE_URL: http://auth:8081/oauth/fake/authorize
+
+      POSTGRES_DSN: postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth
 
       MINIO_ENDPOINT: minio:9000
       MINIO_ROOT_USER: axon
