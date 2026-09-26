@@ -5,13 +5,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
 )
 
-const MaxUploadBytes = 25 << 20
+const MaxUploadBytes = 100 << 20
 
 type Config struct {
 	Upstream string
@@ -72,7 +73,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes)
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, h.upstream, r.Body)
+	target := h.upstream
+	if as := r.URL.Query().Get("as"); as != "" {
+		target += "?" + url.Values{"as": {as}}.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, r.Body)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

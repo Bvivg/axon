@@ -19,6 +19,7 @@ var allowedHeaders = []string{
 	"Grpc-Timeout",
 	"X-Grpc-Web",
 	"X-User-Agent",
+	"X-Filename",
 }
 
 var exposedHeaders = []string{

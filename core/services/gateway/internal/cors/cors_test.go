@@ -57,7 +57,7 @@ func TestPreflightFromAnAllowedOrigin(t *testing.T) {
 
 	allowHeaders := h.Get("Access-Control-Allow-Headers")
 	for _, required := range []string{
-		"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms",
+		"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms", "X-Filename",
 	} {
 		if !strings.Contains(allowHeaders, required) {
 			t.Errorf("Allow-Headers is missing %q: %q", required, allowHeaders)
