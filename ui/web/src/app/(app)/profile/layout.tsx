@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { profileOverview, profilePages } from "@/components/profile/profile-nav";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 
@@ -49,7 +50,7 @@ export default function ProfileLayout({ children }: { children: ReactNode }) {
         </button>
       </nav>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
+      <ScrollArea className="flex-1">{children}</ScrollArea>
     </div>
   );
 }

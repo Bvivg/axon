@@ -11,6 +11,7 @@ import { Tabbar } from "@/components/nav/tabbar";
 import { Topbar } from "@/components/nav/topbar";
 import { useGlobalShortcuts } from "@/components/nav/use-shortcuts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingDots } from "@/components/ui/status";
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
@@ -36,7 +37,12 @@ function SignedInShell({ children }: { children: ReactNode }) {
         <AppSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-28 lg:pb-0">{children}</div>
+          <ScrollArea className="flex-1">
+            <div className="flex h-full flex-col">
+              {children}
+              <div aria-hidden className="h-28 shrink-0 lg:hidden" />
+            </div>
+          </ScrollArea>
           <Tabbar />
         </div>
       </div>

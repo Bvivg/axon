@@ -6,6 +6,7 @@ import { useMemo, useRef } from "react";
 import { useRoomTyping } from "@/components/chat/chat-activity";
 import { RoomListItem } from "@/components/chat/room-list-item";
 import { Alert } from "@/components/ui/alert";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
 import { describe } from "@/lib/errors";
 import { useRooms } from "@/lib/query/chat";
@@ -55,7 +56,7 @@ export function RoomList() {
   }
 
   return (
-    <div ref={viewport} className="min-h-0 flex-1 overflow-y-auto">
+    <ScrollArea className="flex-1" viewportProps={{ ref: viewport }}>
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((row) => {
           const room = rooms.data[row.index];
@@ -77,6 +78,6 @@ export function RoomList() {
           );
         })}
       </div>
-    </div>
+    </ScrollArea>
   );
 }
