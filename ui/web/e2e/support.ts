@@ -59,7 +59,7 @@ export async function expectSessions(page: Page): Promise<void> {
 
 export async function expectLobby(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/chat$/);
-  await expect(page.getByRole("heading", { name: "Your rooms" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Chats", exact: true })).toBeVisible();
 }
 
 export async function expectHome(page: Page): Promise<void> {

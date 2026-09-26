@@ -166,7 +166,7 @@ export const Transcript = memo(function Transcript({
                   />
                 )}
 
-                <div
+                <article
                   className={cn(
                     "max-w-[75%] rounded-2xl px-3 py-2",
                     mine
@@ -195,7 +195,7 @@ export const Transcript = memo(function Transcript({
                       )
                     ) : null}
                   </div>
-                </div>
+                </article>
               </div>
             </div>
           );
