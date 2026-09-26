@@ -20,6 +20,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 
+	"github.com/bvivg/axon/core/services/gateway/internal/attachmentproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/avatarproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/config"
 	"github.com/bvivg/axon/core/services/gateway/internal/cookie"
@@ -165,9 +166,20 @@ func run() error {
 		return err
 	}
 
+	attachmentUpload, err := attachmentproxy.New(attachmentproxy.Config{
+		Upstream: cfg.ChatServiceURL + "/internal/attachment",
+		Verifier: verifier,
+		Limiter:  sensitive,
+		Client:   upstream,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, presenceSocket, avatarUpload, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, presenceSocket, avatarUpload, attachmentUpload, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -193,11 +205,12 @@ func run() error {
 }
 
 const (
-	chatSocketPath      = "/ws/chat"
-	chatSubprotocol     = "axon.chat.v1"
-	presenceSocketPath  = "/ws/presence"
-	presenceSubprotocol = "axon.presence.v1"
-	avatarUploadPath    = "/api/avatar"
+	chatSocketPath       = "/ws/chat"
+	chatSubprotocol      = "axon.chat.v1"
+	presenceSocketPath   = "/ws/presence"
+	presenceSubprotocol  = "axon.presence.v1"
+	avatarUploadPath     = "/api/avatar"
+	attachmentUploadPath = "/api/attachment"
 )
 
 func publicHandler(
@@ -207,6 +220,7 @@ func publicHandler(
 	chatSocket http.Handler,
 	presenceSocket http.Handler,
 	avatarUpload http.Handler,
+	attachmentUpload http.Handler,
 	policyGuard connect.Interceptor,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
@@ -216,6 +230,7 @@ func publicHandler(
 	mux.Handle(chatSocketPath, chatSocket)
 	mux.Handle(presenceSocketPath, presenceSocket)
 	mux.Handle("POST "+avatarUploadPath, avatarUpload)
+	mux.Handle("POST "+attachmentUploadPath, attachmentUpload)
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(

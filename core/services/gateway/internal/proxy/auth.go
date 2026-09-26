@@ -97,6 +97,55 @@ func (a *Auth) RevokeSession(
 	return a.client.RevokeSession(ctx, forward(ctx, req))
 }
 
+func (a *Auth) GetUserByEmail(
+	ctx context.Context,
+	req *connect.Request[authv1.GetUserByEmailRequest],
+) (*connect.Response[authv1.GetUserByEmailResponse], error) {
+	return a.client.GetUserByEmail(ctx, forward(ctx, req))
+}
+
+func (a *Auth) ListRoles(
+	ctx context.Context,
+	req *connect.Request[authv1.ListRolesRequest],
+) (*connect.Response[authv1.ListRolesResponse], error) {
+	return a.client.ListRoles(ctx, forward(ctx, req))
+}
+
+func (a *Auth) AssignRole(
+	ctx context.Context,
+	req *connect.Request[authv1.AssignRoleRequest],
+) (*connect.Response[authv1.AssignRoleResponse], error) {
+	return a.client.AssignRole(ctx, forward(ctx, req))
+}
+
+func (a *Auth) RevokeRole(
+	ctx context.Context,
+	req *connect.Request[authv1.RevokeRoleRequest],
+) (*connect.Response[authv1.RevokeRoleResponse], error) {
+	return a.client.RevokeRole(ctx, forward(ctx, req))
+}
+
+func (a *Auth) SearchUsers(
+	ctx context.Context,
+	req *connect.Request[authv1.SearchUsersRequest],
+) (*connect.Response[authv1.SearchUsersResponse], error) {
+	return a.client.SearchUsers(ctx, forward(ctx, req))
+}
+
+func (a *Auth) GetUsersPublicProfiles(
+	ctx context.Context,
+	req *connect.Request[authv1.GetUsersPublicProfilesRequest],
+) (*connect.Response[authv1.GetUsersPublicProfilesResponse], error) {
+	return a.client.GetUsersPublicProfiles(ctx, forward(ctx, req))
+}
+
+func (a *Auth) UpdateLastSeen(
+	ctx context.Context,
+	req *connect.Request[authv1.UpdateLastSeenRequest],
+) (*connect.Response[authv1.UpdateLastSeenResponse], error) {
+	return a.client.UpdateLastSeen(ctx, forward(ctx, req))
+}
+
 func forward[T any](ctx context.Context, req *connect.Request[T]) *connect.Request[T] {
 	out := connect.NewRequest(req.Msg)
 

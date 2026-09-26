@@ -60,6 +60,61 @@ func TestAuthProcedures(t *testing.T) {
 	}
 }
 
+func TestRBACProcedures(t *testing.T) {
+	tests := map[string]struct {
+		procedure  string
+		wantPublic bool
+		wantTier   policy.Tier
+	}{
+		"list roles":  {authv1connect.AuthServiceListRolesProcedure, false, policy.TierStandard},
+		"assign role": {authv1connect.AuthServiceAssignRoleProcedure, false, policy.TierSensitive},
+		"revoke role": {authv1connect.AuthServiceRevokeRoleProcedure, false, policy.TierSensitive},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			rule := policy.For(tt.procedure)
+
+			if rule.Public != tt.wantPublic {
+				t.Errorf("Public = %v, want %v", rule.Public, tt.wantPublic)
+			}
+			if rule.Tier != tt.wantTier {
+				t.Errorf("Tier = %v, want %v", rule.Tier, tt.wantTier)
+			}
+		})
+	}
+}
+
+func TestDirectMessagingProcedures(t *testing.T) {
+	tests := map[string]struct {
+		procedure  string
+		wantPublic bool
+		wantTier   policy.Tier
+	}{
+		"search users": {authv1connect.AuthServiceSearchUsersProcedure, false, policy.TierSensitive},
+		"get users public profiles": {
+			authv1connect.AuthServiceGetUsersPublicProfilesProcedure, false, policy.TierStandard,
+		},
+		"update last seen": {authv1connect.AuthServiceUpdateLastSeenProcedure, false, policy.TierStandard},
+		"hide room":        {chatv1connect.ChatServiceHideRoomProcedure, false, policy.TierStandard},
+		"get direct room":  {chatv1connect.ChatServiceGetDirectRoomProcedure, false, policy.TierStandard},
+		"mark read":        {chatv1connect.ChatServiceMarkReadProcedure, false, policy.TierStandard},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			rule := policy.For(tt.procedure)
+
+			if rule.Public != tt.wantPublic {
+				t.Errorf("Public = %v, want %v", rule.Public, tt.wantPublic)
+			}
+			if rule.Tier != tt.wantTier {
+				t.Errorf("Tier = %v, want %v", rule.Tier, tt.wantTier)
+			}
+		})
+	}
+}
+
 func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 	for _, procedure := range []string{
 		authv1connect.AuthServiceLoginProcedure,
@@ -74,20 +129,31 @@ func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 
 func TestPolicyMatchesTheContract(t *testing.T) {
 	known := map[string]bool{
-		authv1connect.AuthServiceRegisterProcedure:      true,
-		authv1connect.AuthServiceLoginProcedure:         true,
-		authv1connect.AuthServiceRefreshTokenProcedure:  true,
-		authv1connect.AuthServiceLogoutProcedure:        true,
-		authv1connect.AuthServiceGetMeProcedure:         true,
-		authv1connect.AuthServiceStartOAuthProcedure:    true,
-		authv1connect.AuthServiceCompleteOAuthProcedure: true,
+		authv1connect.AuthServiceRegisterProcedure:       true,
+		authv1connect.AuthServiceLoginProcedure:          true,
+		authv1connect.AuthServiceRefreshTokenProcedure:   true,
+		authv1connect.AuthServiceLogoutProcedure:         true,
+		authv1connect.AuthServiceGetMeProcedure:          true,
+		authv1connect.AuthServiceStartOAuthProcedure:     true,
+		authv1connect.AuthServiceCompleteOAuthProcedure:  true,
+		authv1connect.AuthServiceGetUserByEmailProcedure: true,
+		authv1connect.AuthServiceListRolesProcedure:      true,
+		authv1connect.AuthServiceAssignRoleProcedure:     true,
+		authv1connect.AuthServiceRevokeRoleProcedure:     true,
 
-		chatv1connect.ChatServiceCreateRoomProcedure:   true,
-		chatv1connect.ChatServiceListRoomsProcedure:    true,
-		chatv1connect.ChatServiceGetRoomProcedure:      true,
-		chatv1connect.ChatServiceJoinRoomProcedure:     true,
-		chatv1connect.ChatServiceLeaveRoomProcedure:    true,
-		chatv1connect.ChatServiceListMessagesProcedure: true,
+		authv1connect.AuthServiceSearchUsersProcedure:            true,
+		authv1connect.AuthServiceGetUsersPublicProfilesProcedure: true,
+		authv1connect.AuthServiceUpdateLastSeenProcedure:         true,
+
+		chatv1connect.ChatServiceCreateRoomProcedure:    true,
+		chatv1connect.ChatServiceListRoomsProcedure:     true,
+		chatv1connect.ChatServiceGetRoomProcedure:       true,
+		chatv1connect.ChatServiceJoinRoomProcedure:      true,
+		chatv1connect.ChatServiceLeaveRoomProcedure:     true,
+		chatv1connect.ChatServiceListMessagesProcedure:  true,
+		chatv1connect.ChatServiceHideRoomProcedure:      true,
+		chatv1connect.ChatServiceGetDirectRoomProcedure: true,
+		chatv1connect.ChatServiceMarkReadProcedure:      true,
 	}
 
 	for _, procedure := range policy.Procedures() {
