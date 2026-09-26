@@ -3,16 +3,20 @@
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Images, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
+import { MediaViewer } from "@/components/chat/media-viewer";
+import { MessageComposer } from "@/components/chat/message-composer";
+import { RoomMedia } from "@/components/chat/room-media";
 import { Transcript } from "@/components/chat/transcript";
 import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
 import { signInPath } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
+import { usePendingUploads } from "@/lib/chat/use-pending-uploads";
 import { describe } from "@/lib/errors";
 import { usePageVisible } from "@/lib/hooks/use-page-visible";
 import { chatKeys, useHistory, useMarkRead, useRoom } from "@/lib/query/chat";
@@ -81,7 +85,11 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     }
   }, [socket.revoked, signOut, router]);
 
-  const [draft, setDraft] = useState("");
+  const uploads = usePendingUploads();
+  const [viewing, setViewing] = useState<WireMessage | null>(null);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
 
   const names = useMemo(() => {
     const byID = new Map<string, string>();
@@ -124,6 +132,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     }
     void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(roomID) });
     void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
+    void queryClient.invalidateQueries({ queryKey: chatKeys.media(roomID) });
   }, [roomID, latestSeq, queryClient]);
 
   const pageVisible = usePageVisible();
@@ -154,13 +163,6 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     );
   }
 
-  const onSend = (event: FormEvent) => {
-    event.preventDefault();
-    if (socket.send(draft)) {
-      setDraft("");
-    }
-  };
-
   const isDirect = peerID !== undefined || roomKind === RoomKind.DIRECT;
   const title = isDirect
     ? peerProfile?.displayName || (peerID ? "New chat" : "Direct message")
@@ -183,15 +185,54 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           room.data?.room ? ` · ${room.data.room.memberCount} in the room` : ""
         }`);
 
-  const onDraftChange = (value: string) => {
-    setDraft(value);
-    if (value.trim() !== "") {
-      socket.notifyTyping();
+  const carriesFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
+
+  const onDragEnter = (event: DragEvent) => {
+    if (!carriesFiles(event) || !socket.connected) return;
+    event.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  };
+
+  const onDragOver = (event: DragEvent) => {
+    if (!carriesFiles(event) || !socket.connected) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const onDragLeave = (event: DragEvent) => {
+    if (!carriesFiles(event)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) {
+      setDragging(false);
+    }
+  };
+
+  const onDrop = (event: DragEvent) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    const files = [...event.dataTransfer.files];
+    if (files.length > 0 && socket.connected) {
+      uploads.add(files);
     }
   };
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col px-4 py-4 md:px-6">
+    <main
+      className="relative flex min-h-0 flex-1 flex-col px-4 py-4 md:px-6"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragging ? (
+        <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-signal bg-background/90 text-sm font-medium">
+          <Upload aria-hidden className="size-6 text-signal" />
+          Drop to attach
+        </div>
+      ) : null}
       <header className="flex shrink-0 items-center gap-3 border-b border-border pb-4">
         {isDirect ? (
           <Avatar
@@ -217,6 +258,11 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
             </p>
           ) : null}
         </div>
+        {roomID ? (
+          <Button variant="ghost" size="icon" aria-label="Media" onClick={() => setMediaOpen(true)}>
+            <Images />
+          </Button>
+        ) : null}
       </header>
 
       {room.isError ? <Alert className="mt-3">{describe(room.error)}</Alert> : null}
@@ -233,20 +279,26 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         onLoadOlder={onLoadOlder}
         hasOlder={history.hasNextPage}
         loadingOlder={history.isFetchingNextPage}
+        onOpenMedia={setViewing}
       />
 
-      <form className="flex shrink-0 items-center gap-3 pt-3" onSubmit={onSend}>
-        <Input
-          aria-label="Message"
-          value={draft}
-          onChange={(event) => onDraftChange(event.target.value)}
-          placeholder={socket.connected ? "Say something" : "Waiting for the connection…"}
-          disabled={!socket.connected}
+      <MessageComposer
+        connected={socket.connected}
+        uploads={uploads}
+        onSend={socket.send}
+        onTyping={socket.notifyTyping}
+      />
+
+      <MediaViewer message={viewing} onClose={() => setViewing(null)} />
+      {roomID ? (
+        <RoomMedia
+          roomID={roomID}
+          names={names}
+          selfID={user.id}
+          open={mediaOpen}
+          onOpenChange={setMediaOpen}
         />
-        <Button type="submit" variant="signal" disabled={!socket.connected || draft.trim() === ""}>
-          Send
-        </Button>
-      </form>
+      ) : null}
     </main>
   );
 }

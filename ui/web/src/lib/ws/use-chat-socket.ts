@@ -47,7 +47,7 @@ export interface ChatSocket {
 
   typing: ReadonlySet<string>;
 
-  send: (body: string) => boolean;
+  send: (body: string, uploadId?: string) => boolean;
 
   notifyTyping: () => void;
 }
@@ -210,17 +210,18 @@ export function useChatSocket(
   }, [connected, roomID, sendJsonMessage]);
 
   const send = useCallback(
-    (body: string) => {
-      if (readyState !== ReadyState.OPEN || !body.trim()) {
+    (body: string, uploadId?: string) => {
+      if (readyState !== ReadyState.OPEN || (!body.trim() && !uploadId)) {
         return false;
       }
 
       const clientID = newClientID();
+      const upload = uploadId ? { upload_id: uploadId } : {};
 
       if (roomID) {
-        sendJsonMessage({ type: "send", room_id: roomID, client_id: clientID, body });
+        sendJsonMessage({ type: "send", room_id: roomID, client_id: clientID, body, ...upload });
       } else if (peerID) {
-        sendJsonMessage({ type: "send", to_user_id: peerID, client_id: clientID, body });
+        sendJsonMessage({ type: "send", to_user_id: peerID, client_id: clientID, body, ...upload });
       } else {
         return false;
       }
