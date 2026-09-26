@@ -130,7 +130,7 @@ func run(m *testing.M) (int, error) {
 }
 
 func startMinio(ctx context.Context) (*tcminio.MinioContainer, error) {
-	minioContainer, err := tcminio.Run(ctx, "minio/minio:RELEASE.2025-04-22T22-12-26Z",
+	minioContainer, err := tcminio.Run(ctx, "pgsty/minio:RELEASE.2026-08-04T00-00-00Z",
 		tcminio.WithUsername(minioUser),
 		tcminio.WithPassword(minioPassword),
 	)
