@@ -79,35 +79,6 @@ export function useHistory(roomID: string) {
   });
 }
 
-export function useCreateRoom() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (name: string): Promise<Room | undefined> => {
-      const resp = await chatClient.createRoom({ name });
-      return resp.room;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-    },
-  });
-}
-
-export function useJoinRoom() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (roomID: string) => {
-      await chatClient.joinRoom({ roomId: roomID });
-      return roomID;
-    },
-    onSuccess: (roomID) => {
-      void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-      void queryClient.invalidateQueries({ queryKey: chatKeys.room(roomID) });
-    },
-  });
-}
-
 export function useDirectRoomLookup() {
   return useMutation({
     mutationFn: async (peerID: string): Promise<Room | null> => {

@@ -209,7 +209,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
               className={cn(
                 "truncate text-xs",
                 typingLine || (isDirect && peerProfile?.online)
-                  ? "text-primary"
+                  ? "text-signal"
                   : "text-muted-foreground",
               )}
             >
@@ -243,7 +243,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           placeholder={socket.connected ? "Say something" : "Waiting for the connection…"}
           disabled={!socket.connected}
         />
-        <Button type="submit" disabled={!socket.connected || draft.trim() === ""}>
+        <Button type="submit" variant="signal" disabled={!socket.connected || draft.trim() === ""}>
           Send
         </Button>
       </form>

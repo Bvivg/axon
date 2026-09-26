@@ -1,72 +1,55 @@
 "use client";
 
-import { IdCard, MonitorSmartphone } from "lucide-react";
+import { LogOut } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { useRequireSession } from "@/lib/auth/guards";
+import { profileOverview, profilePages } from "@/components/profile/profile-nav";
 import { useSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 
-const items: { href: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
-  { href: "/profile/my", label: "Personal info", icon: IdCard },
-  { href: "/profile/sessions", label: "Sessions", icon: MonitorSmartphone },
-];
+const rowClass =
+  "flex h-8 items-center gap-2.5 rounded-md px-2 text-sm transition-colors duration-[120ms] ease-signal hover:bg-accent";
 
 export default function ProfileLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isListRoute = pathname === "/profile";
-  const { status } = useSession();
-
-  useRequireSession();
-
-  if (status !== "authenticated") {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </main>
-    );
-  }
+  const { signOut } = useSession();
 
   return (
-    <div className="flex min-h-screen w-full">
-      <aside
-        className={cn(
-          "w-full shrink-0 overflow-y-auto md:sticky md:top-0 md:block md:min-h-screen md:w-72 md:self-start md:border-r md:border-border",
-          isListRoute ? "block" : "hidden",
-        )}
+    <div className="flex min-h-0 flex-1">
+      <nav
+        aria-label="Profile"
+        className="hidden w-56 shrink-0 flex-col gap-px border-r border-border px-2 py-3 md:flex"
       >
-        <ul className="divide-y divide-border">
-          {items.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "flex items-center gap-3 px-6 py-4 text-sm font-medium transition-colors",
-                    active
-                      ? "bg-primary/5 text-primary"
-                      : "text-foreground hover:bg-muted",
-                  )}
-                >
-                  <Icon className="size-5 shrink-0" />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+        <h2 className="eyebrow px-2 pb-1.5">Account</h2>
+        {[profileOverview, ...profilePages].map((page) => {
+          const Icon = page.icon;
+          const active = pathname === page.href;
+          return (
+            <Link
+              key={page.href}
+              href={page.href}
+              aria-current={active ? "page" : undefined}
+              className={cn(rowClass, active ? "bg-accent font-medium" : "text-muted-foreground")}
+            >
+              <Icon aria-hidden className="size-4 shrink-0" strokeWidth={1.5} />
+              {page.label}
+            </Link>
+          );
+        })}
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className={cn(rowClass, "text-muted-foreground hover:text-destructive")}
+        >
+          <LogOut aria-hidden className="size-4 shrink-0" strokeWidth={1.5} />
+          Sign out
+        </button>
+      </nav>
 
-      <div
-        className={cn("min-w-0 flex-1", isListRoute ? "hidden md:block" : "block")}
-      >
-        {children}
-      </div>
+      <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }

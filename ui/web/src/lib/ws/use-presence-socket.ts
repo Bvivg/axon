@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import useWebSocket from "react-use-websocket";
+import useWebSocket, { ReadyState } from "react-use-websocket";
 
 import { refreshSession } from "@/lib/auth/refresh";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { apiBaseUrl } from "@/lib/connect/transport";
+import { forgetRealtimeSocket, reportRealtimeSocket } from "@/lib/ws/connection";
 import { bearerPrefix, closeCodes } from "@/lib/ws/protocol";
 
 const socketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws/presence";
@@ -44,7 +45,7 @@ export function usePresenceSocket(): void {
     };
   }, [token]);
 
-  useWebSocket(token ? socketUrl : null, {
+  const { readyState } = useWebSocket(token ? socketUrl : null, {
     protocols: token ? [presenceSubprotocol, bearerPrefix + token] : undefined,
     share: false,
     retryOnError: true,
@@ -58,4 +59,10 @@ export function usePresenceSocket(): void {
       return event.code !== closeCodes.unauthenticated;
     },
   });
+
+  useEffect(() => {
+    reportRealtimeSocket(readyState === ReadyState.OPEN);
+  }, [readyState]);
+
+  useEffect(() => forgetRealtimeSocket, []);
 }

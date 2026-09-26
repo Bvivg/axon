@@ -3,19 +3,18 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef } from "react";
 
+import { useRoomTyping } from "@/components/chat/chat-activity";
 import { RoomListItem } from "@/components/chat/room-list-item";
 import { Alert } from "@/components/ui/alert";
 import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
 import { describe } from "@/lib/errors";
 import { useRooms } from "@/lib/query/chat";
 import { usePublicProfiles } from "@/lib/query/people";
-import { useRoomActivitySocket } from "@/lib/ws/use-room-activity-socket";
 
 export function RoomList() {
   const viewport = useRef<HTMLDivElement>(null);
   const rooms = useRooms();
 
-  const roomIds = useMemo(() => (rooms.data ?? []).map((room) => room.id), [rooms.data]);
   const peerIDs = useMemo(
     () =>
       (rooms.data ?? [])
@@ -27,7 +26,7 @@ export function RoomList() {
     [rooms.data],
   );
 
-  const typing = useRoomActivitySocket(roomIds, peerIDs);
+  const typing = useRoomTyping();
 
   const profiles = usePublicProfiles(peerIDs);
 

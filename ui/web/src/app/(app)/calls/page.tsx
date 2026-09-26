@@ -1,39 +1,23 @@
-"use client";
+import { MessageSquare, PhoneOff } from "lucide-react";
+import Link from "next/link";
 
-import { Phone } from "lucide-react";
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useRequireSession } from "@/lib/auth/guards";
-import { useSession } from "@/lib/auth/session";
+import { buttonVariants } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function CallsPage() {
-  const { status } = useSession();
-
-  useRequireSession();
-
-  if (status !== "authenticated") {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </main>
-    );
-  }
-
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col items-center justify-center gap-6 px-6 py-12 text-center">
-      <div className="flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-        <Phone className="size-8" />
-      </div>
-
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle>Calling is coming</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Once it lands, the search button below finds somebody by nickname or
-          email to call.
-        </CardContent>
-      </Card>
+    <main className="flex flex-1 items-center justify-center p-4 md:p-8">
+      <EmptyState
+        headingLevel="h1"
+        icon={PhoneOff}
+        title="No calls yet"
+        className="w-full max-w-md rounded-lg border border-dashed border-border py-8"
+      >
+        <Link href="/chat" className={buttonVariants({ variant: "outline" })}>
+          <MessageSquare strokeWidth={1.5} />
+          Open chats
+        </Link>
+      </EmptyState>
     </main>
   );
 }

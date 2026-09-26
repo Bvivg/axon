@@ -42,7 +42,7 @@ export function TabsList({ className, ...props }: ComponentProps<"div">) {
     <div
       role="tablist"
       className={cn(
-        "inline-flex items-center gap-1 rounded-lg bg-muted p-1",
+        "inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5",
         className,
       )}
       {...props}
@@ -69,9 +69,9 @@ export function TabsTrigger({
       aria-selected={active}
       onClick={() => ctx.setValue(value)}
       className={cn(
-        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        "h-[26px] rounded-md px-2.5 text-xs font-medium transition-colors duration-[120ms] ease-signal",
         active
-          ? "bg-background text-foreground shadow-sm"
+          ? "bg-card text-foreground shadow-raised"
           : "text-muted-foreground hover:text-foreground",
         className,
       )}

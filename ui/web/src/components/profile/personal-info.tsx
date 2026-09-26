@@ -1,25 +1,29 @@
 "use client";
 
+import { Check } from "lucide-react";
 import Image from "next/image";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
-import { Alert } from "@/components/ui/alert";
+import { ProfilePage, ProfileSection } from "@/components/profile/profile-page";
+import { Alert, FieldError } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
+import { Input, InputGroup, InputGroupInput } from "@/components/ui/input";
+import { Field, FieldHint, Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/status";
 import type { User } from "@/gen/axon/auth/v1/auth_pb";
 import { useSession } from "@/lib/auth/session";
 import { uploadAvatar, withUploadedAvatar } from "@/lib/avatar/upload";
 import { describe } from "@/lib/errors";
+import { initials, personName } from "@/lib/format";
 import { useUpdateProfile } from "@/lib/query/profile";
 
 const maxAvatarBytes = 5 * 1024 * 1024;
 
 export function PersonalInfo({ user }: { user: User }) {
-  const { updateUser, signOut } = useSession();
+  const { updateUser } = useSession();
   const updateProfile = useUpdateProfile();
 
   const [email, setEmail] = useState(user.email);
@@ -31,6 +35,7 @@ export function PersonalInfo({ user }: { user: User }) {
 
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [avatarPending, setAvatarPending] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -41,12 +46,9 @@ export function PersonalInfo({ user }: { user: User }) {
     try {
       const next = await updateProfile.mutateAsync({
         email: email.trim() !== user.email ? email.trim() : undefined,
-        firstName:
-          firstName.trim() !== (user.firstName ?? "") ? firstName.trim() : undefined,
-        lastName:
-          lastName.trim() !== (user.lastName ?? "") ? lastName.trim() : undefined,
-        nickname:
-          nickname.trim() !== (user.nickname ?? "") ? nickname.trim() : undefined,
+        firstName: firstName.trim() !== (user.firstName ?? "") ? firstName.trim() : undefined,
+        lastName: lastName.trim() !== (user.lastName ?? "") ? lastName.trim() : undefined,
+        nickname: nickname.trim() !== (user.nickname ?? "") ? nickname.trim() : undefined,
       });
       updateUser(next);
       setSaved(true);
@@ -73,154 +75,136 @@ export function PersonalInfo({ user }: { user: User }) {
       const uploaded = await uploadAvatar(file);
       updateUser(withUploadedAvatar(user, uploaded));
     } catch (err) {
-      setAvatarError(
-        err instanceof Error ? err.message : "Could not upload that image.",
-      );
+      setAvatarError(err instanceof Error ? err.message : "Could not upload that image.");
     } finally {
       setAvatarPending(false);
     }
   }
 
-  const displayName = user.displayName || user.email;
-  const initial = displayName.slice(0, 1).toUpperCase();
+  const name = personName(user);
   const avatarSrc = user.avatarUrls?.medium || user.avatarUrl;
   const avatarLarge = user.avatarUrls?.original || user.avatarUrls?.large || avatarSrc;
+  const emailChanged = email.trim() !== user.email;
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-6 py-12">
-      <Card>
-        <CardHeader>
-          <CardTitle>Personal info</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center gap-4">
-            {avatarSrc && avatarLarge ? (
-              <Dialog>
-                <DialogTrigger
-                  aria-label="View avatar"
-                  className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                >
-                  <Avatar
-                    src={avatarSrc}
-                    alt={displayName}
-                    fallback={initial}
-                    className="h-16 w-16 text-xl"
-                    sizes="64px"
-                    priority
-                  />
-                </DialogTrigger>
-                <DialogContent className="w-[min(90vw,32rem)]">
-                  <DialogClose
-                    aria-label="Close"
-                    className="absolute -top-10 right-0 text-sm text-white/80 outline-none hover:text-white"
-                  >
-                    Close
-                  </DialogClose>
-                  <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-muted">
-                    <Image
-                      src={avatarLarge}
-                      alt={displayName}
-                      fill
-                      unoptimized
-                      sizes="90vw"
-                      className="object-cover"
-                    />
-                  </div>
-                </DialogContent>
-              </Dialog>
-            ) : (
-              <Avatar
-                src={avatarSrc}
-                alt={displayName}
-                fallback={initial}
-                className="h-16 w-16 text-xl"
-              />
-            )}
-            <div className="space-y-2">
-              {avatarError ? <Alert>{avatarError}</Alert> : null}
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => void pickAvatar(e)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={avatarPending}
-                onClick={() => fileInput.current?.click()}
-              >
-                {avatarPending ? "Uploading…" : "Change avatar"}
-              </Button>
-            </div>
+    <ProfilePage title="Personal info">
+      <ProfileSection id="photo-heading" label="Photo">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            aria-label="View photo"
+            disabled={!avatarSrc}
+            onClick={() => setViewing(true)}
+            className="rounded-full disabled:cursor-default"
+          >
+            <Avatar
+              self
+              src={avatarSrc}
+              alt={name}
+              fallback={initials(name)}
+              sizes="64px"
+              priority
+              className="size-16 text-lg"
+            />
+          </button>
+          <div className="flex flex-col gap-2">
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => void pickAvatar(e)}
+            />
+            <Button
+              variant="outline"
+              disabled={avatarPending}
+              aria-busy={avatarPending}
+              onClick={() => fileInput.current?.click()}
+            >
+              {avatarPending ? <Spinner /> : null}
+              {avatarPending ? "Uploading…" : "Change photo"}
+            </Button>
+            {avatarError ? <FieldError>{avatarError}</FieldError> : null}
           </div>
+        </div>
+      </ProfileSection>
 
-          <form className="space-y-4" onSubmit={(e) => void submit(e)}>
-            {error ? <Alert>{error}</Alert> : null}
-            {saved ? (
-              <p className="text-sm text-muted-foreground">Saved.</p>
-            ) : null}
+      <ProfileSection id="account-heading" label="Account">
+        <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
+          {error ? <Alert>{error}</Alert> : null}
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
+          <Field>
+            <Label htmlFor="email">Email</Label>
+            <InputGroup>
+              <InputGroupInput
                 id="email"
                 type="email"
                 required
                 value={email}
+                aria-describedby={emailChanged ? "email-hint" : undefined}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              {email.trim() !== user.email ? (
-                <p className="text-xs text-muted-foreground">
-                  Changing your email marks it unverified again.
-                </p>
-              ) : null}
-            </div>
+              {emailChanged ? null : user.emailVerified ? (
+                <Badge variant="success">Verified</Badge>
+              ) : (
+                <Badge variant="warning">Unverified</Badge>
+              )}
+            </InputGroup>
+            {emailChanged ? (
+              <FieldHint id="email-hint">Changing your email marks it unverified again.</FieldHint>
+            ) : null}
+          </Field>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="firstName">First name</Label>
-                <Input
-                  id="firstName"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastName">Last name</Label>
-                <Input
-                  id="lastName"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                />
-              </div>
-            </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <Label htmlFor="firstName">First name</Label>
+              <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+            </Field>
+            <Field>
+              <Label htmlFor="lastName">Last name</Label>
+              <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+            </Field>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="nickname">Nickname (optional)</Label>
-              <Input
-                id="nickname"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-              />
-            </div>
+          <Field>
+            <Label htmlFor="nickname">
+              Nickname <span className="font-normal text-muted-foreground">· optional</span>
+            </Label>
+            <InputGroup>
+              <span aria-hidden className="font-mono text-muted-foreground">
+                @
+              </span>
+              <InputGroupInput id="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+            </InputGroup>
+          </Field>
 
-            <Button type="submit" disabled={updateProfile.isPending}>
+          <div className="flex items-center gap-3 pt-2">
+            <Button type="submit" disabled={updateProfile.isPending} aria-busy={updateProfile.isPending}>
+              {updateProfile.isPending ? <Spinner /> : null}
               {updateProfile.isPending ? "Saving…" : "Save changes"}
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+            {saved ? (
+              <span role="status" className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Check aria-hidden className="size-4 text-success" strokeWidth={2} />
+                Changes saved
+              </span>
+            ) : null}
+          </div>
+        </form>
+      </ProfileSection>
 
-      <Button
-        variant="outline"
-        className="mt-6 w-full"
-        onClick={() => void signOut()}
-      >
-        Sign out
-      </Button>
-    </div>
+      {avatarLarge ? (
+        <Dialog open={viewing} onOpenChange={setViewing}>
+          <DialogContent aria-label="Photo" className="w-[min(calc(100vw-2rem),32rem)] p-2">
+            <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
+              <Image src={avatarLarge} alt={name} fill unoptimized sizes="90vw" className="object-cover" />
+            </div>
+            <DialogClose className="absolute -top-9 right-0 text-sm text-white/85 hover:text-white">
+              Close
+            </DialogClose>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+    </ProfilePage>
   );
 }

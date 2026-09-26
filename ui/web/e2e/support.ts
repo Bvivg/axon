@@ -41,9 +41,9 @@ export async function submitCredentials(
 ): Promise<void> {
   await page.getByLabel("Email").fill(email);
   if (displayName !== undefined) {
-    await page.getByLabel("Display name (optional)").fill(displayName);
+    await page.getByLabel("Display name").fill(displayName);
   }
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: action }).click();
 }
 
@@ -64,7 +64,7 @@ export async function expectLobby(page: Page): Promise<void> {
 
 export async function expectHome(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: "Games are coming" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No active games" })).toBeVisible();
 }
 
 export async function register(
@@ -81,19 +81,21 @@ export async function newPerson(
   browser: Browser,
   label: string,
   displayName: string,
-): Promise<{ page: Page; close: () => Promise<void> }> {
+): Promise<{ page: Page; email: string; close: () => Promise<void> }> {
   const context = await browser.newContext();
   const page = await context.newPage();
+  const email = newEmail(label);
 
-  await register(page, newEmail(label), displayName);
+  await register(page, email, displayName);
 
-  return { page, close: () => context.close() };
+  return { page, email, close: () => context.close() };
 }
 
 export async function goToProfile(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Profile" }).click();
-  await page.getByRole("link", { name: "Personal info" }).click();
+  await page.getByRole("button", { name: "Account" }).click();
+  await page.getByRole("menuitem", { name: "Personal info" }).click();
   await expectProfile(page);
+  await expect(page.getByRole("menu")).toHaveCount(0);
 }
 
 export async function goToSessions(page: Page): Promise<void> {

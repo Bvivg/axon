@@ -1,39 +1,19 @@
 "use client";
 
-import Link from "next/link";
-
-import { CredentialsForm } from "@/components/auth/credentials-form";
+import { CredentialsForm, Mode } from "@/components/auth/credentials-form";
+import { OrDivider, ProviderButtons } from "@/components/auth/provider-buttons";
+import { enabledProviders } from "@/lib/auth/oauth";
 import { useRedirectWhenSignedIn } from "@/lib/auth/guards";
-import { ProviderButtons } from "@/components/auth/provider-buttons";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 export default function LoginPage() {
-
   useRedirectWhenSignedIn();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Sign in</CardTitle>
-      </CardHeader>
-
-      <CardContent className="space-y-6">
-        <CredentialsForm mode="login" />
-        <ProviderButtons />
-      </CardContent>
-
-      <CardFooter className="text-muted-foreground">
-        No account?&nbsp;
-        <Link className="underline underline-offset-4" href="/register">
-          Create one
-        </Link>
-      </CardFooter>
-    </Card>
+    <>
+      <h1 className="text-2xl font-semibold tracking-tight">Sign in to Axon</h1>
+      <ProviderButtons />
+      {enabledProviders().length > 0 ? <OrDivider /> : null}
+      <CredentialsForm mode={Mode.Login} />
+    </>
   );
 }
