@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ]
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://axon:axon@localhost:55432/axon"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    },
+    "docker": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "docker-mcp"
+      ]
+    },
+    "github": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "GITHUB_PERSONAL_ACCESS_TOKEN=\"$(gh auth token)\" exec npx -y @modelcontextprotocol/server-github"
+      ]
+    }
+  }
+}

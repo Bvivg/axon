@@ -174,6 +174,7 @@ axon/
 - `rules/observability.md` — структурированные логи, correlation ID, метрики, трейсинг, health checks
 - `rules/security.md` — секреты, gateway как граница доверия, rate limiting, JWT/JWKS
 - `rules/comments.md` — в коде не пишем комментарии (и почему)
+- `rules/mcp-tools.md` — доступные MCP-серверы и когда их использовать вместо ручных команд
 
 ## Открытые вопросы / TODO
 - Реализация `pathfinding.go` (BFS-валидация стен Quoridor)
