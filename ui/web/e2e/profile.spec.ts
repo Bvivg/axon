@@ -18,7 +18,7 @@ test("editing first, last and nickname updates the displayed name", async ({ pag
   await page.getByLabel("Last name").fill("Lovelace");
   await page.getByRole("button", { name: "Save changes" }).click();
 
-  await expect(page.getByText("Saved.")).toBeVisible();
+  await expect(page.getByText("Changes saved")).toBeVisible();
 
   await page.reload();
   await expect(page.getByLabel("First name")).toHaveValue("Ada");
@@ -43,7 +43,7 @@ test("uploading an avatar shows it immediately and survives a reload", async ({
   await goToProfile(page);
 
   const fileChooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Change avatar" }).click();
+  await page.getByRole("button", { name: "Change photo" }).click();
   const chooser = await fileChooser;
   await chooser.setFiles({
     name: "avatar.png",
@@ -98,7 +98,7 @@ test("the current device shows as online once the presence socket connects", asy
   await page.getByRole("link", { name: "Sessions" }).click();
   await expectSessions(page);
 
-  await expect(page.getByText("Online")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Online", { exact: true })).toBeVisible({ timeout: 15_000 });
 });
 
 function onePixelPNG(): Buffer {

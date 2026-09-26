@@ -3,47 +3,54 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   expectLobby,
   goToProfile,
-  newEmail,
   newPerson,
   open,
-  register,
   signOut,
   submitCredentials,
 } from "./support";
 
+interface Contact {
+  email: string;
+  name: string;
+}
+
 async function goToChats(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Chats" }).click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Chats" }).click();
   await expectLobby(page);
 }
 
-async function openNewChat(page: Page, tab: "Group" | "Join by ID"): Promise<void> {
-  await goToChats(page);
-  await page.getByRole("button", { name: "New chat" }).click();
-  await page.getByRole("tab", { name: tab }).click();
+function chatList(page: Page) {
+  return page.getByRole("complementary", { name: "Chats" });
 }
 
-async function createRoom(page: Page, name: string): Promise<string> {
-  await openNewChat(page, "Group");
-  await page.getByLabel("Group name").fill(name);
-  await page.getByRole("button", { name: "Create" }).click();
+async function startChat(page: Page, contact: Contact, first: string): Promise<string> {
+  await goToChats(page);
+  await page.getByRole("button", { name: "New chat" }).click();
 
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Search").fill(contact.email);
+  await dialog.getByRole("button", { name: contact.name }).click();
+
+  await expect(page).toHaveURL(/\/chat\/new\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: contact.name })).toBeVisible();
+
+  await say(page, first);
   await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
-  await expectConnected(page);
+  await expectSaid(page, "You", first);
 
   return page.url().split("/").pop()!;
 }
 
-async function joinRoom(page: Page, roomID: string): Promise<void> {
-  await openNewChat(page, "Join by ID");
-  await page.getByLabel("Room ID").fill(roomID);
-  await page.getByRole("button", { name: "Join" }).click();
+async function openChatWith(page: Page, name: string): Promise<void> {
+  await goToChats(page);
+  await chatList(page).getByRole("link", { name: new RegExp(name) }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/chat/${roomID}$`));
-  await expectConnected(page);
+  await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
+  await expectReady(page);
 }
 
-async function expectConnected(page: Page): Promise<void> {
-  await expect(page.getByText(/^Connected/)).toBeVisible();
+async function expectReady(page: Page): Promise<void> {
+  await expect(page.getByLabel("Message")).toBeEnabled();
 }
 
 async function say(page: Page, body: string): Promise<void> {
@@ -63,24 +70,23 @@ async function expectSaid(page: Page, author: string, body: string) {
   await expect(message.getByText(author, { exact: true })).toBeVisible();
 }
 
-test("two people in one room see each other's messages as they are sent", async ({
+test("a chat starts from a contact and both people see each other's messages as they are sent", async ({
   browser,
 }) => {
   const ada = await newPerson(browser, "ada", "Ada");
   const grace = await newPerson(browser, "grace", "Grace");
 
-  const roomID = await createRoom(ada.page, "wire protocol");
-  await joinRoom(grace.page, roomID);
+  await startChat(ada.page, { email: grace.email, name: "Grace" }, "did that reach you");
 
-  await say(ada.page, "did that reach you");
-  await expectSaid(ada.page, "You", "did that reach you");
+  await openChatWith(grace.page, "Ada");
   await expectSaid(grace.page, "Ada", "did that reach you");
 
   await say(grace.page, "loud and clear");
   await expectSaid(grace.page, "You", "loud and clear");
   await expectSaid(ada.page, "Grace", "loud and clear");
 
-  await expect(grace.page.getByText("2 in the room")).toBeVisible();
+  await say(ada.page, "good to hear");
+  await expectSaid(grace.page, "Ada", "good to hear");
 
   await ada.close();
   await grace.close();
@@ -90,12 +96,12 @@ test("a page opened cold shows what was said before it existed", async ({
   browser,
 }) => {
   const ada = await newPerson(browser, "history", "Ada");
+  const grace = await newPerson(browser, "history-peer", "Grace");
 
-  await createRoom(ada.page, "before and after");
-  await say(ada.page, "said before the reload");
+  await startChat(ada.page, { email: grace.email, name: "Grace" }, "said before the reload");
 
   await ada.page.reload();
-  await expectConnected(ada.page);
+  await expectReady(ada.page);
   await expectSaid(ada.page, "You", "said before the reload");
 
   await say(ada.page, "said after it");
@@ -103,29 +109,32 @@ test("a page opened cold shows what was said before it existed", async ({
   await expect(ada.page.getByRole("article")).toHaveCount(2);
 
   await goToChats(ada.page);
-  await expect(
-    ada.page.getByRole("link", { name: /before and after/ }),
-  ).toBeVisible();
+  await expect(chatList(ada.page).getByRole("link", { name: /Grace/ })).toBeVisible();
 
   await ada.close();
+  await grace.close();
 });
 
-test("a room is out of reach without a session, and reachable again after signing in", async ({
-  page,
+test("a chat is out of reach without a session, and reachable again after signing in", async ({
+  browser,
 }) => {
-  const email = newEmail("guarded");
+  const ada = await newPerson(browser, "guarded", "Ada");
+  const grace = await newPerson(browser, "guarded-peer", "Grace");
 
-  await register(page, email, "Ada");
-  const roomID = await createRoom(page, "members only");
+  const roomID = await startChat(ada.page, { email: grace.email, name: "Grace" }, "members only");
 
-  await goToProfile(page);
-  await signOut(page);
+  await goToProfile(ada.page);
+  await signOut(ada.page);
 
-  await open(page, `/chat/${roomID}`);
-  await expect(page).toHaveURL(new RegExp(`/login\\?next=%2Fchat%2F${roomID}$`));
+  await open(ada.page, `/chat/${roomID}`);
+  await expect(ada.page).toHaveURL(new RegExp(`/login\\?next=%2Fchat%2F${roomID}$`));
 
-  await submitCredentials(page, "Sign in", email);
+  await submitCredentials(ada.page, "Sign in", ada.email);
 
-  await expect(page).toHaveURL(new RegExp(`/chat/${roomID}$`));
-  await expectConnected(page);
+  await expect(ada.page).toHaveURL(new RegExp(`/chat/${roomID}$`));
+  await expectReady(ada.page);
+  await expectSaid(ada.page, "You", "members only");
+
+  await ada.close();
+  await grace.close();
 });
