@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ type fakeStore struct {
 	rooms    map[uuid.UUID]domain.Room
 	members  map[uuid.UUID]map[uuid.UUID]domain.Member
 	messages map[uuid.UUID][]domain.Message
+	uploads  map[uuid.UUID]domain.Upload
 
 	failWith error
 }
@@ -25,6 +27,7 @@ func newFakeStore() *fakeStore {
 		rooms:    map[uuid.UUID]domain.Room{},
 		members:  map[uuid.UUID]map[uuid.UUID]domain.Member{},
 		messages: map[uuid.UUID][]domain.Message{},
+		uploads:  map[uuid.UUID]domain.Upload{},
 	}
 }
 
@@ -340,6 +343,9 @@ func (s *fakeStore) ListMessages(
 		if m.Seq <= clearedThrough {
 			continue
 		}
+		if len(page.Kinds) > 0 && !slices.Contains(page.Kinds, m.Kind) {
+			continue
+		}
 		switch {
 		case page.BeforeSeq != 0 && m.Seq >= page.BeforeSeq:
 		case page.AfterSeq != 0 && m.Seq <= page.AfterSeq:
@@ -355,4 +361,32 @@ func (s *fakeStore) ListMessages(
 		return selected[:page.Limit], true, nil
 	}
 	return selected, false, nil
+}
+
+func (s *fakeStore) CreateUpload(_ context.Context, u domain.Upload) (domain.Upload, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return domain.Upload{}, s.failWith
+	}
+
+	u.CreatedAt = time.Now()
+	s.uploads[u.ID] = u
+	return u, nil
+}
+
+func (s *fakeStore) UploadByID(_ context.Context, id uuid.UUID) (domain.Upload, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return domain.Upload{}, s.failWith
+	}
+
+	u, ok := s.uploads[id]
+	if !ok {
+		return domain.Upload{}, domain.ErrUploadNotFound
+	}
+	return u, nil
 }

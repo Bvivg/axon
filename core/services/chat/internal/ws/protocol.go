@@ -70,8 +70,9 @@ type Inbound struct {
 
 	Body string `json:"body,omitempty"`
 
-	Kind    string          `json:"kind,omitempty"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+	Kind     string          `json:"kind,omitempty"`
+	Payload  json.RawMessage `json:"payload,omitempty"`
+	UploadID string          `json:"upload_id,omitempty"`
 
 	ReplyToID       string `json:"reply_to_id,omitempty"`
 	ForwardedFromID string `json:"forwarded_from_id,omitempty"`

@@ -4,7 +4,10 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Check, CheckCheck } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useRef } from "react";
 
+import { MessageMedia } from "@/components/chat/message-content";
 import { Avatar } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ContentKind, contentOf } from "@/lib/chat/content";
 import { cn } from "@/lib/utils";
 import type { WireMessage } from "@/lib/ws/protocol";
 
@@ -26,6 +29,8 @@ interface TranscriptProps {
   hasOlder?: boolean;
 
   loadingOlder?: boolean;
+
+  onOpenMedia?: (message: WireMessage) => void;
 }
 
 const loadOlderThreshold = 200;
@@ -41,6 +46,7 @@ export const Transcript = memo(function Transcript({
   onLoadOlder,
   hasOlder,
   loadingOlder,
+  onOpenMedia,
 }: TranscriptProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const previousScrollHeight = useRef(0);
@@ -130,7 +136,7 @@ export const Transcript = memo(function Transcript({
   }
 
   return (
-    <div ref={viewport} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-1">
+    <ScrollArea className="flex-1" viewportProps={{ ref: viewport, onScroll, className: "px-1" }}>
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {virtualItems.map((row) => {
           const message = messages[row.index];
@@ -141,6 +147,10 @@ export const Transcript = memo(function Transcript({
             mine && readSeqs
               ? [...readSeqs.values()].some((seq) => seq >= message.seq)
               : false;
+          const content = contentOf(message);
+          const isMedia = content.kind !== ContentKind.Text && content.kind !== ContentKind.System;
+          const visual = content.kind === ContentKind.Image || content.kind === ContentKind.Video;
+          const caption = message.body.trim();
 
           return (
             <div
@@ -168,19 +178,41 @@ export const Transcript = memo(function Transcript({
 
                 <article
                   className={cn(
-                    "max-w-[75%] rounded-2xl px-3 py-2",
+                    "max-w-[75%] rounded-2xl",
+                    visual ? "p-1" : "px-3 py-2",
                     mine
                       ? "rounded-br-sm bg-signal text-signal-foreground"
                       : "rounded-bl-sm bg-muted text-foreground",
                   )}
                 >
                   {mine ? null : (
-                    <p className="text-xs font-medium text-muted-foreground">{name}</p>
+                    <p className={cn("text-xs font-medium text-muted-foreground", visual && "px-2 pt-1 pb-1")}>
+                      {name}
+                    </p>
                   )}
-                  <p className="whitespace-pre-wrap break-words text-sm">{message.body}</p>
+                  {isMedia ? (
+                    <MessageMedia
+                      content={content}
+                      caption={caption}
+                      mine={mine}
+                      onOpen={() => onOpenMedia?.(message)}
+                    />
+                  ) : null}
+                  {caption || !isMedia ? (
+                    <p
+                      className={cn(
+                        "whitespace-pre-wrap break-words text-sm",
+                        visual && "px-2 pt-1",
+                        isMedia && !visual && "pt-1",
+                      )}
+                    >
+                      {message.body}
+                    </p>
+                  ) : null}
                   <div
                     className={cn(
                       "mt-0.5 flex items-center justify-end gap-1",
+                      visual && "px-2 pb-1",
                       mine ? "text-signal-foreground/70" : "text-muted-foreground",
                     )}
                   >
@@ -201,7 +233,7 @@ export const Transcript = memo(function Transcript({
           );
         })}
       </div>
-    </div>
+    </ScrollArea>
   );
 });
 

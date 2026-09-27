@@ -16,6 +16,7 @@ import (
 type fetched struct {
 	status      int
 	contentType string
+	disposition string
 	body        []byte
 }
 
@@ -37,7 +38,12 @@ func fetchAttachment(t *testing.T, url string) fetched {
 	if err != nil {
 		t.Fatalf("read body of %s: %v", url, err)
 	}
-	return fetched{status: resp.StatusCode, contentType: resp.Header.Get("Content-Type"), body: data}
+	return fetched{
+		status:      resp.StatusCode,
+		contentType: resp.Header.Get("Content-Type"),
+		disposition: resp.Header.Get("Content-Disposition"),
+		body:        data,
+	}
 }
 
 func TestStorePutMakesTheObjectPubliclyFetchable(t *testing.T) {
@@ -45,7 +51,7 @@ func TestStorePutMakesTheObjectPubliclyFetchable(t *testing.T) {
 	key := attachment.NewObjectKey(userID, "recording.webm")
 	content := []byte("pretend this is an audio recording")
 
-	if err := attachmentStore.Put(t.Context(), key, "audio/webm", content); err != nil {
+	if err := attachmentStore.Put(t.Context(), attachment.Object{Key: key, ContentType: "audio/webm", Data: content}); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
@@ -90,7 +96,26 @@ func TestStorePutRejectsUnknownBucket(t *testing.T) {
 	}
 
 	key := attachment.NewObjectKey(uuid.New(), "file.bin")
-	if err := badStore.Put(t.Context(), key, "application/octet-stream", []byte("x")); err == nil {
+	if err := badStore.Put(t.Context(), attachment.Object{Key: key, ContentType: "application/octet-stream", Data: []byte("x")}); err == nil {
 		t.Fatal("Put into a nonexistent bucket was accepted")
+	}
+}
+
+func TestAFileIsServedAsADownloadUnderItsOwnName(t *testing.T) {
+	key := attachment.NewObjectKey(uuid.New(), "page.html")
+	content := []byte("<script>alert(document.domain)</script>")
+
+	if err := attachmentStore.Put(t.Context(), attachment.Object{
+		Key:         key,
+		ContentType: "text/html; charset=utf-8",
+		Disposition: `attachment; filename="page.html"`,
+		Data:        content,
+	}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	got := fetchAttachment(t, attachmentURLs.URL(key))
+	if got.disposition != `attachment; filename="page.html"` {
+		t.Errorf("Content-Disposition = %q, want the download header", got.disposition)
 	}
 }

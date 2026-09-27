@@ -19,6 +19,15 @@ type Config struct {
 	Auth        AuthConfig
 	Kafka       KafkaConfig
 	Attachments AttachmentConfig
+	Media       MediaConfig
+}
+
+type MediaConfig struct {
+	FFmpeg  string
+	FFprobe string
+
+	Workers int
+	Timeout time.Duration
 }
 
 type KafkaConfig struct {
@@ -70,6 +79,12 @@ func Load() (Config, error) {
 			Brokers: l.StringSlice("KAFKA_BROKERS", nil),
 		},
 		Attachments: loadAttachments(l),
+		Media: MediaConfig{
+			FFmpeg:  l.StringDefault("FFMPEG_PATH", "ffmpeg"),
+			FFprobe: l.StringDefault("FFPROBE_PATH", "ffprobe"),
+			Workers: l.IntDefault("MEDIA_WORKERS", 2),
+			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 3*time.Minute),
+		},
 	}
 
 	if cfg.Postgres.SearchPath == "" {

@@ -160,6 +160,7 @@ services:
       target: ${BUILD_TARGET:-dev}
       args:
         SERVICE: chat
+        RUNTIME_FLAVOR: media
     restart: unless-stopped
     env_file:
       - .env

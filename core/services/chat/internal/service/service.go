@@ -29,6 +29,9 @@ type Store interface {
 	AppendMessage(ctx context.Context, m domain.Message) (domain.Message, bool, error)
 	MessageByID(ctx context.Context, id uuid.UUID) (domain.Message, error)
 	ListMessages(ctx context.Context, roomID, callerID uuid.UUID, page domain.Page) ([]domain.Message, bool, error)
+
+	CreateUpload(ctx context.Context, u domain.Upload) (domain.Upload, error)
+	UploadByID(ctx context.Context, id uuid.UUID) (domain.Upload, error)
 }
 
 type Events interface {
@@ -241,8 +244,8 @@ type SendInput struct {
 
 	ClientID string
 
-	Kind    string
-	Payload json.RawMessage
+	Kind     string
+	UploadID string
 
 	ReplyToID       string
 	ForwardedFromID string
@@ -257,7 +260,7 @@ func (s *Service) Send(ctx context.Context, in SendInput) (domain.Message, bool,
 		Body:            in.Body,
 		ClientID:        in.ClientID,
 		Kind:            in.Kind,
-		Payload:         in.Payload,
+		UploadID:        in.UploadID,
 		ReplyToID:       in.ReplyToID,
 		ForwardedFromID: in.ForwardedFromID,
 	})
@@ -271,8 +274,8 @@ type SendDirectInput struct {
 	Body     string
 	ClientID string
 
-	Kind    string
-	Payload json.RawMessage
+	Kind     string
+	UploadID string
 
 	ReplyToID       string
 	ForwardedFromID string
@@ -296,7 +299,7 @@ func (s *Service) SendDirect(ctx context.Context, in SendDirectInput) (domain.Me
 		Body:            in.Body,
 		ClientID:        in.ClientID,
 		Kind:            in.Kind,
-		Payload:         in.Payload,
+		UploadID:        in.UploadID,
 		ReplyToID:       in.ReplyToID,
 		ForwardedFromID: in.ForwardedFromID,
 	})
@@ -361,8 +364,8 @@ type sendCore struct {
 	Body     string
 	ClientID string
 
-	Kind    string
-	Payload json.RawMessage
+	Kind     string
+	UploadID string
 
 	ReplyToID       string
 	ForwardedFromID string
@@ -373,12 +376,22 @@ func (s *Service) appendValidated(
 	roomID, authorID uuid.UUID,
 	in sendCore,
 ) (domain.Message, bool, error) {
-	kind, err := domain.ValidateMessageKind(in.Kind)
+	requested, err := domain.ValidateMessageKind(in.Kind)
 	if err != nil {
 		return domain.Message{}, false, err
 	}
-	if kind == domain.MessageKindSystem {
+	if requested == domain.MessageKindSystem {
 		return domain.Message{}, false, domain.ErrSystemKindNotSendable
+	}
+
+	forwarded, err := s.resolveForwardSource(ctx, authorID, in.ForwardedFromID)
+	if err != nil {
+		return domain.Message{}, false, err
+	}
+
+	kind, payload, err := s.resolveContent(ctx, authorID, in.Kind, requested, in.UploadID, forwarded)
+	if err != nil {
+		return domain.Message{}, false, err
 	}
 
 	var body string
@@ -387,11 +400,6 @@ func (s *Service) appendValidated(
 	} else {
 		body, err = domain.ValidateCaption(in.Body)
 	}
-	if err != nil {
-		return domain.Message{}, false, err
-	}
-
-	payload, err := domain.ValidatePayload(kind, in.Payload)
 	if err != nil {
 		return domain.Message{}, false, err
 	}
@@ -406,9 +414,9 @@ func (s *Service) appendValidated(
 		return domain.Message{}, false, err
 	}
 
-	forwardedFromID, err := s.resolveForwardSource(ctx, authorID, in.ForwardedFromID)
-	if err != nil {
-		return domain.Message{}, false, err
+	var forwardedFromID *uuid.UUID
+	if forwarded != nil {
+		forwardedFromID = &forwarded.ID
 	}
 
 	message, duplicate, err := s.store.AppendMessage(ctx, domain.Message{
@@ -427,12 +435,106 @@ func (s *Service) appendValidated(
 	}
 
 	if !duplicate {
-		s.log.InfoContext(ctx, "message sent", "room_id", roomID, "user_id", authorID, "seq", message.Seq)
+		s.log.InfoContext(ctx, "message sent", "room_id", roomID, "user_id", authorID, "seq", message.Seq, "kind", kind)
 
 		s.events.MessageSent(context.WithoutCancel(ctx), message)
 	}
 
 	return message, duplicate, nil
+}
+
+func (s *Service) resolveContent(
+	ctx context.Context,
+	authorID uuid.UUID,
+	rawKind string,
+	requested domain.MessageKind,
+	rawUploadID string,
+	forwarded *domain.Message,
+) (domain.MessageKind, json.RawMessage, error) {
+	switch {
+	case rawUploadID != "":
+		upload, err := s.resolveUpload(ctx, authorID, rawUploadID)
+		if err != nil {
+			return "", nil, err
+		}
+		if rawKind != "" && requested != upload.Kind {
+			return "", nil, domain.ErrUploadKindMismatch
+		}
+		payload, err := domain.ValidatePayload(upload.Kind, upload.Payload)
+		if err != nil {
+			return "", nil, err
+		}
+		return upload.Kind, payload, nil
+
+	case requested.FromUpload() && forwarded != nil && forwarded.Kind == requested:
+		payload, err := domain.ValidatePayload(requested, forwarded.Payload)
+		if err != nil {
+			return "", nil, err
+		}
+		return requested, payload, nil
+
+	case requested.FromUpload():
+		return "", nil, domain.ErrUploadRequired
+
+	default:
+		payload, err := domain.ValidatePayload(requested, nil)
+		if err != nil {
+			return "", nil, err
+		}
+		return requested, payload, nil
+	}
+}
+
+func (s *Service) resolveUpload(ctx context.Context, authorID uuid.UUID, raw string) (domain.Upload, error) {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return domain.Upload{}, domain.ErrUploadNotFound
+	}
+
+	upload, err := s.store.UploadByID(ctx, id)
+	switch {
+	case err == nil:
+	case errors.Is(err, domain.ErrUploadNotFound):
+		return domain.Upload{}, domain.ErrUploadNotFound
+	default:
+		return domain.Upload{}, fmt.Errorf("service: resolve upload: %w", err)
+	}
+
+	if upload.UploaderID != authorID {
+		return domain.Upload{}, domain.ErrUploadNotFound
+	}
+
+	return upload, nil
+}
+
+func (s *Service) RecordUpload(
+	ctx context.Context,
+	uploaderID uuid.UUID,
+	kind domain.MessageKind,
+	payload json.RawMessage,
+) (domain.Upload, error) {
+	if !kind.FromUpload() {
+		return domain.Upload{}, domain.ErrUploadKindMismatch
+	}
+
+	validated, err := domain.ValidatePayload(kind, payload)
+	if err != nil {
+		return domain.Upload{}, err
+	}
+
+	upload, err := s.store.CreateUpload(ctx, domain.Upload{
+		ID:         s.newID(),
+		UploaderID: uploaderID,
+		Kind:       kind,
+		Payload:    validated,
+	})
+	if err != nil {
+		return domain.Upload{}, fmt.Errorf("service: record upload: %w", err)
+	}
+
+	s.log.InfoContext(ctx, "upload recorded", "upload_id", upload.ID, "user_id", uploaderID, "kind", kind)
+
+	return upload, nil
 }
 
 func (s *Service) resolveReplyTarget(ctx context.Context, roomID uuid.UUID, raw string) (*uuid.UUID, error) {
@@ -461,7 +563,7 @@ func (s *Service) resolveReplyTarget(ctx context.Context, roomID uuid.UUID, raw 
 	return &id, nil
 }
 
-func (s *Service) resolveForwardSource(ctx context.Context, authorID uuid.UUID, raw string) (*uuid.UUID, error) {
+func (s *Service) resolveForwardSource(ctx context.Context, authorID uuid.UUID, raw string) (*domain.Message, error) {
 	if raw == "" {
 		return nil, nil
 	}
@@ -488,7 +590,7 @@ func (s *Service) resolveForwardSource(ctx context.Context, authorID uuid.UUID, 
 		return nil, domain.ErrInvalidForwardTarget
 	}
 
-	return &id, nil
+	return &source, nil
 }
 
 func (s *Service) requireMember(ctx context.Context, roomID, userID uuid.UUID) error {

@@ -21,6 +21,7 @@ import { navItems } from "@/components/nav/items";
 import { setPaletteOpen, usePaletteOpen } from "@/components/nav/palette-store";
 import { Avatar } from "@/components/ui/avatar";
 import { Kbd, KbdCombo } from "@/components/ui/kbd";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingDots, PresenceDot } from "@/components/ui/status";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { useSession } from "@/lib/auth/session";
@@ -252,47 +253,49 @@ function PaletteBody() {
         </BaseDialog.Close>
       </div>
 
-      <div id="palette-list" role="listbox" aria-label="Results" className="min-h-0 flex-1 overflow-y-auto p-1.5">
-        {commands.length === 0 ? (
-          <p className="px-2.5 py-8 text-center text-sm text-muted-foreground">
-            {searching ? "Searching…" : `Nothing matches “${query.trim()}”`}
-          </p>
-        ) : (
-          groups.map(([group, items]) => (
-            <div key={group} role="group" aria-labelledby={`palette-group-${group}`} className="flex flex-col gap-0.5">
-              <div id={`palette-group-${group}`} className="eyebrow px-2.5 pt-2.5 pb-1">
-                {group}
+      <ScrollArea className="flex-1">
+        <div id="palette-list" role="listbox" aria-label="Results" className="p-1.5">
+          {commands.length === 0 ? (
+            <p className="px-2.5 py-8 text-center text-sm text-muted-foreground">
+              {searching ? "Searching…" : `Nothing matches “${query.trim()}”`}
+            </p>
+          ) : (
+            groups.map(([group, items]) => (
+              <div key={group} role="group" aria-labelledby={`palette-group-${group}`} className="flex flex-col gap-0.5">
+                <div id={`palette-group-${group}`} className="eyebrow px-2.5 pt-2.5 pb-1">
+                  {group}
+                </div>
+                {items.map((command) => {
+                  const index = commands.indexOf(command);
+                  const selected = index === current;
+                  return (
+                    <div
+                      key={command.id}
+                      id={`palette-${command.id}`}
+                      role="option"
+                      aria-selected={selected}
+                      onMouseMove={() => setActive(index)}
+                      onClick={command.run}
+                      className={cn(
+                        "flex h-9 shrink-0 cursor-pointer items-center gap-3 rounded-md px-2.5 text-sm",
+                        selected && "bg-accent",
+                      )}
+                    >
+                      <span className="flex w-4 justify-center">{command.icon}</span>
+                      <span className="min-w-0 flex-1 truncate">{command.label}</span>
+                      {command.hint ? (
+                        <span className="shrink-0 font-mono text-2xs text-muted-foreground">{command.hint}</span>
+                      ) : null}
+                      {command.keys ? <KbdCombo aria-hidden keys={command.keys} /> : null}
+                      {selected ? <Kbd aria-hidden>↵</Kbd> : null}
+                    </div>
+                  );
+                })}
               </div>
-              {items.map((command) => {
-                const index = commands.indexOf(command);
-                const selected = index === current;
-                return (
-                  <div
-                    key={command.id}
-                    id={`palette-${command.id}`}
-                    role="option"
-                    aria-selected={selected}
-                    onMouseMove={() => setActive(index)}
-                    onClick={command.run}
-                    className={cn(
-                      "flex h-9 shrink-0 cursor-pointer items-center gap-3 rounded-md px-2.5 text-sm",
-                      selected && "bg-accent",
-                    )}
-                  >
-                    <span className="flex w-4 justify-center">{command.icon}</span>
-                    <span className="min-w-0 flex-1 truncate">{command.label}</span>
-                    {command.hint ? (
-                      <span className="shrink-0 font-mono text-2xs text-muted-foreground">{command.hint}</span>
-                    ) : null}
-                    {command.keys ? <KbdCombo aria-hidden keys={command.keys} /> : null}
-                    {selected ? <Kbd aria-hidden>↵</Kbd> : null}
-                  </div>
-                );
-              })}
-            </div>
-          ))
-        )}
-      </div>
+            ))
+          )}
+        </div>
+      </ScrollArea>
 
       <div className="hidden h-10 shrink-0 items-center gap-4 border-t border-border px-3.5 text-xs text-muted-foreground md:flex">
         <span className="flex items-center gap-1.5">

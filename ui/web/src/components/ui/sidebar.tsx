@@ -17,6 +17,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/lib/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -265,13 +266,9 @@ export function SidebarSeparator({ className, ...props }: ComponentProps<typeof 
 
 export function SidebarContent({ className, ...props }: ComponentProps<"div">) {
   return (
-    <div
-      className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
-        className,
-      )}
-      {...props}
-    />
+    <ScrollArea className="flex-1" viewportProps={{ className: "group-data-[collapsible=icon]:overflow-hidden!" }}>
+      <div className={cn("flex min-h-full flex-col gap-2", className)} {...props} />
+    </ScrollArea>
   );
 }
 

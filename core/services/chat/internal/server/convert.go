@@ -54,11 +54,45 @@ func toProtoMessageKind(k domain.MessageKind) chatv1.MessageKind {
 		return chatv1.MessageKind_MESSAGE_KIND_VOICE
 	case domain.MessageKindAttachment:
 		return chatv1.MessageKind_MESSAGE_KIND_ATTACHMENT
+	case domain.MessageKindImage:
+		return chatv1.MessageKind_MESSAGE_KIND_IMAGE
+	case domain.MessageKindVideo:
+		return chatv1.MessageKind_MESSAGE_KIND_VIDEO
 	case domain.MessageKindSystem:
 		return chatv1.MessageKind_MESSAGE_KIND_SYSTEM
 	default:
 		return chatv1.MessageKind_MESSAGE_KIND_UNSPECIFIED
 	}
+}
+
+func fromProtoMessageKind(k chatv1.MessageKind) domain.MessageKind {
+	switch k {
+	case chatv1.MessageKind_MESSAGE_KIND_TEXT:
+		return domain.MessageKindText
+	case chatv1.MessageKind_MESSAGE_KIND_VOICE:
+		return domain.MessageKindVoice
+	case chatv1.MessageKind_MESSAGE_KIND_ATTACHMENT:
+		return domain.MessageKindAttachment
+	case chatv1.MessageKind_MESSAGE_KIND_IMAGE:
+		return domain.MessageKindImage
+	case chatv1.MessageKind_MESSAGE_KIND_VIDEO:
+		return domain.MessageKindVideo
+	case chatv1.MessageKind_MESSAGE_KIND_SYSTEM:
+		return domain.MessageKindSystem
+	default:
+		return ""
+	}
+}
+
+func fromProtoMessageKinds(kinds []chatv1.MessageKind) []domain.MessageKind {
+	if len(kinds) == 0 {
+		return nil
+	}
+	out := make([]domain.MessageKind, 0, len(kinds))
+	for _, k := range kinds {
+		out = append(out, fromProtoMessageKind(k))
+	}
+	return out
 }
 
 func toProtoMember(m domain.Member) *chatv1.Member {
@@ -110,10 +144,17 @@ func setProtoMessagePayload(message *chatv1.Message, kind domain.MessageKind, ra
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return
 		}
-		message.Payload = &chatv1.Message_Voice{Voice: &chatv1.VoicePayload{
+		voice := &chatv1.VoicePayload{
 			DurationMs: p.DurationMS,
 			Url:        p.URL,
-		}}
+		}
+		if p.Mime != "" {
+			voice.Mime = &p.Mime
+		}
+		if p.SizeBytes > 0 {
+			voice.SizeBytes = &p.SizeBytes
+		}
+		message.Payload = &chatv1.Message_Voice{Voice: voice}
 	case domain.MessageKindAttachment:
 		var p domain.AttachmentPayload
 		if err := json.Unmarshal(raw, &p); err != nil {
@@ -124,6 +165,33 @@ func setProtoMessagePayload(message *chatv1.Message, kind domain.MessageKind, ra
 			Filename:  p.Filename,
 			Mime:      p.Mime,
 			SizeBytes: p.SizeBytes,
+		}}
+	case domain.MessageKindImage:
+		var p domain.ImagePayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return
+		}
+		message.Payload = &chatv1.Message_Image{Image: &chatv1.ImagePayload{
+			Url:          p.URL,
+			ThumbnailUrl: p.ThumbnailURL,
+			Width:        int32(p.Width),
+			Height:       int32(p.Height),
+			SizeBytes:    p.SizeBytes,
+			Mime:         p.Mime,
+		}}
+	case domain.MessageKindVideo:
+		var p domain.VideoPayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return
+		}
+		message.Payload = &chatv1.Message_Video{Video: &chatv1.VideoPayload{
+			Url:        p.URL,
+			PosterUrl:  p.PosterURL,
+			Width:      int32(p.Width),
+			Height:     int32(p.Height),
+			DurationMs: p.DurationMS,
+			SizeBytes:  p.SizeBytes,
+			Mime:       p.Mime,
 		}}
 	case domain.MessageKindSystem:
 		var p domain.SystemPayload

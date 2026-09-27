@@ -7,7 +7,7 @@ export type Outgoing =
   | { type: "unsubscribe"; room_id: string }
   | { type: "typing"; room_id: string }
   | { type: "watch_presence"; to_user_id: string }
-  | ({ type: "send"; client_id: string; body: string } & (
+  | ({ type: "send"; client_id: string; body: string; upload_id?: string } & (
       | { room_id: string }
       | { to_user_id: string }
     ));
@@ -21,6 +21,10 @@ export interface WireMessage {
   sent_at: string;
 
   client_id?: string;
+
+  kind?: string;
+
+  payload?: Record<string, unknown>;
 }
 
 export type Incoming =

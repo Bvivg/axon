@@ -7,9 +7,10 @@ import { usePathname } from "next/navigation";
 
 import { Avatar } from "@/components/ui/avatar";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
-import { MessageKind, RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
+import { RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
-import { useLastMessage } from "@/lib/query/chat";
+import { previewOf } from "@/lib/chat/content";
+import { toWireMessage, useLastMessage } from "@/lib/query/chat";
 import { cn } from "@/lib/utils";
 
 export function RoomListItem({
@@ -98,19 +99,7 @@ export function RoomListItem({
 }
 
 function previewFor(message: Message | null | undefined): string {
-  if (!message) {
-    return "No messages yet";
-  }
-  switch (message.kind) {
-    case MessageKind.VOICE:
-      return "🎤 Voice message";
-    case MessageKind.ATTACHMENT:
-      return "📎 Attachment";
-    case MessageKind.SYSTEM:
-      return message.body || "System message";
-    default:
-      return message.body;
-  }
+  return message ? previewOf(toWireMessage(message)) : "No messages yet";
 }
 
 function shortID(id?: string): string {

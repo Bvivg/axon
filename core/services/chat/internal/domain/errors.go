@@ -18,6 +18,14 @@ var (
 	ErrSystemKindNotSendable = errors.New("chat: system messages cannot be sent by a client")
 
 	ErrCannotMessageSelf = errors.New("chat: cannot open a direct room with yourself")
+
+	ErrUploadNotFound = errors.New("chat: upload not found")
+
+	ErrUploadRequired = errors.New("chat: this kind of message carries an upload")
+
+	ErrUploadKindMismatch = errors.New("chat: the upload is a different kind of message")
+
+	ErrClientPayload = errors.New("chat: the payload comes from an upload, not from the client")
 )
 
 type ValidationError struct {

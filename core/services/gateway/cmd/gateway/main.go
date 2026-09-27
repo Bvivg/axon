@@ -94,8 +94,10 @@ func run() error {
 		PerMinute: cfg.RateLimit.SensitivePerMinute,
 		Burst:     sensitiveBurst,
 	})
+	uploads := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadsPerMinute})
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
+	go uploads.Start(ctx)
 
 	policyGuard, err := guard.New(guard.Config{
 		Verifier:  verifier,
@@ -169,9 +171,12 @@ func run() error {
 	attachmentUpload, err := attachmentproxy.New(attachmentproxy.Config{
 		Upstream: cfg.ChatServiceURL + "/internal/attachment",
 		Verifier: verifier,
-		Limiter:  sensitive,
-		Client:   upstream,
-		Logger:   log,
+		Limiter:  uploads,
+		Client: &http.Client{
+			Timeout:   cfg.UploadTimeout,
+			Transport: internalTransport(),
+		},
+		Logger: log,
 	})
 	if err != nil {
 		return err

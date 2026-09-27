@@ -9,6 +9,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+const immutableCache = "public, max-age=31536000, immutable"
+
 type StoreConfig struct {
 	Endpoint  string
 	AccessKey string
@@ -33,11 +35,31 @@ func NewStore(cfg StoreConfig) (*Store, error) {
 	return &Store{client: client, bucket: cfg.Bucket}, nil
 }
 
-func (s *Store) Put(ctx context.Context, key, contentType string, data []byte) error {
-	_, err := s.client.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)),
-		minio.PutObjectOptions{ContentType: contentType})
+type Object struct {
+	Key         string
+	ContentType string
+	Disposition string
+
+	Data []byte
+
+	Path string
+}
+
+func (s *Store) Put(ctx context.Context, o Object) error {
+	opts := minio.PutObjectOptions{
+		ContentType:        o.ContentType,
+		ContentDisposition: o.Disposition,
+		CacheControl:       immutableCache,
+	}
+
+	var err error
+	if o.Path != "" {
+		_, err = s.client.FPutObject(ctx, s.bucket, o.Key, o.Path, opts)
+	} else {
+		_, err = s.client.PutObject(ctx, s.bucket, o.Key, bytes.NewReader(o.Data), int64(len(o.Data)), opts)
+	}
 	if err != nil {
-		return fmt.Errorf("attachment: upload %s: %w", key, err)
+		return fmt.Errorf("attachment: upload %s: %w", o.Key, err)
 	}
 	return nil
 }

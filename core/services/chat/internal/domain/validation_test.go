@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -148,8 +149,14 @@ func TestValidatePage(t *testing.T) {
 			want: domain.Page{Limit: 10, AfterSeq: 40},
 		},
 
+		"media only": {
+			in:   domain.Page{Limit: 10, Kinds: []domain.MessageKind{domain.MessageKindImage, domain.MessageKindVideo}},
+			want: domain.Page{Limit: 10, Kinds: []domain.MessageKind{domain.MessageKindImage, domain.MessageKindVideo}},
+		},
+
 		"both cursors":    {in: domain.Page{BeforeSeq: 10, AfterSeq: 2}, wantErr: true},
 		"negative cursor": {in: domain.Page{AfterSeq: -1}, wantErr: true},
+		"unknown kind":    {in: domain.Page{Kinds: []domain.MessageKind{"sticker"}}, wantErr: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := domain.ValidatePage(tc.in)
@@ -162,7 +169,7 @@ func TestValidatePage(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ValidatePage(%+v): %v", tc.in, err)
 			}
-			if got != tc.want {
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("ValidatePage(%+v) = %+v, want %+v", tc.in, got, tc.want)
 			}
 		})

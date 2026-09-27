@@ -105,17 +105,27 @@ type wire struct {
 	Seq      int64     `json:"seq"`
 	SentAt   time.Time `json:"sent_at"`
 	ClientID string    `json:"client_id,omitempty"`
+
+	Kind    string          `json:"kind,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+
+	ReplyToID       *uuid.UUID `json:"reply_to_id,omitempty"`
+	ForwardedFromID *uuid.UUID `json:"forwarded_from_id,omitempty"`
 }
 
 func toWire(m domain.Message) wire {
 	return wire{
-		ID:       m.ID.String(),
-		RoomID:   m.RoomID.String(),
-		AuthorID: m.AuthorID.String(),
-		Body:     m.Body,
-		Seq:      m.Seq,
-		SentAt:   m.SentAt,
-		ClientID: m.ClientID,
+		ID:              m.ID.String(),
+		RoomID:          m.RoomID.String(),
+		AuthorID:        m.AuthorID.String(),
+		Body:            m.Body,
+		Seq:             m.Seq,
+		SentAt:          m.SentAt,
+		ClientID:        m.ClientID,
+		Kind:            string(m.Kind),
+		Payload:         m.Payload,
+		ReplyToID:       m.ReplyToID,
+		ForwardedFromID: m.ForwardedFromID,
 	}
 }
 
@@ -141,7 +151,20 @@ func (w wire) toDomain() (domain.Message, error) {
 		Seq:      w.Seq,
 		SentAt:   w.SentAt,
 		ClientID: w.ClientID,
+
+		Kind:    kindOrText(w.Kind),
+		Payload: w.Payload,
+
+		ReplyToID:       w.ReplyToID,
+		ForwardedFromID: w.ForwardedFromID,
 	}, nil
+}
+
+func kindOrText(raw string) domain.MessageKind {
+	if raw == "" {
+		return domain.MessageKindText
+	}
+	return domain.MessageKind(raw)
 }
 
 func (r *Redis) Publish(ctx context.Context, m domain.Message) error {

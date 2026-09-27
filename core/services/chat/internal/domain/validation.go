@@ -123,6 +123,26 @@ func ValidatePayload(kind MessageKind, raw json.RawMessage) (json.RawMessage, er
 		}
 		return json.Marshal(p)
 
+	case MessageKindImage:
+		var p ImagePayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, newValidationError("payload", "is not a valid image payload")
+		}
+		if strings.TrimSpace(p.URL) == "" || p.Width <= 0 || p.Height <= 0 || p.SizeBytes <= 0 {
+			return nil, newValidationError("payload", "is missing url, width, height, or size_bytes")
+		}
+		return json.Marshal(p)
+
+	case MessageKindVideo:
+		var p VideoPayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, newValidationError("payload", "is not a valid video payload")
+		}
+		if strings.TrimSpace(p.URL) == "" || p.Width <= 0 || p.Height <= 0 || p.SizeBytes <= 0 {
+			return nil, newValidationError("payload", "is missing url, width, height, or size_bytes")
+		}
+		return json.Marshal(p)
+
 	case MessageKindSystem:
 		var p SystemPayload
 		if err := json.Unmarshal(raw, &p); err != nil {
@@ -151,6 +171,12 @@ func ValidatePage(p Page) (Page, error) {
 		p.Limit = DefaultPageSize
 	case p.Limit > MaxPageSize:
 		p.Limit = MaxPageSize
+	}
+
+	for _, kind := range p.Kinds {
+		if !kind.Valid() {
+			return Page{}, newValidationError("kinds", "has an unknown message kind")
+		}
 	}
 
 	return p, nil
