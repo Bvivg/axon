@@ -88,6 +88,8 @@ type Inbound struct {
 	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
 
 	MessageID string `json:"message_id,omitempty"`
+
+	MessageIDs []string `json:"message_ids,omitempty"`
 }
 
 type Outbound struct {

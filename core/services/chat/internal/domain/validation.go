@@ -18,6 +18,11 @@ const (
 	DefaultPageSize = 50
 
 	MaxGroupMembers = 100
+
+	MaxForwardMessages = 100
+	MaxForwardTargets  = 50
+
+	MaxDeleteMessages = 100
 )
 
 func ValidateUserIDs(field string, raw []string, exclude uuid.UUID) ([]uuid.UUID, error) {
@@ -41,6 +46,32 @@ func ValidateUserIDs(field string, raw []string, exclude uuid.UUID) ([]uuid.UUID
 
 	if len(ids) >= MaxGroupMembers {
 		return nil, newValidationError(field, "has too many people")
+	}
+
+	return ids, nil
+}
+
+func ValidateIDList(field string, raw []string, limit int) ([]uuid.UUID, error) {
+	seen := make(map[uuid.UUID]struct{}, len(raw))
+	ids := make([]uuid.UUID, 0, len(raw))
+
+	for _, value := range raw {
+		id, err := uuid.Parse(strings.TrimSpace(value))
+		if err != nil {
+			return nil, newValidationError(field, "contains an invalid id")
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	switch {
+	case len(ids) == 0:
+		return nil, newValidationError(field, "is required")
+	case len(ids) > limit:
+		return nil, newValidationError(field, "has too many ids")
 	}
 
 	return ids, nil

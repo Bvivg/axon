@@ -80,6 +80,11 @@ type Member struct {
 	LastReadSeq int64
 }
 
+type Reader struct {
+	UserID uuid.UUID
+	ReadAt *time.Time
+}
+
 type MessageKind string
 
 const (

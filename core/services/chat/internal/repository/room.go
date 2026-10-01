@@ -62,6 +62,20 @@ func (r *Repository) CreateRoom(ctx context.Context, room domain.Room, creator d
 	return created, nil
 }
 
+func (r *Repository) UnreadCount(ctx context.Context, roomID, userID uuid.UUID) (int64, error) {
+	const query = `
+		SELECT count(*)
+		FROM room_members m
+		JOIN messages msg ON msg.room_id = m.room_id AND msg.seq > GREATEST(m.last_read_seq, m.cleared_through_seq)
+		WHERE m.room_id = $1 AND m.user_id = $2`
+
+	var unread int64
+	if err := r.q.QueryRow(ctx, query, roomID, userID).Scan(&unread); err != nil {
+		return 0, fmt.Errorf("repository: unread count: %w", err)
+	}
+	return unread, nil
+}
+
 func (r *Repository) RoomByID(ctx context.Context, id uuid.UUID) (domain.Room, error) {
 	const query = `
 		SELECT ` + roomColumns + `, (SELECT count(*) FROM room_members WHERE room_id = rooms.id)
@@ -275,20 +289,69 @@ func (r *Repository) Members(ctx context.Context, roomID uuid.UUID) ([]domain.Me
 	return members, nil
 }
 
-func (r *Repository) MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) error {
+func (r *Repository) MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) (int64, error) {
 	const query = `
-		UPDATE room_members
-		SET last_read_seq = GREATEST(last_read_seq, $3)
-		WHERE room_id = $1 AND user_id = $2`
+		WITH target AS (
+		    SELECT m.last_read_seq AS old_seq, LEAST($3::bigint, r.next_seq - 1) AS cap
+		    FROM room_members m
+		    JOIN rooms r ON r.id = m.room_id
+		    WHERE m.room_id = $1 AND m.user_id = $2
+		    FOR UPDATE OF m
+		), moved AS (
+		    UPDATE room_members m
+		    SET last_read_seq = GREATEST(t.old_seq, t.cap)
+		    FROM target t
+		    WHERE m.room_id = $1 AND m.user_id = $2
+		    RETURNING t.old_seq, m.last_read_seq AS new_seq
+		), marked AS (
+		    INSERT INTO read_marks (room_id, user_id, from_seq, to_seq)
+		    SELECT $1, $2, old_seq, new_seq FROM moved WHERE new_seq > old_seq
+		)
+		SELECT new_seq FROM moved`
 
-	tag, err := r.q.Exec(ctx, query, roomID, userID, seq)
+	var read int64
+	err := r.q.QueryRow(ctx, query, roomID, userID, seq).Scan(&read)
+	switch {
+	case noRows(err):
+		return 0, domain.ErrNotAMember
+	case err != nil:
+		return 0, fmt.Errorf("repository: mark read: %w", err)
+	}
+	return read, nil
+}
+
+func (r *Repository) Readers(ctx context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error) {
+	const query = `
+		SELECT m.user_id, mark.read_at
+		FROM room_members m
+		LEFT JOIN LATERAL (
+		    SELECT k.read_at
+		    FROM read_marks k
+		    WHERE k.room_id = m.room_id AND k.user_id = m.user_id AND k.to_seq >= $3 AND k.from_seq < $3
+		    ORDER BY k.read_at
+		    LIMIT 1
+		) mark ON true
+		WHERE m.room_id = $1 AND m.user_id <> $2 AND m.last_read_seq >= $3
+		ORDER BY mark.read_at NULLS LAST, m.user_id`
+
+	rows, err := r.q.Query(ctx, query, roomID, authorID, seq)
 	if err != nil {
-		return fmt.Errorf("repository: mark read: %w", err)
+		return nil, fmt.Errorf("repository: readers: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return domain.ErrNotAMember
+	defer rows.Close()
+
+	readers := []domain.Reader{}
+	for rows.Next() {
+		var reader domain.Reader
+		if err := rows.Scan(&reader.UserID, &reader.ReadAt); err != nil {
+			return nil, fmt.Errorf("repository: scan reader: %w", err)
+		}
+		readers = append(readers, reader)
 	}
-	return nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: readers: %w", err)
+	}
+	return readers, nil
 }
 
 func (r *Repository) IsMember(ctx context.Context, roomID, userID uuid.UUID) (bool, error) {

@@ -24,7 +24,9 @@ type Store interface {
 	Members(ctx context.Context, roomID uuid.UUID) ([]domain.Member, error)
 	IsMember(ctx context.Context, roomID, userID uuid.UUID) (bool, error)
 	HideRoom(ctx context.Context, roomID, userID uuid.UUID) error
-	MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) error
+	MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) (int64, error)
+	Readers(ctx context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error)
+	UnreadCount(ctx context.Context, roomID, userID uuid.UUID) (int64, error)
 
 	CreateGroup(ctx context.Context, room domain.Room, owner domain.Member, members []domain.Member) (domain.Room, error)
 	AddGroupMembers(ctx context.Context, roomID uuid.UUID, members []domain.Member, limit int) ([]uuid.UUID, error)
@@ -135,6 +137,16 @@ func (s *Service) GetRoom(ctx context.Context, roomID, userID uuid.UUID) (RoomVi
 		return RoomView{}, fmt.Errorf("service: get room members: %w", err)
 	}
 
+	room.UnreadCount, err = s.store.UnreadCount(ctx, roomID, userID)
+	if err != nil {
+		return RoomView{}, fmt.Errorf("service: get room unread: %w", err)
+	}
+	for _, m := range members {
+		if m.UserID != userID {
+			room.OthersReadSeq = max(room.OthersReadSeq, m.LastReadSeq)
+		}
+	}
+
 	return RoomView{Room: room, Members: members}, nil
 }
 
@@ -199,16 +211,17 @@ func (s *Service) HideRoom(ctx context.Context, roomID, userID uuid.UUID) error 
 	return nil
 }
 
-func (s *Service) MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) error {
+func (s *Service) MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) (int64, error) {
 	if err := s.requireMember(ctx, roomID, userID); err != nil {
-		return err
+		return 0, err
 	}
 
-	if err := s.store.MarkRead(ctx, roomID, userID, seq); err != nil {
-		return fmt.Errorf("service: mark read: %w", err)
+	read, err := s.store.MarkRead(ctx, roomID, userID, seq)
+	if err != nil {
+		return 0, fmt.Errorf("service: mark read: %w", err)
 	}
 
-	return nil
+	return read, nil
 }
 
 type History struct {

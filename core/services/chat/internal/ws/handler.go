@@ -545,6 +545,10 @@ func (s *session) edit(ctx context.Context, frame Inbound) bool {
 }
 
 func (s *session) delete(ctx context.Context, frame Inbound) bool {
+	if len(frame.MessageIDs) > 0 {
+		return s.deleteMany(ctx, frame)
+	}
+
 	messageID, err := uuid.Parse(frame.MessageID)
 	if err != nil {
 		return s.refuse(ctx, ErrorInvalid, "message_id is not a valid id", frame.ClientID)
@@ -556,6 +560,31 @@ func (s *session) delete(ctx context.Context, frame Inbound) bool {
 	}
 
 	return s.publishUpdate(ctx, deleted)
+}
+
+func (s *session) deleteMany(ctx context.Context, frame Inbound) bool {
+	if frame.MessageID != "" {
+		return s.refuse(ctx, ErrorInvalid, "send either message_id or message_ids", frame.ClientID)
+	}
+
+	ids, err := domain.ValidateIDList("message_ids", frame.MessageIDs, domain.MaxDeleteMessages)
+	if err != nil {
+		return s.report(ctx, err, frame.ClientID)
+	}
+
+	for _, id := range ids {
+		deleted, err := s.h.svc.DeleteMessage(ctx, id, s.user)
+		if err != nil {
+			if !s.report(ctx, err, frame.ClientID) {
+				return false
+			}
+			continue
+		}
+		if !s.publishUpdate(ctx, deleted) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *session) publishUpdate(ctx context.Context, m domain.Message) bool {

@@ -237,3 +237,11 @@ func setProtoMessagePayload(message *chatv1.Message, kind domain.MessageKind, ra
 		}}
 	}
 }
+
+func toProtoReader(r domain.Reader) *chatv1.MessageReader {
+	reader := &chatv1.MessageReader{UserId: r.UserID.String()}
+	if r.ReadAt != nil {
+		reader.ReadAt = timestamppb.New(*r.ReadAt)
+	}
+	return reader
+}

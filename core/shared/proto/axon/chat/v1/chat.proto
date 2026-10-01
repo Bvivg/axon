@@ -31,6 +31,10 @@ service ChatService {
   rpc RemoveGroupMember(RemoveGroupMemberRequest) returns (RemoveGroupMemberResponse);
 
   rpc RenameGroup(RenameGroupRequest) returns (RenameGroupResponse);
+
+  rpc ListMessageReaders(ListMessageReadersRequest) returns (ListMessageReadersResponse);
+
+  rpc ForwardMessages(ForwardMessagesRequest) returns (ForwardMessagesResponse);
 }
 
 enum RoomKind {
@@ -237,6 +241,34 @@ message MarkReadRequest {
 }
 
 message MarkReadResponse {}
+
+message ListMessageReadersRequest {
+  string message_id = 1;
+}
+
+message MessageReader {
+  string user_id = 1;
+
+  optional google.protobuf.Timestamp read_at = 2;
+}
+
+message ListMessageReadersResponse {
+  repeated MessageReader readers = 1;
+}
+
+message ForwardMessagesRequest {
+  repeated string message_ids = 1;
+
+  repeated string room_ids = 2;
+
+  string comment = 3;
+
+  string client_id = 4;
+}
+
+message ForwardMessagesResponse {
+  int32 sent = 1;
+}
 
 message GetDirectRoomRequest {
   string user_id = 1;

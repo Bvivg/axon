@@ -67,6 +67,8 @@ type inbound struct {
 	ReplyToID       string `json:"reply_to_id,omitempty"`
 	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
 	MessageID       string `json:"message_id,omitempty"`
+
+	MessageIDs []string `json:"message_ids,omitempty"`
 }
 
 type outbound struct {

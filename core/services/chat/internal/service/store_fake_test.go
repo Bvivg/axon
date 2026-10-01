@@ -286,25 +286,53 @@ func (s *fakeStore) HideRoom(_ context.Context, roomID, userID uuid.UUID) error 
 	return nil
 }
 
-func (s *fakeStore) MarkRead(_ context.Context, roomID, userID uuid.UUID, seq int64) error {
+func (s *fakeStore) MarkRead(_ context.Context, roomID, userID uuid.UUID, seq int64) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.failWith != nil {
-		return s.failWith
+		return 0, s.failWith
 	}
 
 	member, ok := s.members[roomID][userID]
 	if !ok {
-		return domain.ErrNotAMember
+		return 0, domain.ErrNotAMember
 	}
 
+	seq = min(seq, int64(len(s.messages[roomID])))
 	if seq > member.LastReadSeq {
 		member.LastReadSeq = seq
 		s.members[roomID][userID] = member
 	}
 
-	return nil
+	return member.LastReadSeq, nil
+}
+
+func (s *fakeStore) UnreadCount(_ context.Context, roomID, userID uuid.UUID) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	member := s.members[roomID][userID]
+	var unread int64
+	for _, m := range s.messages[roomID] {
+		if m.Seq > max(member.LastReadSeq, member.ClearedThroughSeq) {
+			unread++
+		}
+	}
+	return unread, nil
+}
+
+func (s *fakeStore) Readers(_ context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	readers := []domain.Reader{}
+	for id, member := range s.members[roomID] {
+		if id != authorID && member.LastReadSeq >= seq {
+			readers = append(readers, domain.Reader{UserID: id})
+		}
+	}
+	return readers, nil
 }
 
 func (s *fakeStore) AppendMessage(_ context.Context, m domain.Message) (domain.Message, bool, error) {

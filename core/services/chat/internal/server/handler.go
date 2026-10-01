@@ -221,8 +221,8 @@ func (h *Handler) MarkRead(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	seq := req.Msg.GetSeq()
-	if err := h.svc.MarkRead(ctx, roomID, claims.UserID, seq); err != nil {
+	seq, err := h.svc.MarkRead(ctx, roomID, claims.UserID, req.Msg.GetSeq())
+	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
@@ -236,6 +236,73 @@ func (h *Handler) MarkRead(
 	}
 
 	return connect.NewResponse(&chatv1.MarkReadResponse{}), nil
+}
+
+func (h *Handler) ListMessageReaders(
+	ctx context.Context,
+	req *connect.Request[chatv1.ListMessageReadersRequest],
+) (*connect.Response[chatv1.ListMessageReadersResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	messageID, err := parseID("message_id", req.Msg.GetMessageId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	readers, err := h.svc.ListMessageReaders(ctx, messageID, claims.UserID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	resp := &chatv1.ListMessageReadersResponse{Readers: make([]*chatv1.MessageReader, len(readers))}
+	for i, reader := range readers {
+		resp.Readers[i] = toProtoReader(reader)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *Handler) ForwardMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.ForwardMessagesRequest],
+) (*connect.Response[chatv1.ForwardMessagesResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	sent, err := h.svc.ForwardMessages(ctx, service.ForwardInput{
+		AuthorID:   claims.UserID,
+		MessageIDs: req.Msg.GetMessageIds(),
+		RoomIDs:    req.Msg.GetRoomIds(),
+		Comment:    req.Msg.GetComment(),
+		ClientID:   req.Msg.GetClientId(),
+	})
+	h.publishSent(ctx, sent)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&chatv1.ForwardMessagesResponse{Sent: int32(len(sent))}), nil
+}
+
+func (h *Handler) publishSent(ctx context.Context, sent []service.Forwarded) {
+	ctx = context.WithoutCancel(ctx)
+
+	for _, item := range sent {
+		if item.Duplicate {
+			continue
+		}
+		if err := h.bus.Publish(ctx, item.Message); err != nil {
+			h.log.ErrorContext(ctx, "could not fan a forwarded message out",
+				"room_id", item.Message.RoomID, "message_id", item.Message.ID, "error", err)
+		}
+		for _, userID := range item.Message.Revealed {
+			h.signalUser(ctx, userID, pubsub.SignalRoomAdded, item.Message.RoomID)
+		}
+	}
 }
 
 func (h *Handler) GetDirectRoom(
