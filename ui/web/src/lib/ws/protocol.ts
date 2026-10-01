@@ -54,7 +54,7 @@ export interface WireMessage {
 
 export type Incoming =
   | { type: "message"; message: WireMessage }
-  | { type: "subscribed"; room_id: string; seq: number }
+  | { type: "subscribed"; room_id: string; seq: number; behind?: boolean }
   | { type: "ack"; room_id: string; client_id: string; seq: number }
   | { type: "read"; room_id: string; user_id: string; seq: number }
   | { type: "typing"; room_id: string; user_id: string }

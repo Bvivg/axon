@@ -146,6 +146,13 @@ export function useChatSocket(
         }
         break;
 
+      case "subscribed":
+        if (frame.behind && frame.room_id === roomID) {
+          setDelivered([]);
+          void refreshNewestPage(queryClient, roomID);
+        }
+        break;
+
       case "room_removed":
         if (frame.room_id === roomID) {
           setRemoved(true);
