@@ -59,7 +59,7 @@ func Middleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			header.Set("Access-Control-Expose-Headers", exposeHeaders)
 
 			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
-				header.Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+				header.Set("Access-Control-Allow-Methods", "POST, GET, PUT, DELETE, OPTIONS")
 				header.Set("Access-Control-Allow-Headers", allowHeaders)
 				header.Set("Access-Control-Max-Age", maxAge)
 				header.Add("Vary", "Access-Control-Request-Method")

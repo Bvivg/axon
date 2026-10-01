@@ -64,6 +64,8 @@ type RateLimitConfig struct {
 
 	UploadsPerMinute int
 
+	UploadPartsPerMinute int
+
 	TrustedProxies int
 }
 
@@ -91,7 +93,9 @@ func Load() (Config, error) {
 			StandardPerMinute:  l.IntDefault("RATE_LIMIT_PER_MINUTE", 120),
 			SensitivePerMinute: l.IntDefault("RATE_LIMIT_AUTH_PER_MINUTE", 10),
 			UploadsPerMinute:   l.IntDefault("RATE_LIMIT_UPLOADS_PER_MINUTE", 60),
-			TrustedProxies:     l.IntDefault("TRUSTED_PROXIES", 0),
+
+			UploadPartsPerMinute: l.IntDefault("RATE_LIMIT_UPLOAD_PARTS_PER_MINUTE", 600),
+			TrustedProxies:       l.IntDefault("TRUSTED_PROXIES", 0),
 		},
 	}
 

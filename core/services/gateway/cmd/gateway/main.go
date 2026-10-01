@@ -95,6 +95,7 @@ func run() error {
 		Burst:     sensitiveBurst,
 	})
 	uploads := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadsPerMinute})
+	uploadParts := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadPartsPerMinute})
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
 	go uploads.Start(ctx)
@@ -182,9 +183,24 @@ func run() error {
 		return err
 	}
 
+	uploadSessions, err := attachmentproxy.NewSessions(attachmentproxy.SessionsConfig{
+		Upstream:    cfg.ChatServiceURL + "/internal/uploads",
+		Verifier:    verifier,
+		Limiter:     uploads,
+		PartLimiter: uploadParts,
+		Client: &http.Client{
+			Timeout:   cfg.UploadTimeout,
+			Transport: internalTransport(),
+		},
+		Logger: log,
+	})
+	if err != nil {
+		return err
+	}
+
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, presenceSocket, avatarUpload, attachmentUpload, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, presenceSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -216,6 +232,7 @@ const (
 	presenceSubprotocol  = "axon.presence.v1"
 	avatarUploadPath     = "/api/avatar"
 	attachmentUploadPath = "/api/attachment"
+	uploadSessionsPath   = "/api/uploads"
 )
 
 func publicHandler(
@@ -226,6 +243,7 @@ func publicHandler(
 	presenceSocket http.Handler,
 	avatarUpload http.Handler,
 	attachmentUpload http.Handler,
+	uploadSessions *attachmentproxy.Sessions,
 	policyGuard connect.Interceptor,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
@@ -236,6 +254,7 @@ func publicHandler(
 	mux.Handle(presenceSocketPath, presenceSocket)
 	mux.Handle("POST "+avatarUploadPath, avatarUpload)
 	mux.Handle("POST "+attachmentUploadPath, attachmentUpload)
+	uploadSessions.Register(mux, uploadSessionsPath)
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(
