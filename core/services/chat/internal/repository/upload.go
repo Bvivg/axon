@@ -13,11 +13,14 @@ import (
 
 func (r *Repository) CreateUpload(ctx context.Context, u domain.Upload) (domain.Upload, error) {
 	const query = `
-		INSERT INTO uploads (id, uploader_id, kind, payload)
-		VALUES ($1, $2, $3, $4::jsonb)
-		RETURNING id, uploader_id, kind, payload, created_at`
+		WITH linked AS (
+		    UPDATE files SET linked_at = now() WHERE id = $5
+		)
+		INSERT INTO uploads (id, uploader_id, kind, payload, file_id)
+		VALUES ($1, $2, $3, $4::jsonb, $5)
+		RETURNING ` + uploadColumns
 
-	stored, err := scanUpload(r.q.QueryRow(ctx, query, u.ID, u.UploaderID, string(u.Kind), []byte(u.Payload)))
+	stored, err := scanUpload(r.q.QueryRow(ctx, query, u.ID, u.UploaderID, string(u.Kind), []byte(u.Payload), u.FileID))
 	if err != nil {
 		return domain.Upload{}, fmt.Errorf("repository: create upload: %w", err)
 	}
@@ -25,7 +28,7 @@ func (r *Repository) CreateUpload(ctx context.Context, u domain.Upload) (domain.
 }
 
 func (r *Repository) UploadByID(ctx context.Context, id uuid.UUID) (domain.Upload, error) {
-	const query = `SELECT id, uploader_id, kind, payload, created_at FROM uploads WHERE id = $1`
+	const query = `SELECT ` + uploadColumns + ` FROM uploads WHERE id = $1`
 
 	u, err := scanUpload(r.q.QueryRow(ctx, query, id))
 	if err != nil {
@@ -43,13 +46,15 @@ func scanUpload(row scannable) (domain.Upload, error) {
 		kind    string
 		payload []byte
 	)
-	if err := row.Scan(&u.ID, &u.UploaderID, &kind, &payload, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.UploaderID, &kind, &payload, &u.FileID, &u.CreatedAt); err != nil {
 		return domain.Upload{}, err
 	}
 	u.Kind = domain.MessageKind(kind)
 	u.Payload = json.RawMessage(payload)
 	return u, nil
 }
+
+const uploadColumns = `id, uploader_id, kind, payload, file_id, created_at`
 
 const unreferenced = `NOT EXISTS (SELECT 1 FROM messages m WHERE m.upload_id = u.id AND m.deleted_at IS NULL)`
 
@@ -63,7 +68,7 @@ func (r *Repository) SweepOrphanUploads(
 
 	err := r.InTx(ctx, func(tx *Repository) error {
 		const pick = `
-			SELECT u.id, u.uploader_id, u.kind, u.payload, u.created_at
+			SELECT u.id, u.uploader_id, u.kind, u.payload, u.file_id, u.created_at
 			FROM uploads u
 			WHERE u.created_at < $1 AND ` + unreferenced + `
 			ORDER BY u.created_at

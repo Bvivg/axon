@@ -16,6 +16,9 @@ import (
 const (
 	sweepBatch    = 100
 	removeTimeout = time.Minute
+
+	fileGrace          = time.Hour
+	processingDeadline = time.Hour
 )
 
 type ObjectRemover interface {
@@ -31,10 +34,28 @@ type OrphanUploads interface {
 	) (int, error)
 }
 
+type UploadSessions interface {
+	StaleSessions(ctx context.Context, olderThan time.Time, limit int) ([]domain.UploadSession, error)
+	FailStuckSessions(ctx context.Context, claimedBefore time.Time) (int, error)
+	DeleteSession(ctx context.Context, id uuid.UUID) error
+	SweepOrphanFiles(
+		ctx context.Context,
+		linkedBefore time.Time,
+		limit int,
+		remove func(context.Context, []domain.StoredFile) ([]uuid.UUID, error),
+	) (int, error)
+}
+
+type MultipartAborter interface {
+	AbortMultipart(ctx context.Context, key, uploadID string) error
+}
+
 type SweeperConfig struct {
-	Objects ObjectRemover
-	Uploads OrphanUploads
-	URLs    URLBuilder
+	Objects   ObjectRemover
+	Multipart MultipartAborter
+	Uploads   OrphanUploads
+	Sessions  UploadSessions
+	URLs      URLBuilder
 
 	Interval    time.Duration
 	OrphanAfter time.Duration
@@ -43,9 +64,11 @@ type SweeperConfig struct {
 }
 
 type Sweeper struct {
-	objects ObjectRemover
-	uploads OrphanUploads
-	urls    URLBuilder
+	objects   ObjectRemover
+	multipart MultipartAborter
+	uploads   OrphanUploads
+	sessions  UploadSessions
+	urls      URLBuilder
 
 	interval    time.Duration
 	orphanAfter time.Duration
@@ -60,6 +83,8 @@ func NewSweeper(cfg SweeperConfig) (*Sweeper, error) {
 		return nil, errors.New("attachment: an object store is required")
 	case cfg.Uploads == nil:
 		return nil, errors.New("attachment: an upload store is required")
+	case cfg.Sessions != nil && cfg.Multipart == nil:
+		return nil, errors.New("attachment: sweeping upload sessions needs a multipart aborter")
 	case cfg.Interval <= 0:
 		return nil, errors.New("attachment: sweep interval must be positive")
 	case cfg.OrphanAfter <= 0:
@@ -70,7 +95,9 @@ func NewSweeper(cfg SweeperConfig) (*Sweeper, error) {
 
 	return &Sweeper{
 		objects:     cfg.Objects,
+		multipart:   cfg.Multipart,
 		uploads:     cfg.Uploads,
+		sessions:    cfg.Sessions,
 		urls:        cfg.URLs,
 		interval:    cfg.Interval,
 		orphanAfter: cfg.OrphanAfter,
@@ -112,7 +139,84 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 			break
 		}
 	}
+
+	if s.sessions == nil {
+		return total, nil
+	}
+	if err := s.sweepSessions(ctx, cutoff); err != nil {
+		return total, err
+	}
+
+	linkedBefore := s.now().Add(-fileGrace)
+	for ctx.Err() == nil {
+		swept, err := s.sessions.SweepOrphanFiles(ctx, linkedBefore, sweepBatch, s.removeFiles)
+		total += swept
+		if err != nil {
+			return total, err
+		}
+		if swept == 0 {
+			break
+		}
+	}
 	return total, nil
+}
+
+func (s *Sweeper) sweepSessions(ctx context.Context, cutoff time.Time) error {
+	if stuck, err := s.sessions.FailStuckSessions(ctx, s.now().Add(-processingDeadline)); err != nil {
+		return err
+	} else if stuck > 0 {
+		s.log.WarnContext(ctx, "gave up on uploads that never finished processing", "count", stuck)
+	}
+
+	for ctx.Err() == nil {
+		stale, err := s.sessions.StaleSessions(ctx, cutoff, sweepBatch)
+		if err != nil {
+			return err
+		}
+		if len(stale) == 0 {
+			return nil
+		}
+		for _, session := range stale {
+			if session.Status == domain.UploadUploading || session.Status == domain.UploadFailed {
+				if err := s.multipart.AbortMultipart(ctx, session.StagingKey, session.MultipartID); err != nil {
+					s.log.WarnContext(ctx, "could not abort a stale upload", "upload_session_id", session.ID, "error", err)
+				}
+				for key, err := range s.objects.Remove(ctx, []string{session.StagingKey}) {
+					s.log.WarnContext(ctx, "could not remove a staged upload", "key", key, "error", err)
+				}
+			}
+			if err := s.sessions.DeleteSession(ctx, session.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Sweeper) removeFiles(ctx context.Context, files []domain.StoredFile) ([]uuid.UUID, error) {
+	ctx, cancel := context.WithTimeout(ctx, removeTimeout)
+	defer cancel()
+
+	var all []string
+	for _, f := range files {
+		all = append(all, f.ObjectKeys...)
+	}
+	failures := s.objects.Remove(ctx, all)
+
+	var removed []uuid.UUID
+	for _, f := range files {
+		ok := true
+		for _, key := range f.ObjectKeys {
+			if err, failed := failures[key]; failed {
+				ok = false
+				s.log.WarnContext(ctx, "could not remove an unused file, will retry", "file_id", f.ID, "error", err)
+			}
+		}
+		if ok {
+			removed = append(removed, f.ID)
+		}
+	}
+	return removed, nil
 }
 
 func (s *Sweeper) remove(ctx context.Context, uploads []domain.Upload) ([]uuid.UUID, error) {
@@ -122,6 +226,9 @@ func (s *Sweeper) remove(ctx context.Context, uploads []domain.Upload) ([]uuid.U
 	keysOf := make(map[uuid.UUID][]string, len(uploads))
 	var all []string
 	for _, u := range uploads {
+		if u.FileID != nil {
+			continue
+		}
 		keys := s.ObjectKeys(u.Payload)
 		keysOf[u.ID] = keys
 		all = append(all, keys...)

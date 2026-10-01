@@ -152,6 +152,7 @@ type Upload struct {
 	UploaderID uuid.UUID
 	Kind       MessageKind
 	Payload    json.RawMessage
+	FileID     *uuid.UUID
 	CreatedAt  time.Time
 }
 

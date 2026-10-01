@@ -20,6 +20,13 @@ type Config struct {
 	Kafka       KafkaConfig
 	Attachments AttachmentConfig
 	Media       MediaConfig
+	Uploads     UploadsConfig
+}
+
+type UploadsConfig struct {
+	MaxBytes  int64
+	PartBytes int64
+	Workers   int
 }
 
 type MediaConfig struct {
@@ -86,7 +93,12 @@ func Load() (Config, error) {
 			FFmpeg:  l.StringDefault("FFMPEG_PATH", "ffmpeg"),
 			FFprobe: l.StringDefault("FFPROBE_PATH", "ffprobe"),
 			Workers: l.IntDefault("MEDIA_WORKERS", 2),
-			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 3*time.Minute),
+			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 15*time.Minute),
+		},
+		Uploads: UploadsConfig{
+			MaxBytes:  int64(l.IntDefault("CHAT_MAX_UPLOAD_MB", 200)) << 20,
+			PartBytes: int64(l.IntDefault("CHAT_UPLOAD_PART_MB", 10)) << 20,
+			Workers:   l.IntDefault("CHAT_UPLOAD_WORKERS", 1),
 		},
 	}
 

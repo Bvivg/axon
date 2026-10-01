@@ -34,6 +34,7 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
 	"github.com/bvivg/axon/core/services/chat/internal/server"
 	"github.com/bvivg/axon/core/services/chat/internal/service"
+	"github.com/bvivg/axon/core/services/chat/internal/uploads"
 	chatws "github.com/bvivg/axon/core/services/chat/internal/ws"
 )
 
@@ -209,7 +210,9 @@ func run() error {
 
 	sweeper, err := attachment.NewSweeper(attachment.SweeperConfig{
 		Objects:     attachmentStore,
+		Multipart:   attachmentStore,
 		Uploads:     repo,
+		Sessions:    repo,
 		URLs:        attachmentURLs,
 		Interval:    cfg.Attachments.SweepInterval,
 		OrphanAfter: cfg.Attachments.OrphanAfter,
@@ -230,10 +233,37 @@ func run() error {
 		log.Warn("media processing is unavailable until ffmpeg is installed", "error", err)
 	}
 
+	pipeline := attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools)
+
 	attachmentUpload, err := server.NewAttachmentHandler(server.AttachmentConfig{
 		Verifier: verifier,
-		Pipeline: attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools),
+		Pipeline: pipeline,
 		Recorder: svc,
+		Logger:   log,
+	})
+	if err != nil {
+		return err
+	}
+
+	uploadManager, err := uploads.New(uploads.Config{
+		Sessions:      repo,
+		Objects:       attachmentStore,
+		Processor:     pipeline,
+		KeysOf:        sweeper.ObjectKeys,
+		Logger:        log,
+		MaxBytes:      cfg.Uploads.MaxBytes,
+		MaxVoiceBytes: attachment.MaxVoiceBytes,
+		PartSize:      cfg.Uploads.PartBytes,
+		Workers:       cfg.Uploads.Workers,
+	})
+	if err != nil {
+		return err
+	}
+	go uploadManager.Run(ctx)
+
+	uploadSessions, err := server.NewUploadSessionsHandler(server.UploadSessionsConfig{
+		Verifier: verifier,
+		Manager:  uploadManager,
 		Logger:   log,
 	})
 	if err != nil {
@@ -244,7 +274,7 @@ func run() error {
 
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(handler, socket, presenceSocket, attachmentUpload, metrics, log),
+		Handler:           publicHandler(handler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
@@ -298,6 +328,7 @@ func publicHandler(
 	socket *chatws.Handler,
 	presenceSocket *chatpresence.Handler,
 	attachmentUpload *server.AttachmentHandler,
+	uploadSessions *server.UploadSessionsHandler,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
 ) http.Handler {
@@ -306,6 +337,7 @@ func publicHandler(
 	mux.Handle(chatws.Path, socket)
 	mux.Handle(chatpresence.Path, presenceSocket)
 	mux.Handle("POST "+server.AttachmentUploadPath, attachmentUpload)
+	uploadSessions.Register(mux)
 
 	mux.Handle(chatv1connect.NewChatServiceHandler(handler,
 		connect.WithInterceptors(
