@@ -162,6 +162,9 @@ services:
       MINIO_ROOT_USER: axon
       MINIO_ROOT_PASSWORD: axon12345
 
+      CHAT_VAPID_PUBLIC_KEY: ${CHAT_VAPID_PUBLIC_KEY:-}
+      CHAT_VAPID_PRIVATE_KEY: ${CHAT_VAPID_PRIVATE_KEY:-}
+
     depends_on:
       migrate-chat:
         condition: service_completed_successfully
