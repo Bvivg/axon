@@ -35,6 +35,8 @@ var version = "dev"
 
 const sensitiveBurst = 5
 
+const uploadsBurst = 30
+
 func main() {
 
 	health.RunProbeIfRequested()
@@ -94,7 +96,7 @@ func run() error {
 		PerMinute: cfg.RateLimit.SensitivePerMinute,
 		Burst:     sensitiveBurst,
 	})
-	uploads := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadsPerMinute})
+	uploads := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadsPerMinute, Burst: uploadsBurst})
 	uploadParts := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadPartsPerMinute})
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
