@@ -95,8 +95,13 @@ migrate-guard:
 		exit 1; \
 	fi
 
+.PHONY: db-extensions
+db-extensions: ## Create the Postgres extensions on a database initialised before they were added
+	$(COMPOSE) up -d --wait postgres
+	$(COMPOSE) exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -f /docker-entrypoint-initdb.d/02-extensions.sql'
+
 .PHONY: migrate-up
-migrate-up: migrate-guard ## Apply pending migrations (make migrate-up S=auth)
+migrate-up: migrate-guard db-extensions ## Apply pending migrations (make migrate-up S=auth)
 	$(COMPOSE) run --rm migrate -path=/migrations -database "$(MIGRATE_DSN)" up
 
 .PHONY: migrate-down
