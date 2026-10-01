@@ -209,7 +209,7 @@ export const Transcript = memo(function Transcript({
   });
 
   const latest = useRef({ items, hasOlder, loadingOlder, onLoadOlder, onVisibleSeqChange, firstUnreadSeq });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { items, hasOlder, loadingOlder, onLoadOlder, onVisibleSeqChange, firstUnreadSeq };
   });
 
