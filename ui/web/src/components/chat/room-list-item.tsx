@@ -8,7 +8,7 @@ import { Avatar } from "@/components/ui/avatar";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { MessageKind, RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
-import { chatHref, isRoomAt, roomAddress, useChatAddress } from "@/lib/chat/address";
+import { chatHref, roomAddress } from "@/lib/chat/address";
 import { previewOf } from "@/lib/chat/content";
 import { profileName, shortID } from "@/lib/format";
 import { toWireMessage } from "@/lib/query/chat";
@@ -18,12 +18,13 @@ export function RoomListItem({
   room,
   peerProfile,
   typing = false,
+  active = false,
 }: {
   room: Room;
   peerProfile?: PublicProfile;
   typing?: boolean;
+  active?: boolean;
 }) {
-  const address = useChatAddress();
   const { user } = useSession();
 
   const isGroup = room.kind !== RoomKind.DIRECT;
@@ -35,8 +36,6 @@ export function RoomListItem({
   const readByOthers = mine && !!lastMessage && (room.othersReadSeq ?? BigInt(0)) >= lastMessage.seq;
 
   const unread = Number(room.unreadCount);
-
-  const active = isRoomAt(address, room, peerProfile);
 
   return (
     <Link

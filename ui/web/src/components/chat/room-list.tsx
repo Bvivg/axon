@@ -8,6 +8,7 @@ import { RoomListItem } from "@/components/chat/room-list-item";
 import { Alert } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
+import { isRoomAt, useChatAddress } from "@/lib/chat/address";
 import { describe } from "@/lib/errors";
 import { useRooms } from "@/lib/query/chat";
 import { usePublicProfiles } from "@/lib/query/people";
@@ -28,6 +29,7 @@ export function RoomList() {
   );
 
   const typing = useRoomTyping();
+  const address = useChatAddress();
 
   const profiles = usePublicProfiles(peerIDs);
 
@@ -60,6 +62,7 @@ export function RoomList() {
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((row) => {
           const room = rooms.data[row.index];
+          const peerProfile = room.peerUserId ? profiles.data?.get(room.peerUserId) : undefined;
 
           return (
             <div
@@ -71,8 +74,9 @@ export function RoomList() {
             >
               <RoomListItem
                 room={room}
-                peerProfile={room.peerUserId ? profiles.data?.get(room.peerUserId) : undefined}
+                peerProfile={peerProfile}
                 typing={typing.has(room.id)}
+                active={isRoomAt(address, room, peerProfile)}
               />
             </div>
           );
