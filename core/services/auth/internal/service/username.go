@@ -15,16 +15,12 @@ const usernameAttempts = 5
 
 func (s *Service) createWithUsername(
 	ctx context.Context,
-	chosen *string,
+	chosen string,
 	email string,
 	create func(username string) (domain.User, error),
 ) (domain.User, error) {
-	if chosen != nil {
-		username, err := domain.ValidateUsername(*chosen)
-		if err != nil {
-			return domain.User{}, err
-		}
-		return create(username)
+	if chosen != "" {
+		return create(chosen)
 	}
 
 	stem := domain.UsernameStem(email)

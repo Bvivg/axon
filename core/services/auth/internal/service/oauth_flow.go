@@ -186,7 +186,7 @@ func (s *Service) resolveOauthUser(
 		return domain.User{}, false, err
 	}
 
-	user, err := s.createWithUsername(ctx, nil, email, func(username string) (domain.User, error) {
+	user, err := s.createWithUsername(ctx, "", email, func(username string) (domain.User, error) {
 		return s.store.CreateUserWithOauthAccount(ctx, domain.User{
 			ID:            uuid.New(),
 			Email:         email,

@@ -35,8 +35,9 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 	if err != nil {
 		return Result{}, err
 	}
+	username := ""
 	if in.Username != nil {
-		if _, err := domain.ValidateUsername(*in.Username); err != nil {
+		if username, err = domain.ValidateUsername(*in.Username); err != nil {
 			return Result{}, err
 		}
 	}
@@ -46,11 +47,11 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 		return Result{}, fmt.Errorf("service: hash password: %w", err)
 	}
 
-	user, err := s.createWithUsername(ctx, in.Username, email, func(username string) (domain.User, error) {
+	user, err := s.createWithUsername(ctx, username, email, func(candidate string) (domain.User, error) {
 		return s.store.CreateUserWithPassword(ctx, domain.User{
 			ID:          uuid.New(),
 			Email:       email,
-			Username:    username,
+			Username:    candidate,
 			DisplayName: displayName,
 		}, hash)
 	})
