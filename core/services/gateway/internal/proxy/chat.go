@@ -122,3 +122,17 @@ func NewChatClient(
 ) chatv1connect.ChatServiceClient {
 	return chatv1connect.NewChatServiceClient(httpClient, baseURL, opts...)
 }
+
+func (c *Chat) ListMessageReaders(
+	ctx context.Context,
+	req *connect.Request[chatv1.ListMessageReadersRequest],
+) (*connect.Response[chatv1.ListMessageReadersResponse], error) {
+	return c.client.ListMessageReaders(ctx, forward(ctx, req))
+}
+
+func (c *Chat) ForwardMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.ForwardMessagesRequest],
+) (*connect.Response[chatv1.ForwardMessagesResponse], error) {
+	return c.client.ForwardMessages(ctx, forward(ctx, req))
+}

@@ -103,6 +103,8 @@ func TestDirectMessagingProcedures(t *testing.T) {
 		"add members":      {chatv1connect.ChatServiceAddGroupMembersProcedure, false, policy.TierSensitive},
 		"remove member":    {chatv1connect.ChatServiceRemoveGroupMemberProcedure, false, policy.TierStandard},
 		"rename group":     {chatv1connect.ChatServiceRenameGroupProcedure, false, policy.TierStandard},
+		"message readers":  {chatv1connect.ChatServiceListMessageReadersProcedure, false, policy.TierStandard},
+		"forward messages": {chatv1connect.ChatServiceForwardMessagesProcedure, false, policy.TierSensitive},
 	}
 
 	for name, tt := range tests {
@@ -163,6 +165,9 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		chatv1connect.ChatServiceAddGroupMembersProcedure:   true,
 		chatv1connect.ChatServiceRemoveGroupMemberProcedure: true,
 		chatv1connect.ChatServiceRenameGroupProcedure:       true,
+
+		chatv1connect.ChatServiceListMessageReadersProcedure: true,
+		chatv1connect.ChatServiceForwardMessagesProcedure:    true,
 	}
 
 	for _, procedure := range policy.Procedures() {

@@ -49,6 +49,9 @@ var procedures = map[string]Rule{
 	"/axon.chat.v1.ChatService/RemoveGroupMember": {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/RenameGroup":       {Public: false, Tier: TierStandard},
 
+	"/axon.chat.v1.ChatService/ListMessageReaders": {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatService/ForwardMessages":    {Public: false, Tier: TierSensitive},
+
 	"/axon.chat.v1.ChatService/CreateRoom":      {Public: false, Tier: TierSensitive},
 	"/axon.chat.v1.ChatService/CreateGroup":     {Public: false, Tier: TierSensitive},
 	"/axon.chat.v1.ChatService/AddGroupMembers": {Public: false, Tier: TierSensitive},
