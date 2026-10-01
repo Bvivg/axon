@@ -179,7 +179,7 @@ func (n *Notifier) Notify(ctx context.Context, m domain.Message) error {
 
 func payloadOf(room domain.Room, author string, m domain.Message) Payload {
 	text := previewOf(m)
-	p := Payload{Title: author, Body: text, URL: "/chat/" + room.ID.String(), Tag: room.ID.String()}
+	p := Payload{Title: author, Body: text, URL: "/chat#" + room.ID.String(), Tag: room.ID.String()}
 	if room.Kind == domain.RoomKindGroup || room.Kind == domain.RoomKindOpen {
 		p.Title = room.Name
 		p.Body = author + ": " + text

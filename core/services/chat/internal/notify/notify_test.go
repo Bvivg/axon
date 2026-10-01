@@ -118,7 +118,7 @@ func TestOnlyPeopleWhoCannotSeeTheAppGetAPush(t *testing.T) {
 		if s.endpoint != "https://push/ben-phone" && s.endpoint != "https://push/ben-laptop" {
 			t.Errorf("pushed to %s", s.endpoint)
 		}
-		want := Payload{Title: "Weekend", Body: "Ada: dinner at 8?", URL: "/chat/" + roomID.String(), Tag: roomID.String()}
+		want := Payload{Title: "Weekend", Body: "Ada: dinner at 8?", URL: "/chat#" + roomID.String(), Tag: roomID.String()}
 		if s.payload != want {
 			t.Errorf("payload = %+v, want %+v", s.payload, want)
 		}
