@@ -313,7 +313,6 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     if (!roomID || latestSeq <= 0) {
       return;
     }
-    refreshSoon(queryClient, chatKeys.lastMessage(roomID));
     refreshSoon(queryClient, chatKeys.rooms);
     refreshSoon(queryClient, chatKeys.media(roomID));
   }, [roomID, latestSeq, queryClient]);

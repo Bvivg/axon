@@ -18,8 +18,6 @@ export const chatKeys = {
   rooms: ["chat", "rooms"] as const,
   room: (id: string) => ["chat", "room", id] as const,
   history: (id: string) => ["chat", "history", id] as const,
-  lastMessages: ["chat", "last-message"] as const,
-  lastMessage: (id: string) => ["chat", "last-message", id] as const,
   media: (id: string) => ["chat", "media", id] as const,
   mediaOf: (id: string, kinds: MessageKind[]) => ["chat", "media", id, kinds.join(",")] as const,
   readers: (messageID: string) => ["chat", "readers", messageID] as const,
@@ -253,18 +251,6 @@ export function useDirectRoomLookup() {
   });
 }
 
-export function useLastMessage(roomID: string) {
-  return useQuery({
-    queryKey: chatKeys.lastMessage(roomID),
-    queryFn: async () => {
-      const resp = await chatClient.listMessages({ roomId: roomID, limit: 1 });
-      return resp.messages[0] ?? null;
-    },
-    enabled: roomID !== "",
-    staleTime: 30_000,
-  });
-}
-
 export function useRoomMedia(roomID: string, kinds: MessageKind[]) {
   return useInfiniteQuery({
     queryKey: chatKeys.mediaOf(roomID, kinds),
@@ -316,7 +302,6 @@ export function useHideRoom() {
     },
     onSuccess: (roomID) => {
       forgetHistory(queryClient, roomID);
-      void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(roomID) });
       void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
     },
   });

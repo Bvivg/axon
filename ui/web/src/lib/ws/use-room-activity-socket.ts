@@ -69,7 +69,6 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
     switch (frame.type) {
       case "message":
         typingTracker.stop(frame.message.room_id, frame.message.author_id);
-        refreshSoon(queryClient, chatKeys.lastMessage(frame.message.room_id));
         refreshSoon(queryClient, chatKeys.rooms);
         break;
 
@@ -87,7 +86,7 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
 
       case "message_updated":
         patchHistory(queryClient, frame.message);
-        refreshSoon(queryClient, chatKeys.lastMessage(frame.message.room_id));
+        refreshSoon(queryClient, chatKeys.rooms);
         refreshSoon(queryClient, chatKeys.media(frame.message.room_id));
         break;
 
@@ -130,7 +129,6 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
         subscribed.current.clear();
         watched.current.clear();
         if (opened.current) {
-          void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessages });
           void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
         }
         opened.current = true;

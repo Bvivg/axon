@@ -10,7 +10,7 @@ import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { MessageKind, RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
 import { previewOf } from "@/lib/chat/content";
-import { toWireMessage, useLastMessage } from "@/lib/query/chat";
+import { toWireMessage } from "@/lib/query/chat";
 import { cn } from "@/lib/utils";
 
 export function RoomListItem({
@@ -29,10 +29,9 @@ export function RoomListItem({
   const name = isGroup ? room.name : peerProfile?.displayName || shortID(room.peerUserId);
   const avatarSrc = isGroup ? undefined : peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl;
 
-  const lastMessage = useLastMessage(room.id);
-  const mine = lastMessage.data?.authorId === user?.id && lastMessage.data?.kind !== MessageKind.SYSTEM;
-  const readByOthers =
-    mine && !!lastMessage.data && (room.othersReadSeq ?? BigInt(0)) >= lastMessage.data.seq;
+  const lastMessage = room.lastMessage;
+  const mine = lastMessage?.authorId === user?.id && lastMessage?.kind !== MessageKind.SYSTEM;
+  const readByOthers = mine && !!lastMessage && (room.othersReadSeq ?? BigInt(0)) >= lastMessage.seq;
 
   const unread = Number(room.unreadCount);
 
@@ -67,7 +66,7 @@ export function RoomListItem({
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-sm font-medium">{name}</span>
           <time className="shrink-0 text-xs text-muted-foreground">
-            {formatWhen(lastMessage.data?.sentAt)}
+            {formatWhen(lastMessage?.sentAt)}
           </time>
         </div>
         <div className="flex items-center gap-1">
@@ -83,7 +82,7 @@ export function RoomListItem({
                 )
               ) : null}
               <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                {previewFor(lastMessage.data)}
+                {previewFor(lastMessage)}
               </p>
             </>
           )}
