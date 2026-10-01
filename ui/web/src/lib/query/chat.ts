@@ -21,7 +21,17 @@ export const chatKeys = {
   media: (id: string) => ["chat", "media", id] as const,
   mediaOf: (id: string, kinds: MessageKind[]) => ["chat", "media", id, kinds.join(",")] as const,
   readers: (messageID: string) => ["chat", "readers", messageID] as const,
+  pushKey: ["chat", "push-key"] as const,
 };
+
+export function usePushKey(enabled = true) {
+  return useQuery({
+    queryKey: chatKeys.pushKey,
+    queryFn: async () => (await chatClient.getPushKey({})).publicKey,
+    staleTime: Infinity,
+    enabled,
+  });
+}
 
 export function useRooms() {
   return useQuery({

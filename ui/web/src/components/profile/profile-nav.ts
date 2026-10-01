@@ -1,4 +1,4 @@
-import { IdCard, MonitorSmartphone, Palette, UserRound, type LucideIcon } from "lucide-react";
+import { Bell, IdCard, MonitorSmartphone, Palette, UserRound, type LucideIcon } from "lucide-react";
 
 export interface ProfilePage {
   href: string;
@@ -11,5 +11,6 @@ export const profileOverview: ProfilePage = { href: "/profile", label: "Overview
 export const profilePages: ProfilePage[] = [
   { href: "/profile/my", label: "Personal info", icon: IdCard },
   { href: "/profile/sessions", label: "Sessions", icon: MonitorSmartphone },
+  { href: "/profile/notifications", label: "Notifications", icon: Bell },
   { href: "/profile/appearance", label: "Appearance", icon: Palette },
 ];

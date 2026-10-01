@@ -15,6 +15,7 @@ import {
 import type { TokenPair, User } from "@/gen/axon/auth/v1/auth_pb";
 import { authClient, apiClient } from "@/lib/connect/clients";
 import { refreshSession } from "@/lib/auth/refresh";
+import { disablePush } from "@/lib/push";
 import { clearAccessToken, setAccessToken } from "@/lib/auth/tokens";
 
 export type SessionStatus = "restoring" | "authenticated" | "anonymous";
@@ -52,6 +53,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     settled.current = true;
+
+    await disablePush().catch(() => undefined);
 
     try {
 

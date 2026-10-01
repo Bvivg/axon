@@ -13,7 +13,7 @@ import { apiBaseUrl } from "@/lib/connect/transport";
 import { chatKeys, forgetHistory, patchHistory } from "@/lib/query/chat";
 import { invalidateProfilesOf } from "@/lib/query/people";
 import { refreshSoon } from "@/lib/query/refresh";
-import { bearerPrefix, closeCodes, parseFrame, subprotocol, type Incoming } from "@/lib/ws/protocol";
+import { bearerPrefix, closeCodes, parseFrame, subprotocol, type Incoming, type WireMessage } from "@/lib/ws/protocol";
 import { useTyping, type TypingByRoom } from "@/lib/ws/use-typing";
 
 const socketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws/chat";
@@ -21,8 +21,16 @@ const socketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws/chat";
 const maxRetries = 30;
 const reconnectDelay = (attempt: number) => Math.min(1000 * 2 ** attempt, 15_000);
 
-export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): TypingByRoom {
+export function useRoomActivitySocket(
+  roomIds: string[],
+  peerIds: string[],
+  onMessage?: (message: WireMessage) => void,
+): TypingByRoom {
   const queryClient = useQueryClient();
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  });
   const router = useRouter();
   const { signOut } = useSession();
 
@@ -70,6 +78,7 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
       case "message":
         typingTracker.stop(frame.message.room_id, frame.message.author_id);
         refreshSoon(queryClient, chatKeys.rooms);
+        onMessageRef.current?.(frame.message);
         break;
 
       case "read":
