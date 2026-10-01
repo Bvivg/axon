@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ChatActivityProvider } from "@/components/chat/chat-activity";
@@ -7,14 +8,15 @@ import { ComposerDialog } from "@/components/chat/composer-dialog";
 import { AppSidebar } from "@/components/nav/app-sidebar";
 import { BrandMark } from "@/components/nav/brand";
 import { CommandPalette } from "@/components/nav/command-palette";
+import { isConversation } from "@/components/nav/items";
 import { Tabbar } from "@/components/nav/tabbar";
 import { Topbar } from "@/components/nav/topbar";
 import { useGlobalShortcuts } from "@/components/nav/use-shortcuts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingDots } from "@/components/ui/status";
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
+import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { status } = useSession();
@@ -30,6 +32,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function SignedInShell({ children }: { children: ReactNode }) {
   useGlobalShortcuts();
+  const pathname = usePathname();
 
   return (
     <ChatActivityProvider>
@@ -37,12 +40,14 @@ function SignedInShell({ children }: { children: ReactNode }) {
         <AppSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
-          <ScrollArea className="flex-1">
-            <div className="flex h-full flex-col">
-              {children}
-              <div aria-hidden className="h-28 shrink-0 lg:hidden" />
-            </div>
-          </ScrollArea>
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col pb-28 lg:pb-0",
+              isConversation(pathname) && "max-md:pb-[env(safe-area-inset-bottom)]",
+            )}
+          >
+            {children}
+          </div>
           <Tabbar />
         </div>
       </div>

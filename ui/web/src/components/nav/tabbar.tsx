@@ -4,7 +4,7 @@ import { Gamepad2, MessageCircle, Phone, Search, User, type LucideIcon } from "l
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Section, sectionFor } from "@/components/nav/items";
+import { isConversation, Section, sectionFor } from "@/components/nav/items";
 import { setPaletteOpen } from "@/components/nav/palette-store";
 import { Avatar } from "@/components/ui/avatar";
 import { useSession } from "@/lib/auth/session";
@@ -31,7 +31,12 @@ export function Tabbar() {
   const avatarSrc = user?.avatarUrls?.small || user?.avatarUrl;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden">
+    <div
+      className={cn(
+        "pointer-events-none fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden",
+        isConversation(pathname) && "max-md:hidden",
+      )}
+    >
       <nav
         aria-label="Primary"
         className="pointer-events-auto flex flex-1 items-center justify-between rounded-full border border-border bg-card/95 px-1 py-1.5 shadow-lg backdrop-blur"

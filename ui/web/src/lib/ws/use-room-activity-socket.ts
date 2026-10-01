@@ -10,7 +10,7 @@ import { useSession } from "@/lib/auth/session";
 import { clearAccessToken, getAccessToken } from "@/lib/auth/tokens";
 import { refreshSession } from "@/lib/auth/refresh";
 import { apiBaseUrl } from "@/lib/connect/transport";
-import { chatKeys } from "@/lib/query/chat";
+import { chatKeys, forgetHistory, patchHistory } from "@/lib/query/chat";
 import { invalidateProfilesOf } from "@/lib/query/people";
 import { bearerPrefix, closeCodes, parseFrame, subprotocol, type Incoming } from "@/lib/ws/protocol";
 import { useTyping, type TypingByRoom } from "@/lib/ws/use-typing";
@@ -28,6 +28,7 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
   const [token, setToken] = useState<string | null>(null);
   const subscribed = useRef(new Set<string>());
   const watched = useRef(new Set<string>());
+  const opened = useRef(false);
   const typingTracker = useTyping();
 
   useEffect(() => {
@@ -83,10 +84,22 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
         void invalidateProfilesOf(queryClient, frame.user_id);
         break;
 
+      case "message_updated":
+        patchHistory(queryClient, frame.message);
+        void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(frame.message.room_id) });
+        void queryClient.invalidateQueries({ queryKey: chatKeys.media(frame.message.room_id) });
+        break;
+
       case "room_added":
         if (!subscribed.current.has(frame.room_id)) {
           void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
         }
+        break;
+
+      case "room_removed":
+        subscribed.current.delete(frame.room_id);
+        void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
+        forgetHistory(queryClient, frame.room_id);
         break;
     }
   };
@@ -115,6 +128,11 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
       onOpen: () => {
         subscribed.current.clear();
         watched.current.clear();
+        if (opened.current) {
+          void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessages });
+          void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
+        }
+        opened.current = true;
       },
       onMessage: (event) => {
         if (typeof event.data !== "string") {

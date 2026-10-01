@@ -40,6 +40,7 @@ test("a page opened cold shows what was said before it existed", async ({
   await say(ada.page, "said after it");
   await expectSaid(ada.page, "You", "said after it");
   await expect(ada.page.getByRole("article")).toHaveCount(2);
+  await expect(ada.page.getByText("Today", { exact: true })).toHaveCount(1);
 
   await goToChats(ada.page);
   await expect(chatList(ada.page).getByRole("link", { name: /Grace/ })).toBeVisible();

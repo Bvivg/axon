@@ -7,6 +7,7 @@ import useWebSocket, { ReadyState } from "react-use-websocket";
 import { clearAccessToken, getAccessToken } from "@/lib/auth/tokens";
 import { refreshSession } from "@/lib/auth/refresh";
 import { apiBaseUrl } from "@/lib/connect/transport";
+import { applyUpdate, patchHistory, refreshNewestPage } from "@/lib/query/chat";
 import { invalidateProfilesOf } from "@/lib/query/people";
 import {
   bearerPrefix,
@@ -32,6 +33,11 @@ const nobody: ReadonlySet<string> = new Set();
 
 export type ChatTarget = { roomId: string } | { peerId: string };
 
+export interface SendOptions {
+  uploadId?: string;
+  replyToId?: string;
+}
+
 export interface ChatSocket {
   messages: WireMessage[];
 
@@ -47,7 +53,15 @@ export interface ChatSocket {
 
   typing: ReadonlySet<string>;
 
-  send: (body: string, uploadId?: string) => boolean;
+  removed: boolean;
+
+  send: (body: string, options?: SendOptions) => boolean;
+
+  forward: (messageId: string, roomId: string, onForwarded?: () => void) => boolean;
+
+  edit: (messageId: string, body: string, onSettled?: (saved: boolean) => void) => boolean;
+
+  remove: (messageId: string) => boolean;
 
   notifyTyping: () => void;
 }
@@ -66,8 +80,12 @@ export function useChatSocket(
   const [newRoomId, setNewRoomId] = useState<string | null>(null);
   const [revoked, setRevoked] = useState(false);
   const [readSeqs, setReadSeqs] = useState<Map<string, number>>(new Map());
+  const [removed, setRemoved] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const typingTracker = useTyping();
+  const forwards = useRef(new Map<string, () => void>());
+  const edits = useRef(new Map<string, PendingEdit>());
+  const opened = useRef(false);
 
   const messages = useMemo(
     () => merge(history ?? noHistory, delivered),
@@ -117,7 +135,28 @@ export function useChatSocket(
         setDelivered((current) => merge(current, [frame.message]));
         break;
 
+      case "message_updated":
+        if (frame.message.room_id === roomID) {
+          setDelivered((current) => applyUpdate(current, frame.message));
+          patchHistory(queryClient, frame.message);
+        }
+        for (const [clientID, pending] of edits.current) {
+          if (pending.messageId === frame.message.id) {
+            edits.current.delete(clientID);
+            pending.settle(true);
+          }
+        }
+        break;
+
+      case "room_removed":
+        if (frame.room_id === roomID) {
+          setRemoved(true);
+        }
+        break;
+
       case "ack":
+        forwards.current.get(frame.client_id)?.();
+        forwards.current.delete(frame.client_id);
         if (!roomID && frame.room_id) {
           setNewRoomId(frame.room_id);
         }
@@ -143,6 +182,11 @@ export function useChatSocket(
         break;
 
       case "error":
+        if (frame.client_id) {
+          forwards.current.delete(frame.client_id);
+          edits.current.get(frame.client_id)?.settle(false);
+          edits.current.delete(frame.client_id);
+        }
         setError(frame.reason || frame.code);
         break;
     }
@@ -172,7 +216,22 @@ export function useChatSocket(
       },
       onOpen: () => {
         if (roomID) {
+          if (opened.current) {
+            void refreshNewestPage(queryClient, roomID);
+          }
           sendJsonMessage({ type: "subscribe", room_id: roomID, since: seen.current });
+        }
+        opened.current = true;
+      },
+      onClose: () => {
+        const unconfirmed = forwards.current.size + edits.current.size;
+        forwards.current.clear();
+        for (const pending of edits.current.values()) {
+          pending.settle(false);
+        }
+        edits.current.clear();
+        if (unconfirmed > 0) {
+          setError("The connection dropped before your change was confirmed. Check the chat before trying again.");
         }
       },
       onMessage: (event) => {
@@ -210,18 +269,23 @@ export function useChatSocket(
   }, [connected, roomID, sendJsonMessage]);
 
   const send = useCallback(
-    (body: string, uploadId?: string) => {
-      if (readyState !== ReadyState.OPEN || (!body.trim() && !uploadId)) {
+    (body: string, options: SendOptions = {}) => {
+      if (readyState !== ReadyState.OPEN || (!body.trim() && !options.uploadId)) {
         return false;
       }
 
-      const clientID = newClientID();
-      const upload = uploadId ? { upload_id: uploadId } : {};
+      const frame = {
+        type: "send" as const,
+        client_id: newClientID(),
+        body,
+        ...(options.uploadId ? { upload_id: options.uploadId } : {}),
+        ...(options.replyToId ? { reply_to_id: options.replyToId } : {}),
+      };
 
       if (roomID) {
-        sendJsonMessage({ type: "send", room_id: roomID, client_id: clientID, body, ...upload });
+        sendJsonMessage({ ...frame, room_id: roomID });
       } else if (peerID) {
-        sendJsonMessage({ type: "send", to_user_id: peerID, client_id: clientID, body, ...upload });
+        sendJsonMessage({ ...frame, to_user_id: peerID });
       } else {
         return false;
       }
@@ -233,6 +297,56 @@ export function useChatSocket(
     [readyState, roomID, peerID, sendJsonMessage],
   );
 
+  const forward = useCallback(
+    (messageId: string, targetRoomId: string, onForwarded?: () => void) => {
+      if (readyState !== ReadyState.OPEN) {
+        return false;
+      }
+      const clientID = newClientID();
+      if (onForwarded) {
+        forwards.current.set(clientID, onForwarded);
+      }
+      sendJsonMessage({
+        type: "send",
+        room_id: targetRoomId,
+        client_id: clientID,
+        body: "",
+        forwarded_from_id: messageId,
+      });
+      setError(null);
+      return true;
+    },
+    [readyState, sendJsonMessage],
+  );
+
+  const edit = useCallback(
+    (messageId: string, body: string, onSettled?: (saved: boolean) => void) => {
+      if (readyState !== ReadyState.OPEN) {
+        return false;
+      }
+      const clientID = newClientID();
+      if (onSettled) {
+        edits.current.set(clientID, { messageId, settle: onSettled });
+      }
+      sendJsonMessage({ type: "edit", client_id: clientID, message_id: messageId, body });
+      setError(null);
+      return true;
+    },
+    [readyState, sendJsonMessage],
+  );
+
+  const remove = useCallback(
+    (messageId: string) => {
+      if (readyState !== ReadyState.OPEN) {
+        return false;
+      }
+      sendJsonMessage({ type: "delete", message_id: messageId });
+      setError(null);
+      return true;
+    },
+    [readyState, sendJsonMessage],
+  );
+
   return {
     messages,
     connected,
@@ -241,9 +355,18 @@ export function useChatSocket(
     revoked,
     readSeqs,
     typing: (roomID && typingTracker.typing.get(roomID)) || nobody,
+    removed,
     send,
+    forward,
+    edit,
+    remove,
     notifyTyping,
   };
+}
+
+interface PendingEdit {
+  messageId: string;
+  settle: (saved: boolean) => void;
 }
 
 function merge(current: WireMessage[], incoming: WireMessage[]): WireMessage[] {

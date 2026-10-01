@@ -100,6 +100,13 @@ test("a photo loses its camera metadata on the way and both people can open it",
   await viewer.getByRole("button", { name: "Close" }).click();
   await expect(viewer).toHaveCount(0);
 
+  await grace.page.getByRole("button", { name: "Open photo: look at this" }).click();
+  await viewer.getByRole("img", { name: "look at this" }).click();
+  await expect(viewer).toBeVisible();
+  const size = grace.page.viewportSize();
+  await grace.page.mouse.click(4, (size?.height ?? 600) / 2);
+  await expect(viewer).toHaveCount(0);
+
   await ada.close();
   await grace.close();
 });

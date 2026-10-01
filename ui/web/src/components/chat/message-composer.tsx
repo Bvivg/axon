@@ -1,8 +1,8 @@
 "use client";
 
-import { FileText, Film, ImageIcon, Mic, Paperclip, SendHorizontal, Trash2, X } from "lucide-react";
+import { FileText, Film, ImageIcon, Mic, Paperclip, Pencil, Reply, SendHorizontal, Trash2, X } from "lucide-react";
 import Image from "next/image";
-import { useRef, useState, type ClipboardEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,21 +23,75 @@ import {
 import { RecorderState, useVoiceRecorder } from "@/lib/chat/use-voice-recorder";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { SendOptions } from "@/lib/ws/use-chat-socket";
 
 type PendingUploads = ReturnType<typeof usePendingUploads>;
+
+export enum ComposerMode {
+  Reply = "reply",
+  Edit = "edit",
+}
+
+export interface ComposerContext {
+  mode: ComposerMode;
+  messageId: string;
+  title: string;
+  preview: string;
+  body: string;
+  bodyOptional?: boolean;
+}
 
 export function MessageComposer({
   connected,
   uploads,
+  context,
   onSend,
+  onEdit,
+  onCancelContext,
   onTyping,
 }: {
   connected: boolean;
   uploads: PendingUploads;
-  onSend: (body: string, uploadId?: string) => boolean;
+  context: ComposerContext | null;
+  onSend: (body: string, options?: SendOptions) => boolean;
+  onEdit: (messageId: string, body: string, onSettled?: (saved: boolean) => void) => boolean;
+  onCancelContext: () => void;
   onTyping: () => void;
 }) {
   const [draft, setDraft] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const editing = context?.mode === ComposerMode.Edit;
+  const replyToId = context?.mode === ComposerMode.Reply ? context.messageId : undefined;
+
+  const contextKey = context ? `${context.mode}:${context.messageId}` : "";
+  const [appliedContext, setAppliedContext] = useState("");
+  const [stashedDraft, setStashedDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  if (contextKey !== appliedContext) {
+    const wasEditing = appliedContext.startsWith(`${ComposerMode.Edit}:`);
+    setAppliedContext(contextKey);
+    setSaving(false);
+    if (editing) {
+      if (!wasEditing) {
+        setStashedDraft(draft);
+      }
+      setDraft(context.body);
+    } else if (wasEditing) {
+      setDraft(stashedDraft);
+      setStashedDraft("");
+    }
+  }
+
+  const currentContext = useRef(contextKey);
+  useEffect(() => {
+    currentContext.current = contextKey;
+  });
+
+  useEffect(() => {
+    if (contextKey) {
+      input.current?.focus();
+    }
+  }, [contextKey]);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [voiceSending, setVoiceSending] = useState(false);
   const mediaInput = useRef<HTMLInputElement>(null);
@@ -45,7 +99,13 @@ export function MessageComposer({
   const recorder = useVoiceRecorder();
 
   const hasUploads = uploads.items.length > 0;
-  const canSend = connected && !uploads.busy && (draft.trim() !== "" || uploads.ready.length > 0);
+  const canSend = editing
+    ? connected && !saving && (context.bodyOptional || draft.trim() !== "") && draft !== context.body
+    : connected && !uploads.busy && (draft.trim() !== "" || uploads.ready.length > 0);
+
+  const cancelContext = () => {
+    onCancelContext();
+  };
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -53,22 +113,48 @@ export function MessageComposer({
       return;
     }
 
+    if (editing) {
+      const editedContext = contextKey;
+      const sent = onEdit(context.messageId, draft, (saved) => {
+        if (currentContext.current !== editedContext) {
+          return;
+        }
+        setSaving(false);
+        if (saved) {
+          onCancelContext();
+        }
+      });
+      setSaving(sent);
+      return;
+    }
+
     if (uploads.ready.length === 0) {
-      if (onSend(draft)) {
+      if (onSend(draft, { replyToId })) {
         setDraft("");
+        onCancelContext();
       }
       return;
     }
 
     const sent: string[] = [];
     uploads.ready.forEach((item, index) => {
-      if (item.uploaded && onSend(index === 0 ? draft : "", item.uploaded.uploadId)) {
+      const first = index === 0;
+      const options = { uploadId: item.uploaded?.uploadId, replyToId: first ? replyToId : undefined };
+      if (item.uploaded && onSend(first ? draft : "", options)) {
         sent.push(item.id);
       }
     });
     if (sent.length > 0) {
       uploads.take(sent);
       setDraft("");
+      onCancelContext();
+    }
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape" && context) {
+      event.preventDefault();
+      cancelContext();
     }
   };
 
@@ -109,7 +195,9 @@ export function MessageComposer({
     }
     try {
       const uploaded = await uploadAttachment(recording.blob, recording.filename, UploadAs.Voice);
-      if (!onSend("", uploaded.uploadId)) {
+      if (onSend("", { uploadId: uploaded.uploadId, replyToId })) {
+        onCancelContext();
+      } else {
         setVoiceError("The voice message was not sent. Check the connection and try again.");
       }
     } catch (err) {
@@ -127,7 +215,29 @@ export function MessageComposer({
 
   return (
     <div className="shrink-0 pt-3">
-      {hasUploads ? (
+      {context ? (
+        <div className="mb-2 flex items-center gap-3 rounded-lg border-l-2 border-signal bg-muted/60 py-1.5 pr-1 pl-3">
+          {editing ? (
+            <Pencil aria-hidden className="size-4 shrink-0 text-signal" />
+          ) : (
+            <Reply aria-hidden className="size-4 shrink-0 text-signal" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-signal">{context.title}</p>
+            <p className="truncate text-xs text-muted-foreground">{context.preview}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={editing ? "Cancel editing" : "Cancel reply"}
+            onClick={cancelContext}
+          >
+            <X />
+          </Button>
+        </div>
+      ) : null}
+
+      {hasUploads && !editing ? (
         <ScrollArea orientation="horizontal" className="mb-2">
           <ul aria-label="Attachments" className="flex w-max gap-2 pb-3">
             {uploads.items.map((item) => (
@@ -180,25 +290,27 @@ export function MessageComposer({
         </div>
       ) : (
         <form className="flex items-center gap-2" onSubmit={onSubmit}>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon" aria-label="Attach" disabled={!connected}>
-                  <Paperclip />
-                </Button>
-              }
-            />
-            <DropdownMenuContent side="top" className="w-48">
-              <DropdownMenuItem onClick={() => mediaInput.current?.click()}>
-                <ImageIcon />
-                Photo or video
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => fileInput.current?.click()}>
-                <FileText />
-                File
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {editing ? null : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="ghost" size="icon" aria-label="Attach" disabled={!connected}>
+                    <Paperclip />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent side="top" className="w-48">
+                <DropdownMenuItem onClick={() => mediaInput.current?.click()}>
+                  <ImageIcon />
+                  Photo or video
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => fileInput.current?.click()}>
+                  <FileText />
+                  File
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <input
             ref={mediaInput}
             type="file"
@@ -218,17 +330,25 @@ export function MessageComposer({
           />
 
           <Input
+            ref={input}
             aria-label="Message"
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
-            onPaste={onPaste}
+            onPaste={editing ? undefined : onPaste}
+            onKeyDown={onKeyDown}
             placeholder={
-              !connected ? "Waiting for the connection…" : hasUploads ? "Add a caption" : "Say something"
+              !connected
+                ? "Waiting for the connection…"
+                : editing
+                  ? "Edit the message"
+                  : hasUploads
+                    ? "Add a caption"
+                    : "Say something"
             }
             disabled={!connected}
           />
 
-          {draft.trim() === "" && !hasUploads ? (
+          {draft.trim() === "" && !hasUploads && !editing ? (
             <Button
               variant="ghost"
               size="icon"
@@ -239,8 +359,8 @@ export function MessageComposer({
               <Mic />
             </Button>
           ) : null}
-          <Button type="submit" variant="signal" disabled={!canSend} aria-busy={uploads.busy}>
-            Send
+          <Button type="submit" variant="signal" disabled={!canSend} aria-busy={editing ? saving : uploads.busy}>
+            {editing ? "Save" : "Send"}
           </Button>
         </form>
       )}
