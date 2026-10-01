@@ -7,10 +7,24 @@ export type Outgoing =
   | { type: "unsubscribe"; room_id: string }
   | { type: "typing"; room_id: string }
   | { type: "watch_presence"; to_user_id: string }
-  | ({ type: "send"; client_id: string; body: string; upload_id?: string } & (
-      | { room_id: string }
-      | { to_user_id: string }
-    ));
+  | { type: "edit"; client_id: string; message_id: string; body: string }
+  | { type: "delete"; message_id: string }
+  | ({
+      type: "send";
+      client_id: string;
+      body: string;
+      upload_id?: string;
+      reply_to_id?: string;
+      forwarded_from_id?: string;
+    } & ({ room_id: string } | { to_user_id: string }));
+
+export interface WireReplyPreview {
+  id: string;
+  author_id: string;
+  kind: string;
+  body: string;
+  deleted?: boolean;
+}
 
 export interface WireMessage {
   id: string;
@@ -25,6 +39,15 @@ export interface WireMessage {
   kind?: string;
 
   payload?: Record<string, unknown>;
+
+  reply_to_id?: string;
+  reply_to?: WireReplyPreview;
+
+  forwarded_from_id?: string;
+  forwarded_from_author_id?: string;
+
+  edited_at?: string;
+  deleted_at?: string;
 }
 
 export type Incoming =
@@ -34,7 +57,9 @@ export type Incoming =
   | { type: "read"; room_id: string; user_id: string; seq: number }
   | { type: "typing"; room_id: string; user_id: string }
   | { type: "presence"; user_id: string }
+  | { type: "message_updated"; message: WireMessage }
   | { type: "room_added"; room_id: string }
+  | { type: "room_removed"; room_id: string }
   | { type: "error"; code: string; reason: string; client_id?: string };
 
 export const closeCodes = {

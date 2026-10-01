@@ -99,6 +99,10 @@ func TestDirectMessagingProcedures(t *testing.T) {
 		"hide room":        {chatv1connect.ChatServiceHideRoomProcedure, false, policy.TierStandard},
 		"get direct room":  {chatv1connect.ChatServiceGetDirectRoomProcedure, false, policy.TierStandard},
 		"mark read":        {chatv1connect.ChatServiceMarkReadProcedure, false, policy.TierStandard},
+		"create group":     {chatv1connect.ChatServiceCreateGroupProcedure, false, policy.TierSensitive},
+		"add members":      {chatv1connect.ChatServiceAddGroupMembersProcedure, false, policy.TierSensitive},
+		"remove member":    {chatv1connect.ChatServiceRemoveGroupMemberProcedure, false, policy.TierStandard},
+		"rename group":     {chatv1connect.ChatServiceRenameGroupProcedure, false, policy.TierStandard},
 	}
 
 	for name, tt := range tests {
@@ -154,6 +158,11 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		chatv1connect.ChatServiceHideRoomProcedure:      true,
 		chatv1connect.ChatServiceGetDirectRoomProcedure: true,
 		chatv1connect.ChatServiceMarkReadProcedure:      true,
+
+		chatv1connect.ChatServiceCreateGroupProcedure:       true,
+		chatv1connect.ChatServiceAddGroupMembersProcedure:   true,
+		chatv1connect.ChatServiceRemoveGroupMemberProcedure: true,
+		chatv1connect.ChatServiceRenameGroupProcedure:       true,
 	}
 
 	for _, procedure := range policy.Procedures() {

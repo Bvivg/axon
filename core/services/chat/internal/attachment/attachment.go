@@ -24,6 +24,15 @@ func (b URLBuilder) URL(key string) string {
 	return b.publicURL + "/" + b.bucket + "/" + key
 }
 
+func (b URLBuilder) Key(url string) (string, bool) {
+	prefix := b.publicURL + "/" + b.bucket + "/"
+	key, ok := strings.CutPrefix(url, prefix)
+	if !ok || key == "" || strings.Contains(key, "..") {
+		return "", false
+	}
+	return key, true
+}
+
 func newObjectBase(userID uuid.UUID) string {
 	return userID.String() + "/" + uuid.NewString()
 }

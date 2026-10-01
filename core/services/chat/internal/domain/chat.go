@@ -12,11 +12,12 @@ type RoomKind string
 const (
 	RoomKindOpen   RoomKind = "open"
 	RoomKindDirect RoomKind = "direct"
+	RoomKindGroup  RoomKind = "group"
 )
 
 func (k RoomKind) Valid() bool {
 	switch k {
-	case RoomKindOpen, RoomKindDirect:
+	case RoomKindOpen, RoomKindDirect, RoomKindGroup:
 		return true
 	default:
 		return false
@@ -58,11 +59,20 @@ func DirectPair(a, b uuid.UUID) (min, max uuid.UUID) {
 	return b, a
 }
 
+type MemberRole string
+
+const (
+	MemberRoleOwner  MemberRole = "owner"
+	MemberRoleMember MemberRole = "member"
+)
+
 type Member struct {
 	UserID   uuid.UUID
 	JoinedAt time.Time
 
 	DisplayName string
+
+	Role MemberRole
 
 	HiddenAt          *time.Time
 	ClearedThroughSeq int64
@@ -140,10 +150,19 @@ type Upload struct {
 	CreatedAt  time.Time
 }
 
+const (
+	SystemGroupCreated  = "group_created"
+	SystemMemberAdded   = "member_added"
+	SystemMemberRemoved = "member_removed"
+	SystemMemberLeft    = "member_left"
+	SystemGroupRenamed  = "group_renamed"
+)
+
 type SystemPayload struct {
-	Event    string  `json:"event"`
-	ActorID  *string `json:"actor_id,omitempty"`
-	TargetID *string `json:"target_id,omitempty"`
+	Event     string   `json:"event"`
+	ActorID   *string  `json:"actor_id,omitempty"`
+	TargetID  *string  `json:"target_id,omitempty"`
+	TargetIDs []string `json:"target_ids,omitempty"`
 }
 
 var emptyPayload = json.RawMessage(`{}`)
@@ -165,6 +184,50 @@ type Message struct {
 
 	ReplyToID       *uuid.UUID
 	ForwardedFromID *uuid.UUID
+
+	ForwardOriginAuthorID *uuid.UUID
+	UploadID              *uuid.UUID
+
+	EditedAt  *time.Time
+	DeletedAt *time.Time
+
+	ReplyTo *ReplyPreview
+
+	Revealed []uuid.UUID
+}
+
+func (m Message) Deleted() bool { return m.DeletedAt != nil }
+
+func (m Message) Editable() bool {
+	switch {
+	case m.Deleted(), m.ForwardedFromID != nil:
+		return false
+	case m.Kind == MessageKindText, m.Kind == MessageKindImage, m.Kind == MessageKindVideo, m.Kind == MessageKindAttachment:
+		return true
+	default:
+		return false
+	}
+}
+
+const ReplyPreviewLength = 140
+
+type ReplyPreview struct {
+	ID       uuid.UUID
+	AuthorID uuid.UUID
+	Kind     MessageKind
+	Body     string
+	Deleted  bool
+}
+
+func PreviewOf(m Message) ReplyPreview {
+	body := m.Body
+	if runes := []rune(body); len(runes) > ReplyPreviewLength {
+		body = string(runes[:ReplyPreviewLength])
+	}
+	if m.Deleted() {
+		body = ""
+	}
+	return ReplyPreview{ID: m.ID, AuthorID: m.AuthorID, Kind: m.Kind, Body: body, Deleted: m.Deleted()}
 }
 
 type Page struct {

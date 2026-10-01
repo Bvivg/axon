@@ -195,7 +195,7 @@ func TestSendingStopsTheMomentMembershipDoes(t *testing.T) {
 		t.Fatalf("Send: %v", err)
 	}
 
-	if err := h.svc.LeaveRoom(t.Context(), room.ID, owner); err != nil {
+	if _, err := h.svc.LeaveRoom(t.Context(), room.ID, owner); err != nil {
 		t.Fatalf("LeaveRoom: %v", err)
 	}
 

@@ -44,6 +44,18 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrDirectRoomNotJoinable):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("direct rooms cannot be joined"))
 
+	case errors.Is(err, domain.ErrGroupNotJoinable):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("a group is joined only when its owner adds you"))
+
+	case errors.Is(err, domain.ErrNotAGroup):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("this chat is not a group"))
+
+	case errors.Is(err, domain.ErrNotGroupOwner):
+		return connect.NewError(connect.CodePermissionDenied, errors.New("only the group owner can do this"))
+
+	case errors.Is(err, domain.ErrUnknownUser):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("one of the people does not exist"))
+
 	case errors.Is(err, domain.ErrInvalidReplyTarget),
 		errors.Is(err, domain.ErrInvalidForwardTarget),
 		errors.Is(err, domain.ErrCannotMessageSelf),

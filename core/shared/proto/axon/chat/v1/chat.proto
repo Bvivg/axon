@@ -23,12 +23,21 @@ service ChatService {
   rpc GetDirectRoom(GetDirectRoomRequest) returns (GetDirectRoomResponse);
 
   rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
+
+  rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
+
+  rpc AddGroupMembers(AddGroupMembersRequest) returns (AddGroupMembersResponse);
+
+  rpc RemoveGroupMember(RemoveGroupMemberRequest) returns (RemoveGroupMemberResponse);
+
+  rpc RenameGroup(RenameGroupRequest) returns (RenameGroupResponse);
 }
 
 enum RoomKind {
   ROOM_KIND_UNSPECIFIED = 0;
   ROOM_KIND_OPEN = 1;
   ROOM_KIND_DIRECT = 2;
+  ROOM_KIND_GROUP = 3;
 }
 
 message Room {
@@ -58,6 +67,13 @@ message Member {
   google.protobuf.Timestamp joined_at = 3;
 
   int64 last_read_seq = 4;
+  optional MemberRole role = 5;
+}
+
+enum MemberRole {
+  MEMBER_ROLE_UNSPECIFIED = 0;
+  MEMBER_ROLE_OWNER = 1;
+  MEMBER_ROLE_MEMBER = 2;
 }
 
 enum MessageKind {
@@ -109,6 +125,7 @@ message SystemPayload {
 
   optional string actor_id = 2;
   optional string target_id = 3;
+  repeated string target_ids = 4;
 }
 
 message Message {
@@ -135,6 +152,18 @@ message Message {
     ImagePayload image = 14;
     VideoPayload video = 15;
   }
+  optional ReplyPreview reply_to = 16;
+  optional string forwarded_from_author_id = 17;
+  optional google.protobuf.Timestamp edited_at = 18;
+  optional google.protobuf.Timestamp deleted_at = 19;
+}
+
+message ReplyPreview {
+  string id = 1;
+  string author_id = 2;
+  MessageKind kind = 3;
+  string body = 4;
+  bool deleted = 5;
 }
 
 message CreateRoomRequest {
@@ -215,4 +244,38 @@ message GetDirectRoomRequest {
 
 message GetDirectRoomResponse {
   optional Room room = 1;
+}
+
+message CreateGroupRequest {
+  string name = 1;
+  repeated string member_user_ids = 2;
+}
+
+message CreateGroupResponse {
+  Room room = 1;
+}
+
+message AddGroupMembersRequest {
+  string room_id = 1;
+  repeated string user_ids = 2;
+}
+
+message AddGroupMembersResponse {
+  repeated Member added = 1;
+}
+
+message RemoveGroupMemberRequest {
+  string room_id = 1;
+  string user_id = 2;
+}
+
+message RemoveGroupMemberResponse {}
+
+message RenameGroupRequest {
+  string room_id = 1;
+  string name = 2;
+}
+
+message RenameGroupResponse {
+  Room room = 1;
 }

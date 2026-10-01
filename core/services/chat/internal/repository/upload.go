@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -48,4 +49,110 @@ func scanUpload(row scannable) (domain.Upload, error) {
 	u.Kind = domain.MessageKind(kind)
 	u.Payload = json.RawMessage(payload)
 	return u, nil
+}
+
+const unreferenced = `NOT EXISTS (SELECT 1 FROM messages m WHERE m.upload_id = u.id AND m.deleted_at IS NULL)`
+
+func (r *Repository) SweepOrphanUploads(
+	ctx context.Context,
+	olderThan time.Time,
+	limit int,
+	remove func(context.Context, []domain.Upload) ([]uuid.UUID, error),
+) (int, error) {
+	var swept int
+
+	err := r.InTx(ctx, func(tx *Repository) error {
+		const pick = `
+			SELECT u.id, u.uploader_id, u.kind, u.payload, u.created_at
+			FROM uploads u
+			WHERE u.created_at < $1 AND ` + unreferenced + `
+			ORDER BY u.created_at
+			LIMIT $2
+			FOR UPDATE OF u SKIP LOCKED`
+
+		rows, err := tx.q.Query(ctx, pick, olderThan, limit)
+		if err != nil {
+			return fmt.Errorf("repository: pick orphan uploads: %w", err)
+		}
+
+		var orphans []domain.Upload
+		for rows.Next() {
+			u, err := scanUpload(rows)
+			if err != nil {
+				rows.Close()
+				return fmt.Errorf("repository: scan orphan upload: %w", err)
+			}
+			orphans = append(orphans, u)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("repository: pick orphan uploads: %w", err)
+		}
+		orphans, err = tx.stillOrphaned(ctx, orphans)
+		if err != nil {
+			return err
+		}
+		if len(orphans) == 0 {
+			return nil
+		}
+
+		ids, err := remove(ctx, orphans)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+
+		if _, err := tx.q.Exec(ctx, `DELETE FROM uploads WHERE id = ANY($1)`, ids); err != nil {
+			return fmt.Errorf("repository: delete orphan uploads: %w", err)
+		}
+
+		swept = len(ids)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return swept, nil
+}
+
+func (r *Repository) stillOrphaned(ctx context.Context, picked []domain.Upload) ([]domain.Upload, error) {
+	if len(picked) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]uuid.UUID, len(picked))
+	for i, u := range picked {
+		ids[i] = u.ID
+	}
+
+	const query = `SELECT u.id FROM uploads u WHERE u.id = ANY($1) AND ` + unreferenced
+
+	rows, err := r.q.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("repository: recheck orphan uploads: %w", err)
+	}
+	defer rows.Close()
+
+	orphaned := make(map[uuid.UUID]struct{}, len(picked))
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("repository: scan orphan upload: %w", err)
+		}
+		orphaned[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: recheck orphan uploads: %w", err)
+	}
+
+	still := picked[:0]
+	for _, u := range picked {
+		if _, ok := orphaned[u.ID]; ok {
+			still = append(still, u)
+		}
+	}
+	return still, nil
 }

@@ -54,11 +54,32 @@ export async function say(page: Page, body: string): Promise<void> {
 }
 
 export async function expectSaid(page: Page, author: string, body: string) {
-  const message = page.getByRole("article").filter({ hasText: body });
-  if (author === "You") {
-    await expect(message).toBeVisible();
-    await expect(message.getByText(body, { exact: true })).toBeVisible();
-    return;
-  }
-  await expect(message.getByText(author, { exact: true })).toBeVisible();
+  const label = author === "You" ? "Your message" : `Message from ${author}`;
+  const message = page.getByRole("article", { name: label, exact: true }).filter({ hasText: body });
+  await expect(message).toBeVisible();
+  await expect(message.getByText(body, { exact: true })).toBeVisible();
+}
+
+export function messageWith(page: Page, text: string) {
+  return page.getByRole("article").filter({ hasText: text });
+}
+
+export async function openMessageActions(page: Page, text: string): Promise<void> {
+  const row = messageWith(page, text).first().locator("xpath=..");
+  await row.hover();
+  await row.getByRole("button", { name: "Message actions" }).click();
+}
+
+export async function chooseMessageAction(page: Page, text: string, action: string): Promise<void> {
+  await openMessageActions(page, text);
+  await page.getByRole("menuitem", { name: action }).click();
+}
+
+export async function chooseChatAction(page: Page, action: string): Promise<void> {
+  await page.getByRole("button", { name: "Chat actions" }).click();
+  await page.getByRole("menuitem", { name: action }).click();
+}
+
+export function systemLine(page: Page, text: string) {
+  return page.getByText(text, { exact: true });
 }

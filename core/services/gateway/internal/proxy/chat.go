@@ -87,6 +87,34 @@ func (c *Chat) MarkRead(
 	return c.client.MarkRead(ctx, forward(ctx, req))
 }
 
+func (c *Chat) CreateGroup(
+	ctx context.Context,
+	req *connect.Request[chatv1.CreateGroupRequest],
+) (*connect.Response[chatv1.CreateGroupResponse], error) {
+	return c.client.CreateGroup(ctx, forward(ctx, req))
+}
+
+func (c *Chat) AddGroupMembers(
+	ctx context.Context,
+	req *connect.Request[chatv1.AddGroupMembersRequest],
+) (*connect.Response[chatv1.AddGroupMembersResponse], error) {
+	return c.client.AddGroupMembers(ctx, forward(ctx, req))
+}
+
+func (c *Chat) RemoveGroupMember(
+	ctx context.Context,
+	req *connect.Request[chatv1.RemoveGroupMemberRequest],
+) (*connect.Response[chatv1.RemoveGroupMemberResponse], error) {
+	return c.client.RemoveGroupMember(ctx, forward(ctx, req))
+}
+
+func (c *Chat) RenameGroup(
+	ctx context.Context,
+	req *connect.Request[chatv1.RenameGroupRequest],
+) (*connect.Response[chatv1.RenameGroupResponse], error) {
+	return c.client.RenameGroup(ctx, forward(ctx, req))
+}
+
 func NewChatClient(
 	httpClient *http.Client,
 	baseURL string,

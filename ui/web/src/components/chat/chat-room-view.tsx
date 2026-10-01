@@ -2,28 +2,41 @@
 
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Images, Upload } from "lucide-react";
+import { ChevronLeft, Images, Info, LogOut, MoreVertical, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
+import { ConfirmDialog } from "@/components/chat/confirm-dialog";
+import { ForwardDialog } from "@/components/chat/forward-dialog";
+import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
 import { MediaViewer } from "@/components/chat/media-viewer";
-import { MessageComposer } from "@/components/chat/message-composer";
+import { ComposerMode, MessageComposer, type ComposerContext } from "@/components/chat/message-composer";
 import { RoomMedia } from "@/components/chat/room-media";
-import { Transcript } from "@/components/chat/transcript";
+import { Transcript, type MessageActions } from "@/components/chat/transcript";
 import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
 import { signInPath } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
+import { ContentKind, contentOf, membersLabel, previewOf, targetIDsOf, type NameOf } from "@/lib/chat/content";
 import { usePendingUploads } from "@/lib/chat/use-pending-uploads";
 import { describe } from "@/lib/errors";
 import { usePageVisible } from "@/lib/hooks/use-page-visible";
-import { chatKeys, useHistory, useMarkRead, useRoom } from "@/lib/query/chat";
+import { chatKeys, useHideRoom, useHistory, useLeaveRoom, useMarkRead, useRoom } from "@/lib/query/chat";
 import { usePublicProfiles } from "@/lib/query/people";
 import { cn } from "@/lib/utils";
 import { useChatSocket, type ChatTarget } from "@/lib/ws/use-chat-socket";
 import type { WireMessage } from "@/lib/ws/protocol";
+
+const clockSkewMs = 5_000;
 
 export function ChatRoomView({ target }: { target: ChatTarget }) {
   const router = useRouter();
@@ -91,7 +104,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
 
-  const names = useMemo(() => {
+  const memberNames = useMemo(() => {
     const byID = new Map<string, string>();
     for (const member of room.data?.members ?? []) {
       if (member.displayName) {
@@ -103,6 +116,106 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     }
     return byID;
   }, [room.data, effectivePeerID, peerProfile]);
+
+  const strangers = useMemo(() => {
+    const ids = new Set<string>();
+    const note = (id: unknown) => {
+      if (typeof id === "string" && id !== user?.id && !memberNames.has(id)) ids.add(id);
+    };
+    for (const m of socket.messages) {
+      note(m.forwarded_from_author_id);
+      note(m.reply_to?.author_id);
+      if (m.kind === ContentKind.System) {
+        note(m.payload?.actor_id);
+        targetIDsOf(m.payload ?? {}).forEach(note);
+      }
+    }
+    return [...ids];
+  }, [socket.messages, memberNames, user?.id]);
+  const strangerProfiles = usePublicProfiles(strangers);
+
+  const names = useMemo(() => {
+    const byID = new Map(memberNames);
+    for (const [id, profile] of strangerProfiles.data ?? []) {
+      if (profile.displayName && !byID.has(id)) {
+        byID.set(id, profile.displayName);
+      }
+    }
+    return byID;
+  }, [memberNames, strangerProfiles.data]);
+
+  const nameOf = useCallback<NameOf>(
+    (id) => {
+      if (!id) return "Someone";
+      if (id === user?.id) return "You";
+      return names.get(id) ?? id.slice(0, 8);
+    },
+    [names, user?.id],
+  );
+
+  const [context, setContext] = useState<ComposerContext | null>(null);
+  const [forwarding, setForwarding] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmingExit, setConfirmingExit] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  const nameOfRef = useRef(nameOf);
+  useEffect(() => {
+    nameOfRef.current = nameOf;
+  });
+
+  const actions = useMemo<MessageActions>(
+    () => ({
+      onReply: (message) =>
+        setContext({
+          mode: ComposerMode.Reply,
+          messageId: message.id,
+          title: `Reply to ${nameOfRef.current(message.author_id)}`,
+          preview: previewOf(message),
+          body: message.body,
+        }),
+      onForward: (message) => setForwarding(message.id),
+      onEdit: (message) =>
+        setContext({
+          mode: ComposerMode.Edit,
+          messageId: message.id,
+          title: "Edit message",
+          preview: previewOf(message),
+          body: message.body,
+          bodyOptional: contentOf(message).kind !== ContentKind.Text,
+        }),
+      onDelete: (message) => setDeleting(message.id),
+    }),
+    [],
+  );
+
+  const hide = useHideRoom();
+  const leave = useLeaveRoom();
+
+  const latestSystem = useMemo(
+    () => socket.messages.findLast((m) => m.kind === ContentKind.System),
+    [socket.messages],
+  );
+  const roomLoadedAt = room.dataUpdatedAt;
+  const checkedSystemID = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!roomID || !latestSystem || !roomLoadedAt || latestSystem.id === checkedSystemID.current) {
+      return;
+    }
+    checkedSystemID.current = latestSystem.id;
+    if (Date.parse(latestSystem.sent_at) < roomLoadedAt - clockSkewMs) {
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: chatKeys.room(roomID) });
+    void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
+  }, [roomID, latestSystem, roomLoadedAt, queryClient]);
+
+  useEffect(() => {
+    if (socket.removed) {
+      void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
+      router.replace("/chat");
+    }
+  }, [socket.removed, queryClient, router]);
 
   const askedAbout = useRef(new Set<string>());
   const newestAuthor = socket.messages.at(-1)?.author_id;
@@ -164,9 +277,22 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   }
 
   const isDirect = peerID !== undefined || roomKind === RoomKind.DIRECT;
+  const isGroup = roomKind === RoomKind.GROUP;
   const title = isDirect
     ? peerProfile?.displayName || (peerID ? "New chat" : "Direct message")
     : room.data?.room?.name || "Room";
+
+  const exit = () => {
+    if (!roomID) return;
+    const done = { onSuccess: () => router.replace("/chat") };
+    if (isDirect) {
+      hide.mutate(roomID, done);
+    } else {
+      leave.mutate(roomID, done);
+    }
+  };
+  const exiting = hide.isPending || leave.isPending;
+  const exitError = hide.error ?? leave.error;
 
   const typists = [...socket.typing].filter((id) => id !== user.id);
   const typingLine = isDirect
@@ -181,9 +307,11 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
       ? peerProfile?.online
         ? "online"
         : lastSeen(peerProfile?.lastSeenAt)
-      : `${socket.connected ? "Connected" : "Reconnecting…"}${
-          room.data?.room ? ` · ${room.data.room.memberCount} in the room` : ""
-        }`);
+      : socket.connected
+        ? room.data?.room
+          ? membersLabel(room.data.room.memberCount)
+          : ""
+        : "Reconnecting…");
 
   const carriesFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
 
@@ -234,6 +362,13 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         </div>
       ) : null}
       <header className="flex shrink-0 items-center gap-3 border-b border-border pb-4">
+        <Link
+          href="/chat"
+          aria-label="Back to chats"
+          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "-ml-2 -mr-1 shrink-0 md:hidden")}
+        >
+          <ChevronLeft className="size-5" />
+        </Link>
         {isDirect ? (
           <Avatar
             src={peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl}
@@ -244,7 +379,19 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           />
         ) : null}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-semibold">{title}</h1>
+          <h1 className="truncate text-lg font-semibold">
+            {isGroup ? (
+              <button
+                type="button"
+                className="max-w-full truncate text-left hover:underline"
+                onClick={() => setInfoOpen(true)}
+              >
+                {title}
+              </button>
+            ) : (
+              title
+            )}
+          </h1>
           {subtitle ? (
             <p
               className={cn(
@@ -263,6 +410,32 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
             <Images />
           </Button>
         ) : null}
+        {roomID && roomKind !== undefined ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon" aria-label="Chat actions">
+                  <MoreVertical />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-48">
+              {isGroup ? (
+                <DropdownMenuItem onClick={() => setInfoOpen(true)}>
+                  <Info />
+                  Group info
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem
+                onClick={() => setConfirmingExit(true)}
+                className="text-destructive [&>svg]:text-destructive"
+              >
+                {isDirect ? <Trash2 /> : <LogOut />}
+                {isDirect ? "Delete chat" : isGroup ? "Leave group" : "Leave room"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </header>
 
       {room.isError ? <Alert className="mt-3">{describe(room.error)}</Alert> : null}
@@ -272,7 +445,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
       <Transcript
         messages={socket.messages}
         selfID={user.id}
-        names={names}
+        nameOf={nameOf}
         avatars={avatars}
         readSeqs={readSeqs}
         onVisibleSeqChange={setVisibleSeq}
@@ -280,14 +453,84 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         hasOlder={history.hasNextPage}
         loadingOlder={history.isFetchingNextPage}
         onOpenMedia={setViewing}
+        actions={socket.connected ? actions : undefined}
+        showNames={!isDirect}
       />
 
       <MessageComposer
         connected={socket.connected}
         uploads={uploads}
+        context={context}
         onSend={socket.send}
+        onEdit={socket.edit}
+        onCancelContext={() => setContext(null)}
         onTyping={socket.notifyTyping}
       />
+
+      <ForwardDialog
+        open={forwarding !== null}
+        onOpenChange={(open) => !open && setForwarding(null)}
+        onPick={(targetRoomID) => {
+          const openTarget = () => {
+            if (targetRoomID !== roomID) {
+              router.push(`/chat/${targetRoomID}`);
+            }
+          };
+          if (forwarding && socket.forward(forwarding, targetRoomID, openTarget)) {
+            setForwarding(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Delete message?"
+        consequence="It disappears for everyone in this chat."
+        action="Delete"
+        onConfirm={() => {
+          if (deleting && socket.remove(deleting)) {
+            if (context?.messageId === deleting) setContext(null);
+            setDeleting(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmingExit}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmingExit(false);
+            hide.reset();
+            leave.reset();
+          }
+        }}
+        title={isDirect ? "Delete this chat?" : isGroup ? "Leave this group?" : "Leave this room?"}
+        consequence={
+          isDirect
+            ? "The history is cleared for you. The other person keeps theirs, and a new message brings the chat back."
+            : isGroup
+              ? "You stop receiving its messages. Only the owner can add you back."
+              : "You stop receiving its messages."
+        }
+        action={isDirect ? "Delete chat" : "Leave"}
+        pending={exiting}
+        error={exitError ? describe(exitError) : null}
+        onConfirm={exit}
+      />
+
+      {isGroup && roomID ? (
+        <GroupInfoDialog
+          open={infoOpen}
+          onOpenChange={setInfoOpen}
+          roomID={roomID}
+          selfID={user.id}
+          onLeave={() => {
+            setInfoOpen(false);
+            setConfirmingExit(true);
+          }}
+        />
+      ) : null}
 
       <MediaViewer message={viewing} onClose={() => setViewing(null)} />
       {roomID ? (

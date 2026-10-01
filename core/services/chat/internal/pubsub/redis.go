@@ -111,10 +111,25 @@ type wire struct {
 
 	ReplyToID       *uuid.UUID `json:"reply_to_id,omitempty"`
 	ForwardedFromID *uuid.UUID `json:"forwarded_from_id,omitempty"`
+
+	ForwardOriginAuthorID *uuid.UUID `json:"forward_origin_author_id,omitempty"`
+	EditedAt              *time.Time `json:"edited_at,omitempty"`
+	DeletedAt             *time.Time `json:"deleted_at,omitempty"`
+	ReplyTo               *replyWire `json:"reply_to,omitempty"`
+
+	Update bool `json:"update,omitempty"`
+}
+
+type replyWire struct {
+	ID       uuid.UUID `json:"id"`
+	AuthorID uuid.UUID `json:"author_id"`
+	Kind     string    `json:"kind"`
+	Body     string    `json:"body,omitempty"`
+	Deleted  bool      `json:"deleted,omitempty"`
 }
 
 func toWire(m domain.Message) wire {
-	return wire{
+	w := wire{
 		ID:              m.ID.String(),
 		RoomID:          m.RoomID.String(),
 		AuthorID:        m.AuthorID.String(),
@@ -126,7 +141,21 @@ func toWire(m domain.Message) wire {
 		Payload:         m.Payload,
 		ReplyToID:       m.ReplyToID,
 		ForwardedFromID: m.ForwardedFromID,
+
+		ForwardOriginAuthorID: m.ForwardOriginAuthorID,
+		EditedAt:              m.EditedAt,
+		DeletedAt:             m.DeletedAt,
 	}
+	if m.ReplyTo != nil {
+		w.ReplyTo = &replyWire{
+			ID:       m.ReplyTo.ID,
+			AuthorID: m.ReplyTo.AuthorID,
+			Kind:     string(m.ReplyTo.Kind),
+			Body:     m.ReplyTo.Body,
+			Deleted:  m.ReplyTo.Deleted,
+		}
+	}
+	return w
 }
 
 func (w wire) toDomain() (domain.Message, error) {
@@ -143,7 +172,7 @@ func (w wire) toDomain() (domain.Message, error) {
 		return domain.Message{}, fmt.Errorf("pubsub: author id: %w", err)
 	}
 
-	return domain.Message{
+	m := domain.Message{
 		ID:       id,
 		RoomID:   roomID,
 		AuthorID: authorID,
@@ -157,7 +186,21 @@ func (w wire) toDomain() (domain.Message, error) {
 
 		ReplyToID:       w.ReplyToID,
 		ForwardedFromID: w.ForwardedFromID,
-	}, nil
+
+		ForwardOriginAuthorID: w.ForwardOriginAuthorID,
+		EditedAt:              w.EditedAt,
+		DeletedAt:             w.DeletedAt,
+	}
+	if w.ReplyTo != nil {
+		m.ReplyTo = &domain.ReplyPreview{
+			ID:       w.ReplyTo.ID,
+			AuthorID: w.ReplyTo.AuthorID,
+			Kind:     kindOrText(w.ReplyTo.Kind),
+			Body:     w.ReplyTo.Body,
+			Deleted:  w.ReplyTo.Deleted,
+		}
+	}
+	return m, nil
 }
 
 func kindOrText(raw string) domain.MessageKind {
@@ -168,18 +211,28 @@ func kindOrText(raw string) domain.MessageKind {
 }
 
 func (r *Redis) Publish(ctx context.Context, m domain.Message) error {
-	payload, err := json.Marshal(toWire(m))
+	return r.publish(ctx, m.RoomID, toWire(m))
+}
+
+func (r *Redis) PublishUpdate(ctx context.Context, m domain.Message) error {
+	w := toWire(m)
+	w.Update = true
+	return r.publish(ctx, m.RoomID, w)
+}
+
+func (r *Redis) publish(ctx context.Context, roomID uuid.UUID, w wire) error {
+	payload, err := json.Marshal(w)
 	if err != nil {
 		return fmt.Errorf("pubsub: encode message: %w", err)
 	}
 
-	if err := r.client.Publish(ctx, channel(m.RoomID), payload).Err(); err != nil {
-		return fmt.Errorf("pubsub: publish to %s: %w", channel(m.RoomID), err)
+	if err := r.client.Publish(ctx, channel(roomID), payload).Err(); err != nil {
+		return fmt.Errorf("pubsub: publish to %s: %w", channel(roomID), err)
 	}
 	return nil
 }
 
-func (r *Redis) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan domain.Message, func(), error) {
+func (r *Redis) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan Delivery, func(), error) {
 	if err := r.acquire(roomID); err != nil {
 		return nil, nil, err
 	}
@@ -273,7 +326,7 @@ func (r *Redis) pump(ctx context.Context, roomID uuid.UUID, sub *goredis.PubSub,
 				continue
 			}
 
-			_ = r.local.Publish(ctx, m)
+			r.local.deliver(Delivery{Message: m, Update: w.Update})
 		}
 	}
 }

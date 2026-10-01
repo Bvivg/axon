@@ -1,26 +1,85 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
+import { PeoplePicker, UserSearch } from "@/components/chat/people-picker";
 import { Alert } from "@/components/ui/alert";
-import { Avatar } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
+import { useSession } from "@/lib/auth/session";
 import { describe } from "@/lib/errors";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
-import { useDirectRoomLookup } from "@/lib/query/chat";
-import { useSearchUsers } from "@/lib/query/people";
+import { useCreateGroup, useDirectRoomLookup } from "@/lib/query/chat";
+
+enum NewChatTab {
+  Direct = "direct",
+  Group = "group",
+}
 
 export function NewChatDialog({ onDone }: { onDone: () => void }) {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-  const debouncedQuery = useDebouncedValue(query, 350);
-  const trimmed = debouncedQuery.trim();
+  return (
+    <Tabs defaultValue={NewChatTab.Direct} className="space-y-4">
+      <TabsList className="w-full">
+        <TabsTrigger value={NewChatTab.Direct} className="flex-1">
+          Message
+        </TabsTrigger>
+        <TabsTrigger value={NewChatTab.Group} className="flex-1">
+          New group
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value={NewChatTab.Direct}>
+        <DirectChatPicker onDone={onDone} />
+      </TabsContent>
+      <TabsContent value={NewChatTab.Group}>
+        <NewGroupForm onDone={onDone} />
+      </TabsContent>
+    </Tabs>
+  );
+}
 
-  const search = useSearchUsers(debouncedQuery);
+function NewGroupForm({ onDone }: { onDone: () => void }) {
+  const router = useRouter();
+  const { user } = useSession();
+  const [name, setName] = useState("");
+  const [people, setPeople] = useState<PublicProfile[]>([]);
+  const create = useCreateGroup();
+
+  const canCreate = name.trim() !== "" && people.length > 0 && !create.isPending;
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canCreate) return;
+    create.mutate(
+      { name: name.trim(), memberIDs: people.map((p) => p.id) },
+      {
+        onSuccess: (room) => {
+          if (room) router.push(`/chat/${room.id}`);
+          onDone();
+        },
+      },
+    );
+  };
+
+  return (
+    <form className="space-y-4" onSubmit={onSubmit}>
+      <div className="space-y-2">
+        <Label htmlFor="group-name">Group name</Label>
+        <Input id="group-name" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} />
+      </div>
+      <PeoplePicker selected={people} onChange={setPeople} selfID={user?.id} />
+      {create.isError ? <Alert>{describe(create.error)}</Alert> : null}
+      <Button type="submit" variant="signal" className="w-full" disabled={!canCreate} aria-busy={create.isPending}>
+        Create group
+      </Button>
+    </form>
+  );
+}
+
+function DirectChatPicker({ onDone }: { onDone: () => void }) {
+  const router = useRouter();
   const lookup = useDirectRoomLookup();
 
   const pick = (profile: PublicProfile) => {
@@ -32,55 +91,19 @@ export function NewChatDialog({ onDone }: { onDone: () => void }) {
     });
   };
 
-  const noMatches = trimmed !== "" && !search.isLoading && (search.data?.length ?? 0) === 0;
-
   return (
     <div className="space-y-3">
-      <div className="space-y-2">
-        <Label htmlFor="people-query">Search</Label>
-        <Input
-          id="people-query"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Email or display name"
-        />
-      </div>
-
-      {search.isError ? <Alert>{describe(search.error)}</Alert> : null}
-      {lookup.isError ? <Alert>{describe(lookup.error)}</Alert> : null}
-
-      <ScrollArea className="max-h-72">
-        <ul className="divide-y divide-border">
-          {search.data?.map((profile) => (
-            <li key={profile.id}>
-              <button
-                type="button"
-                disabled={lookup.isPending}
-                onClick={() => pick(profile)}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-muted disabled:opacity-50"
-              >
-                <Avatar
-                  src={profile.avatarUrls?.small || profile.avatarUrl}
-                  alt=""
-                  fallback={(profile.displayName || "?").slice(0, 1).toUpperCase()}
-                  className="size-9"
-                  sizes="36px"
-                />
-                <span className="font-medium">{profile.displayName || "No display name"}</span>
-                {profile.online ? (
-                  <span className="ml-auto size-2 shrink-0 rounded-full bg-green-500" />
-                ) : null}
-              </button>
-            </li>
-          ))}
-
-          {noMatches ? (
-            <li className="px-2 py-6 text-center text-sm text-muted-foreground">
-              No match for &quot;{trimmed}&quot;.
-            </li>
-          ) : null}
-        </ul>
-      </ScrollArea>
+      <UserSearch
+        id="people-query"
+        label="Search"
+        disabled={lookup.isPending}
+        notice={lookup.isError ? <Alert>{describe(lookup.error)}</Alert> : null}
+        onPick={pick}
+        className="max-h-72"
+        trailing={(profile) =>
+          profile.online ? <span className="ml-auto size-2 shrink-0 rounded-full bg-green-500" /> : null
+        }
+      />
     </div>
   );
 }

@@ -63,3 +63,21 @@ func (s *Store) Put(ctx context.Context, o Object) error {
 	}
 	return nil
 }
+
+func (s *Store) Remove(ctx context.Context, keys []string) map[string]error {
+	failed := map[string]error{}
+	if len(keys) == 0 {
+		return failed
+	}
+
+	objects := make(chan minio.ObjectInfo, len(keys))
+	for _, key := range keys {
+		objects <- minio.ObjectInfo{Key: key}
+	}
+	close(objects)
+
+	for failure := range s.client.RemoveObjects(ctx, s.bucket, objects, minio.RemoveObjectsOptions{}) {
+		failed[failure.ObjectName] = fmt.Errorf("attachment: remove %s: %w", failure.ObjectName, failure.Err)
+	}
+	return failed
+}

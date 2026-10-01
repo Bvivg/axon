@@ -187,6 +187,10 @@ integration-тестами (Kafka через testcontainers). Это созна�
 `000002_rich_messages`, direct-комнаты, поиск людей (`AuthService.SearchUsers`),
 вложения/войс через MinIO. Решения и статус — в `chat-rich-messaging.md`.
 
+Группы (только через владельца, из контактов), ответ/пересылка/правка/удаление
+в вебе, скрытие чата и уборка неотправленных загрузок из MinIO — миграция
+`000005_groups_and_message_actions`, см. `chat-groups-and-message-actions.md`. ✅
+
 ---
 
 ## Этап 3 — Game: движок + Tic-Tac-Toe
@@ -306,5 +310,5 @@ API дорого.
 - Реальные OAuth-ключи Google/GitHub/Apple — подставляются позже; до этого fake-провайдер в dev/e2e
 - Kafka vs Redpanda для локальной разработки (Redpanda легче, API совместим) — решаем на этапе 2
 - k8s — не блокирующая цель, docker-compose остаётся основным способом запуска
-- Объектное хранилище для вложений/войсов в чате (MinIO в compose или внешний
-  S3-совместимый) — не решено, см. `chat-rich-messaging.md`
+- ~~Объектное хранилище для вложений/войсов в чате~~ — MinIO в compose, см.
+  `chat-media-messages.md`

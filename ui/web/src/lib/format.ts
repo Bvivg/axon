@@ -32,7 +32,7 @@ export function clockTime(at: Date): string {
   return at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-function isSameDay(a: Date, b: Date): boolean {
+export function isSameDay(a: Date, b: Date): boolean {
   return a.toDateString() === b.toDateString();
 }
 

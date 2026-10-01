@@ -41,6 +41,9 @@ type AttachmentConfig struct {
 	Bucket    string
 	UseSSL    bool
 	PublicURL string
+
+	SweepInterval time.Duration
+	OrphanAfter   time.Duration
 }
 
 type JWTConfig struct {
@@ -105,5 +108,8 @@ func loadAttachments(l *config.Loader) AttachmentConfig {
 		Bucket:    l.StringDefault("ATTACHMENTS_BUCKET", "chat-attachments"),
 		UseSSL:    l.Bool("ATTACHMENTS_USE_SSL", false),
 		PublicURL: l.StringDefault("ATTACHMENTS_PUBLIC_URL", "http://localhost:59000"),
+
+		SweepInterval: l.DurationDefault("ATTACHMENTS_SWEEP_INTERVAL", time.Hour),
+		OrphanAfter:   l.DurationDefault("ATTACHMENTS_ORPHAN_AFTER", 24*time.Hour),
 	}
 }

@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 
 import { Avatar } from "@/components/ui/avatar";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
-import { RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
+import { MessageKind, RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
 import { previewOf } from "@/lib/chat/content";
 import { toWireMessage, useLastMessage } from "@/lib/query/chat";
@@ -25,12 +25,12 @@ export function RoomListItem({
   const pathname = usePathname();
   const { user } = useSession();
 
-  const isGroup = room.kind === RoomKind.OPEN;
+  const isGroup = room.kind !== RoomKind.DIRECT;
   const name = isGroup ? room.name : peerProfile?.displayName || shortID(room.peerUserId);
   const avatarSrc = isGroup ? undefined : peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl;
 
   const lastMessage = useLastMessage(room.id);
-  const mine = lastMessage.data?.authorId === user?.id;
+  const mine = lastMessage.data?.authorId === user?.id && lastMessage.data?.kind !== MessageKind.SYSTEM;
   const readByOthers =
     mine && !!lastMessage.data && (room.othersReadSeq ?? BigInt(0)) >= lastMessage.data.seq;
 

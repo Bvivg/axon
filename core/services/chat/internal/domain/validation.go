@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -14,7 +16,35 @@ const (
 
 	MaxPageSize     = 200
 	DefaultPageSize = 50
+
+	MaxGroupMembers = 100
 )
+
+func ValidateUserIDs(field string, raw []string, exclude uuid.UUID) ([]uuid.UUID, error) {
+	seen := make(map[uuid.UUID]struct{}, len(raw))
+	ids := make([]uuid.UUID, 0, len(raw))
+
+	for _, value := range raw {
+		id, err := uuid.Parse(strings.TrimSpace(value))
+		if err != nil {
+			return nil, newValidationError(field, "contains an invalid id")
+		}
+		if id == exclude {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	if len(ids) >= MaxGroupMembers {
+		return nil, newValidationError(field, "has too many people")
+	}
+
+	return ids, nil
+}
 
 func ValidateRoomName(name string) (string, error) {
 	trimmed := strings.TrimSpace(name)

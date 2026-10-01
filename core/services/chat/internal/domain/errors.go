@@ -26,6 +26,22 @@ var (
 	ErrUploadKindMismatch = errors.New("chat: the upload is a different kind of message")
 
 	ErrClientPayload = errors.New("chat: the payload comes from an upload, not from the client")
+
+	ErrGroupNotJoinable = errors.New("chat: a group is joined only when its owner adds you")
+
+	ErrNotAGroup = errors.New("chat: this room is not a group")
+
+	ErrNotGroupOwner = errors.New("chat: only the group owner can do this")
+
+	ErrGroupFull = errors.New("chat: the group has no room for more people")
+
+	ErrUnknownUser = errors.New("chat: no such user")
+
+	ErrNotMessageAuthor = errors.New("chat: only the author can change this message")
+
+	ErrMessageNotEditable = errors.New("chat: this message cannot be edited")
+
+	ErrMessageDeleted = errors.New("chat: the message was deleted")
 )
 
 type ValidationError struct {

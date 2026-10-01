@@ -9,10 +9,18 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
+type Delivery struct {
+	Message domain.Message
+
+	Update bool
+}
+
 type Bus interface {
 	Publish(ctx context.Context, m domain.Message) error
 
-	Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan domain.Message, func(), error)
+	PublishUpdate(ctx context.Context, m domain.Message) error
+
+	Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan Delivery, func(), error)
 }
 
 type SignalKind string
@@ -23,6 +31,8 @@ const (
 	SignalTyping SignalKind = "typing"
 
 	SignalRoomAdded SignalKind = "room_added"
+
+	SignalRoomRemoved SignalKind = "room_removed"
 )
 
 type Signal struct {
@@ -55,7 +65,7 @@ type Memory struct {
 }
 
 type subscription struct {
-	ch chan domain.Message
+	ch chan Delivery
 }
 
 type signalSubscription struct {
@@ -71,22 +81,29 @@ func NewMemory() *Memory {
 }
 
 func (m *Memory) Publish(_ context.Context, msg domain.Message) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	for sub := range m.rooms[msg.RoomID] {
-		select {
-		case sub.ch <- msg:
-		default:
-
-		}
-	}
-
+	m.deliver(Delivery{Message: msg})
 	return nil
 }
 
-func (m *Memory) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan domain.Message, func(), error) {
-	sub := &subscription{ch: make(chan domain.Message, Backlog)}
+func (m *Memory) PublishUpdate(_ context.Context, msg domain.Message) error {
+	m.deliver(Delivery{Message: msg, Update: true})
+	return nil
+}
+
+func (m *Memory) deliver(d Delivery) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for sub := range m.rooms[d.Message.RoomID] {
+		select {
+		case sub.ch <- d:
+		default:
+		}
+	}
+}
+
+func (m *Memory) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan Delivery, func(), error) {
+	sub := &subscription{ch: make(chan Delivery, Backlog)}
 
 	m.mu.Lock()
 	if m.rooms[roomID] == nil {

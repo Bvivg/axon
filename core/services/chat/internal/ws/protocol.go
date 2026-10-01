@@ -20,6 +20,10 @@ const (
 	TypeSend = "send"
 
 	TypeWatchPresence = "watch_presence"
+
+	TypeEdit = "edit"
+
+	TypeDelete = "delete"
 )
 
 const (
@@ -36,6 +40,10 @@ const (
 	TypePresence = "presence"
 
 	TypeRoomAdded = "room_added"
+
+	TypeMessageUpdated = "message_updated"
+
+	TypeRoomRemoved = "room_removed"
 )
 
 const TypeTyping = "typing"
@@ -56,6 +64,8 @@ const (
 	ErrorInvalid = "invalid"
 
 	ErrorInternal = "internal"
+
+	ErrorForbidden = "forbidden"
 )
 
 type Inbound struct {
@@ -76,6 +86,8 @@ type Inbound struct {
 
 	ReplyToID       string `json:"reply_to_id,omitempty"`
 	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
+
+	MessageID string `json:"message_id,omitempty"`
 }
 
 type Outbound struct {
@@ -107,6 +119,20 @@ type Message struct {
 
 	ReplyToID       string `json:"reply_to_id,omitempty"`
 	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
+
+	ReplyTo               *ReplyPreview `json:"reply_to,omitempty"`
+	ForwardedFromAuthorID string        `json:"forwarded_from_author_id,omitempty"`
+
+	EditedAt  *time.Time `json:"edited_at,omitempty"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+}
+
+type ReplyPreview struct {
+	ID       string `json:"id"`
+	AuthorID string `json:"author_id"`
+	Kind     string `json:"kind"`
+	Body     string `json:"body"`
+	Deleted  bool   `json:"deleted,omitempty"`
 }
 
 func toWire(m domain.Message) Message {
@@ -121,7 +147,7 @@ func toWire(m domain.Message) Message {
 		Kind:     string(m.Kind),
 	}
 
-	if m.Kind != domain.MessageKindText {
+	if m.Kind != domain.MessageKindText && !m.Deleted() {
 		wire.Payload = m.Payload
 	}
 	if m.ReplyToID != nil {
@@ -130,6 +156,20 @@ func toWire(m domain.Message) Message {
 	if m.ForwardedFromID != nil {
 		wire.ForwardedFromID = m.ForwardedFromID.String()
 	}
+	if m.ForwardOriginAuthorID != nil {
+		wire.ForwardedFromAuthorID = m.ForwardOriginAuthorID.String()
+	}
+	if m.ReplyTo != nil {
+		wire.ReplyTo = &ReplyPreview{
+			ID:       m.ReplyTo.ID.String(),
+			AuthorID: m.ReplyTo.AuthorID.String(),
+			Kind:     string(m.ReplyTo.Kind),
+			Body:     m.ReplyTo.Body,
+			Deleted:  m.ReplyTo.Deleted,
+		}
+	}
+	wire.EditedAt = m.EditedAt
+	wire.DeletedAt = m.DeletedAt
 
 	return wire
 }
@@ -140,6 +180,16 @@ func messageFrame(m domain.Message, recipient string) Outbound {
 		wire.ClientID = ""
 	}
 	return Outbound{Type: TypeMessage, Message: &wire}
+}
+
+func messageUpdatedFrame(m domain.Message) Outbound {
+	wire := toWire(m)
+	wire.ClientID = ""
+	return Outbound{Type: TypeMessageUpdated, Message: &wire}
+}
+
+func roomRemovedFrame(roomID string) Outbound {
+	return Outbound{Type: TypeRoomRemoved, RoomID: roomID}
 }
 
 func ackFrame(m domain.Message) Outbound {
