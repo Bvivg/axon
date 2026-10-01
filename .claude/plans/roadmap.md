@@ -191,6 +191,9 @@ integration-тестами (Kafka через testcontainers). Это созна�
 в вебе, скрытие чата и уборка неотправленных загрузок из MinIO — миграция
 `000005_groups_and_message_actions`, см. `chat-groups-and-message-actions.md`. ✅
 
+Перенос доработок чата из nod (лента, выбор сообщений, медиа v2, альбомы,
+уведомления, поиск) — шесть срезов, см. `chat-port-from-nod.md`.
+
 ---
 
 ## Этап 3 — Game: движок + Tic-Tac-Toe
