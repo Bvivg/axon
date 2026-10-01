@@ -17,6 +17,7 @@
     "@bufbuild/protobuf": "^2.13.0",
     "@connectrpc/connect": "^2.1.2",
     "@connectrpc/connect-web": "^2.1.2",
+    "@player.style/minimal": "^0.2.1",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-virtual": "^3.14.9",
     "axios": "^1.20.0",
@@ -25,6 +26,7 @@
     "heic2any": "^0.0.4",
     "linkifyjs": "^4.3.3",
     "lucide-react": "^1.31.0",
+    "media-chrome": "^4.19.3",
     "next": "^16.2.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -32,7 +34,8 @@
     "react-use-websocket": "^4.13.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.3.1",
-    "virtua": "^0.52.10"
+    "virtua": "^0.52.10",
+    "yet-another-react-lightbox": "^3.32.2"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

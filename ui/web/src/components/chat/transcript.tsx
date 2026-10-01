@@ -44,7 +44,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ContentKind, contentOf, isDeleted, isEditable, quoteOf, systemTextOf, type NameOf } from "@/lib/chat/content";
 import { useDragSelect } from "@/lib/chat/drag-select";
 import { splitLinks } from "@/lib/chat/links";
-import { canSelect, type MessageSelection } from "@/lib/chat/selection";
+import { canSelect, isPicked, type MessageSelection } from "@/lib/chat/selection";
 import { groupTranscript, sameItem, type TranscriptItem } from "@/lib/chat/series";
 import { useLongPress, useSwipeToReply } from "@/lib/chat/swipe";
 import { clockTime, dayLabel, fromISO } from "@/lib/format";
@@ -78,12 +78,13 @@ interface TranscriptProps {
   onLoadOlder?: () => void;
   hasOlder?: boolean;
   loadingOlder?: boolean;
-  onOpenMedia?: (message: WireMessage) => void;
+  onOpenMedia?: (message: WireMessage, item: number) => void;
   onJumpTo?: (messageID: string) => void;
   actions?: MessageActions;
   showNames?: boolean;
   selection?: MessageSelection | null;
   onToggleSelected?: (messageID: string) => void;
+  onToggleItem?: (messageID: string, item: number, total: number) => void;
   onSelectMessages?: (selection: MessageSelection | null) => void;
 }
 
@@ -95,11 +96,12 @@ interface RowContext {
   showNames: boolean;
   menuFor: string | null;
   setMenuFor: (id: string | null) => void;
-  onOpenMedia?: (message: WireMessage) => void;
+  onOpenMedia?: (message: WireMessage, item: number) => void;
   onJumpTo?: (messageID: string) => void;
   actions?: MessageActions;
   selection: MessageSelection | null;
   onToggleSelected?: (messageID: string) => void;
+  onToggleItem?: (messageID: string, item: number, total: number) => void;
 }
 
 interface Edges {
@@ -145,6 +147,7 @@ export const Transcript = memo(function Transcript({
   showNames = true,
   selection = null,
   onToggleSelected,
+  onToggleItem,
   onSelectMessages,
 }: TranscriptProps) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -183,8 +186,22 @@ export const Transcript = memo(function Transcript({
       actions,
       selection,
       onToggleSelected,
+      onToggleItem,
     }),
-    [selfID, nameOf, avatars, readSeq, showNames, menuFor, onOpenMedia, onJumpTo, actions, selection, onToggleSelected],
+    [
+      selfID,
+      nameOf,
+      avatars,
+      readSeq,
+      showNames,
+      menuFor,
+      onOpenMedia,
+      onJumpTo,
+      actions,
+      selection,
+      onToggleSelected,
+      onToggleItem,
+    ],
   );
 
   const firstID = messages[0]?.id ?? null;
@@ -640,17 +657,20 @@ const MessageRow = memo(function MessageRow({
   last: boolean;
   flash: boolean;
 }) {
-  const { selfID, nameOf, actions, menuFor, setMenuFor, onOpenMedia, onJumpTo, selection, onToggleSelected } = context;
+  const { selfID, nameOf, actions, menuFor, setMenuFor, onOpenMedia, onJumpTo, selection, onToggleSelected, onToggleItem } =
+    context;
   const selecting = selection !== null;
   const selectable = selecting && canSelect(message);
   const selected = selectable && selection.has(message.id);
+  const partial = selected && selection.get(message.id) !== null;
   const mine = message.author_id === selfID;
   const name = nameOf(message.author_id);
   const deleted = isDeleted(message);
   const read = mine && context.readSeq >= message.seq;
   const content = contentOf(message);
   const isMedia = !deleted && content.kind !== ContentKind.Text;
-  const visual = isMedia && (content.kind === ContentKind.Image || content.kind === ContentKind.Video);
+  const visual =
+    isMedia && (content.kind === ContentKind.Image || content.kind === ContentKind.Video || content.kind === ContentKind.Album);
   const caption = message.body.trim();
   const padded = cn(visual && "px-2");
   const hasText = deleted || !isMedia || caption !== "";
@@ -746,7 +766,18 @@ const MessageRow = memo(function MessageRow({
             ) : null}
 
             {isMedia ? (
-              <MessageMedia content={content} caption={caption} mine={mine} onOpen={() => onOpenMedia?.(message)} />
+              <MessageMedia
+                content={content}
+                caption={caption}
+                mine={mine}
+                onOpen={(item) => onOpenMedia?.(message, item)}
+                picked={selectable ? (item) => isPicked(selection, message.id, item) : undefined}
+                onTogglePicked={
+                  selectable && content.kind === ContentKind.Album
+                    ? (item) => onToggleItem?.(message.id, item, content.items.length)
+                    : undefined
+                }
+              />
             ) : null}
           </>
         )}
@@ -794,10 +825,13 @@ const MessageRow = memo(function MessageRow({
         <button
           type="button"
           role="checkbox"
-          aria-checked={selected}
+          aria-checked={partial ? "mixed" : selected}
           aria-label={`Select message from ${mine ? "you" : name}`}
           onClick={() => onToggleSelected?.(message.id)}
-          className="absolute inset-0 z-10 flex items-center pl-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          className={cn(
+            "absolute z-10 flex items-center pl-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+            content.kind === ContentKind.Album ? "inset-y-0 left-0 w-10" : "inset-0",
+          )}
         >
           {selected ? (
             <CheckCircle2 aria-hidden className="size-5 fill-signal text-signal-foreground" />

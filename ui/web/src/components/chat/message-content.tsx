@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import {
   ContentKind,
+  type AlbumItem,
   type Content,
   type FileContent,
   type ImageContent,
@@ -33,17 +34,31 @@ export function MessageMedia({
   caption,
   mine,
   onOpen,
+  picked,
+  onTogglePicked,
 }: {
   content: Content;
   caption: string;
   mine: boolean;
-  onOpen: () => void;
+  onOpen: (item: number) => void;
+  picked?: (item: number) => boolean;
+  onTogglePicked?: (item: number) => void;
 }) {
   switch (content.kind) {
+    case ContentKind.Album:
+      return (
+        <AlbumGrid
+          items={content.items}
+          caption={caption}
+          onOpen={onOpen}
+          picked={picked}
+          onTogglePicked={onTogglePicked}
+        />
+      );
     case ContentKind.Image:
-      return <PhotoTile image={content.image} caption={caption} onOpen={onOpen} />;
+      return <PhotoTile image={content.image} caption={caption} onOpen={() => onOpen(0)} />;
     case ContentKind.Video:
-      return <VideoTile video={content.video} onOpen={onOpen} />;
+      return <VideoTile video={content.video} onOpen={() => onOpen(0)} />;
     case ContentKind.Voice:
       return <VoicePlayer voice={content.voice} mine={mine} />;
     case ContentKind.File:
@@ -51,6 +66,98 @@ export function MessageMedia({
     default:
       return null;
   }
+}
+
+const albumRows: Record<number, number[]> = {
+  2: [2],
+  3: [1, 2],
+  4: [2, 2],
+  5: [2, 3],
+  6: [3, 3],
+  7: [2, 2, 3],
+  8: [2, 3, 3],
+  9: [3, 3, 3],
+  10: [2, 2, 3, 3],
+};
+
+const ratioOf = (item: AlbumItem) => {
+  const { width, height } = item.kind === ContentKind.Image ? item.image : item.video;
+  return width > 0 && height > 0 ? Math.min(2, Math.max(0.5, width / height)) : 1;
+};
+
+export function AlbumGrid({
+  items,
+  caption,
+  onOpen,
+  picked,
+  onTogglePicked,
+}: {
+  items: AlbumItem[];
+  caption: string;
+  onOpen: (item: number) => void;
+  picked?: (item: number) => boolean;
+  onTogglePicked?: (item: number) => void;
+}) {
+  const rows = albumRows[items.length] ?? [items.length];
+  const starts = rows.map((_, row) => rows.slice(0, row).reduce((sum, count) => sum + count, 0));
+  return (
+    <div role="group" aria-label={`Album of ${items.length}`} className="flex w-[280px] max-w-full flex-col gap-0.5 overflow-hidden rounded-xl">
+      {rows.map((count, row) => {
+        const start = starts[row];
+        return (
+          <div key={row} className="flex gap-0.5">
+            {items.slice(start, start + count).map((item, offset) => {
+              const index = start + offset;
+              const ratio = ratioOf(item);
+              const thumb = item.kind === ContentKind.Image ? item.image.thumbnailUrl : item.video.posterUrl;
+              const selecting = onTogglePicked !== undefined;
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  role={selecting ? "checkbox" : undefined}
+                  aria-checked={selecting ? (picked?.(index) ?? false) : undefined}
+                  aria-label={
+                    selecting
+                      ? `Select item ${index + 1} of the album`
+                      : item.kind === ContentKind.Image
+                        ? `Open photo ${index + 1} of ${items.length}`
+                        : `Play video ${index + 1} of ${items.length}`
+                  }
+                  onClick={(event) => {
+                    if (!selecting) return onOpen(index);
+                    event.stopPropagation();
+                    onTogglePicked(index);
+                  }}
+                  className="relative min-w-0 overflow-hidden bg-muted"
+                  style={{ flexGrow: ratio, flexBasis: 0, aspectRatio: String(ratio) }}
+                >
+                  {thumb ? (
+                    <Image src={thumb} alt={caption || ""} fill unoptimized sizes="140px" className="object-cover" />
+                  ) : null}
+                  {item.kind === ContentKind.Video ? (
+                    <span className="absolute bottom-1 left-1 flex items-center gap-1 rounded-md bg-black/55 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                      <Play aria-hidden className="size-2.5 fill-current" />
+                      {formatDuration(item.video.durationMs)}
+                    </span>
+                  ) : null}
+                  {selecting ? (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "absolute top-1.5 right-1.5 size-5 rounded-full border-2 border-white shadow",
+                        picked?.(index) ? "bg-signal" : "bg-black/25",
+                      )}
+                    />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function PhotoTile({

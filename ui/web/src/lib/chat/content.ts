@@ -7,6 +7,7 @@ export enum ContentKind {
   Video = "video",
   Voice = "voice",
   File = "attachment",
+  Album = "album",
   System = "system",
 }
 
@@ -39,6 +40,10 @@ export interface VideoContent {
   mime: string;
 }
 
+export type AlbumItem =
+  | { kind: ContentKind.Image; image: ImageContent }
+  | { kind: ContentKind.Video; video: VideoContent };
+
 export interface VoiceContent {
   url: string;
   durationMs: number;
@@ -58,6 +63,7 @@ export type Content =
   | { kind: ContentKind.Video; video: VideoContent }
   | { kind: ContentKind.Voice; voice: VoiceContent }
   | { kind: ContentKind.File; file: FileContent }
+  | { kind: ContentKind.Album; items: AlbumItem[] }
   | { kind: ContentKind.System };
 
 const text = (payload: Record<string, unknown>, key: string): string =>
@@ -66,40 +72,66 @@ const text = (payload: Record<string, unknown>, key: string): string =>
 const number = (payload: Record<string, unknown>, key: string): number =>
   typeof payload[key] === "number" ? (payload[key] as number) : Number(payload[key] ?? 0) || 0;
 
+function imageOf(payload: Record<string, unknown>): ImageContent | null {
+  const url = text(payload, "url");
+  if (!url) return null;
+  return {
+    url,
+    thumbnailUrl: text(payload, "thumbnail_url") || url,
+    width: number(payload, "width"),
+    height: number(payload, "height"),
+    sizeBytes: number(payload, "size_bytes"),
+    mime: text(payload, "mime"),
+  };
+}
+
+function videoOf(payload: Record<string, unknown>): VideoContent | null {
+  const url = text(payload, "url");
+  if (!url) return null;
+  return {
+    url,
+    posterUrl: text(payload, "poster_url"),
+    width: number(payload, "width"),
+    height: number(payload, "height"),
+    durationMs: number(payload, "duration_ms"),
+    sizeBytes: number(payload, "size_bytes"),
+    mime: text(payload, "mime"),
+  };
+}
+
+function albumItemsOf(payload: Record<string, unknown>): AlbumItem[] {
+  const raw = Array.isArray(payload.items) ? (payload.items as Record<string, unknown>[]) : [];
+  const items: AlbumItem[] = [];
+  for (const entry of raw) {
+    if (entry?.kind === ContentKind.Image) {
+      const image = imageOf(entry);
+      if (image) items.push({ kind: ContentKind.Image, image });
+    } else if (entry?.kind === ContentKind.Video) {
+      const video = videoOf(entry);
+      if (video) items.push({ kind: ContentKind.Video, video });
+    }
+  }
+  return items;
+}
+
 export function contentOf(message: WireMessage): Content {
   const payload = message.payload ?? {};
 
   switch (message.kind) {
+    case ContentKind.Album: {
+      const items = albumItemsOf(payload);
+      if (items.length === 0) break;
+      return { kind: ContentKind.Album, items };
+    }
     case ContentKind.Image: {
-      const url = text(payload, "url");
-      if (!url) break;
-      return {
-        kind: ContentKind.Image,
-        image: {
-          url,
-          thumbnailUrl: text(payload, "thumbnail_url") || url,
-          width: number(payload, "width"),
-          height: number(payload, "height"),
-          sizeBytes: number(payload, "size_bytes"),
-          mime: text(payload, "mime"),
-        },
-      };
+      const image = imageOf(payload);
+      if (!image) break;
+      return { kind: ContentKind.Image, image };
     }
     case ContentKind.Video: {
-      const url = text(payload, "url");
-      if (!url) break;
-      return {
-        kind: ContentKind.Video,
-        video: {
-          url,
-          posterUrl: text(payload, "poster_url"),
-          width: number(payload, "width"),
-          height: number(payload, "height"),
-          durationMs: number(payload, "duration_ms"),
-          sizeBytes: number(payload, "size_bytes"),
-          mime: text(payload, "mime"),
-        },
-      };
+      const video = videoOf(payload);
+      if (!video) break;
+      return { kind: ContentKind.Video, video };
     }
     case ContentKind.Voice: {
       const url = text(payload, "url");
@@ -139,7 +171,11 @@ export function isEditable(message: WireMessage): boolean {
   }
   const kind = contentOf(message).kind;
   return (
-    kind === ContentKind.Text || kind === ContentKind.Image || kind === ContentKind.Video || kind === ContentKind.File
+    kind === ContentKind.Text ||
+    kind === ContentKind.Image ||
+    kind === ContentKind.Video ||
+    kind === ContentKind.File ||
+    kind === ContentKind.Album
   );
 }
 
@@ -223,6 +259,8 @@ export function quoteOf(preview: WireReplyPreview): string {
       return "Voice message";
     case ContentKind.File:
       return caption || "File";
+    case ContentKind.Album:
+      return caption || "Album";
     default:
       return caption;
   }
@@ -245,6 +283,8 @@ export function previewOf(message: WireMessage): string {
       return `🎤 Voice message · ${formatDuration(content.voice.durationMs)}`;
     case ContentKind.File:
       return `📎 ${content.file.filename}`;
+    case ContentKind.Album:
+      return caption ? `🖼 ${caption}` : `🖼 Album · ${content.items.length}`;
     case ContentKind.System:
       return systemSummaryOf(message);
     default:

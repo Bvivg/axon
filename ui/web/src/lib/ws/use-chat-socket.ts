@@ -35,6 +35,7 @@ export type ChatTarget = { roomId: string } | { peerId: string };
 
 export interface SendOptions {
   uploadId?: string;
+  uploadIds?: string[];
   replyToId?: string;
 }
 
@@ -263,7 +264,8 @@ export function useChatSocket(
 
   const send = useCallback(
     (body: string, options: SendOptions = {}) => {
-      if (readyState !== ReadyState.OPEN || (!body.trim() && !options.uploadId)) {
+      const uploads = options.uploadIds?.length ? options.uploadIds : options.uploadId ? [options.uploadId] : [];
+      if (readyState !== ReadyState.OPEN || (!body.trim() && uploads.length === 0)) {
         return false;
       }
 
@@ -271,7 +273,8 @@ export function useChatSocket(
         type: "send" as const,
         client_id: newClientID(),
         body,
-        ...(options.uploadId ? { upload_id: options.uploadId } : {}),
+        ...(uploads.length === 1 ? { upload_id: uploads[0] } : {}),
+        ...(uploads.length > 1 ? { upload_ids: uploads } : {}),
         ...(options.replyToId ? { reply_to_id: options.replyToId } : {}),
       };
 

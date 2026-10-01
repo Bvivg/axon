@@ -141,11 +141,14 @@ export function MessageComposer({
     }
 
     const sent: string[] = [];
-    uploads.ready.forEach((item, index) => {
+    batchesOf(uploads.ready).forEach((batch, index) => {
       const first = index === 0;
-      const options = { uploadId: item.uploaded?.uploadId, replyToId: first ? replyToId : undefined };
-      if (item.uploaded && onSend(first ? draft : "", options)) {
-        sent.push(item.id);
+      const options = {
+        uploadIds: batch.map((item) => item.uploaded?.uploadId ?? ""),
+        replyToId: first ? replyToId : undefined,
+      };
+      if (onSend(first ? draft : "", options)) {
+        sent.push(...batch.map((item) => item.id));
       }
     });
     if (sent.length > 0) {
@@ -377,6 +380,19 @@ export function MessageComposer({
       )}
     </div>
   );
+}
+
+const albumLimit = 10;
+
+function batchesOf(ready: PendingUpload[]): PendingUpload[][] {
+  const uploaded = ready.filter((item) => item.uploaded);
+  const media = uploaded.filter((item) => item.uploaded?.kind === "image" || item.uploaded?.kind === "video");
+  const rest = uploaded.filter((item) => !media.includes(item));
+  const albums: PendingUpload[][] = [];
+  for (let start = 0; start < media.length; start += albumLimit) {
+    albums.push(media.slice(start, start + albumLimit));
+  }
+  return [...albums, ...rest.map((item) => [item])];
 }
 
 function PendingChip({ item, onRemove }: { item: PendingUpload; onRemove: () => void }) {

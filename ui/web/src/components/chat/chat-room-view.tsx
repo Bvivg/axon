@@ -32,7 +32,17 @@ import { signInPath } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 import { ContentKind, contentOf, membersLabel, previewOf, targetIDsOf, type NameOf } from "@/lib/chat/content";
 import { copyImage } from "@/lib/chat/copy-image";
-import { selectedMessages, selectionText, toggleMessage, type MessageSelection } from "@/lib/chat/selection";
+import {
+  forwardRequest,
+  selectedCount,
+  selectedMessages,
+  selectionText,
+  toggleItem,
+  toggleMessage,
+  type ForwardRequest,
+  type MessageSelection,
+} from "@/lib/chat/selection";
+import { slideIndexOf, viewerSlidesOf } from "@/lib/chat/viewer";
 import { usePendingUploads } from "@/lib/chat/use-pending-uploads";
 import { describe } from "@/lib/errors";
 import { firstUnreadOf } from "@/lib/chat/series";
@@ -125,7 +135,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   }, [socket.revoked, signOut, router]);
 
   const uploads = usePendingUploads();
-  const [viewing, setViewing] = useState<WireMessage | null>(null);
+  const [viewing, setViewing] = useState<{ messageID: string; item: number } | null>(null);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -180,7 +190,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   );
 
   const [context, setContext] = useState<ComposerContext | null>(null);
-  const [forwarding, setForwarding] = useState<string[] | null>(null);
+  const [forwarding, setForwarding] = useState<ForwardRequest | null>(null);
   const [deleting, setDeleting] = useState<string[] | null>(null);
   const [readersOf, setReadersOf] = useState<string | null>(null);
   const [selection, setSelection] = useState<MessageSelection | null>(null);
@@ -208,7 +218,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           preview: previewOf(message),
           body: message.body,
         }),
-      onForward: (message) => setForwarding([message.id]),
+      onForward: (message) => setForwarding({ messageIds: [message.id], parts: [] }),
       onEdit: (message) =>
         setContext({
           mode: ComposerMode.Edit,
@@ -219,7 +229,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           bodyOptional: contentOf(message).kind !== ContentKind.Text,
         }),
       onDelete: (message) => setDeleting([message.id]),
-      onSelect: (message) => setSelection(new Set([message.id])),
+      onSelect: (message) => setSelection(new Map([[message.id, null]])),
       onReaders: (message) => setReadersOf(message.id),
       onCopyImage: (message) => {
         const content = contentOf(message);
@@ -237,6 +247,13 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     (messageID: string) => setSelection((current) => toggleMessage(current, messageID)),
     [],
   );
+  const onToggleItem = useCallback(
+    (messageID: string, item: number, total: number) =>
+      setSelection((current) => toggleItem(current, messageID, item, total)),
+    [],
+  );
+  const slides = useMemo(() => viewerSlidesOf(socket.messages), [socket.messages]);
+  const onOpenMedia = useCallback((message: WireMessage, item: number) => setViewing({ messageID: message.id, item }), []);
   const selected = useMemo(() => selectedMessages(selection, socket.messages), [selection, socket.messages]);
   const canDeleteSelected = selected.length > 0 && selected.every((message) => message.author_id === user?.id);
 
@@ -592,11 +609,12 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           onLoadOlder={onLoadOlder}
           hasOlder={history.hasNextPage}
           loadingOlder={history.isFetchingNextPage}
-          onOpenMedia={setViewing}
+          onOpenMedia={onOpenMedia}
           actions={socket.connected ? actions : undefined}
           showNames={!isDirect}
           selection={selection}
           onToggleSelected={onToggleSelected}
+          onToggleItem={onToggleItem}
           onSelectMessages={socket.connected ? setSelection : undefined}
         />
       )}
@@ -615,10 +633,10 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         </div>
         {selection !== null ? (
           <SelectionBar
-            count={selected.length}
+            count={selectedCount(selection, socket.messages)}
             canDelete={canDeleteSelected}
             onCopy={copySelected}
-            onForward={() => setForwarding(selected.map((message) => message.id))}
+            onForward={() => setForwarding(forwardRequest(selection, socket.messages))}
             onDelete={() => setDeleting(selected.map((message) => message.id))}
             onCancel={() => setSelection(null)}
           />
@@ -627,7 +645,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
 
       <ForwardDialog
         open={forwarding !== null}
-        count={forwarding?.length ?? 0}
+        count={forwarding?.messageIds.length ?? 0}
         pending={forwardMessages.isPending}
         error={forwardMessages.error ? describe(forwardMessages.error) : null}
         onOpenChange={(open) => {
@@ -639,7 +657,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         onForward={(roomIds, comment) => {
           if (!forwarding) return;
           forwardMessages.mutate(
-            { messageIds: forwarding, roomIds, comment, clientId: newClientID() },
+            { ...forwarding, roomIds, comment, clientId: newClientID() },
             {
               onSuccess: () => {
                 setForwarding(null);
@@ -715,7 +733,11 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         />
       ) : null}
 
-      <MediaViewer message={viewing} onClose={() => setViewing(null)} />
+      <MediaViewer
+        slides={slides}
+        index={viewing ? slideIndexOf(slides, viewing.messageID, viewing.item) : null}
+        onClose={() => setViewing(null)}
+      />
       {roomID ? (
         <RoomMedia
           roomID={roomID}

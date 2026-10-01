@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import { ContentKind } from "@/lib/chat/content";
 import {
   canSelect,
+  forwardRequest,
+  isPicked,
   selectableBetween,
+  selectedCount,
   selectedMessages,
   selectionText,
   selectWhole,
+  toggleItem,
   toggleMessage,
 } from "@/lib/chat/selection";
 import type { WireMessage } from "@/lib/ws/protocol";
@@ -28,7 +32,7 @@ describe("selection", () => {
 
   it("toggling the last message off ends the selection", () => {
     const one = toggleMessage(null, "m1");
-    expect([...(one ?? [])]).toEqual(["m1"]);
+    expect([...(one?.keys() ?? [])]).toEqual(["m1"]);
     expect(toggleMessage(one, "m1")).toBeNull();
   });
 
@@ -36,13 +40,42 @@ describe("selection", () => {
     const messages = [message(1), message(2, { kind: ContentKind.System }), message(3), message(4)];
     expect(selectableBetween(messages, 4, 1)).toEqual(["m1", "m3", "m4"]);
     const base = toggleMessage(null, "m9");
-    expect([...(selectWhole(base, ["m1", "m3"]) ?? [])].sort()).toEqual(["m1", "m3", "m9"]);
+    expect([...(selectWhole(base, ["m1", "m3"])?.keys() ?? [])].sort()).toEqual(["m1", "m3", "m9"]);
   });
 
   it("selected messages follow the transcript order and drop what got deleted", () => {
     const messages = [message(1), message(2, { deleted_at: at }), message(3)];
-    const picked = new Set(["m3", "m2", "m1"]);
+    const picked = new Map<string, null>([["m3", null], ["m2", null], ["m1", null]]);
     expect(selectedMessages(picked, messages).map((m) => m.id)).toEqual(["m1", "m3"]);
+  });
+
+  it("album items are picked one by one and counted as photos", () => {
+    const album = message(5, {
+      kind: ContentKind.Album,
+      payload: {
+        items: [0, 1, 2].map((i) => ({ kind: "image", url: `u${i}`, width: 1, height: 1, size_bytes: 1 })),
+      },
+    });
+    const messages = [message(1), album];
+
+    let selection = toggleItem(null, album.id, 1, 3);
+    expect(isPicked(selection, album.id, 1)).toBe(true);
+    expect(isPicked(selection, album.id, 0)).toBe(false);
+    selection = toggleMessage(selection, "m1");
+    expect(selectedCount(selection, messages)).toBe(2);
+    expect(forwardRequest(selection, messages)).toEqual({
+      messageIds: ["m1", album.id],
+      parts: [{ messageId: album.id, positions: [1] }],
+    });
+
+    selection = toggleItem(toggleItem(selection, album.id, 0, 3), album.id, 2, 3);
+    expect(selection?.get(album.id)).toBeNull();
+    expect(selectedCount(selection, messages)).toBe(4);
+    expect(forwardRequest(selection, messages).parts).toEqual([]);
+
+    selection = toggleItem(selection, album.id, 0, 3);
+    selection = toggleItem(toggleItem(selection, album.id, 1, 3), album.id, 2, 3);
+    expect(selection?.has(album.id)).toBe(false);
   });
 
   it("copies one message as its text and several with author and time", () => {

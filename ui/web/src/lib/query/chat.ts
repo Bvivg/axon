@@ -58,6 +58,7 @@ const kindNames: Partial<Record<MessageKind, string>> = {
   [MessageKind.ATTACHMENT]: "attachment",
   [MessageKind.IMAGE]: "image",
   [MessageKind.VIDEO]: "video",
+  [MessageKind.ALBUM]: "album",
   [MessageKind.SYSTEM]: "system",
 };
 
@@ -94,6 +95,20 @@ function payloadOf(m: Message): Record<string, unknown> | undefined {
         filename: m.payload.value.filename,
         mime: m.payload.value.mime,
         size_bytes: Number(m.payload.value.sizeBytes),
+      };
+    case "album":
+      return {
+        items: m.payload.value.items.map((item) => ({
+          kind: kindNames[item.kind] ?? "image",
+          url: item.url,
+          thumbnail_url: item.thumbnailUrl,
+          poster_url: item.posterUrl,
+          width: item.width,
+          height: item.height,
+          duration_ms: Number(item.durationMs),
+          size_bytes: Number(item.sizeBytes),
+          mime: item.mime,
+        })),
       };
     case "system":
       return {
@@ -393,7 +408,13 @@ export function useMessageReaders(messageID: string | null) {
 
 export function useForwardMessages() {
   return useMutation({
-    mutationFn: async (input: { messageIds: string[]; roomIds: string[]; comment: string; clientId: string }) => {
+    mutationFn: async (input: {
+      messageIds: string[];
+      parts: { messageId: string; positions: number[] }[];
+      roomIds: string[];
+      comment: string;
+      clientId: string;
+    }) => {
       const resp = await chatClient.forwardMessages(input);
       return resp.sent;
     },

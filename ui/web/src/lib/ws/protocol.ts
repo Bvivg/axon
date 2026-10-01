@@ -15,6 +15,7 @@ export type Outgoing =
       client_id: string;
       body: string;
       upload_id?: string;
+      upload_ids?: string[];
       reply_to_id?: string;
       forwarded_from_id?: string;
     } & ({ room_id: string } | { to_user_id: string }));

@@ -58,7 +58,20 @@ async function accessToken(): Promise<string> {
   return getAccessToken() ?? "";
 }
 
+const throttled = (err: unknown) => isAxiosError(err) && err.response?.status === 429;
+
 async function call<T>(config: AxiosRequestConfig): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await callOnce<T>(config);
+    } catch (err) {
+      if (attempt >= partAttempts || !throttled(err)) throw err;
+      await pause(retryDelayMs * 2 ** (attempt - 1), config.signal as AbortSignal | undefined);
+    }
+  }
+}
+
+async function callOnce<T>(config: AxiosRequestConfig): Promise<T> {
   const attempt = async (token: string) =>
     axios.request<T>({
       ...config,
