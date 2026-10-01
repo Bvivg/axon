@@ -9,8 +9,10 @@ import { setPaletteOpen } from "@/components/nav/palette-store";
 import { Button } from "@/components/ui/button";
 import { KbdCombo } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/status";
+import { useSession } from "@/lib/auth/session";
 import { ChatAddressKind, parseChatAddress, useChatAddress } from "@/lib/chat/address";
 import { useModKey } from "@/lib/hooks/use-is-mac";
+import { usePublicProfileByUsername } from "@/lib/query/people";
 import { Theme, toggleTheme, useResolvedTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { ConnectionStatus, useConnectionStatus } from "@/lib/ws/connection";
@@ -24,13 +26,16 @@ const profilePages: Record<string, string> = {
 function usePageLabel(pathname: string, section: Section | null): string | null {
   const { rooms, entries } = useRoomDirectory();
   const address = useChatAddress();
+  const { user } = useSession();
+  const entry = entryAt(entries, address);
+  const parsed = parseChatAddress(address);
+  const person = usePublicProfileByUsername(!entry && parsed.kind === ChatAddressKind.Person ? parsed.username : "");
 
   if (section === Section.Chats) {
-    const entry = entryAt(entries, address);
     if (entry) {
       return entry.direct ? entry.label : `#${entry.label}`;
     }
-    if (rooms.isSuccess && parseChatAddress(address).kind === ChatAddressKind.Person) {
+    if (rooms.isSuccess && person.data && person.data.id !== user?.id) {
       return "New message";
     }
     return null;

@@ -10,7 +10,7 @@ import { entryAt, useRoomDirectory } from "@/components/chat/use-room-directory"
 import { buttonVariants } from "@/components/ui/button";
 import { LoadingDots } from "@/components/ui/status";
 import { useSession } from "@/lib/auth/session";
-import { ChatAddressKind, HistoryMode, openChat, parseChatAddress, useChatAddress } from "@/lib/chat/address";
+import { ChatAddressKind, parseChatAddress, settleChatAddress, useChatAddress } from "@/lib/chat/address";
 import { describe, isCode } from "@/lib/errors";
 import { useDirectRoom } from "@/lib/query/chat";
 import { usePublicProfileByUsername } from "@/lib/query/people";
@@ -93,11 +93,7 @@ function useResolvedChat(address: string): Resolved {
   const direct = useDirectRoom(peer && !peerRoom && rooms.isSuccess && peer.id !== user?.id ? peer.id : "");
 
   const canonical = parsed.kind === ChatAddressKind.Room && known?.direct ? known.address : address;
-  useEffect(() => {
-    if (canonical !== address || window.location.hash.slice(1) !== canonical) {
-      openChat(router, canonical, HistoryMode.Replace);
-    }
-  }, [canonical, address, router]);
+  useEffect(() => settleChatAddress(router, address, canonical), [canonical, address, router]);
 
   switch (parsed.kind) {
     case ChatAddressKind.None:

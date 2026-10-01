@@ -3,6 +3,8 @@
 import type { useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
+import { normalizeUsername } from "@/lib/format";
+
 export const chatPath = "/chat";
 
 export enum ChatAddressKind {
@@ -23,13 +25,12 @@ const usernamePattern = /^[a-z][a-z0-9_]{2,31}$/;
 const addressChangeEvent = "axon:chat-address";
 
 export function normalizeChatAddress(hash: string): string {
-  let raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
   try {
-    raw = decodeURIComponent(raw);
+    return normalizeUsername(decodeURIComponent(raw));
   } catch {
-    return raw.trim().toLowerCase();
+    return normalizeUsername(raw);
   }
-  return raw.trim().replace(/^@/, "").toLowerCase();
 }
 
 export function parseChatAddress(address: string): ChatAddress {
@@ -152,7 +153,7 @@ function interceptChatLink(event: MouseEvent) {
 
 function syncRouterWithHash() {
   if (window.location.pathname === chatPath) {
-    window.history.replaceState(window.history.state, "", window.location.href);
+    window.history.replaceState(window.history.state, "", chatHref(normalizeChatAddress(window.location.hash)));
   }
 }
 
@@ -193,6 +194,15 @@ function subscribe(onChange: () => void): () => void {
 
 function currentAddress(): string {
   return window.location.pathname === chatPath ? normalizeChatAddress(window.location.hash) : "";
+}
+
+export function settleChatAddress(router: Router, rendered: string, canonical: string) {
+  if (currentAddress() !== rendered) {
+    return;
+  }
+  if (canonical !== rendered || window.location.hash.slice(1) !== canonical) {
+    openChat(router, canonical, HistoryMode.Replace);
+  }
 }
 
 function noAddress(): string {
