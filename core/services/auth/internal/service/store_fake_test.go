@@ -82,6 +82,9 @@ func (s *fakeStore) CreateUserWithPassword(_ context.Context, u domain.User, pas
 	if _, taken := s.usersByMail[u.Email]; taken {
 		return domain.User{}, domain.ErrEmailTaken
 	}
+	if s.usernameTakenLocked(u.Username, u.ID) {
+		return domain.User{}, domain.ErrUsernameTaken
+	}
 
 	now := time.Now().UTC()
 	u.CreatedAt, u.UpdatedAt = now, now
@@ -103,6 +106,9 @@ func (s *fakeStore) CreateUserWithOauthAccount(_ context.Context, u domain.User,
 	}
 	if _, taken := s.usersByMail[u.Email]; taken {
 		return domain.User{}, domain.ErrEmailTaken
+	}
+	if s.usernameTakenLocked(u.Username, u.ID) {
+		return domain.User{}, domain.ErrUsernameTaken
 	}
 
 	now := time.Now().UTC()
@@ -149,6 +155,31 @@ func (s *fakeStore) UserByID(_ context.Context, id uuid.UUID) (domain.User, erro
 	return u, nil
 }
 
+func (s *fakeStore) UserByUsername(_ context.Context, username string) (domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("UserByUsername"); err != nil {
+		return domain.User{}, err
+	}
+
+	for _, u := range s.users {
+		if u.Username == username {
+			return u, nil
+		}
+	}
+	return domain.User{}, domain.ErrUserNotFound
+}
+
+func (s *fakeStore) usernameTakenLocked(username string, owner uuid.UUID) bool {
+	for id, u := range s.users {
+		if id != owner && u.Username == username {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.ProfileUpdate) (domain.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -162,11 +193,16 @@ func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.Pro
 		return domain.User{}, domain.ErrUserNotFound
 	}
 
+	if s.usernameTakenLocked(in.Username, id) {
+		return domain.User{}, domain.ErrUsernameTaken
+	}
+
 	u.Email = in.Email
 	u.EmailVerified = in.EmailVerified
 	u.FirstName = in.FirstName
 	u.LastName = in.LastName
 	u.Nickname = in.Nickname
+	u.Username = in.Username
 	u.DisplayName = in.DisplayName
 	u.UpdatedAt = time.Now().UTC()
 	s.users[id] = u
@@ -610,7 +646,8 @@ func (s *fakeStore) SearchExact(_ context.Context, query string, excludeUserID u
 		if u.ID == excludeUserID {
 			continue
 		}
-		if strings.ToLower(u.Email) == lowered || strings.ToLower(u.DisplayName) == lowered {
+		if strings.ToLower(u.Email) == lowered || strings.ToLower(u.DisplayName) == lowered ||
+			u.Username == strings.TrimPrefix(lowered, "@") {
 			out = append(out, u)
 		}
 	}

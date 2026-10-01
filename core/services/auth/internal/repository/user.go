@@ -10,21 +10,24 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-const userColumns = `id, email, email_verified, display_name, avatar_url, ` +
+const userColumns = `id, email, email_verified, username, display_name, avatar_url, ` +
 	`first_name, last_name, nickname, avatar_is_custom, created_at, updated_at, last_seen_at`
 
 func (r *Repository) CreateUser(ctx context.Context, u domain.User) (domain.User, error) {
 	const query = `
-		INSERT INTO users (id, email, email_verified, display_name, avatar_url)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (id, email, email_verified, username, display_name, avatar_url)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING ` + userColumns
 
-	row := r.q.QueryRow(ctx, query, u.ID, u.Email, u.EmailVerified, u.DisplayName, u.AvatarURL)
+	row := r.q.QueryRow(ctx, query, u.ID, u.Email, u.EmailVerified, u.Username, u.DisplayName, u.AvatarURL)
 
 	created, err := scanUser(row)
 	if err != nil {
 		if isUniqueViolation(err, "users_email_key") {
 			return domain.User{}, domain.ErrEmailTaken
+		}
+		if isUniqueViolation(err, "users_username_key") {
+			return domain.User{}, domain.ErrUsernameTaken
 		}
 		return domain.User{}, fmt.Errorf("repository: create user: %w", err)
 	}
@@ -57,6 +60,19 @@ func (r *Repository) UserByID(ctx context.Context, id uuid.UUID) (domain.User, e
 	return u, nil
 }
 
+func (r *Repository) UserByUsername(ctx context.Context, username string) (domain.User, error) {
+	const query = `SELECT ` + userColumns + ` FROM users WHERE username = $1`
+
+	u, err := scanUser(r.q.QueryRow(ctx, query, username))
+	if err != nil {
+		if noRows(err) {
+			return domain.User{}, domain.ErrUserNotFound
+		}
+		return domain.User{}, fmt.Errorf("repository: user by username: %w", err)
+	}
+	return u, nil
+}
+
 func (r *Repository) UpdateProfile(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate) (domain.User, error) {
 	const query = `
 		UPDATE users
@@ -66,12 +82,13 @@ func (r *Repository) UpdateProfile(ctx context.Context, id uuid.UUID, u domain.P
 		    last_name      = $5,
 		    nickname       = $6,
 		    display_name   = $7,
+		    username       = $8,
 		    updated_at     = now()
 		WHERE id = $1
 		RETURNING ` + userColumns
 
 	row := r.q.QueryRow(ctx, query,
-		id, u.Email, u.EmailVerified, u.FirstName, u.LastName, u.Nickname, u.DisplayName)
+		id, u.Email, u.EmailVerified, u.FirstName, u.LastName, u.Nickname, u.DisplayName, u.Username)
 
 	updated, err := scanUser(row)
 	if err != nil {
@@ -80,6 +97,9 @@ func (r *Repository) UpdateProfile(ctx context.Context, id uuid.UUID, u domain.P
 		}
 		if isUniqueViolation(err, "users_email_key") {
 			return domain.User{}, domain.ErrEmailTaken
+		}
+		if isUniqueViolation(err, "users_username_key") {
+			return domain.User{}, domain.ErrUsernameTaken
 		}
 		return domain.User{}, fmt.Errorf("repository: update profile: %w", err)
 	}
@@ -168,6 +188,7 @@ func scanUser(row scanRow) (domain.User, error) {
 		&u.ID,
 		&u.Email,
 		&u.EmailVerified,
+		&u.Username,
 		&u.DisplayName,
 		&u.AvatarURL,
 		&u.FirstName,

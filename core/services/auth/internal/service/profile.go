@@ -21,6 +21,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, patch dom
 		FirstName:     current.FirstName,
 		LastName:      current.LastName,
 		Nickname:      current.Nickname,
+		Username:      current.Username,
 	}
 
 	if patch.Email != nil {
@@ -55,6 +56,14 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, patch dom
 			return domain.User{}, err
 		}
 		update.Nickname = v
+	}
+
+	if patch.Username != nil && domain.NormalizeUsername(*patch.Username) != current.Username {
+		v, err := domain.ValidateUsername(*patch.Username)
+		if err != nil {
+			return domain.User{}, err
+		}
+		update.Username = v
 	}
 
 	update.DisplayName = resolveDisplayName(update.Nickname, update.FirstName, update.LastName, current.DisplayName)

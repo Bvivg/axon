@@ -35,6 +35,9 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrEmailTaken):
 		return connect.NewError(connect.CodeAlreadyExists, errors.New("email already registered"))
 
+	case errors.Is(err, domain.ErrUsernameTaken):
+		return connect.NewError(connect.CodeAlreadyExists, errors.New("username is taken"))
+
 	case errors.Is(err, domain.ErrUserNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("user not found"))
 

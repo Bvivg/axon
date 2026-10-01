@@ -21,6 +21,7 @@ type Store interface {
 
 	UserByEmail(ctx context.Context, email string) (domain.User, error)
 	UserByID(ctx context.Context, id uuid.UUID) (domain.User, error)
+	UserByUsername(ctx context.Context, username string) (domain.User, error)
 	UpdateProfile(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate) (domain.User, error)
 	SetAvatar(ctx context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error)
 	UpdateLastSeen(ctx context.Context, id uuid.UUID, at time.Time) error

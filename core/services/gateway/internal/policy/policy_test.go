@@ -95,6 +95,9 @@ func TestDirectMessagingProcedures(t *testing.T) {
 		"get users public profiles": {
 			authv1connect.AuthServiceGetUsersPublicProfilesProcedure, false, policy.TierStandard,
 		},
+		"get public profile by username": {
+			authv1connect.AuthServiceGetPublicProfileByUsernameProcedure, false, policy.TierStandard,
+		},
 		"update last seen": {authv1connect.AuthServiceUpdateLastSeenProcedure, false, policy.TierStandard},
 		"hide room":        {chatv1connect.ChatServiceHideRoomProcedure, false, policy.TierStandard},
 		"get direct room":  {chatv1connect.ChatServiceGetDirectRoomProcedure, false, policy.TierStandard},
@@ -147,9 +150,10 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		authv1connect.AuthServiceAssignRoleProcedure:     true,
 		authv1connect.AuthServiceRevokeRoleProcedure:     true,
 
-		authv1connect.AuthServiceSearchUsersProcedure:            true,
-		authv1connect.AuthServiceGetUsersPublicProfilesProcedure: true,
-		authv1connect.AuthServiceUpdateLastSeenProcedure:         true,
+		authv1connect.AuthServiceSearchUsersProcedure:                true,
+		authv1connect.AuthServiceGetUsersPublicProfilesProcedure:     true,
+		authv1connect.AuthServiceGetPublicProfileByUsernameProcedure: true,
+		authv1connect.AuthServiceUpdateLastSeenProcedure:             true,
 
 		chatv1connect.ChatServiceCreateRoomProcedure:     true,
 		chatv1connect.ChatServiceListRoomsProcedure:      true,

@@ -139,6 +139,13 @@ func (a *Auth) GetUsersPublicProfiles(
 	return a.client.GetUsersPublicProfiles(ctx, forward(ctx, req))
 }
 
+func (a *Auth) GetPublicProfileByUsername(
+	ctx context.Context,
+	req *connect.Request[authv1.GetPublicProfileByUsernameRequest],
+) (*connect.Response[authv1.GetPublicProfileByUsernameResponse], error) {
+	return a.client.GetPublicProfileByUsername(ctx, forward(ctx, req))
+}
+
 func (a *Auth) UpdateLastSeen(
 	ctx context.Context,
 	req *connect.Request[authv1.UpdateLastSeenRequest],

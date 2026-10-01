@@ -38,6 +38,8 @@ service AuthService {
 
   rpc GetUsersPublicProfiles(GetUsersPublicProfilesRequest) returns (GetUsersPublicProfilesResponse);
 
+  rpc GetPublicProfileByUsername(GetPublicProfileByUsernameRequest) returns (GetPublicProfileByUsernameResponse);
+
   rpc UpdateLastSeen(UpdateLastSeenRequest) returns (UpdateLastSeenResponse);
 }
 
@@ -77,6 +79,8 @@ message User {
   optional AvatarURLs avatar_urls = 10;
 
   repeated string roles = 11;
+
+  optional string username = 12;
 }
 
 message AvatarURLs {
@@ -91,6 +95,8 @@ message RegisterRequest {
   string email = 1;
   string password = 2;
   optional string display_name = 3;
+
+  optional string username = 4;
 }
 
 message RegisterResponse {
@@ -162,6 +168,8 @@ message UpdateProfileRequest {
   optional string first_name = 2;
   optional string last_name = 3;
   optional string nickname = 4;
+
+  optional string username = 5;
 }
 
 message UpdateProfileResponse {
@@ -248,6 +256,8 @@ message PublicProfile {
   bool online = 5;
 
   optional google.protobuf.Timestamp last_seen_at = 6;
+
+  optional string username = 7;
 }
 
 message SearchUsersRequest {
@@ -264,6 +274,14 @@ message GetUsersPublicProfilesRequest {
 
 message GetUsersPublicProfilesResponse {
   repeated PublicProfile users = 1;
+}
+
+message GetPublicProfileByUsernameRequest {
+  string username = 1;
+}
+
+message GetPublicProfileByUsernameResponse {
+  PublicProfile user = 1;
 }
 
 message UpdateLastSeenRequest {}

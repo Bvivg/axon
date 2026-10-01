@@ -33,9 +33,10 @@ var procedures = map[string]Rule{
 	"/axon.auth.v1.AuthService/AssignRole": {Public: false, Tier: TierSensitive},
 	"/axon.auth.v1.AuthService/RevokeRole": {Public: false, Tier: TierSensitive},
 
-	"/axon.auth.v1.AuthService/SearchUsers":            {Public: false, Tier: TierSensitive},
-	"/axon.auth.v1.AuthService/GetUsersPublicProfiles": {Public: false, Tier: TierStandard},
-	"/axon.auth.v1.AuthService/UpdateLastSeen":         {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthService/SearchUsers":                {Public: false, Tier: TierSensitive},
+	"/axon.auth.v1.AuthService/GetUsersPublicProfiles":     {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthService/GetPublicProfileByUsername": {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthService/UpdateLastSeen":             {Public: false, Tier: TierStandard},
 
 	"/axon.chat.v1.ChatService/ListRooms":      {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/GetRoom":        {Public: false, Tier: TierStandard},

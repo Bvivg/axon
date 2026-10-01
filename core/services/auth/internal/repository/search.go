@@ -13,7 +13,7 @@ func (r *Repository) SearchExact(ctx context.Context, query string, excludeUserI
 	const stmt = `
 		SELECT ` + userColumns + `
 		FROM users
-		WHERE (email = lower($1) OR lower(display_name) = lower($1)) AND id != $2
+		WHERE (email = lower($1) OR lower(display_name) = lower($1) OR username = lower(ltrim($1, '@'))) AND id != $2
 		ORDER BY id`
 
 	rows, err := r.q.Query(ctx, stmt, query, excludeUserID)

@@ -19,6 +19,7 @@ func TestSearchExactMatchesByEmail(t *testing.T) {
 
 	target, err := repo.CreateUserWithPassword(ctx, domain.User{
 		ID:          uuid.New(),
+		Username:    newUsername(),
 		Email:       "search-target-" + uuid.NewString() + "@axon.test",
 		DisplayName: "Ada Lovelace",
 	}, searchTestHash)
@@ -27,8 +28,9 @@ func TestSearchExactMatchesByEmail(t *testing.T) {
 	}
 
 	caller, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: "search-caller-" + uuid.NewString() + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    "search-caller-" + uuid.NewString() + "@axon.test",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create caller: %v", err)
@@ -49,6 +51,7 @@ func TestSearchExactMatchesByDisplayNameCaseInsensitively(t *testing.T) {
 
 	target, err := repo.CreateUserWithPassword(ctx, domain.User{
 		ID:          uuid.New(),
+		Username:    newUsername(),
 		Email:       "search-target-" + uuid.NewString() + "@axon.test",
 		DisplayName: "Grace Hopper",
 	}, searchTestHash)
@@ -57,8 +60,9 @@ func TestSearchExactMatchesByDisplayNameCaseInsensitively(t *testing.T) {
 	}
 
 	caller, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: "search-caller-" + uuid.NewString() + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    "search-caller-" + uuid.NewString() + "@axon.test",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create caller: %v", err)
@@ -78,8 +82,9 @@ func TestSearchExactExcludesTheCaller(t *testing.T) {
 	ctx := t.Context()
 
 	caller, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: "search-self-" + uuid.NewString() + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    "search-self-" + uuid.NewString() + "@axon.test",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create caller: %v", err)
@@ -101,16 +106,18 @@ func TestSearchExactDoesNotPrefixMatch(t *testing.T) {
 	prefix := "search-prefix-" + uuid.NewString()
 
 	target, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: prefix + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    prefix + "@axon.test",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create target: %v", err)
 	}
 
 	caller, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: "search-caller-" + uuid.NewString() + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    "search-caller-" + uuid.NewString() + "@axon.test",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create caller: %v", err)
@@ -130,15 +137,17 @@ func TestUsersByIDsReturnsOnlyKnownUsers(t *testing.T) {
 	ctx := t.Context()
 
 	first, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: "search-batch-1-" + uuid.NewString() + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    "search-batch-1-" + uuid.NewString() + "@axon.test",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create first: %v", err)
 	}
 	second, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: "search-batch-2-" + uuid.NewString() + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    "search-batch-2-" + uuid.NewString() + "@axon.test",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create second: %v", err)

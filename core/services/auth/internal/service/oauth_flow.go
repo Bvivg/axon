@@ -186,13 +186,15 @@ func (s *Service) resolveOauthUser(
 		return domain.User{}, false, err
 	}
 
-	user, err := s.store.CreateUserWithOauthAccount(ctx, domain.User{
-		ID:          uuid.New(),
-		Email:       email,
-		DisplayName: displayName,
-
-		EmailVerified: true,
-	}, account)
+	user, err := s.createWithUsername(ctx, nil, email, func(username string) (domain.User, error) {
+		return s.store.CreateUserWithOauthAccount(ctx, domain.User{
+			ID:            uuid.New(),
+			Email:         email,
+			Username:      username,
+			DisplayName:   displayName,
+			EmailVerified: true,
+		}, account)
+	})
 	if err != nil {
 		return domain.User{}, false, fmt.Errorf("service: create account from %s profile: %w", id, err)
 	}

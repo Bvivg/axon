@@ -14,6 +14,7 @@ type RegisterInput struct {
 	Email       string
 	Password    string
 	DisplayName string
+	Username    *string
 	Device      domain.Device
 }
 
@@ -34,19 +35,26 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 	if err != nil {
 		return Result{}, err
 	}
+	if in.Username != nil {
+		if _, err := domain.ValidateUsername(*in.Username); err != nil {
+			return Result{}, err
+		}
+	}
 
 	hash, err := s.hasher.Hash(in.Password)
 	if err != nil {
 		return Result{}, fmt.Errorf("service: hash password: %w", err)
 	}
 
-	user, err := s.store.CreateUserWithPassword(ctx, domain.User{
-		ID:          uuid.New(),
-		Email:       email,
-		DisplayName: displayName,
-	}, hash)
+	user, err := s.createWithUsername(ctx, in.Username, email, func(username string) (domain.User, error) {
+		return s.store.CreateUserWithPassword(ctx, domain.User{
+			ID:          uuid.New(),
+			Email:       email,
+			Username:    username,
+			DisplayName: displayName,
+		}, hash)
+	})
 	if err != nil {
-
 		return Result{}, err
 	}
 

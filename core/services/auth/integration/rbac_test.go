@@ -37,8 +37,9 @@ func TestCreateUserWithOauthAccountAssignsTheDefaultRole(t *testing.T) {
 	}
 
 	created, err := repo.CreateUserWithOauthAccount(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: account.Email,
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    account.Email,
 	}, account)
 	if err != nil {
 		t.Fatalf("create: %v", err)

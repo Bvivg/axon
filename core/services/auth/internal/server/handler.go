@@ -73,6 +73,7 @@ func (h *Handler) Register(
 		Email:       msg.GetEmail(),
 		Password:    msg.GetPassword(),
 		DisplayName: msg.GetDisplayName(),
+		Username:    msg.Username,
 		Device:      deviceFrom(req.Header()),
 	})
 	if err != nil {
@@ -206,6 +207,7 @@ func (h *Handler) UpdateProfile(
 		FirstName: req.Msg.FirstName,
 		LastName:  req.Msg.LastName,
 		Nickname:  req.Msg.Nickname,
+		Username:  req.Msg.Username,
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
@@ -324,6 +326,24 @@ func (h *Handler) GetUsersPublicProfiles(
 	}
 
 	return connect.NewResponse(&authv1.GetUsersPublicProfilesResponse{Users: out}), nil
+}
+
+func (h *Handler) GetPublicProfileByUsername(
+	ctx context.Context,
+	req *connect.Request[authv1.GetPublicProfileByUsernameRequest],
+) (*connect.Response[authv1.GetPublicProfileByUsernameResponse], error) {
+	if _, err := h.authenticate(req.Header()); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	profile, err := h.svc.PublicProfileByUsername(ctx, req.Msg.GetUsername())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.GetPublicProfileByUsernameResponse{
+		User: toProtoPublicProfile(profile, h.avatarURLs),
+	}), nil
 }
 
 func (h *Handler) UpdateLastSeen(
