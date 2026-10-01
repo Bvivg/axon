@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { UploadAs, UploadCancelled, uploadAttachment, type Uploaded } from "@/lib/chat/upload";
+import { prepareImage } from "@/lib/chat/prepare-image";
+import { UploadAs, UploadCancelled, UploadStage, uploadAttachment, withdrawUpload, type Uploaded } from "@/lib/chat/upload";
 
 export enum PendingStatus {
   Uploading = "uploading",
@@ -22,6 +23,7 @@ export interface PendingUpload {
   shape: PendingShape;
   previewUrl?: string;
   progress: number;
+  processing?: boolean;
   status: PendingStatus;
   uploaded?: Uploaded;
   error?: string;
@@ -43,14 +45,20 @@ export function usePendingUploads() {
   const [items, setItems] = useState<PendingUpload[]>([]);
   const controllers = useRef(new Map<string, AbortController>());
   const previews = useRef(new Map<string, string>());
+  const sessions = useRef(new Map<string, string>());
 
   const patch = useCallback((id: string, change: Partial<PendingUpload>) => {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...change } : item)));
   }, []);
 
-  const forget = useCallback((id: string) => {
+  const forget = useCallback((id: string, withdraw: boolean) => {
     controllers.current.get(id)?.abort();
     controllers.current.delete(id);
+    const session = sessions.current.get(id);
+    sessions.current.delete(id);
+    if (session && withdraw) {
+      void withdrawUpload(session);
+    }
     const preview = previews.current.get(id);
     if (preview) {
       URL.revokeObjectURL(preview);
@@ -61,9 +69,15 @@ export function usePendingUploads() {
   useEffect(() => {
     const pending = controllers.current;
     const urls = previews.current;
+    const drafts = sessions.current;
+    const onPageHide = () => drafts.forEach((session) => void withdrawUpload(session, { keepalive: true }));
+    window.addEventListener("pagehide", onPageHide);
     return () => {
+      window.removeEventListener("pagehide", onPageHide);
       pending.forEach((controller) => controller.abort());
       urls.forEach((url) => URL.revokeObjectURL(url));
+      drafts.forEach((session) => void withdrawUpload(session));
+      drafts.clear();
     };
   }, []);
 
@@ -87,19 +101,31 @@ export function usePendingUploads() {
           { id, name: file.name || "file", shape, previewUrl, progress: 0, status: PendingStatus.Uploading },
         ]);
 
-        uploadAttachment(file, file.name || "file", mode, {
-          signal: controller.signal,
-          onProgress: (fraction) => patch(id, { progress: fraction }),
-        })
+        const prepared = shape === PendingShape.Image ? prepareImage(file) : Promise.resolve(file);
+        prepared
+          .then((ready) =>
+            uploadAttachment(ready, ready.name || "file", mode, {
+              signal: controller.signal,
+              onProgress: (fraction) => patch(id, { progress: fraction }),
+              onStage: (stage) => patch(id, { processing: stage === UploadStage.Processing }),
+              onSession: (session) => {
+                if (controllers.current.has(id)) sessions.current.set(id, session);
+                else void withdrawUpload(session);
+              },
+            }),
+          )
           .then((uploaded) => {
             controllers.current.delete(id);
-            patch(id, { status: PendingStatus.Ready, progress: 1, uploaded });
+            patch(id, { status: PendingStatus.Ready, progress: 1, processing: false, uploaded });
           })
           .catch((err: unknown) => {
             controllers.current.delete(id);
             if (err instanceof UploadCancelled) {
               return;
             }
+            const session = sessions.current.get(id);
+            sessions.current.delete(id);
+            if (session) void withdrawUpload(session);
             patch(id, {
               status: PendingStatus.Failed,
               error: err instanceof Error ? err.message : "The upload failed.",
@@ -112,7 +138,7 @@ export function usePendingUploads() {
 
   const remove = useCallback(
     (id: string) => {
-      forget(id);
+      forget(id, true);
       setItems((current) => current.filter((item) => item.id !== id));
     },
     [forget],
@@ -120,7 +146,7 @@ export function usePendingUploads() {
 
   const take = useCallback(
     (ids: string[]) => {
-      ids.forEach(forget);
+      ids.forEach((id) => forget(id, false));
       setItems((current) => current.filter((item) => !ids.includes(item.id)));
     },
     [forget],

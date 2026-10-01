@@ -402,7 +402,7 @@ function PendingChip({ item, onRemove }: { item: PendingUpload; onRemove: () => 
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-medium">{item.name}</span>
-        {uploading && item.progress >= 1 ? (
+        {uploading && (item.processing || item.progress >= 1) ? (
           <span role="status" className="block text-[10px] text-muted-foreground">
             Processing…
           </span>
