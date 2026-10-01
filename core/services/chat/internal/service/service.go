@@ -28,6 +28,8 @@ type Store interface {
 	Readers(ctx context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error)
 	UnreadCount(ctx context.Context, roomID, userID uuid.UUID) (int64, error)
 	LastMessages(ctx context.Context, roomIDs []uuid.UUID, userID uuid.UUID) (map[uuid.UUID]domain.Message, error)
+	SavePushSubscription(ctx context.Context, s domain.PushSubscription) error
+	DeletePushSubscription(ctx context.Context, userID uuid.UUID, endpoint string) error
 
 	CreateGroup(ctx context.Context, room domain.Room, owner domain.Member, members []domain.Member) (domain.Room, error)
 	AddGroupMembers(ctx context.Context, roomID uuid.UUID, members []domain.Member, limit int) ([]uuid.UUID, error)

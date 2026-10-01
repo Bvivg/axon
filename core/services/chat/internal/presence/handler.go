@@ -2,6 +2,7 @@ package presence
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -31,7 +32,17 @@ type Tracker interface {
 	Touch(ctx context.Context, sessionID, connID string, ttl time.Duration) error
 	Clear(ctx context.Context, sessionID, connID string) error
 	PublishChanged(ctx context.Context, userID string) error
+
+	TouchVisible(ctx context.Context, userID, connID string, ttl time.Duration) error
+	ClearVisible(ctx context.Context, userID, connID string) error
 }
+
+type frame struct {
+	Type    string `json:"type"`
+	Visible bool   `json:"visible"`
+}
+
+const frameVisibility = "visibility"
 
 type LastSeenRecorder interface {
 	UpdateLastSeen(ctx context.Context, accessToken string)
@@ -113,7 +124,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.log.WarnContext(ctx, "presence: publish change failed", "user_id", userID, "error", err)
 	}
 
-	go h.refresh(ctx, sessionID, connID)
+	var visible atomic.Bool
+	go h.refresh(ctx, sessionID, userID, connID, &visible)
 
 	var rotating atomic.Bool
 	if timer := expiryTimer(claims.ExpiresAt, func() {
@@ -127,14 +139,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.log.InfoContext(ctx, "presence socket opened", "user_id", claims.UserID, "session_id", sessionID)
 
 	for {
-		if _, err := conn.Read(ctx); err != nil {
+		data, err := conn.Read(ctx)
+		if err != nil {
 			break
+		}
+		var f frame
+		if json.Unmarshal(data, &f) != nil || f.Type != frameVisibility {
+			continue
+		}
+		visible.Store(f.Visible)
+		if f.Visible {
+			err = h.tracker.TouchVisible(ctx, userID, connID, TTL)
+		} else {
+			err = h.tracker.ClearVisible(ctx, userID, connID)
+		}
+		if err != nil {
+			h.log.WarnContext(ctx, "presence: visibility update failed", "user_id", userID, "error", err)
 		}
 	}
 	cancel()
 
 	closeCtx, closeCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer closeCancel()
+	if err := h.tracker.ClearVisible(closeCtx, userID, connID); err != nil {
+		h.log.WarnContext(closeCtx, "presence: clear visibility failed", "user_id", userID, "error", err)
+	}
 
 	h.lastSeen.UpdateLastSeen(closeCtx, raw)
 
@@ -166,7 +195,7 @@ func expiryTimer(expiresAt time.Time, onExpiry func()) *time.Timer {
 	return time.AfterFunc(remaining, onExpiry)
 }
 
-func (h *Handler) refresh(ctx context.Context, sessionID, connID string) {
+func (h *Handler) refresh(ctx context.Context, sessionID, userID, connID string, visible *atomic.Bool) {
 	ticker := time.NewTicker(RefreshInterval)
 	defer ticker.Stop()
 
@@ -177,6 +206,11 @@ func (h *Handler) refresh(ctx context.Context, sessionID, connID string) {
 		case <-ticker.C:
 			if err := h.tracker.Touch(ctx, sessionID, connID, TTL); err != nil {
 				h.log.ErrorContext(ctx, "presence: refresh touch failed", "session_id", sessionID, "error", err)
+			}
+			if visible.Load() {
+				if err := h.tracker.TouchVisible(ctx, userID, connID, TTL); err != nil {
+					h.log.WarnContext(ctx, "presence: refresh visibility failed", "user_id", userID, "error", err)
+				}
 			}
 		}
 	}

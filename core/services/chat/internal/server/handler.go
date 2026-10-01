@@ -37,6 +37,8 @@ type Handler struct {
 	signals  pubsub.SignalBus
 	users    pubsub.UserSignalBus
 	log      *slog.Logger
+
+	pushKey string
 }
 
 var _ chatv1connect.ChatServiceHandler = (*Handler)(nil)
@@ -50,6 +52,8 @@ type Config struct {
 	Signals  pubsub.SignalBus
 	Users    pubsub.UserSignalBus
 	Logger   *slog.Logger
+
+	PushPublicKey string
 }
 
 func New(cfg Config) (*Handler, error) {
@@ -81,6 +85,7 @@ func New(cfg Config) (*Handler, error) {
 		signals:  cfg.Signals,
 		users:    cfg.Users,
 		log:      cfg.Logger,
+		pushKey:  cfg.PushPublicKey,
 	}, nil
 }
 
@@ -590,4 +595,50 @@ func forwardPartsOf(parts []*chatv1.ForwardPart) []service.ForwardPart {
 		out[i] = service.ForwardPart{MessageID: part.GetMessageId(), Positions: positions}
 	}
 	return out
+}
+
+func (h *Handler) GetPushKey(
+	ctx context.Context,
+	req *connect.Request[chatv1.GetPushKeyRequest],
+) (*connect.Response[chatv1.GetPushKeyResponse], error) {
+	if _, err := h.authenticate(req.Header()); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	return connect.NewResponse(&chatv1.GetPushKeyResponse{PublicKey: h.pushKey}), nil
+}
+
+func (h *Handler) SubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.SubscribePushRequest],
+) (*connect.Response[chatv1.SubscribePushResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	if h.pushKey == "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("push notifications are not set up"))
+	}
+	if err := h.svc.SubscribePush(ctx, domain.PushSubscription{
+		Endpoint: req.Msg.GetEndpoint(),
+		UserID:   claims.UserID,
+		P256DH:   req.Msg.GetP256Dh(),
+		Auth:     req.Msg.GetAuth(),
+	}); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	return connect.NewResponse(&chatv1.SubscribePushResponse{}), nil
+}
+
+func (h *Handler) UnsubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.UnsubscribePushRequest],
+) (*connect.Response[chatv1.UnsubscribePushResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	if err := h.svc.UnsubscribePush(ctx, claims.UserID, req.Msg.GetEndpoint()); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	return connect.NewResponse(&chatv1.UnsubscribePushResponse{}), nil
 }

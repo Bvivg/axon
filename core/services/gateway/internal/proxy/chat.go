@@ -136,3 +136,24 @@ func (c *Chat) ForwardMessages(
 ) (*connect.Response[chatv1.ForwardMessagesResponse], error) {
 	return c.client.ForwardMessages(ctx, forward(ctx, req))
 }
+
+func (c *Chat) GetPushKey(
+	ctx context.Context,
+	req *connect.Request[chatv1.GetPushKeyRequest],
+) (*connect.Response[chatv1.GetPushKeyResponse], error) {
+	return c.client.GetPushKey(ctx, forward(ctx, req))
+}
+
+func (c *Chat) SubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.SubscribePushRequest],
+) (*connect.Response[chatv1.SubscribePushResponse], error) {
+	return c.client.SubscribePush(ctx, forward(ctx, req))
+}
+
+func (c *Chat) UnsubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.UnsubscribePushRequest],
+) (*connect.Response[chatv1.UnsubscribePushResponse], error) {
+	return c.client.UnsubscribePush(ctx, forward(ctx, req))
+}

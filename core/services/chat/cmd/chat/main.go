@@ -29,6 +29,7 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/events"
 	"github.com/bvivg/axon/core/services/chat/internal/identity"
 	"github.com/bvivg/axon/core/services/chat/internal/media"
+	"github.com/bvivg/axon/core/services/chat/internal/notify"
 	chatpresence "github.com/bvivg/axon/core/services/chat/internal/presence"
 	"github.com/bvivg/axon/core/services/chat/internal/pubsub"
 	"github.com/bvivg/axon/core/services/chat/internal/repository"
@@ -121,15 +122,6 @@ func run() error {
 
 	repo := repository.New(pool)
 
-	svc, err := service.New(service.Config{
-		Store:  repo,
-		Events: publisher,
-		Logger: log,
-	})
-	if err != nil {
-		return err
-	}
-
 	cache, err := redis.Connect(ctx, cfg.Redis, log)
 	if err != nil {
 		return err
@@ -139,6 +131,39 @@ func run() error {
 			log.Error("could not close the redis client", "error", err)
 		}
 	}()
+
+	presenceTracker := presence.NewTracker(cache)
+
+	listeners := events.Fanout{publisher}
+	if cfg.Push.PublicKey != "" && cfg.Push.PrivateKey != "" {
+		notifier, err := notify.New(notify.Config{
+			Store:    repo,
+			Presence: presenceTracker,
+			Sender: notify.WebPush{
+				PublicKey:  cfg.Push.PublicKey,
+				PrivateKey: cfg.Push.PrivateKey,
+				Subject:    cfg.Push.Subject,
+				Client:     &http.Client{Timeout: 15 * time.Second},
+			},
+			Logger: log,
+		})
+		if err != nil {
+			return err
+		}
+		go notifier.Run(ctx)
+		listeners = append(listeners, notifier)
+	} else {
+		log.Warn("web push is off until CHAT_VAPID_PUBLIC_KEY and CHAT_VAPID_PRIVATE_KEY are set")
+	}
+
+	svc, err := service.New(service.Config{
+		Store:  repo,
+		Events: listeners,
+		Logger: log,
+	})
+	if err != nil {
+		return err
+	}
 
 	bus, err := pubsub.NewRedis(cache, log)
 	if err != nil {
@@ -154,8 +179,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	presenceTracker := presence.NewTracker(cache)
 
 	socket, err := chatws.New(chatws.Config{
 		Service:     svc,
@@ -191,6 +214,8 @@ func run() error {
 		Signals:  bus,
 		Users:    bus,
 		Logger:   log,
+
+		PushPublicKey: cfg.Push.PublicKey,
 	})
 	if err != nil {
 		return err

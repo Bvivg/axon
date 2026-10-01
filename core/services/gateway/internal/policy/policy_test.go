@@ -168,6 +168,10 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 
 		chatv1connect.ChatServiceListMessageReadersProcedure: true,
 		chatv1connect.ChatServiceForwardMessagesProcedure:    true,
+
+		chatv1connect.ChatServiceGetPushKeyProcedure:      true,
+		chatv1connect.ChatServiceSubscribePushProcedure:   true,
+		chatv1connect.ChatServiceUnsubscribePushProcedure: true,
 	}
 
 	for _, procedure := range policy.Procedures() {

@@ -296,3 +296,24 @@ func (i AlbumItem) Single() (MessageKind, json.RawMessage, error) {
 	}
 	return i.Kind, raw, nil
 }
+
+const (
+	maxPushEndpoint = 2048
+	maxPushKey      = 256
+)
+
+func ValidatePushSubscription(s PushSubscription) (PushSubscription, error) {
+	s.Endpoint = strings.TrimSpace(s.Endpoint)
+	s.P256DH = strings.TrimSpace(s.P256DH)
+	s.Auth = strings.TrimSpace(s.Auth)
+
+	switch {
+	case !strings.HasPrefix(s.Endpoint, "https://") || len(s.Endpoint) > maxPushEndpoint:
+		return PushSubscription{}, newValidationError("endpoint", "must be an https URL")
+	case s.P256DH == "" || len(s.P256DH) > maxPushKey:
+		return PushSubscription{}, newValidationError("p256dh", "is missing or too long")
+	case s.Auth == "" || len(s.Auth) > maxPushKey:
+		return PushSubscription{}, newValidationError("auth", "is missing or too long")
+	}
+	return s, nil
+}

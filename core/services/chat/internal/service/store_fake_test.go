@@ -349,6 +349,10 @@ func (s *fakeStore) LastMessages(_ context.Context, roomIDs []uuid.UUID, _ uuid.
 	return last, nil
 }
 
+func (s *fakeStore) SavePushSubscription(context.Context, domain.PushSubscription) error { return nil }
+
+func (s *fakeStore) DeletePushSubscription(context.Context, uuid.UUID, string) error { return nil }
+
 func (s *fakeStore) Readers(_ context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

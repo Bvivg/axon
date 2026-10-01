@@ -21,6 +21,13 @@ type Config struct {
 	Attachments AttachmentConfig
 	Media       MediaConfig
 	Uploads     UploadsConfig
+	Push        PushConfig
+}
+
+type PushConfig struct {
+	PublicKey  string
+	PrivateKey string
+	Subject    string
 }
 
 type UploadsConfig struct {
@@ -94,6 +101,11 @@ func Load() (Config, error) {
 			FFprobe: l.StringDefault("FFPROBE_PATH", "ffprobe"),
 			Workers: l.IntDefault("MEDIA_WORKERS", 2),
 			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 15*time.Minute),
+		},
+		Push: PushConfig{
+			PublicKey:  l.StringDefault("CHAT_VAPID_PUBLIC_KEY", ""),
+			PrivateKey: l.SecretDefault("CHAT_VAPID_PRIVATE_KEY", "").Reveal(),
+			Subject:    l.StringDefault("CHAT_VAPID_SUBJECT", "mailto:push@axon.test"),
 		},
 		Uploads: UploadsConfig{
 			MaxBytes:  int64(l.IntDefault("CHAT_MAX_UPLOAD_MB", 200)) << 20,

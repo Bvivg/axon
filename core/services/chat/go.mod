@@ -11,6 +11,7 @@ replace github.com/bvivg/axon/core/shared => ../../shared
 
 require (
 	connectrpc.com/connect v1.20.0
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/andybalholm/brotli v1.2.6
 	github.com/bvivg/axon/core/shared v0.0.0-00010101000000-000000000000
 	github.com/disintegration/imaging v1.6.2

@@ -35,6 +35,12 @@ service ChatService {
   rpc ListMessageReaders(ListMessageReadersRequest) returns (ListMessageReadersResponse);
 
   rpc ForwardMessages(ForwardMessagesRequest) returns (ForwardMessagesResponse);
+
+  rpc GetPushKey(GetPushKeyRequest) returns (GetPushKeyResponse);
+
+  rpc SubscribePush(SubscribePushRequest) returns (SubscribePushResponse);
+
+  rpc UnsubscribePush(UnsubscribePushRequest) returns (UnsubscribePushResponse);
 }
 
 enum RoomKind {
@@ -339,3 +345,25 @@ message RenameGroupRequest {
 message RenameGroupResponse {
   Room room = 1;
 }
+
+message GetPushKeyRequest {}
+
+message GetPushKeyResponse {
+  string public_key = 1;
+}
+
+message SubscribePushRequest {
+  string endpoint = 1;
+
+  string p256dh = 2;
+
+  string auth = 3;
+}
+
+message SubscribePushResponse {}
+
+message UnsubscribePushRequest {
+  string endpoint = 1;
+}
+
+message UnsubscribePushResponse {}
