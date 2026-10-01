@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -17,6 +18,12 @@ type ForwardInput struct {
 	RoomIDs    []string
 	Comment    string
 	ClientID   string
+	Parts      []ForwardPart
+}
+
+type ForwardPart struct {
+	MessageID string
+	Positions []int
 }
 
 type Forwarded struct {
@@ -49,9 +56,24 @@ func (s *Service) ForwardMessages(ctx context.Context, in ForwardInput) ([]Forwa
 			return nil, err
 		}
 	}
+	positions := make(map[uuid.UUID][]int, len(in.Parts))
+	for _, part := range in.Parts {
+		id, err := uuid.Parse(part.MessageID)
+		if err != nil || !slices.Contains(sources, id) {
+			return nil, &domain.ValidationError{Field: "parts", Reason: "names a message that is not forwarded"}
+		}
+		if len(part.Positions) == 0 || len(part.Positions) > domain.MaxAlbumItems {
+			return nil, &domain.ValidationError{Field: "parts", Reason: "picks 1 to 10 album items"}
+		}
+		positions[id] = part.Positions
+	}
 	for _, sourceID := range sources {
-		if _, err := s.resolveForwardSource(ctx, in.AuthorID, sourceID.String()); err != nil {
+		source, err := s.resolveForwardSource(ctx, in.AuthorID, sourceID.String())
+		if err != nil {
 			return nil, err
+		}
+		if _, picked := positions[sourceID]; picked && source.Kind != domain.MessageKindAlbum {
+			return nil, &domain.ValidationError{Field: "parts", Reason: "only album items can be picked"}
 		}
 	}
 
@@ -71,10 +93,11 @@ func (s *Service) ForwardMessages(ctx context.Context, in ForwardInput) ([]Forwa
 		}
 		for _, sourceID := range sources {
 			message, duplicate, err := s.Send(ctx, SendInput{
-				RoomID:          roomID,
-				AuthorID:        in.AuthorID,
-				ClientID:        forwardClientID(batch, roomID, sourceID.String()),
-				ForwardedFromID: sourceID.String(),
+				RoomID:           roomID,
+				AuthorID:         in.AuthorID,
+				ClientID:         forwardClientID(batch, roomID, sourceID.String()),
+				ForwardedFromID:  sourceID.String(),
+				ForwardPositions: positions[sourceID],
 			})
 			if err != nil {
 				return sent, err

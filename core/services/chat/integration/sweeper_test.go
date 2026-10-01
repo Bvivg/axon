@@ -67,6 +67,33 @@ func sendUpload(t *testing.T, r *repository.Repository, roomID, author uuid.UUID
 	return m
 }
 
+func sendAlbum(t *testing.T, r *repository.Repository, roomID, author uuid.UUID, uploads ...storedUpload) domain.Message {
+	t.Helper()
+
+	album := domain.AlbumPayload{}
+	var ids []uuid.UUID
+	for _, u := range uploads {
+		item, err := domain.AlbumItemOf(domain.MessageKindImage, u.upload.Payload)
+		if err != nil {
+			t.Fatalf("AlbumItemOf: %v", err)
+		}
+		album.Items = append(album.Items, item)
+		ids = append(ids, u.upload.ID)
+	}
+	payload, _ := json.Marshal(album)
+	m, _, err := r.AppendMessage(t.Context(), domain.Message{
+		ID: uuid.New(), RoomID: roomID, AuthorID: author, Kind: domain.MessageKindAlbum,
+		Payload: payload, AlbumUploads: ids,
+	})
+	if err != nil {
+		t.Fatalf("AppendMessage(album): %v", err)
+	}
+	if stored, err := r.AlbumUploads(t.Context(), m.ID); err != nil || len(stored) != len(ids) {
+		t.Fatalf("AlbumUploads = %v, %v; want %d links", stored, err, len(ids))
+	}
+	return m
+}
+
 func objectsExist(t *testing.T, urls []string) bool {
 	t.Helper()
 
@@ -100,6 +127,15 @@ func TestTheSweeperRemovesOnlyOldUploadsNobodyShows(t *testing.T) {
 		t.Fatalf("DeleteMessage: %v", err)
 	}
 
+	inAlbum := putUpload(t, r, 2*day)
+	sharedByAlbums := putUpload(t, r, 2*day)
+	inDeletedAlbum := putUpload(t, r, 2*day)
+	sendAlbum(t, r, room.ID, owner, inAlbum, sharedByAlbums)
+	gone := sendAlbum(t, r, room.ID, owner, inDeletedAlbum, sharedByAlbums)
+	if _, err := r.DeleteMessage(t.Context(), gone.ID); err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+
 	original := sendUpload(t, r, room.ID, owner, sharedByAForward)
 	sendUpload(t, r, room.ID, owner, sharedByAForward)
 	if _, err := r.DeleteMessage(t.Context(), original.ID); err != nil {
@@ -130,11 +166,14 @@ func TestTheSweeperRemovesOnlyOldUploadsNobodyShows(t *testing.T) {
 		u    storedUpload
 		kept bool
 	}{
-		"unsent":                 {unsent, false},
-		"fresh":                  {fresh, true},
-		"shown":                  {shown, true},
-		"deleted for everyone":   {unsentAfterDelete, false},
-		"still shown by forward": {sharedByAForward, true},
+		"unsent":                        {unsent, false},
+		"fresh":                         {fresh, true},
+		"shown":                         {shown, true},
+		"deleted for everyone":          {unsentAfterDelete, false},
+		"still shown by forward":        {sharedByAForward, true},
+		"in an album":                   {inAlbum, true},
+		"in a live and a deleted album": {sharedByAlbums, true},
+		"only in a deleted album":       {inDeletedAlbum, false},
 	} {
 		_, err := r.UploadByID(t.Context(), tc.u.upload.ID)
 		if kept := err == nil; kept != tc.kept {

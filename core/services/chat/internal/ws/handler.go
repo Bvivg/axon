@@ -621,6 +621,7 @@ func (s *session) send(ctx context.Context, frame Inbound) bool {
 		ClientID:        frame.ClientID,
 		Kind:            frame.Kind,
 		UploadID:        frame.UploadID,
+		UploadIDs:       frame.UploadIDs,
 		ReplyToID:       frame.ReplyToID,
 		ForwardedFromID: frame.ForwardedFromID,
 	})
@@ -647,6 +648,7 @@ func (s *session) sendDirect(ctx context.Context, frame Inbound) bool {
 		ClientID:        frame.ClientID,
 		Kind:            frame.Kind,
 		UploadID:        frame.UploadID,
+		UploadIDs:       frame.UploadIDs,
 		ReplyToID:       frame.ReplyToID,
 		ForwardedFromID: frame.ForwardedFromID,
 	})

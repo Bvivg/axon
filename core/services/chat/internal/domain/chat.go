@@ -95,12 +95,14 @@ const (
 	MessageKindAttachment MessageKind = "attachment"
 	MessageKindImage      MessageKind = "image"
 	MessageKindVideo      MessageKind = "video"
+	MessageKindAlbum      MessageKind = "album"
 	MessageKindSystem     MessageKind = "system"
 )
 
 func (k MessageKind) Valid() bool {
 	switch k {
-	case MessageKindText, MessageKindVoice, MessageKindAttachment, MessageKindImage, MessageKindVideo, MessageKindSystem:
+	case MessageKindText, MessageKindVoice, MessageKindAttachment, MessageKindImage, MessageKindVideo, MessageKindAlbum,
+		MessageKindSystem:
 		return true
 	default:
 		return false
@@ -109,7 +111,7 @@ func (k MessageKind) Valid() bool {
 
 func (k MessageKind) FromUpload() bool {
 	switch k {
-	case MessageKindVoice, MessageKindAttachment, MessageKindImage, MessageKindVideo:
+	case MessageKindVoice, MessageKindAttachment, MessageKindImage, MessageKindVideo, MessageKindAlbum:
 		return true
 	default:
 		return false
@@ -147,6 +149,22 @@ type VideoPayload struct {
 	DurationMS int64  `json:"duration_ms"`
 	SizeBytes  int64  `json:"size_bytes"`
 	Mime       string `json:"mime"`
+}
+
+type AlbumItem struct {
+	Kind         MessageKind `json:"kind"`
+	URL          string      `json:"url"`
+	ThumbnailURL string      `json:"thumbnail_url,omitempty"`
+	PosterURL    string      `json:"poster_url,omitempty"`
+	Width        int         `json:"width"`
+	Height       int         `json:"height"`
+	DurationMS   int64       `json:"duration_ms,omitempty"`
+	SizeBytes    int64       `json:"size_bytes"`
+	Mime         string      `json:"mime"`
+}
+
+type AlbumPayload struct {
+	Items []AlbumItem `json:"items"`
 }
 
 type Upload struct {
@@ -195,6 +213,7 @@ type Message struct {
 
 	ForwardOriginAuthorID *uuid.UUID
 	UploadID              *uuid.UUID
+	AlbumUploads          []uuid.UUID
 
 	EditedAt  *time.Time
 	DeletedAt *time.Time
@@ -210,7 +229,8 @@ func (m Message) Editable() bool {
 	switch {
 	case m.Deleted(), m.ForwardedFromID != nil:
 		return false
-	case m.Kind == MessageKindText, m.Kind == MessageKindImage, m.Kind == MessageKindVideo, m.Kind == MessageKindAttachment:
+	case m.Kind == MessageKindText, m.Kind == MessageKindImage, m.Kind == MessageKindVideo, m.Kind == MessageKindAttachment,
+		m.Kind == MessageKindAlbum:
 		return true
 	default:
 		return false

@@ -73,6 +73,17 @@ func (r *Repository) AppendMessage(ctx context.Context, m domain.Message) (domai
 			return nil
 		}
 
+		for position, uploadID := range m.AlbumUploads {
+			const link = `INSERT INTO message_uploads (message_id, position, upload_id) VALUES ($1, $2, $3)`
+			if _, err := tx.q.Exec(ctx, link, stored.ID, position, uploadID); err != nil {
+				if isForeignKeyViolation(err, "message_uploads_upload_id_fkey") {
+					return domain.ErrUploadNotFound
+				}
+				return fmt.Errorf("repository: link album upload: %w", err)
+			}
+		}
+		stored.AlbumUploads = m.AlbumUploads
+
 		revealed, err := tx.revealRoom(ctx, m.RoomID)
 		if err != nil {
 			return err
@@ -336,6 +347,27 @@ func reverse(messages []domain.Message) {
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
+}
+
+func (r *Repository) AlbumUploads(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.q.Query(ctx, `SELECT upload_id FROM message_uploads WHERE message_id = $1 ORDER BY position`, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("repository: album uploads: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("repository: scan album upload: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: album uploads: %w", err)
+	}
+	return ids, nil
 }
 
 func (r *Repository) LastMessages(ctx context.Context, roomIDs []uuid.UUID, userID uuid.UUID) (map[uuid.UUID]domain.Message, error) {

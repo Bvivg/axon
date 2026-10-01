@@ -38,6 +38,7 @@ type Store interface {
 
 	AppendMessage(ctx context.Context, m domain.Message) (domain.Message, bool, error)
 	MessageByID(ctx context.Context, id uuid.UUID) (domain.Message, error)
+	AlbumUploads(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error)
 	ListMessages(ctx context.Context, roomID, callerID uuid.UUID, page domain.Page) ([]domain.Message, bool, error)
 	EditMessage(ctx context.Context, id uuid.UUID, body string) (domain.Message, error)
 	DeleteMessage(ctx context.Context, id uuid.UUID) (domain.Message, error)
@@ -286,11 +287,14 @@ type SendInput struct {
 
 	ClientID string
 
-	Kind     string
-	UploadID string
+	Kind      string
+	UploadID  string
+	UploadIDs []string
 
 	ReplyToID       string
 	ForwardedFromID string
+
+	ForwardPositions []int
 }
 
 func (s *Service) Send(ctx context.Context, in SendInput) (domain.Message, bool, error) {
@@ -299,12 +303,14 @@ func (s *Service) Send(ctx context.Context, in SendInput) (domain.Message, bool,
 	}
 
 	return s.appendValidated(ctx, in.RoomID, in.AuthorID, sendCore{
-		Body:            in.Body,
-		ClientID:        in.ClientID,
-		Kind:            in.Kind,
-		UploadID:        in.UploadID,
-		ReplyToID:       in.ReplyToID,
-		ForwardedFromID: in.ForwardedFromID,
+		Body:             in.Body,
+		ClientID:         in.ClientID,
+		Kind:             in.Kind,
+		UploadID:         in.UploadID,
+		UploadIDs:        in.UploadIDs,
+		ReplyToID:        in.ReplyToID,
+		ForwardedFromID:  in.ForwardedFromID,
+		ForwardPositions: in.ForwardPositions,
 	})
 }
 
@@ -316,8 +322,9 @@ type SendDirectInput struct {
 	Body     string
 	ClientID string
 
-	Kind     string
-	UploadID string
+	Kind      string
+	UploadID  string
+	UploadIDs []string
 
 	ReplyToID       string
 	ForwardedFromID string
@@ -342,6 +349,7 @@ func (s *Service) SendDirect(ctx context.Context, in SendDirectInput) (domain.Me
 		ClientID:        in.ClientID,
 		Kind:            in.Kind,
 		UploadID:        in.UploadID,
+		UploadIDs:       in.UploadIDs,
 		ReplyToID:       in.ReplyToID,
 		ForwardedFromID: in.ForwardedFromID,
 	})
@@ -413,11 +421,14 @@ type sendCore struct {
 	Body     string
 	ClientID string
 
-	Kind     string
-	UploadID string
+	Kind      string
+	UploadID  string
+	UploadIDs []string
 
 	ReplyToID       string
 	ForwardedFromID string
+
+	ForwardPositions []int
 }
 
 func (s *Service) appendValidated(
@@ -438,7 +449,7 @@ func (s *Service) appendValidated(
 		return domain.Message{}, false, err
 	}
 
-	content, err := s.resolveContent(ctx, authorID, in.Kind, requested, in.UploadID, forwarded)
+	content, err := s.resolveContent(ctx, authorID, in.Kind, requested, uploadsOf(in), forwarded, in.ForwardPositions)
 	if err != nil {
 		return domain.Message{}, false, err
 	}
@@ -446,6 +457,8 @@ func (s *Service) appendValidated(
 
 	var body string
 	switch {
+	case forwarded != nil && len(in.ForwardPositions) > 0:
+		body = ""
 	case forwarded != nil:
 		body = forwarded.Body
 	case kind == domain.MessageKindText:
@@ -476,6 +489,8 @@ func (s *Service) appendValidated(
 		Kind:     kind,
 		Payload:  content.payload,
 		UploadID: content.uploadID,
+
+		AlbumUploads: content.albumUploads,
 	}
 	if replyTarget != nil {
 		draft.ReplyToID = &replyTarget.ID
@@ -514,6 +529,15 @@ type content struct {
 	kind     domain.MessageKind
 	payload  json.RawMessage
 	uploadID *uuid.UUID
+
+	albumUploads []uuid.UUID
+}
+
+func uploadsOf(in sendCore) []string {
+	if in.UploadID != "" {
+		return append([]string{in.UploadID}, in.UploadIDs...)
+	}
+	return in.UploadIDs
 }
 
 func (s *Service) resolveContent(
@@ -521,22 +545,31 @@ func (s *Service) resolveContent(
 	authorID uuid.UUID,
 	rawKind string,
 	requested domain.MessageKind,
-	rawUploadID string,
+	rawUploadIDs []string,
 	forwarded *domain.Message,
+	positions []int,
 ) (content, error) {
 	switch {
-	case forwarded != nil && rawUploadID != "":
+	case forwarded != nil && len(rawUploadIDs) > 0:
 		return content{}, &domain.ValidationError{Field: "upload_id", Reason: "cannot come with a forwarded message"}
 
 	case forwarded != nil:
-		payload, err := domain.ValidatePayload(forwarded.Kind, forwarded.Payload)
-		if err != nil {
-			return content{}, err
-		}
-		return content{kind: forwarded.Kind, payload: payload, uploadID: forwarded.UploadID}, nil
+		return s.forwardedContent(ctx, forwarded, positions)
 
-	case rawUploadID != "":
-		upload, err := s.resolveUpload(ctx, authorID, rawUploadID)
+	case len(positions) > 0:
+		return content{}, &domain.ValidationError{Field: "positions", Reason: "pick album items only when forwarding"}
+
+	case len(rawUploadIDs) > domain.MaxAlbumItems:
+		return content{}, &domain.ValidationError{Field: "upload_ids", Reason: "an album holds up to 10 photos or videos"}
+
+	case len(rawUploadIDs) > 1:
+		if rawKind != "" && requested != domain.MessageKindAlbum {
+			return content{}, domain.ErrUploadKindMismatch
+		}
+		return s.albumContent(ctx, authorID, rawUploadIDs)
+
+	case len(rawUploadIDs) == 1:
+		upload, err := s.resolveUpload(ctx, authorID, rawUploadIDs[0])
 		if err != nil {
 			return content{}, err
 		}
@@ -559,6 +592,97 @@ func (s *Service) resolveContent(
 		}
 		return content{kind: requested, payload: payload}, nil
 	}
+}
+
+func (s *Service) albumContent(ctx context.Context, authorID uuid.UUID, rawUploadIDs []string) (content, error) {
+	seen := make(map[uuid.UUID]struct{}, len(rawUploadIDs))
+	album := domain.AlbumPayload{Items: make([]domain.AlbumItem, 0, len(rawUploadIDs))}
+	ids := make([]uuid.UUID, 0, len(rawUploadIDs))
+	for _, raw := range rawUploadIDs {
+		upload, err := s.resolveUpload(ctx, authorID, raw)
+		if err != nil {
+			return content{}, err
+		}
+		if _, dup := seen[upload.ID]; dup {
+			return content{}, &domain.ValidationError{Field: "upload_ids", Reason: "repeats an upload"}
+		}
+		seen[upload.ID] = struct{}{}
+		item, err := domain.AlbumItemOf(upload.Kind, upload.Payload)
+		if err != nil {
+			return content{}, err
+		}
+		album.Items = append(album.Items, item)
+		ids = append(ids, upload.ID)
+	}
+	return albumOf(album, ids)
+}
+
+func albumOf(album domain.AlbumPayload, ids []uuid.UUID) (content, error) {
+	raw, err := json.Marshal(album)
+	if err != nil {
+		return content{}, fmt.Errorf("service: marshal album: %w", err)
+	}
+	payload, err := domain.ValidatePayload(domain.MessageKindAlbum, raw)
+	if err != nil {
+		return content{}, err
+	}
+	return content{kind: domain.MessageKindAlbum, payload: payload, albumUploads: ids}, nil
+}
+
+func (s *Service) forwardedContent(ctx context.Context, source *domain.Message, positions []int) (content, error) {
+	if source.Kind != domain.MessageKindAlbum {
+		if len(positions) > 0 {
+			return content{}, &domain.ValidationError{Field: "positions", Reason: "only album items can be picked"}
+		}
+		payload, err := domain.ValidatePayload(source.Kind, source.Payload)
+		if err != nil {
+			return content{}, err
+		}
+		return content{kind: source.Kind, payload: payload, uploadID: source.UploadID}, nil
+	}
+
+	var album domain.AlbumPayload
+	if err := json.Unmarshal(source.Payload, &album); err != nil {
+		return content{}, fmt.Errorf("service: read forwarded album: %w", err)
+	}
+	uploads, err := s.store.AlbumUploads(ctx, source.ID)
+	if err != nil {
+		return content{}, fmt.Errorf("service: load forwarded album: %w", err)
+	}
+	if len(uploads) != len(album.Items) {
+		return content{}, fmt.Errorf("service: album %s has %d items and %d uploads", source.ID, len(album.Items), len(uploads))
+	}
+	if len(positions) == 0 {
+		return albumOf(album, uploads)
+	}
+
+	seen := make(map[int]struct{}, len(positions))
+	picked := domain.AlbumPayload{}
+	var ids []uuid.UUID
+	for _, position := range positions {
+		if position < 0 || position >= len(album.Items) {
+			return content{}, &domain.ValidationError{Field: "positions", Reason: "points past the album"}
+		}
+		if _, dup := seen[position]; dup {
+			return content{}, &domain.ValidationError{Field: "positions", Reason: "repeats an item"}
+		}
+		seen[position] = struct{}{}
+		picked.Items = append(picked.Items, album.Items[position])
+		ids = append(ids, uploads[position])
+	}
+	if len(picked.Items) > 1 {
+		return albumOf(picked, ids)
+	}
+
+	kind, payload, err := picked.Items[0].Single()
+	if err != nil {
+		return content{}, err
+	}
+	payload, err = domain.ValidatePayload(kind, payload)
+	if err != nil {
+		return content{}, err
+	}
+	return content{kind: kind, payload: payload, uploadID: &ids[0]}, nil
 }
 
 func (s *Service) resolveUpload(ctx context.Context, authorID uuid.UUID, raw string) (domain.Upload, error) {
@@ -589,7 +713,7 @@ func (s *Service) RecordUpload(
 	kind domain.MessageKind,
 	payload json.RawMessage,
 ) (domain.Upload, error) {
-	if !kind.FromUpload() {
+	if !kind.FromUpload() || kind == domain.MessageKindAlbum {
 		return domain.Upload{}, domain.ErrUploadKindMismatch
 	}
 

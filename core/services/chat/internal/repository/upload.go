@@ -56,7 +56,9 @@ func scanUpload(row scannable) (domain.Upload, error) {
 
 const uploadColumns = `id, uploader_id, kind, payload, file_id, created_at`
 
-const unreferenced = `NOT EXISTS (SELECT 1 FROM messages m WHERE m.upload_id = u.id AND m.deleted_at IS NULL)`
+const unreferenced = `NOT EXISTS (SELECT 1 FROM messages m WHERE m.upload_id = u.id AND m.deleted_at IS NULL)
+	AND NOT EXISTS (SELECT 1 FROM message_uploads mu JOIN messages m ON m.id = mu.message_id
+	                WHERE mu.upload_id = u.id AND m.deleted_at IS NULL)`
 
 func (r *Repository) SweepOrphanUploads(
 	ctx context.Context,

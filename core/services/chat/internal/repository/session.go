@@ -157,6 +157,7 @@ func (r *Repository) DeleteDraftUpload(ctx context.Context, uploadID uuid.UUID) 
 		var used bool
 		const check = `
 			SELECT EXISTS (SELECT 1 FROM messages WHERE upload_id = $1)
+			    OR EXISTS (SELECT 1 FROM message_uploads WHERE upload_id = $1)
 			FROM uploads WHERE id = $1 FOR UPDATE`
 		if err := tx.q.QueryRow(ctx, check, uploadID).Scan(&used); err != nil {
 			if noRows(err) {

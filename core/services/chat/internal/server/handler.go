@@ -279,6 +279,7 @@ func (h *Handler) ForwardMessages(
 		RoomIDs:    req.Msg.GetRoomIds(),
 		Comment:    req.Msg.GetComment(),
 		ClientID:   req.Msg.GetClientId(),
+		Parts:      forwardPartsOf(req.Msg.GetParts()),
 	})
 	h.publishSent(ctx, sent)
 	if err != nil {
@@ -577,4 +578,16 @@ func parseID(field, raw string) (uuid.UUID, error) {
 		return uuid.Nil, &domain.ValidationError{Field: field, Reason: "is not a valid id"}
 	}
 	return id, nil
+}
+
+func forwardPartsOf(parts []*chatv1.ForwardPart) []service.ForwardPart {
+	out := make([]service.ForwardPart, len(parts))
+	for i, part := range parts {
+		positions := make([]int, len(part.GetPositions()))
+		for j, position := range part.GetPositions() {
+			positions[j] = int(position)
+		}
+		out[i] = service.ForwardPart{MessageID: part.GetMessageId(), Positions: positions}
+	}
+	return out
 }

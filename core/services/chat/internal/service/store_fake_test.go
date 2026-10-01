@@ -322,6 +322,20 @@ func (s *fakeStore) UnreadCount(_ context.Context, roomID, userID uuid.UUID) (in
 	return unread, nil
 }
 
+func (s *fakeStore) AlbumUploads(_ context.Context, messageID uuid.UUID) ([]uuid.UUID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, messages := range s.messages {
+		for _, m := range messages {
+			if m.ID == messageID {
+				return m.AlbumUploads, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
 func (s *fakeStore) LastMessages(_ context.Context, roomIDs []uuid.UUID, _ uuid.UUID) (map[uuid.UUID]domain.Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

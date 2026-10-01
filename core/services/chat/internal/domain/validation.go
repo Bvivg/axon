@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -23,6 +24,9 @@ const (
 	MaxForwardTargets  = 50
 
 	MaxDeleteMessages = 100
+
+	MinAlbumItems = 2
+	MaxAlbumItems = 10
 )
 
 func ValidateUserIDs(field string, raw []string, exclude uuid.UUID) ([]uuid.UUID, error) {
@@ -204,6 +208,24 @@ func ValidatePayload(kind MessageKind, raw json.RawMessage) (json.RawMessage, er
 		}
 		return json.Marshal(p)
 
+	case MessageKindAlbum:
+		var p AlbumPayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, newValidationError("payload", "is not a valid album payload")
+		}
+		if len(p.Items) < MinAlbumItems || len(p.Items) > MaxAlbumItems {
+			return nil, newValidationError("payload", "an album holds 2 to 10 photos or videos")
+		}
+		for _, item := range p.Items {
+			if item.Kind != MessageKindImage && item.Kind != MessageKindVideo {
+				return nil, newValidationError("payload", "an album holds only photos and videos")
+			}
+			if strings.TrimSpace(item.URL) == "" || item.Width <= 0 || item.Height <= 0 || item.SizeBytes <= 0 {
+				return nil, newValidationError("payload", "an album item is missing url, width, height, or size_bytes")
+			}
+		}
+		return json.Marshal(p)
+
 	case MessageKindSystem:
 		var p SystemPayload
 		if err := json.Unmarshal(raw, &p); err != nil {
@@ -241,4 +263,36 @@ func ValidatePage(p Page) (Page, error) {
 	}
 
 	return p, nil
+}
+
+func AlbumItemOf(kind MessageKind, payload json.RawMessage) (AlbumItem, error) {
+	if kind != MessageKindImage && kind != MessageKindVideo {
+		return AlbumItem{}, newValidationError("upload_ids", "an album holds only photos and videos")
+	}
+	var item AlbumItem
+	if err := json.Unmarshal(payload, &item); err != nil {
+		return AlbumItem{}, newValidationError("upload_ids", "an upload has no usable payload")
+	}
+	item.Kind = kind
+	return item, nil
+}
+
+func (i AlbumItem) Single() (MessageKind, json.RawMessage, error) {
+	var payload any
+	switch i.Kind {
+	case MessageKindImage:
+		payload = ImagePayload{URL: i.URL, ThumbnailURL: i.ThumbnailURL, Width: i.Width, Height: i.Height, SizeBytes: i.SizeBytes, Mime: i.Mime}
+	case MessageKindVideo:
+		payload = VideoPayload{
+			URL: i.URL, PosterURL: i.PosterURL, Width: i.Width, Height: i.Height,
+			DurationMS: i.DurationMS, SizeBytes: i.SizeBytes, Mime: i.Mime,
+		}
+	default:
+		return "", nil, newValidationError("payload", "an album holds only photos and videos")
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("domain: album item payload: %w", err)
+	}
+	return i.Kind, raw, nil
 }

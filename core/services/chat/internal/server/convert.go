@@ -64,6 +64,8 @@ func toProtoMessageKind(k domain.MessageKind) chatv1.MessageKind {
 		return chatv1.MessageKind_MESSAGE_KIND_IMAGE
 	case domain.MessageKindVideo:
 		return chatv1.MessageKind_MESSAGE_KIND_VIDEO
+	case domain.MessageKindAlbum:
+		return chatv1.MessageKind_MESSAGE_KIND_ALBUM
 	case domain.MessageKindSystem:
 		return chatv1.MessageKind_MESSAGE_KIND_SYSTEM
 	default:
@@ -83,6 +85,8 @@ func fromProtoMessageKind(k chatv1.MessageKind) domain.MessageKind {
 		return domain.MessageKindImage
 	case chatv1.MessageKind_MESSAGE_KIND_VIDEO:
 		return domain.MessageKindVideo
+	case chatv1.MessageKind_MESSAGE_KIND_ALBUM:
+		return domain.MessageKindAlbum
 	case chatv1.MessageKind_MESSAGE_KIND_SYSTEM:
 		return domain.MessageKindSystem
 	default:
@@ -228,6 +232,26 @@ func setProtoMessagePayload(message *chatv1.Message, kind domain.MessageKind, ra
 			SizeBytes:  p.SizeBytes,
 			Mime:       p.Mime,
 		}}
+	case domain.MessageKindAlbum:
+		var p domain.AlbumPayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return
+		}
+		album := &chatv1.AlbumPayload{Items: make([]*chatv1.AlbumItem, len(p.Items))}
+		for i, item := range p.Items {
+			album.Items[i] = &chatv1.AlbumItem{
+				Kind:         toProtoMessageKind(item.Kind),
+				Url:          item.URL,
+				ThumbnailUrl: item.ThumbnailURL,
+				PosterUrl:    item.PosterURL,
+				Width:        int32(item.Width),
+				Height:       int32(item.Height),
+				DurationMs:   item.DurationMS,
+				SizeBytes:    item.SizeBytes,
+				Mime:         item.Mime,
+			}
+		}
+		message.Payload = &chatv1.Message_Album{Album: album}
 	case domain.MessageKindSystem:
 		var p domain.SystemPayload
 		if err := json.Unmarshal(raw, &p); err != nil {

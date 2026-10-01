@@ -69,6 +69,8 @@ type inbound struct {
 	MessageID       string `json:"message_id,omitempty"`
 
 	MessageIDs []string `json:"message_ids,omitempty"`
+
+	UploadIDs []string `json:"upload_ids,omitempty"`
 }
 
 type outbound struct {
