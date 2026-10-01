@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -92,7 +93,8 @@ func (r *Resolver) DisplayName(ctx context.Context, accessToken string) string {
 		return ""
 	}
 
-	return resp.Msg.GetUser().GetDisplayName()
+	user := resp.Msg.GetUser()
+	return cmp.Or(user.GetDisplayName(), user.GetUsername())
 }
 
 func (r *Resolver) Profiles(ctx context.Context, accessToken string, ids []uuid.UUID) (map[uuid.UUID]string, error) {
@@ -122,7 +124,7 @@ func (r *Resolver) Profiles(ctx context.Context, accessToken string, ids []uuid.
 		if err != nil {
 			continue
 		}
-		names[id] = user.GetDisplayName()
+		names[id] = cmp.Or(user.GetDisplayName(), user.GetUsername())
 	}
 	for _, id := range ids {
 		if _, ok := names[id]; !ok {
