@@ -57,11 +57,9 @@ export interface ChatSocket {
 
   send: (body: string, options?: SendOptions) => boolean;
 
-  forward: (messageId: string, roomId: string, onForwarded?: () => void) => boolean;
-
   edit: (messageId: string, body: string, onSettled?: (saved: boolean) => void) => boolean;
 
-  remove: (messageId: string) => boolean;
+  remove: (messageId: string | string[]) => boolean;
 
   notifyTyping: () => void;
 }
@@ -83,7 +81,6 @@ export function useChatSocket(
   const [removed, setRemoved] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const typingTracker = useTyping();
-  const forwards = useRef(new Map<string, () => void>());
   const edits = useRef(new Map<string, PendingEdit>());
   const opened = useRef(false);
 
@@ -155,8 +152,6 @@ export function useChatSocket(
         break;
 
       case "ack":
-        forwards.current.get(frame.client_id)?.();
-        forwards.current.delete(frame.client_id);
         if (!roomID && frame.room_id) {
           setNewRoomId(frame.room_id);
         }
@@ -183,7 +178,6 @@ export function useChatSocket(
 
       case "error":
         if (frame.client_id) {
-          forwards.current.delete(frame.client_id);
           edits.current.get(frame.client_id)?.settle(false);
           edits.current.delete(frame.client_id);
         }
@@ -224,8 +218,7 @@ export function useChatSocket(
         opened.current = true;
       },
       onClose: () => {
-        const unconfirmed = forwards.current.size + edits.current.size;
-        forwards.current.clear();
+        const unconfirmed = edits.current.size;
         for (const pending of edits.current.values()) {
           pending.settle(false);
         }
@@ -297,28 +290,6 @@ export function useChatSocket(
     [readyState, roomID, peerID, sendJsonMessage],
   );
 
-  const forward = useCallback(
-    (messageId: string, targetRoomId: string, onForwarded?: () => void) => {
-      if (readyState !== ReadyState.OPEN) {
-        return false;
-      }
-      const clientID = newClientID();
-      if (onForwarded) {
-        forwards.current.set(clientID, onForwarded);
-      }
-      sendJsonMessage({
-        type: "send",
-        room_id: targetRoomId,
-        client_id: clientID,
-        body: "",
-        forwarded_from_id: messageId,
-      });
-      setError(null);
-      return true;
-    },
-    [readyState, sendJsonMessage],
-  );
-
   const edit = useCallback(
     (messageId: string, body: string, onSettled?: (saved: boolean) => void) => {
       if (readyState !== ReadyState.OPEN) {
@@ -336,11 +307,15 @@ export function useChatSocket(
   );
 
   const remove = useCallback(
-    (messageId: string) => {
+    (messageId: string | string[]) => {
       if (readyState !== ReadyState.OPEN) {
         return false;
       }
-      sendJsonMessage({ type: "delete", message_id: messageId });
+      sendJsonMessage(
+        Array.isArray(messageId)
+          ? { type: "delete", message_ids: messageId }
+          : { type: "delete", message_id: messageId },
+      );
       setError(null);
       return true;
     },
@@ -357,7 +332,6 @@ export function useChatSocket(
     typing: (roomID && typingTracker.typing.get(roomID)) || nobody,
     removed,
     send,
-    forward,
     edit,
     remove,
     notifyTyping,

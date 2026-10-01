@@ -22,6 +22,7 @@ export const chatKeys = {
   lastMessage: (id: string) => ["chat", "last-message", id] as const,
   media: (id: string) => ["chat", "media", id] as const,
   mediaOf: (id: string, kinds: MessageKind[]) => ["chat", "media", id, kinds.join(",")] as const,
+  readers: (messageID: string) => ["chat", "readers", messageID] as const,
 };
 
 export function useRooms() {
@@ -43,6 +44,7 @@ export function useRoom(roomID: string) {
     },
     enabled: roomID !== "",
 
+    refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
 }
@@ -139,12 +141,15 @@ export function toWireMessage(m: Message): WireMessage {
   };
 }
 
+const historyPageSize = 100;
+
 export function useHistory(roomID: string) {
   return useInfiniteQuery({
     queryKey: chatKeys.history(roomID),
     queryFn: async ({ pageParam }): Promise<HistoryPage> => {
       const resp = await chatClient.listMessages({
         roomId: roomID,
+        limit: historyPageSize,
         beforeSeq: pageParam > 0 ? BigInt(pageParam) : undefined,
       });
       return {
@@ -204,13 +209,13 @@ export async function refreshNewestPage(queryClient: QueryClient, roomID: string
   const key = chatKeys.history(roomID);
   const loaded = queryClient.getQueryData<InfiniteData<HistoryPage, number>>(key);
   if (!loaded || loaded.pages.length <= 1) {
-    void queryClient.invalidateQueries({ queryKey: key });
+    await queryClient.invalidateQueries({ queryKey: key });
     return;
   }
 
   let newest: HistoryPage;
   try {
-    const resp = await chatClient.listMessages({ roomId: roomID });
+    const resp = await chatClient.listMessages({ roomId: roomID, limit: historyPageSize });
     newest = { messages: resp.messages.map(toWireMessage), hasMore: resp.hasMore };
   } catch {
     void queryClient.invalidateQueries({ queryKey: key, refetchType: "none" });
@@ -379,4 +384,33 @@ export function useRenameGroup() {
     (vars: { roomID: string; name: string }) => chatClient.renameGroup({ roomId: vars.roomID, name: vars.name }),
     (vars) => vars.roomID,
   );
+}
+
+export interface Reader {
+  userId: string;
+  readAt: Date | null;
+}
+
+export function useMessageReaders(messageID: string | null) {
+  return useQuery({
+    queryKey: chatKeys.readers(messageID ?? ""),
+    queryFn: async (): Promise<Reader[]> => {
+      const resp = await chatClient.listMessageReaders({ messageId: messageID ?? "" });
+      return resp.readers.map((reader) => ({
+        userId: reader.userId,
+        readAt: reader.readAt ? timestampDate(reader.readAt) : null,
+      }));
+    },
+    enabled: messageID !== null,
+    staleTime: 0,
+  });
+}
+
+export function useForwardMessages() {
+  return useMutation({
+    mutationFn: async (input: { messageIds: string[]; roomIds: string[]; comment: string; clientId: string }) => {
+      const resp = await chatClient.forwardMessages(input);
+      return resp.sent;
+    },
+  });
 }

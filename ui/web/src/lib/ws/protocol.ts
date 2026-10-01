@@ -9,6 +9,7 @@ export type Outgoing =
   | { type: "watch_presence"; to_user_id: string }
   | { type: "edit"; client_id: string; message_id: string; body: string }
   | { type: "delete"; message_id: string }
+  | { type: "delete"; message_ids: string[] }
   | ({
       type: "send";
       client_id: string;

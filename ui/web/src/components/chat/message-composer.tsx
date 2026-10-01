@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { UploadAs, UploadCancelled, uploadAttachment } from "@/lib/chat/upload";
 import {
@@ -59,7 +59,7 @@ export function MessageComposer({
   onTyping: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const editing = context?.mode === ComposerMode.Edit;
   const replyToId = context?.mode === ComposerMode.Reply ? context.messageId : undefined;
 
@@ -109,6 +109,10 @@ export function MessageComposer({
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
+    submit();
+  };
+
+  const submit = () => {
     if (!canSend) {
       return;
     }
@@ -151,10 +155,15 @@ export function MessageComposer({
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape" && context) {
       event.preventDefault();
       cancelContext();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      submit();
     }
   };
 
@@ -165,7 +174,7 @@ export function MessageComposer({
     }
   };
 
-  const onPaste = (event: ClipboardEvent<HTMLInputElement>) => {
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = [...event.clipboardData.files];
     if (files.length > 0) {
       event.preventDefault();
@@ -289,7 +298,7 @@ export function MessageComposer({
           </Button>
         </div>
       ) : (
-        <form className="flex items-center gap-2" onSubmit={onSubmit}>
+        <form className="flex items-end gap-2" onSubmit={onSubmit}>
           {editing ? null : (
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -329,9 +338,11 @@ export function MessageComposer({
             onChange={(event) => pick(event.currentTarget, UploadAs.File)}
           />
 
-          <Input
+          <Textarea
             ref={input}
             aria-label="Message"
+            rows={1}
+            className="max-h-40"
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
             onPaste={editing ? undefined : onPaste}

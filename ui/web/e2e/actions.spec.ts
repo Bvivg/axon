@@ -68,7 +68,9 @@ test("a forward lands in another chat credited to whoever said it first", async 
 
   await openChatWith(grace.page, "Ada");
   await chooseMessageAction(grace.page, "worth sharing", "Forward");
-  await grace.page.getByRole("dialog").getByRole("button", { name: "Linus" }).click();
+  const dialog = grace.page.getByRole("dialog");
+  await dialog.getByRole("checkbox", { name: /Linus/ }).click();
+  await dialog.getByRole("button", { name: "Forward", exact: true }).click();
 
   await expect(grace.page.getByRole("heading", { name: "Linus" })).toBeVisible();
   const forwarded = messageWith(grace.page, "Forwarded from Ada");

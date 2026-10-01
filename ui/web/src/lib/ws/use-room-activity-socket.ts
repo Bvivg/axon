@@ -12,6 +12,7 @@ import { refreshSession } from "@/lib/auth/refresh";
 import { apiBaseUrl } from "@/lib/connect/transport";
 import { chatKeys, forgetHistory, patchHistory } from "@/lib/query/chat";
 import { invalidateProfilesOf } from "@/lib/query/people";
+import { refreshSoon } from "@/lib/query/refresh";
 import { bearerPrefix, closeCodes, parseFrame, subprotocol, type Incoming } from "@/lib/ws/protocol";
 import { useTyping, type TypingByRoom } from "@/lib/ws/use-typing";
 
@@ -68,12 +69,12 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
     switch (frame.type) {
       case "message":
         typingTracker.stop(frame.message.room_id, frame.message.author_id);
-        void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(frame.message.room_id) });
-        void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
+        refreshSoon(queryClient, chatKeys.lastMessage(frame.message.room_id));
+        refreshSoon(queryClient, chatKeys.rooms);
         break;
 
       case "read":
-        void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
+        refreshSoon(queryClient, chatKeys.rooms);
         break;
 
       case "typing":
@@ -86,8 +87,8 @@ export function useRoomActivitySocket(roomIds: string[], peerIds: string[]): Typ
 
       case "message_updated":
         patchHistory(queryClient, frame.message);
-        void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(frame.message.room_id) });
-        void queryClient.invalidateQueries({ queryKey: chatKeys.media(frame.message.room_id) });
+        refreshSoon(queryClient, chatKeys.lastMessage(frame.message.room_id));
+        refreshSoon(queryClient, chatKeys.media(frame.message.room_id));
         break;
 
       case "room_added":

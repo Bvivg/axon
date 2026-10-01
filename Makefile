@@ -169,8 +169,12 @@ web-typecheck: ## Type-check the web client
 web-build: ## Build the web client's production bundle
 	$(COMPOSE_TOOLS) run --rm node npm run build
 
+.PHONY: web-test
+web-test: ## Run the web client's unit tests (Vitest)
+	$(COMPOSE_TOOLS) run --rm node npm test
+
 .PHONY: web-check
-web-check: web-lint web-typecheck web-build ## Everything CI runs for the web client
+web-check: web-lint web-typecheck web-test web-build ## Everything CI runs for the web client
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace

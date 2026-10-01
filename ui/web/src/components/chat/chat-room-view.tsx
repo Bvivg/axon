@@ -1,19 +1,23 @@
 "use client";
 
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Images, Info, LogOut, MoreVertical, Trash2, Upload } from "lucide-react";
+import { toast } from "sonner";
+import { ChevronLeft, Images, Info, Loader2, LogOut, MoreVertical, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { ConfirmDialog } from "@/components/chat/confirm-dialog";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
 import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
 import { MediaViewer } from "@/components/chat/media-viewer";
+import { ReadersDialog } from "@/components/chat/readers-dialog";
+import { SelectionBar } from "@/components/chat/selection-bar";
 import { ComposerMode, MessageComposer, type ComposerContext } from "@/components/chat/message-composer";
 import { RoomMedia } from "@/components/chat/room-media";
-import { Transcript, type MessageActions } from "@/components/chat/transcript";
+import { Transcript, type MessageActions, type TranscriptHandle } from "@/components/chat/transcript";
 import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -27,16 +31,38 @@ import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
 import { signInPath } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 import { ContentKind, contentOf, membersLabel, previewOf, targetIDsOf, type NameOf } from "@/lib/chat/content";
+import { copyImage } from "@/lib/chat/copy-image";
+import { selectedMessages, selectionText, toggleMessage, type MessageSelection } from "@/lib/chat/selection";
 import { usePendingUploads } from "@/lib/chat/use-pending-uploads";
 import { describe } from "@/lib/errors";
-import { usePageVisible } from "@/lib/hooks/use-page-visible";
-import { chatKeys, useHideRoom, useHistory, useLeaveRoom, useMarkRead, useRoom } from "@/lib/query/chat";
+import { firstUnreadOf } from "@/lib/chat/series";
+import { useAttention } from "@/lib/hooks/use-attention";
+import {
+  chatKeys,
+  refreshNewestPage,
+  useForwardMessages,
+  useHideRoom,
+  useHistory,
+  useLeaveRoom,
+  useMarkRead,
+  useRoom,
+} from "@/lib/query/chat";
 import { usePublicProfiles } from "@/lib/query/people";
+import { refreshSoon } from "@/lib/query/refresh";
 import { cn } from "@/lib/utils";
 import { useChatSocket, type ChatTarget } from "@/lib/ws/use-chat-socket";
-import type { WireMessage } from "@/lib/ws/protocol";
+import { newClientID, type WireMessage } from "@/lib/ws/protocol";
 
 const clockSkewMs = 5_000;
+const markReadDebounceMs = 250;
+const maxPagesToReveal = 20;
+const throttledRetryMs = 1_000;
+
+const nextFrames = (count: number) =>
+  new Promise<void>((resolve) => {
+    const step = (left: number) => (left <= 0 ? resolve() : requestAnimationFrame(() => step(left - 1)));
+    step(count);
+  });
 
 export function ChatRoomView({ target }: { target: ChatTarget }) {
   const router = useRouter();
@@ -154,8 +180,16 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   );
 
   const [context, setContext] = useState<ComposerContext | null>(null);
-  const [forwarding, setForwarding] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [forwarding, setForwarding] = useState<string[] | null>(null);
+  const [deleting, setDeleting] = useState<string[] | null>(null);
+  const [readersOf, setReadersOf] = useState<string | null>(null);
+  const [selection, setSelection] = useState<MessageSelection | null>(null);
+  const [selectionRoom, setSelectionRoom] = useState(roomID);
+  if (selectionRoom !== roomID) {
+    setSelectionRoom(roomID);
+    setSelection(null);
+  }
+  const forwardMessages = useForwardMessages();
   const [confirmingExit, setConfirmingExit] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
 
@@ -174,7 +208,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           preview: previewOf(message),
           body: message.body,
         }),
-      onForward: (message) => setForwarding(message.id),
+      onForward: (message) => setForwarding([message.id]),
       onEdit: (message) =>
         setContext({
           mode: ComposerMode.Edit,
@@ -184,10 +218,46 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           body: message.body,
           bodyOptional: contentOf(message).kind !== ContentKind.Text,
         }),
-      onDelete: (message) => setDeleting(message.id),
+      onDelete: (message) => setDeleting([message.id]),
+      onSelect: (message) => setSelection(new Set([message.id])),
+      onReaders: (message) => setReadersOf(message.id),
+      onCopyImage: (message) => {
+        const content = contentOf(message);
+        if (content.kind !== ContentKind.Image) return;
+        copyImage(content.image.url).then(
+          () => toast.success("Image copied"),
+          (error: unknown) => toast.error(error instanceof Error ? error.message : "The image could not be copied."),
+        );
+      },
     }),
     [],
   );
+
+  const onToggleSelected = useCallback(
+    (messageID: string) => setSelection((current) => toggleMessage(current, messageID)),
+    [],
+  );
+  const selected = useMemo(() => selectedMessages(selection, socket.messages), [selection, socket.messages]);
+  const canDeleteSelected = selected.length > 0 && selected.every((message) => message.author_id === user?.id);
+
+  const dialogOpen = forwarding !== null || deleting !== null || readersOf !== null;
+  useEffect(() => {
+    if (selection === null || dialogOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) setSelection(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection, dialogOpen]);
+
+  const copySelected = () => {
+    const text = selectionText(selected, nameOf);
+    void navigator.clipboard?.writeText(text).then(
+      () => toast.success(selected.length === 1 ? "Message copied" : `${selected.length} messages copied`),
+      () => toast.error("The messages could not be copied."),
+    );
+    setSelection(null);
+  };
 
   const hide = useHideRoom();
   const leave = useLeaveRoom();
@@ -243,22 +313,53 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     if (!roomID || latestSeq <= 0) {
       return;
     }
-    void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(roomID) });
-    void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-    void queryClient.invalidateQueries({ queryKey: chatKeys.media(roomID) });
+    refreshSoon(queryClient, chatKeys.lastMessage(roomID));
+    refreshSoon(queryClient, chatKeys.rooms);
+    refreshSoon(queryClient, chatKeys.media(roomID));
   }, [roomID, latestSeq, queryClient]);
 
-  const pageVisible = usePageVisible();
-  const [visibleSeq, setVisibleSeq] = useState(0);
+  const myReadSeq = Number(room.data?.members.find((member) => member.userId === user?.id)?.lastReadSeq ?? 0);
+  const [opened, setOpened] = useState<{ roomID: string; readSeq: number; unread: boolean } | null>(null);
+  if (roomID && room.data && room.isFetchedAfterMount && opened?.roomID !== roomID) {
+    setOpened({ roomID, readSeq: myReadSeq, unread: Number(room.data.room?.unreadCount ?? 0) > 0 });
+  }
+  const openedHere = opened && opened.roomID === roomID ? opened : null;
+
+  const [freshFor, setFreshFor] = useState<string | null>(null);
+  const historyFetchedHere = history.isFetchedAfterMount;
   useEffect(() => {
-    if (!roomID || visibleSeq <= 0 || !pageVisible) {
+    if (!roomID || !openedHere?.unread || freshFor === roomID || historyFetchedHere) return;
+    let cancelled = false;
+    void refreshNewestPage(queryClient, roomID).finally(() => {
+      if (!cancelled) setFreshFor(roomID);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomID, openedHere, freshFor, historyFetchedHere, queryClient]);
+  const historyReady =
+    flatHistory !== undefined && (!openedHere?.unread || historyFetchedHere || freshFor === roomID);
+  const firstUnreadSeq = useMemo(
+    () => (openedHere?.unread && user ? firstUnreadOf(socket.messages, openedHere.readSeq, user.id) : null),
+    [openedHere, socket.messages, user],
+  );
+
+  const attentive = useAttention();
+  const [visibleSeq, setVisibleSeq] = useState(0);
+  const markedSeq = useRef(0);
+  useEffect(() => {
+    markedSeq.current = 0;
+  }, [roomID]);
+  useEffect(() => {
+    if (!roomID || !attentive || visibleSeq <= Math.max(myReadSeq, markedSeq.current)) {
       return;
     }
     const timer = setTimeout(() => {
+      markedSeq.current = visibleSeq;
       markReadRef.current({ roomID, seq: visibleSeq });
-    }, 1500);
+    }, markReadDebounceMs);
     return () => clearTimeout(timer);
-  }, [roomID, visibleSeq, pageVisible]);
+  }, [roomID, visibleSeq, myReadSeq, attentive]);
 
   const fetchNextPageRef = useRef(history.fetchNextPage);
   useEffect(() => {
@@ -267,6 +368,37 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const onLoadOlder = useCallback(() => {
     void fetchNextPageRef.current();
   }, []);
+
+  const transcript = useRef<TranscriptHandle>(null);
+  const [jumpTo, setJumpTo] = useState<{ id: string } | null>(null);
+  const onJumpTo = useCallback((id: string) => setJumpTo({ id }), []);
+  useEffect(() => {
+    if (!jumpTo) return;
+    let cancelled = false;
+    void (async () => {
+      let pages = 0;
+      for (let attempt = 0; pages < maxPagesToReveal && attempt < maxPagesToReveal * 2 && !cancelled; attempt += 1) {
+        if (transcript.current?.reveal(jumpTo.id)) break;
+        const result = await fetchNextPageRef.current();
+        if (cancelled) break;
+        if (result.isError) {
+          if (ConnectError.from(result.error).code !== Code.ResourceExhausted) break;
+          await new Promise((resolve) => setTimeout(resolve, throttledRetryMs));
+          continue;
+        }
+        pages += 1;
+        await nextFrames(2);
+        if (!result.hasNextPage) {
+          if (!cancelled) transcript.current?.reveal(jumpTo.id);
+          break;
+        }
+      }
+      if (!cancelled) setJumpTo(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jumpTo]);
 
   if (!user) {
     return (
@@ -442,60 +574,112 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
       {history.isError ? <Alert className="mt-3">{describe(history.error)}</Alert> : null}
       {socket.error ? <Alert className="mt-3">{socket.error}</Alert> : null}
 
-      <Transcript
-        messages={socket.messages}
-        selfID={user.id}
-        nameOf={nameOf}
-        avatars={avatars}
-        readSeqs={readSeqs}
-        onVisibleSeqChange={setVisibleSeq}
-        onLoadOlder={onLoadOlder}
-        hasOlder={history.hasNextPage}
-        loadingOlder={history.isFetchingNextPage}
-        onOpenMedia={setViewing}
-        actions={socket.connected ? actions : undefined}
-        showNames={!isDirect}
-      />
+      {roomID && (!openedHere || !historyReady) && !room.isError && !history.isError ? (
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 aria-label="Loading messages" className="size-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <Transcript
+          key={roomID ?? peerID}
+          ref={transcript}
+          messages={socket.messages}
+          firstUnreadSeq={firstUnreadSeq}
+          onJumpTo={onJumpTo}
+          selfID={user.id}
+          nameOf={nameOf}
+          avatars={avatars}
+          readSeqs={readSeqs}
+          onVisibleSeqChange={setVisibleSeq}
+          onLoadOlder={onLoadOlder}
+          hasOlder={history.hasNextPage}
+          loadingOlder={history.isFetchingNextPage}
+          onOpenMedia={setViewing}
+          actions={socket.connected ? actions : undefined}
+          showNames={!isDirect}
+          selection={selection}
+          onToggleSelected={onToggleSelected}
+          onSelectMessages={socket.connected ? setSelection : undefined}
+        />
+      )}
 
-      <MessageComposer
-        connected={socket.connected}
-        uploads={uploads}
-        context={context}
-        onSend={socket.send}
-        onEdit={socket.edit}
-        onCancelContext={() => setContext(null)}
-        onTyping={socket.notifyTyping}
-      />
+      <div className="relative shrink-0">
+        <div inert={selection !== null}>
+          <MessageComposer
+            connected={socket.connected}
+            uploads={uploads}
+            context={context}
+            onSend={socket.send}
+            onEdit={socket.edit}
+            onCancelContext={() => setContext(null)}
+            onTyping={socket.notifyTyping}
+          />
+        </div>
+        {selection !== null ? (
+          <SelectionBar
+            count={selected.length}
+            canDelete={canDeleteSelected}
+            onCopy={copySelected}
+            onForward={() => setForwarding(selected.map((message) => message.id))}
+            onDelete={() => setDeleting(selected.map((message) => message.id))}
+            onCancel={() => setSelection(null)}
+          />
+        ) : null}
+      </div>
 
       <ForwardDialog
         open={forwarding !== null}
-        onOpenChange={(open) => !open && setForwarding(null)}
-        onPick={(targetRoomID) => {
-          const openTarget = () => {
-            if (targetRoomID !== roomID) {
-              router.push(`/chat/${targetRoomID}`);
-            }
-          };
-          if (forwarding && socket.forward(forwarding, targetRoomID, openTarget)) {
+        count={forwarding?.length ?? 0}
+        pending={forwardMessages.isPending}
+        error={forwardMessages.error ? describe(forwardMessages.error) : null}
+        onOpenChange={(open) => {
+          if (!open) {
             setForwarding(null);
+            forwardMessages.reset();
           }
         }}
+        onForward={(roomIds, comment) => {
+          if (!forwarding) return;
+          forwardMessages.mutate(
+            { messageIds: forwarding, roomIds, comment, clientId: newClientID() },
+            {
+              onSuccess: () => {
+                setForwarding(null);
+                setSelection(null);
+                if (roomIds.length === 1 && roomIds[0] !== roomID) {
+                  router.push(`/chat/${roomIds[0]}`);
+                } else {
+                  toast.success(roomIds.length === 1 ? "Forwarded" : `Forwarded to ${roomIds.length} chats`);
+                }
+              },
+            },
+          );
+        }}
       />
-
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
-        title="Delete message?"
-        consequence="It disappears for everyone in this chat."
+        title={deleting && deleting.length > 1 ? `Delete ${deleting.length} messages?` : "Delete message?"}
+        consequence={
+          deleting && deleting.length > 1
+            ? "They disappear for everyone in this chat."
+            : "It disappears for everyone in this chat."
+        }
         action="Delete"
         onConfirm={() => {
-          if (deleting && socket.remove(deleting)) {
-            if (context?.messageId === deleting) setContext(null);
+          if (!deleting) return;
+          if (socket.remove(deleting.length === 1 ? deleting[0] : deleting)) {
+            if (context && deleting.includes(context.messageId)) setContext(null);
             setDeleting(null);
+            setSelection(null);
           }
         }}
       />
-
+      <ReadersDialog
+        messageID={readersOf}
+        direct={isDirect}
+        nameOf={nameOf}
+        onOpenChange={(open) => !open && setReadersOf(null)}
+      />
       <ConfirmDialog
         open={confirmingExit}
         onOpenChange={(open) => {
