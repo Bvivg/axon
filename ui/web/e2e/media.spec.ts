@@ -86,10 +86,11 @@ test("a photo loses its camera metadata on the way and both people can open it",
   await openChatWith(grace.page, "Ada");
 
   await grace.page.getByRole("button", { name: "Open photo: look at this" }).click();
-  const viewer = grace.page.getByRole("dialog", { name: "Photo" });
-  await expect(viewer.getByRole("img", { name: "look at this" })).toBeVisible();
+  const viewer = grace.page.getByRole("dialog", { name: "Lightbox" });
+  const shown = viewer.getByRole("img", { name: "look at this" });
+  await expect(shown).toBeVisible();
 
-  const original = await viewer.getByRole("link", { name: "Open original" }).getAttribute("href");
+  const original = await shown.getAttribute("src");
   const served = await grace.page.request.get(original!);
   expect(served.ok()).toBe(true);
   expect(served.headers()["content-type"]).toBe("image/jpeg");
@@ -101,10 +102,10 @@ test("a photo loses its camera metadata on the way and both people can open it",
   await expect(viewer).toHaveCount(0);
 
   await grace.page.getByRole("button", { name: "Open photo: look at this" }).click();
-  await viewer.getByRole("img", { name: "look at this" }).click();
+  await shown.click();
   await expect(viewer).toBeVisible();
-  const size = grace.page.viewportSize();
-  await grace.page.mouse.click(4, (size?.height ?? 600) / 2);
+  const box = (await shown.boundingBox())!;
+  await grace.page.mouse.click(box.x + box.width / 2, box.y / 2);
   await expect(viewer).toHaveCount(0);
 
   await ada.close();
@@ -123,7 +124,7 @@ test("a video is re-encoded for the web and plays in the viewer", async ({ brows
   await openChatWith(grace.page, "Ada");
   await grace.page.getByRole("button", { name: "Play video" }).click();
 
-  const viewer = grace.page.getByRole("dialog", { name: "Video" });
+  const viewer = grace.page.getByRole("dialog", { name: "Lightbox" });
   const video = viewer.locator("video");
   await expect(video).toBeVisible();
 
