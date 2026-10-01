@@ -4,7 +4,12 @@ import { expectLobby } from "./support";
 
 export interface Contact {
   email: string;
+  username: string;
   name: string;
+}
+
+export function chatAt(address: string): RegExp {
+  return new RegExp(`/chat#${address}$`);
 }
 
 export async function goToChats(page: Page): Promise<void> {
@@ -24,21 +29,23 @@ export async function startChat(page: Page, contact: Contact, first: string): Pr
   await dialog.getByLabel("Search").fill(contact.email);
   await dialog.getByRole("button", { name: contact.name }).click();
 
-  await expect(page).toHaveURL(/\/chat\/new\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(chatAt(contact.username));
   await expect(page.getByRole("heading", { name: contact.name })).toBeVisible();
 
   await say(page, first);
-  await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
   await expectSaid(page, "You", first);
+  await expect(page).toHaveURL(chatAt(contact.username));
 
-  return page.url().split("/").pop()!;
+  const room = chatList(page).locator(`a[href="/chat#${contact.username}"]`);
+  await expect(room).toHaveAttribute("data-room-id", /^[0-9a-f-]{36}$/);
+  return (await room.getAttribute("data-room-id"))!;
 }
 
 export async function openChatWith(page: Page, name: string): Promise<void> {
   await goToChats(page);
   await chatList(page).getByRole("link", { name: new RegExp(name) }).click();
 
-  await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/chat#.+$/);
   await expectReady(page);
 }
 

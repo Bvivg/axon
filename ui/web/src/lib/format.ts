@@ -85,13 +85,22 @@ export function lastSeen(at: Date | null, now = new Date()): string {
 
 export function personName(user: {
   email: string;
+  username?: string;
   displayName?: string;
   nickname?: string;
   firstName?: string;
   lastName?: string;
 }): string {
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
-  return user.displayName || fullName || user.nickname || user.email;
+  return user.displayName || fullName || user.nickname || user.username || user.email;
+}
+
+export function profileName(profile?: { displayName?: string; username?: string }): string {
+  return profile?.displayName || profile?.username || "";
+}
+
+export function normalizeUsername(value: string): string {
+  return value.trim().replace(/^@/, "").toLowerCase();
 }
 
 export function shortID(id?: string): string {

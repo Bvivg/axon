@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useRoomDirectory } from "@/components/chat/use-room-directory";
 import type { Member } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
+import { isRoomAt, navigateTo, openChat, useChatAddress } from "@/lib/chat/address";
 import { ContentKind, previewOf } from "@/lib/chat/content";
 import { listenForOpenRequests, pushSupported, resyncPush } from "@/lib/push";
 import { chatKeys, usePushKey } from "@/lib/query/chat";
@@ -29,14 +30,15 @@ export function ChatActivityProvider({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const router = useRouter();
   const pathname = usePathname();
+  const address = useChatAddress();
   const queryClient = useQueryClient();
   const roomIDs = useMemo(() => (rooms.data ?? []).map((room) => room.id), [rooms.data]);
 
   const announce = useCallback(
     (message: WireMessage) => {
       if (!user || message.author_id === user.id || message.kind === ContentKind.System) return;
-      if (document.visibilityState !== "visible" || pathname === `/chat/${message.room_id}`) return;
       const entry = entries.find((candidate) => candidate.room.id === message.room_id);
+      if (document.visibilityState !== "visible" || isRoomAt(address, { id: message.room_id }, entry?.peer)) return;
       const label = entry?.label || "New message";
       const group = entry !== undefined && !entry.direct;
       const author = queryClient
@@ -46,10 +48,13 @@ export function ChatActivityProvider({ children }: { children: ReactNode }) {
       toast(label, {
         id: `message-${message.room_id}`,
         description: group && author ? `${author}: ${text}` : text,
-        action: { label: "Open", onClick: () => router.push(`/chat/${message.room_id}`) },
+        action: {
+          label: "Open",
+          onClick: () => openChat(router, entry?.address ?? message.room_id),
+        },
       });
     },
-    [user, pathname, entries, queryClient, router],
+    [user, address, entries, queryClient, router],
   );
 
   const typing = useRoomActivitySocket(roomIDs, peerIDs, announce);
@@ -59,12 +64,12 @@ export function ChatActivityProvider({ children }: { children: ReactNode }) {
     if (pushKey.data) void resyncPush(pushKey.data).catch(() => undefined);
   }, [pushKey.data]);
 
-  useEffect(() => listenForOpenRequests((url) => router.push(url)), [router]);
+  useEffect(() => listenForOpenRequests((url) => navigateTo(router, url)), [router]);
 
   useEffect(() => {
     const base = document.title.replace(badge, "");
     document.title = unread > 0 ? `(${unread > 99 ? "99+" : unread}) ${base}` : base;
-  }, [unread, pathname]);
+  }, [unread, pathname, address]);
 
   return <ChatActivityContext value={typing}>{children}</ChatActivityContext>;
 }

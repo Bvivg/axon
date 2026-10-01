@@ -22,6 +22,13 @@ export function newEmail(label: string): string {
   return `${label}-${Date.now()}-${counter}@axon.test`;
 }
 
+export function newUsername(label: string): string {
+  counter += 1;
+  const stem = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 14);
+  const salt = Math.random().toString(36).slice(2, 6);
+  return `${stem}_${Date.now().toString(36)}${salt}${counter}`;
+}
+
 export async function open(page: Page, path: string): Promise<void> {
   const restored = page.waitForResponse(
     (response) =>
@@ -38,8 +45,12 @@ export async function submitCredentials(
   action: "Create account" | "Sign in",
   email: string,
   displayName?: string,
+  username?: string,
 ): Promise<void> {
   await page.getByLabel("Email").fill(email);
+  if (action === "Create account") {
+    await page.getByLabel("Username").fill(username ?? newUsername("user"));
+  }
   if (displayName !== undefined) {
     await page.getByLabel("Display name").fill(displayName);
   }
@@ -71,24 +82,25 @@ export async function register(
   page: Page,
   email: string,
   displayName?: string,
-): Promise<void> {
+  username = newUsername("user"),
+): Promise<string> {
   await open(page, "/register");
-  await submitCredentials(page, "Create account", email, displayName);
+  await submitCredentials(page, "Create account", email, displayName, username);
   await expectHome(page);
+  return username;
 }
 
 export async function newPerson(
   browser: Browser,
   label: string,
   displayName: string,
-): Promise<{ page: Page; email: string; close: () => Promise<void> }> {
+): Promise<{ page: Page; email: string; username: string; close: () => Promise<void> }> {
   const context = await browser.newContext();
   const page = await context.newPage();
   const email = newEmail(label);
+  const username = await register(page, email, displayName, newUsername(label));
 
-  await register(page, email, displayName);
-
-  return { page, email, close: () => context.close() };
+  return { page, email, username, close: () => context.close() };
 }
 
 export async function goToProfile(page: Page): Promise<void> {

@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import Image from "next/image";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
+import { UsernameInput } from "@/components/auth/username-input";
 import { ProfilePage, ProfileSection } from "@/components/profile/profile-page";
 import { Alert, FieldError } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
@@ -16,8 +17,8 @@ import { Spinner } from "@/components/ui/status";
 import type { User } from "@/gen/axon/auth/v1/auth_pb";
 import { useSession } from "@/lib/auth/session";
 import { uploadAvatar, withUploadedAvatar } from "@/lib/avatar/upload";
-import { describe } from "@/lib/errors";
-import { initials, personName } from "@/lib/format";
+import { describe, isUsernameError } from "@/lib/errors";
+import { initials, normalizeUsername, personName } from "@/lib/format";
 import { useUpdateProfile } from "@/lib/query/profile";
 
 const maxAvatarBytes = 5 * 1024 * 1024;
@@ -29,8 +30,10 @@ export function PersonalInfo({ user }: { user: User }) {
   const [email, setEmail] = useState(user.email);
   const [firstName, setFirstName] = useState(user.firstName ?? "");
   const [lastName, setLastName] = useState(user.lastName ?? "");
+  const [username, setUsername] = useState(user.username ?? "");
   const [nickname, setNickname] = useState(user.nickname ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -41,11 +44,13 @@ export function PersonalInfo({ user }: { user: User }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setUsernameError(null);
     setSaved(false);
 
     try {
       const next = await updateProfile.mutateAsync({
         email: email.trim() !== user.email ? email.trim() : undefined,
+        username: normalizeUsername(username) !== (user.username ?? "") ? username.trim() : undefined,
         firstName: firstName.trim() !== (user.firstName ?? "") ? firstName.trim() : undefined,
         lastName: lastName.trim() !== (user.lastName ?? "") ? lastName.trim() : undefined,
         nickname: nickname.trim() !== (user.nickname ?? "") ? nickname.trim() : undefined,
@@ -53,7 +58,11 @@ export function PersonalInfo({ user }: { user: User }) {
       updateUser(next);
       setSaved(true);
     } catch (err) {
-      setError(describe(err));
+      if (isUsernameError(err)) {
+        setUsernameError(describe(err));
+      } else {
+        setError(describe(err));
+      }
     }
   }
 
@@ -155,6 +164,19 @@ export function PersonalInfo({ user }: { user: User }) {
             ) : null}
           </Field>
 
+          <Field>
+            <Label htmlFor="username">Username</Label>
+            <UsernameInput
+              id="username"
+              required
+              value={username}
+              invalid={!!usernameError}
+              aria-describedby={usernameError ? "username-error" : undefined}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            {usernameError ? <FieldError id="username-error">{usernameError}</FieldError> : null}
+          </Field>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
               <Label htmlFor="firstName">First name</Label>
@@ -170,12 +192,7 @@ export function PersonalInfo({ user }: { user: User }) {
             <Label htmlFor="nickname">
               Nickname <span className="font-normal text-muted-foreground">· optional</span>
             </Label>
-            <InputGroup>
-              <span aria-hidden className="font-mono text-muted-foreground">
-                @
-              </span>
-              <InputGroupInput id="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} />
-            </InputGroup>
+            <Input id="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} />
           </Field>
 
           <div className="flex items-center gap-3 pt-2">

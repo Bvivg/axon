@@ -39,7 +39,7 @@ test("a group is built from contacts and run by its owner", async ({ browser }) 
   await pickPerson(ada.page, linus.email, "Linus");
   await dialog.getByRole("button", { name: "Create group" }).click();
 
-  await expect(ada.page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
+  await expect(ada.page).toHaveURL(/\/chat#[0-9a-f-]{36}$/);
   await expect(ada.page.getByRole("heading", { name: "Weekend" })).toBeVisible();
   await expect(systemLine(ada.page, "You created the group “Weekend”")).toBeVisible();
 

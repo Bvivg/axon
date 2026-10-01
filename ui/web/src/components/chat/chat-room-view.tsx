@@ -32,6 +32,7 @@ import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
 import { signInPath } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 import { ContentKind, contentOf, membersLabel, previewOf, targetIDsOf, type NameOf } from "@/lib/chat/content";
+import { HistoryMode, openChat } from "@/lib/chat/address";
 import { copyImage } from "@/lib/chat/copy-image";
 import {
   forwardRequest,
@@ -46,6 +47,7 @@ import {
 import { slideIndexOf, viewerSlidesOf } from "@/lib/chat/viewer";
 import { usePendingUploads } from "@/lib/chat/use-pending-uploads";
 import { describe } from "@/lib/errors";
+import { profileName } from "@/lib/format";
 import { firstUnreadOf } from "@/lib/chat/series";
 import { useAttention } from "@/lib/hooks/use-attention";
 import {
@@ -126,9 +128,9 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   useEffect(() => {
     if (socket.newRoomId) {
       void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-      router.replace(`/chat/${socket.newRoomId}`);
+      if (peerID) void queryClient.invalidateQueries({ queryKey: chatKeys.direct(peerID) });
     }
-  }, [socket.newRoomId, router, queryClient]);
+  }, [socket.newRoomId, peerID, queryClient]);
 
   useEffect(() => {
     if (socket.revoked) {
@@ -150,8 +152,8 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         byID.set(member.userId, member.displayName);
       }
     }
-    if (effectivePeerID && peerProfile?.displayName) {
-      byID.set(effectivePeerID, peerProfile.displayName);
+    if (effectivePeerID && profileName(peerProfile)) {
+      byID.set(effectivePeerID, profileName(peerProfile));
     }
     return byID;
   }, [room.data, effectivePeerID, peerProfile]);
@@ -176,8 +178,8 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const names = useMemo(() => {
     const byID = new Map(memberNames);
     for (const [id, profile] of strangerProfiles.data ?? []) {
-      if (profile.displayName && !byID.has(id)) {
-        byID.set(id, profile.displayName);
+      if (profileName(profile) && !byID.has(id)) {
+        byID.set(id, profileName(profile));
       }
     }
     return byID;
@@ -303,7 +305,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   useEffect(() => {
     if (socket.removed) {
       void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-      router.replace("/chat");
+      openChat(router, "", HistoryMode.Replace);
     }
   }, [socket.removed, queryClient, router]);
 
@@ -446,12 +448,12 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const isDirect = peerID !== undefined || roomKind === RoomKind.DIRECT;
   const isGroup = roomKind === RoomKind.GROUP;
   const title = isDirect
-    ? peerProfile?.displayName || (peerID ? "New chat" : "Direct message")
+    ? profileName(peerProfile) || (peerID ? "New chat" : "Direct message")
     : room.data?.room?.name || "Room";
 
   const exit = () => {
     if (!roomID) return;
-    const done = { onSuccess: () => router.replace("/chat") };
+    const done = { onSuccess: () => openChat(router, "", HistoryMode.Replace) };
     if (isDirect) {
       hide.mutate(roomID, done);
     } else {
@@ -701,7 +703,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
                 setForwarding(null);
                 setSelection(null);
                 if (roomIds.length === 1 && roomIds[0] !== roomID) {
-                  router.push(`/chat/${roomIds[0]}`);
+                  openChat(router, roomIds[0]);
                 } else {
                   toast.success(roomIds.length === 1 ? "Forwarded" : `Forwarded to ${roomIds.length} chats`);
                 }

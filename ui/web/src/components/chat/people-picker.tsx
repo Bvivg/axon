@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { describe } from "@/lib/errors";
+import { profileName } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useSearchUsers } from "@/lib/query/people";
 import { cn } from "@/lib/utils";
@@ -43,15 +44,15 @@ export function PeoplePicker({
               <Avatar
                 src={profile.avatarUrls?.small || profile.avatarUrl}
                 alt=""
-                fallback={(profile.displayName || "?").slice(0, 1).toUpperCase()}
+                fallback={(profileName(profile) || "?").slice(0, 1).toUpperCase()}
                 className="size-5 text-[10px]"
                 sizes="20px"
               />
-              {profile.displayName || "No display name"}
+              {profileName(profile) || "No name"}
               <button
                 type="button"
                 onClick={() => toggle(profile)}
-                aria-label={`Remove ${profile.displayName || "person"}`}
+                aria-label={`Remove ${profileName(profile) || "person"}`}
                 className="flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 <X aria-hidden className="size-3" />
@@ -142,11 +143,16 @@ export function UserSearch({
                 <Avatar
                   src={profile.avatarUrls?.small || profile.avatarUrl}
                   alt=""
-                  fallback={(profile.displayName || "?").slice(0, 1).toUpperCase()}
+                  fallback={(profileName(profile) || "?").slice(0, 1).toUpperCase()}
                   className="size-9"
                   sizes="36px"
                 />
-                <span className="font-medium">{profile.displayName || "No display name"}</span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate font-medium">{profileName(profile) || "No name"}</span>
+                  {profile.displayName && profile.username ? (
+                    <span className="truncate text-xs text-muted-foreground">@{profile.username}</span>
+                  ) : null}
+                </span>
                 {trailing(profile)}
               </button>
             </li>

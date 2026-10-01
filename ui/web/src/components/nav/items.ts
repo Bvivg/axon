@@ -46,10 +46,6 @@ export function sectionFor(pathname: string): Section | null {
   return null;
 }
 
-export function isConversation(pathname: string): boolean {
-  return pathname.startsWith("/chat/");
-}
-
 export const sectionLabels: Record<Section, string> = {
   [Section.Lobby]: "Lobby",
   [Section.Chats]: "Chats",

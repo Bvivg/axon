@@ -1,10 +1,17 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-import { ChatRoomView } from "@/components/chat/chat-room-view";
+import { HistoryMode, openChat } from "@/lib/chat/address";
 
-export default function ChatRoomPage() {
+export default function LegacyChatRoomPage() {
   const params = useParams<{ roomId: string }>();
-  return <ChatRoomView target={{ roomId: params.roomId }} />;
+  const router = useRouter();
+
+  useEffect(() => {
+    openChat(router, params.roomId.toLowerCase(), HistoryMode.Replace);
+  }, [params.roomId, router]);
+
+  return null;
 }

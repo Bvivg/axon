@@ -1,13 +1,16 @@
 "use client";
 
+import { Code } from "@connectrpc/connect";
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { apiClient } from "@/lib/connect/clients";
+import { isCode } from "@/lib/errors";
 
 export const peopleKeys = {
   search: (query: string) => ["people", "search", query] as const,
   profiles: (userIds: string[]) => ["people", "profiles", ...userIds] as const,
+  byUsername: (username: string) => ["people", "username", username] as const,
 };
 
 export function invalidateProfilesOf(queryClient: QueryClient, userID: string): Promise<void> {
@@ -42,5 +45,17 @@ export function usePublicProfiles(userIDs: string[]) {
       return new Map(resp.users.map((profile) => [profile.id, profile]));
     },
     enabled: ids.length > 0,
+  });
+}
+
+export function usePublicProfileByUsername(username: string) {
+  return useQuery({
+    queryKey: peopleKeys.byUsername(username),
+    queryFn: async (): Promise<PublicProfile | null> => {
+      const resp = await apiClient.getPublicProfileByUsername({ username });
+      return resp.user ?? null;
+    },
+    enabled: username !== "",
+    retry: (failures, err) => !isCode(err, Code.NotFound) && failures < 2,
   });
 }

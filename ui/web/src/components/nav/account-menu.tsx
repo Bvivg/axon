@@ -27,7 +27,7 @@ export function AccountMenu() {
 
   const name = personName(user);
   const online = connection === ConnectionStatus.Connected;
-  const handle = user.nickname ? `@${user.nickname}` : user.email;
+  const handle = user.username ? `@${user.username}` : user.email;
 
   return (
     <DropdownMenu>

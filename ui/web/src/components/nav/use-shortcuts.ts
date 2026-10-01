@@ -5,6 +5,7 @@ import { useEffect } from "react";
 
 import { navItems } from "@/components/nav/items";
 import { togglePalette } from "@/components/nav/palette-store";
+import { navigateTo } from "@/lib/chat/address";
 import { toggleTheme } from "@/lib/theme";
 
 const chordWindow = 1_000;
@@ -45,7 +46,7 @@ export function useGlobalShortcuts(): void {
         const target = navItems.find((item) => item.keys?.[1]?.toLowerCase() === key);
         if (target) {
           event.preventDefault();
-          router.push(target.href);
+          navigateTo(router, target.href);
         }
         return;
       }

@@ -5,11 +5,13 @@ import type { ReactNode } from "react";
 
 import { ChatListHeader } from "@/components/chat/chat-list-header";
 import { RoomList } from "@/components/chat/room-list";
+import { useChatAddress } from "@/lib/chat/address";
 import { cn } from "@/lib/utils";
 
 export default function ChatLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isListRoute = pathname === "/chat";
+  const address = useChatAddress();
+  const isListRoute = pathname === "/chat" && address === "";
   return (
     <div className="flex min-h-0 w-full flex-1 overflow-hidden">
       <aside

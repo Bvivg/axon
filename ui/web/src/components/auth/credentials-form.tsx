@@ -5,6 +5,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { UsernameInput } from "@/components/auth/username-input";
 import { Alert, FieldError } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input, InputGroup, InputGroupInput } from "@/components/ui/input";
@@ -12,8 +13,9 @@ import { Field, Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/status";
 import { currentNext } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
+import { HistoryMode, navigateTo } from "@/lib/chat/address";
 import { authClient } from "@/lib/connect/clients";
-import { describe, isCode } from "@/lib/errors";
+import { describe, isCode, isUsernameError } from "@/lib/errors";
 
 export enum Mode {
   Login = "login",
@@ -23,6 +25,7 @@ export enum Mode {
 enum Problem {
   Credentials = "credentials",
   EmailTaken = "email-taken",
+  Username = "username",
   RateLimited = "rate-limited",
   Other = "other",
 }
@@ -35,6 +38,9 @@ interface Failure {
 function toFailure(err: unknown): Failure {
   if (isCode(err, Code.Unauthenticated)) {
     return { problem: Problem.Credentials, message: "Email or password is incorrect." };
+  }
+  if (isUsernameError(err)) {
+    return { problem: Problem.Username, message: describe(err) };
   }
   if (isCode(err, Code.AlreadyExists)) {
     return { problem: Problem.EmailTaken, message: "That email is already registered." };
@@ -51,6 +57,7 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [reveal, setReveal] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -68,6 +75,7 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
           : await authClient.register({
               email,
               password,
+              username: username.trim(),
               displayName: displayName.trim() || undefined,
             });
 
@@ -76,7 +84,7 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
       }
 
       signedIn(result.user, result.tokens);
-      router.replace(currentNext());
+      navigateTo(router, currentNext(), HistoryMode.Replace);
     } catch (err) {
       setFailure(toFailure(err));
       setPending(false);
@@ -85,6 +93,7 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
 
   const credentialsWrong = failure?.problem === Problem.Credentials;
   const emailTaken = failure?.problem === Problem.EmailTaken;
+  const usernameWrong = failure?.problem === Problem.Username;
 
   return (
     <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
@@ -112,19 +121,35 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
       </Field>
 
       {mode === Mode.Register ? (
-        <Field>
-          <Label htmlFor="displayName">
-            Display name <span className="font-normal text-muted-foreground">· optional</span>
-          </Label>
-          <Input
-            id="displayName"
-            type="text"
-            autoComplete="nickname"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            disabled={pending}
-          />
-        </Field>
+        <>
+          <Field>
+            <Label htmlFor="username">Username</Label>
+            <UsernameInput
+              id="username"
+              required
+              value={username}
+              invalid={usernameWrong}
+              aria-describedby={usernameWrong ? "username-error" : undefined}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={pending}
+            />
+            {usernameWrong ? <FieldError id="username-error">{failure.message}</FieldError> : null}
+          </Field>
+
+          <Field>
+            <Label htmlFor="displayName">
+              Display name <span className="font-normal text-muted-foreground">· optional</span>
+            </Label>
+            <Input
+              id="displayName"
+              type="text"
+              autoComplete="nickname"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              disabled={pending}
+            />
+          </Field>
+        </>
       ) : null}
 
       <Field>

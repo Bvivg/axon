@@ -11,8 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { useSession } from "@/lib/auth/session";
+import { openChat } from "@/lib/chat/address";
 import { describe } from "@/lib/errors";
-import { useCreateGroup, useDirectRoomLookup } from "@/lib/query/chat";
+import { useCreateGroup } from "@/lib/query/chat";
 
 enum NewChatTab {
   Direct = "direct",
@@ -56,7 +57,7 @@ function NewGroupForm({ onDone }: { onDone: () => void }) {
       { name: name.trim(), memberIDs: people.map((p) => p.id) },
       {
         onSuccess: (room) => {
-          if (room) router.push(`/chat/${room.id}`);
+          if (room) openChat(router, room.id);
           onDone();
         },
       },
@@ -80,15 +81,10 @@ function NewGroupForm({ onDone }: { onDone: () => void }) {
 
 function DirectChatPicker({ onDone }: { onDone: () => void }) {
   const router = useRouter();
-  const lookup = useDirectRoomLookup();
 
   const pick = (profile: PublicProfile) => {
-    lookup.mutate(profile.id, {
-      onSuccess: (room) => {
-        router.push(room ? `/chat/${room.id}` : `/chat/new/${profile.id}`);
-        onDone();
-      },
-    });
+    openChat(router, profile.username);
+    onDone();
   };
 
   return (
@@ -96,8 +92,6 @@ function DirectChatPicker({ onDone }: { onDone: () => void }) {
       <UserSearch
         id="people-query"
         label="Search"
-        disabled={lookup.isPending}
-        notice={lookup.isError ? <Alert>{describe(lookup.error)}</Alert> : null}
         onPick={pick}
         className="max-h-72"
         trailing={(profile) =>

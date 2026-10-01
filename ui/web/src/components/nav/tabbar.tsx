@@ -4,10 +4,11 @@ import { Gamepad2, MessageCircle, Phone, Search, User, type LucideIcon } from "l
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { isConversation, Section, sectionFor } from "@/components/nav/items";
+import { Section, sectionFor } from "@/components/nav/items";
 import { setPaletteOpen } from "@/components/nav/palette-store";
 import { Avatar } from "@/components/ui/avatar";
 import { useSession } from "@/lib/auth/session";
+import { useChatAddress } from "@/lib/chat/address";
 import { cn } from "@/lib/utils";
 
 interface Tab {
@@ -27,6 +28,7 @@ const tabs: Tab[] = [
 export function Tabbar() {
   const pathname = usePathname();
   const section = sectionFor(pathname);
+  const inConversation = useChatAddress() !== "";
   const { user } = useSession();
   const avatarSrc = user?.avatarUrls?.small || user?.avatarUrl;
 
@@ -34,7 +36,7 @@ export function Tabbar() {
     <div
       className={cn(
         "pointer-events-none fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden",
-        isConversation(pathname) && "max-md:hidden",
+        inConversation && "max-md:hidden",
       )}
     >
       <nav

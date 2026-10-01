@@ -23,7 +23,7 @@ async function drawnPhotos(page: Page, count: number): Promise<Buffer[]> {
 test("photos sent together arrive as one album that the viewer pages through", async ({ browser }) => {
   const ada = await newPerson(browser, "album", "Ada");
   const grace = await newPerson(browser, "album-peer", "Grace");
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "holiday pictures");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "holiday pictures");
 
   const photos = await drawnPhotos(ada.page, 4);
   const chooser = ada.page.waitForEvent("filechooser");

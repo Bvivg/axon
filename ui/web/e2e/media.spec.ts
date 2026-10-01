@@ -70,7 +70,7 @@ test("a photo loses its camera metadata on the way and both people can open it",
   const ada = await newPerson(browser, "photo", "Ada");
   const grace = await newPerson(browser, "photo-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "one sec");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "one sec");
 
   const photo = withExif(await drawnJpeg(ada.page), cameraMake);
   expect(photo.includes(cameraMake)).toBe(true);
@@ -115,7 +115,7 @@ test("a video is re-encoded for the web and plays in the viewer", async ({ brows
   const ada = await newPerson(browser, "video", "Ada");
   const grace = await newPerson(browser, "video-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "watch this");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "watch this");
 
   await attach(ada.page, "Photo or video", clip);
   await sendAttachments(ada.page);
@@ -143,7 +143,7 @@ test("files arrive byte for byte, voice messages play, and the Media panel keeps
   const ada = await newPerson(browser, "files", "Ada");
   const grace = await newPerson(browser, "files-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "sending the scan");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "sending the scan");
 
   const scan = withExif(await drawnJpeg(ada.page), cameraMake);
   await attach(ada.page, "File", { name: "scan.jpg", mimeType: "image/jpeg", buffer: scan });

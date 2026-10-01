@@ -8,8 +8,8 @@ test("several messages go to two chats with a comment, and own ones are deleted 
   const grace = await newPerson(browser, "selection-grace", "Grace");
   const hal = await newPerson(browser, "selection-hal", "Hal");
 
-  await startChat(ada.page, { email: hal.email, name: "Hal" }, "hi hal");
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "point one");
+  await startChat(ada.page, { email: hal.email, username: hal.username, name: "Hal" }, "hi hal");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "point one");
   await say(ada.page, "point two");
   await say(ada.page, "point three");
 

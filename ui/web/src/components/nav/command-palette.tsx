@@ -25,10 +25,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingDots, PresenceDot } from "@/components/ui/status";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { useSession } from "@/lib/auth/session";
-import { fromTimestamp, initials, lastSeen } from "@/lib/format";
+import { navigateTo, openChat } from "@/lib/chat/address";
+import { fromTimestamp, initials, lastSeen, profileName } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useModKey } from "@/lib/hooks/use-is-mac";
-import { useDirectRoomLookup } from "@/lib/query/chat";
 import { useSearchUsers } from "@/lib/query/people";
 import { Theme, toggleTheme, useResolvedTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -74,7 +74,6 @@ function PaletteBody() {
   const { user, signOut } = useSession();
   const { entries } = useRoomDirectory();
   const resolved = useResolvedTheme();
-  const lookup = useDirectRoomLookup();
 
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -84,7 +83,11 @@ function PaletteBody() {
 
   const commands = useMemo<Command[]>(() => {
     const go = (href: string) => () => {
-      router.push(href);
+      navigateTo(router, href);
+      setPaletteOpen(false);
+    };
+    const goToChat = (address: string) => () => {
+      openChat(router, address);
       setPaletteOpen(false);
     };
 
@@ -98,29 +101,22 @@ function PaletteBody() {
         <Hash aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.5} />
       ),
       hint: entry.unread > 0 ? `${entry.unread} unread` : undefined,
-      run: go(`/chat/${entry.room.id}`),
+      run: goToChat(entry.address),
     });
 
     const personCommand = (profile: PublicProfile): Command => ({
       id: `person-${profile.id}`,
       group: "People",
-      label: profile.displayName || "No display name",
+      label: profileName(profile) || "No name",
       icon: (
         <PersonMark
-          name={profile.displayName || "?"}
+          name={profileName(profile) || "?"}
           src={profile.avatarUrls?.small || profile.avatarUrl}
           online={profile.online}
         />
       ),
       hint: profile.online ? "online" : lastSeen(fromTimestamp(profile.lastSeenAt)),
-      run: () => {
-        lookup.mutate(profile.id, {
-          onSuccess: (room) => {
-            router.push(room ? `/chat/${room.id}` : `/chat/new/${profile.id}`);
-            setPaletteOpen(false);
-          },
-        });
-      },
+      run: goToChat(profile.username ?? ""),
     });
 
     const icon = (Icon: LucideIcon) => (
@@ -176,7 +172,11 @@ function PaletteBody() {
     }
 
     const rooms = entries
-      .filter((entry) => entry.label.toLowerCase().includes(needle.replace(/^#/, "")))
+      .filter(
+        (entry) =>
+          entry.label.toLowerCase().includes(needle.replace(/^#/, "")) ||
+          (!!entry.peer?.username && entry.peer.username.includes(needle.replace(/^@/, ""))),
+      )
       .slice(0, roomLimit)
       .map(roomCommand("Chats"));
     const found = (people.data ?? [])
@@ -184,7 +184,7 @@ function PaletteBody() {
       .map(personCommand);
 
     return [...rooms, ...found, ...navigation.filter(matches), ...actions.filter(matches)];
-  }, [entries, needle, people.data, user?.id, resolved, mod, router, signOut, lookup]);
+  }, [entries, needle, people.data, user?.id, resolved, mod, router, signOut]);
 
   const current = Math.min(active, Math.max(commands.length - 1, 0));
   const activeID = commands[current] ? `palette-${commands[current].id}` : undefined;

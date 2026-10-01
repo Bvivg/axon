@@ -13,6 +13,7 @@ import { authClient } from "@/lib/connect/clients";
 import { describe, errorCode } from "@/lib/errors";
 import { providerLabels, startOAuth, takePendingFlow, toProvider } from "@/lib/auth/oauth";
 import { useSession } from "@/lib/auth/session";
+import { HistoryMode, navigateTo } from "@/lib/chat/address";
 
 interface Failure {
   title: string;
@@ -80,7 +81,7 @@ export default function OAuthCallbackPage() {
         }
 
         signedIn(result.user, result.tokens);
-        router.replace(pending.returnTo || "/profile");
+        navigateTo(router, pending.returnTo || "/profile", HistoryMode.Replace);
       } catch (err) {
         setFailure({ title: "Sign-in failed", detail: `[${errorCode(err)}] ${describe(err)}` });
       }

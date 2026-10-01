@@ -12,6 +12,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { CountBadge } from "@/components/ui/badge";
 import { KbdCombo } from "@/components/ui/kbd";
 import { PresenceDot } from "@/components/ui/status";
+import { chatHref, isRoomAt, useChatAddress } from "@/lib/chat/address";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ export function AppSidebar() {
   const active = sectionFor(pathname);
   const { entries, unread } = useRoomDirectory();
   const typing = useRoomTyping();
+  const address = useChatAddress();
 
   const unreadRooms = entries.filter((entry) => entry.unread > 0).slice(0, unreadShown);
 
@@ -55,7 +57,7 @@ export function AppSidebar() {
             <UnreadRow
               key={entry.room.id}
               entry={entry}
-              current={pathname === `/chat/${entry.room.id}`}
+              current={isRoomAt(address, entry.room, entry.peer)}
               typing={(typing.get(entry.room.id)?.size ?? 0) > 0}
             />
           ))}
@@ -102,7 +104,8 @@ function UnreadRow({
 }) {
   return (
     <Link
-      href={`/chat/${entry.room.id}`}
+      href={chatHref(entry.address)}
+      scroll={false}
       aria-current={current ? "page" : undefined}
       className={cn(rowClass, "font-medium text-foreground", current && "bg-accent")}
     >

@@ -35,7 +35,7 @@ test("search finds a message from the start of a long chat and jumps to it", asy
   const ada = await newPerson(browser, "search", "Ada");
   const grace = await newPerson(browser, "search-peer", "Grace");
 
-  const roomID = await startChat(ada.page, { email: grace.email, name: "Grace" }, "hello there");
+  const roomID = await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "hello there");
   const fillers = Array.from({ length: 249 }, (_, i) => `filler ${i + 1}`);
   await sendAll(await accessTokenOf(ada.email), roomID, ["the needle sits in this haystack", ...fillers]);
 

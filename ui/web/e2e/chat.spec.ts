@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { chatList, expectReady, expectSaid, goToChats, openChatWith, say, startChat } from "./chat-support";
+import { chatAt, chatList, expectReady, expectSaid, goToChats, openChatWith, say, startChat } from "./chat-support";
 import { goToProfile, newPerson, open, signOut, submitCredentials } from "./support";
 
 test("a chat starts from a contact and both people see each other's messages as they are sent", async ({
@@ -9,7 +9,7 @@ test("a chat starts from a contact and both people see each other's messages as 
   const ada = await newPerson(browser, "ada", "Ada");
   const grace = await newPerson(browser, "grace", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "did that reach you");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "did that reach you");
 
   await openChatWith(grace.page, "Ada");
   await expectSaid(grace.page, "Ada", "did that reach you");
@@ -31,7 +31,7 @@ test("a page opened cold shows what was said before it existed", async ({
   const ada = await newPerson(browser, "history", "Ada");
   const grace = await newPerson(browser, "history-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "said before the reload");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "said before the reload");
 
   await ada.page.reload();
   await expectReady(ada.page);
@@ -55,17 +55,17 @@ test("a chat is out of reach without a session, and reachable again after signin
   const ada = await newPerson(browser, "guarded", "Ada");
   const grace = await newPerson(browser, "guarded-peer", "Grace");
 
-  const roomID = await startChat(ada.page, { email: grace.email, name: "Grace" }, "members only");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "members only");
 
   await goToProfile(ada.page);
   await signOut(ada.page);
 
-  await open(ada.page, `/chat/${roomID}`);
-  await expect(ada.page).toHaveURL(new RegExp(`/login\\?next=%2Fchat%2F${roomID}$`));
+  await open(ada.page, `/chat#${grace.username}`);
+  await expect(ada.page).toHaveURL(new RegExp(`/login\\?next=%2Fchat%23${grace.username}$`));
 
   await submitCredentials(ada.page, "Sign in", ada.email);
 
-  await expect(ada.page).toHaveURL(new RegExp(`/chat/${roomID}$`));
+  await expect(ada.page).toHaveURL(chatAt(grace.username));
   await expectReady(ada.page);
   await expectSaid(ada.page, "You", "members only");
 

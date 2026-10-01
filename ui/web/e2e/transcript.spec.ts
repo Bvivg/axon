@@ -15,7 +15,7 @@ test("a chat opens at the first unread message, and the latest is one click away
   const ada = await newPerson(browser, "transcript", "Ada");
   const grace = await newPerson(browser, "transcript-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "hello there");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "hello there");
   await goToChats(ada.page);
 
   await openChatWith(grace.page, "Ada");
@@ -51,7 +51,7 @@ test("Shift+Enter breaks the line, Enter sends, and links open safely", async ({
   const ada = await newPerson(browser, "composer", "Ada");
   const grace = await newPerson(browser, "composer-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "hi");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "hi");
   await openChatWith(grace.page, "Ada");
   await expectReady(ada.page);
 

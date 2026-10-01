@@ -22,7 +22,7 @@ export default function ProfileOverviewPage() {
 
   const name = personName(user);
   const online = connection === ConnectionStatus.Connected;
-  const handle = user.nickname ? `@${user.nickname}` : user.email;
+  const handle = user.username ? `@${user.username}` : user.email;
   const since = fromTimestamp(user.createdAt);
 
   return (

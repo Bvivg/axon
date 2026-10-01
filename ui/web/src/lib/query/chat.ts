@@ -24,6 +24,7 @@ export const chatKeys = {
   readers: (messageID: string) => ["chat", "readers", messageID] as const,
   pushKey: ["chat", "push-key"] as const,
   search: (id: string, query: string) => ["chat", "search", id, query] as const,
+  direct: (peerID: string) => ["chat", "direct", peerID] as const,
 };
 
 export function usePushKey(enabled = true) {
@@ -306,12 +307,14 @@ export function useSearchMessages(roomID: string, query: string) {
   });
 }
 
-export function useDirectRoomLookup() {
-  return useMutation({
-    mutationFn: async (peerID: string): Promise<Room | null> => {
+export function useDirectRoom(peerID: string) {
+  return useQuery({
+    queryKey: chatKeys.direct(peerID),
+    queryFn: async (): Promise<Room | null> => {
       const resp = await chatClient.getDirectRoom({ userId: peerID });
       return resp.room ?? null;
     },
+    enabled: peerID !== "",
   });
 }
 

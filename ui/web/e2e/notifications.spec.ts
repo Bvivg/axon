@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { expectReady, openChatWith, say, startChat } from "./chat-support";
+import { chatAt, expectReady, openChatWith, say, startChat } from "./chat-support";
 import { newPerson } from "./support";
 
 test("a message in another chat shows a toast that opens it, and the tab counts what is unread", async ({
@@ -10,8 +10,8 @@ test("a message in another chat shows a toast that opens it, and the tab counts 
   const grace = await newPerson(browser, "toast-peer", "Grace");
   const cid = await newPerson(browser, "toast-other", "Cid");
 
-  await startChat(grace.page, { email: ada.email, name: "Ada" }, "hello ada");
-  const cidRoom = await startChat(cid.page, { email: ada.email, name: "Ada" }, "from cid");
+  await startChat(grace.page, { email: ada.email, username: ada.username, name: "Ada" }, "hello ada");
+  await startChat(cid.page, { email: ada.email, username: ada.username, name: "Ada" }, "from cid");
 
   await openChatWith(ada.page, "Grace");
   await expect(ada.page).toHaveTitle("(1) Axon");
@@ -26,7 +26,7 @@ test("a message in another chat shows a toast that opens it, and the tab counts 
   await expect(ada.page).toHaveTitle("(2) Axon");
 
   await toast.getByRole("button", { name: "Open" }).click();
-  await expect(ada.page).toHaveURL(new RegExp(`/chat/${cidRoom}$`));
+  await expect(ada.page).toHaveURL(chatAt(cid.username));
   await expectReady(ada.page);
   await expect(ada.page).toHaveTitle("Axon");
 });

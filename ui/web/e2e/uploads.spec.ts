@@ -13,7 +13,7 @@ async function attachFile(page: Page, name: string, size: number): Promise<void>
 test("a file bigger than one part goes up in parts and reaches the other person", async ({ browser }) => {
   const ada = await newPerson(browser, "parts", "Ada");
   const grace = await newPerson(browser, "parts-peer", "Grace");
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "sending a big one");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "sending a big one");
 
   const parts = new Set<string>();
   ada.page.on("request", (request) => {
@@ -35,7 +35,7 @@ test("a file bigger than one part goes up in parts and reaches the other person"
 test("removing an attachment before sending withdraws the upload", async ({ browser }) => {
   const ada = await newPerson(browser, "withdraw", "Ada");
   const grace = await newPerson(browser, "withdraw-peer", "Grace");
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "never mind");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "never mind");
 
   await attachFile(ada.page, "draft.bin", 64 * 1024);
   await expect(ada.page.getByRole("button", { name: "Send", exact: true })).toBeEnabled({ timeout: 30_000 });

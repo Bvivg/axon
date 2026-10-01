@@ -17,7 +17,7 @@ test("a reply quotes what it answers, and an edit and a delete reach the other p
   const ada = await newPerson(browser, "actions", "Ada");
   const grace = await newPerson(browser, "actions-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "the first words");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "the first words");
   await openChatWith(grace.page, "Ada");
 
   await chooseMessageAction(grace.page, "the first words", "Reply");
@@ -63,8 +63,8 @@ test("a forward lands in another chat credited to whoever said it first", async 
   const grace = await newPerson(browser, "forward-peer", "Grace");
   const linus = await newPerson(browser, "forward-third", "Linus");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "worth sharing");
-  await startChat(grace.page, { email: linus.email, name: "Linus" }, "hi linus");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "worth sharing");
+  await startChat(grace.page, { email: linus.email, username: linus.username, name: "Linus" }, "hi linus");
 
   await openChatWith(grace.page, "Ada");
   await chooseMessageAction(grace.page, "worth sharing", "Forward");
@@ -88,7 +88,7 @@ test("a deleted chat is cleared for you until a new message brings it back", asy
   const ada = await newPerson(browser, "hide", "Ada");
   const grace = await newPerson(browser, "hide-peer", "Grace");
 
-  await startChat(ada.page, { email: grace.email, name: "Grace" }, "before the clean slate");
+  await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "before the clean slate");
   await openChatWith(grace.page, "Ada");
   await expectSaid(grace.page, "Ada", "before the clean slate");
 

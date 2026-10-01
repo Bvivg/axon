@@ -3,13 +3,14 @@
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { Check, CheckCheck } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
 import { Avatar } from "@/components/ui/avatar";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { MessageKind, RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
+import { chatHref, isRoomAt, roomAddress, useChatAddress } from "@/lib/chat/address";
 import { previewOf } from "@/lib/chat/content";
+import { profileName, shortID } from "@/lib/format";
 import { toWireMessage } from "@/lib/query/chat";
 import { cn } from "@/lib/utils";
 
@@ -22,11 +23,11 @@ export function RoomListItem({
   peerProfile?: PublicProfile;
   typing?: boolean;
 }) {
-  const pathname = usePathname();
+  const address = useChatAddress();
   const { user } = useSession();
 
   const isGroup = room.kind !== RoomKind.DIRECT;
-  const name = isGroup ? room.name : peerProfile?.displayName || shortID(room.peerUserId);
+  const name = isGroup ? room.name : profileName(peerProfile) || shortID(room.peerUserId);
   const avatarSrc = isGroup ? undefined : peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl;
 
   const lastMessage = room.lastMessage;
@@ -35,11 +36,13 @@ export function RoomListItem({
 
   const unread = Number(room.unreadCount);
 
-  const active = pathname === `/chat/${room.id}`;
+  const active = isRoomAt(address, room, peerProfile);
 
   return (
     <Link
-      href={`/chat/${room.id}`}
+      href={chatHref(roomAddress(room, peerProfile))}
+      scroll={false}
+      data-room-id={room.id}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex items-center gap-3 border-b border-border px-4 py-3 transition-colors",
@@ -99,10 +102,6 @@ export function RoomListItem({
 
 function previewFor(message: Message | null | undefined): string {
   return message ? previewOf(toWireMessage(message)) : "No messages yet";
-}
-
-function shortID(id?: string): string {
-  return id ? id.slice(0, 8) : "?";
 }
 
 function formatWhen(ts?: Timestamp): string {

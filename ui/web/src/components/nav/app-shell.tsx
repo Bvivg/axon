@@ -1,6 +1,5 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ChatActivityProvider } from "@/components/chat/chat-activity";
@@ -8,7 +7,6 @@ import { ComposerDialog } from "@/components/chat/composer-dialog";
 import { AppSidebar } from "@/components/nav/app-sidebar";
 import { BrandMark } from "@/components/nav/brand";
 import { CommandPalette } from "@/components/nav/command-palette";
-import { isConversation } from "@/components/nav/items";
 import { Tabbar } from "@/components/nav/tabbar";
 import { Topbar } from "@/components/nav/topbar";
 import { useGlobalShortcuts } from "@/components/nav/use-shortcuts";
@@ -16,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LoadingDots } from "@/components/ui/status";
 import { useRequireSession } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
+import { useChatAddress } from "@/lib/chat/address";
 import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -32,7 +31,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function SignedInShell({ children }: { children: ReactNode }) {
   useGlobalShortcuts();
-  const pathname = usePathname();
+  const inConversation = useChatAddress() !== "";
 
   return (
     <ChatActivityProvider>
@@ -43,7 +42,7 @@ function SignedInShell({ children }: { children: ReactNode }) {
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col pb-28 lg:pb-0",
-              isConversation(pathname) && "max-md:pb-[env(safe-area-inset-bottom)]",
+              inConversation && "max-md:pb-[env(safe-area-inset-bottom)]",
             )}
           >
             {children}

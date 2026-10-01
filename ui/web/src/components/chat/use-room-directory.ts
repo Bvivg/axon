@@ -4,13 +4,15 @@ import { useMemo } from "react";
 
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { RoomKind, type Room } from "@/gen/axon/chat/v1/chat_pb";
-import { shortID } from "@/lib/format";
+import { isRoomAt, roomAddress } from "@/lib/chat/address";
+import { profileName, shortID } from "@/lib/format";
 import { useRooms } from "@/lib/query/chat";
 import { usePublicProfiles } from "@/lib/query/people";
 
 export interface RoomEntry {
   room: Room;
   label: string;
+  address: string;
   direct: boolean;
   peer?: PublicProfile;
   avatarSrc?: string;
@@ -47,8 +49,13 @@ function toEntry(room: Room, profiles?: Map<string, PublicProfile>): RoomEntry {
     room,
     direct,
     peer,
-    label: direct ? peer?.displayName || shortID(room.peerUserId) : room.name,
+    label: direct ? profileName(peer) || shortID(room.peerUserId) : room.name,
+    address: roomAddress(room, peer),
     avatarSrc: peer?.avatarUrls?.small || peer?.avatarUrl,
     unread: Number(room.unreadCount),
   };
+}
+
+export function entryAt(entries: RoomEntry[], address: string): RoomEntry | undefined {
+  return address === "" ? undefined : entries.find((entry) => isRoomAt(address, entry.room, entry.peer));
 }

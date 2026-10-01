@@ -3,12 +3,13 @@
 import { Moon, Search, Sun } from "lucide-react";
 import { usePathname } from "next/navigation";
 
-import { useRoomDirectory } from "@/components/chat/use-room-directory";
+import { entryAt, useRoomDirectory } from "@/components/chat/use-room-directory";
 import { Section, sectionFor, sectionLabels } from "@/components/nav/items";
 import { setPaletteOpen } from "@/components/nav/palette-store";
 import { Button } from "@/components/ui/button";
 import { KbdCombo } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/status";
+import { ChatAddressKind, parseChatAddress, useChatAddress } from "@/lib/chat/address";
 import { useModKey } from "@/lib/hooks/use-is-mac";
 import { Theme, toggleTheme, useResolvedTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -21,18 +22,18 @@ const profilePages: Record<string, string> = {
 };
 
 function usePageLabel(pathname: string, section: Section | null): string | null {
-  const { entries } = useRoomDirectory();
+  const { rooms, entries } = useRoomDirectory();
+  const address = useChatAddress();
 
   if (section === Section.Chats) {
-    if (pathname.startsWith("/chat/new/")) {
+    const entry = entryAt(entries, address);
+    if (entry) {
+      return entry.direct ? entry.label : `#${entry.label}`;
+    }
+    if (rooms.isSuccess && parseChatAddress(address).kind === ChatAddressKind.Person) {
       return "New message";
     }
-    const roomID = pathname.split("/")[2];
-    const entry = roomID ? entries.find((candidate) => candidate.room.id === roomID) : undefined;
-    if (!entry) {
-      return null;
-    }
-    return entry.direct ? entry.label : `#${entry.label}`;
+    return null;
   }
   if (section === Section.Profile) {
     return profilePages[pathname] ?? null;
