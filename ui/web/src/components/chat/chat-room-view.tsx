@@ -6,13 +6,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, Images, Info, Loader2, LogOut, MoreVertical, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, Images, Info, Loader2, LogOut, MoreVertical, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { ConfirmDialog } from "@/components/chat/confirm-dialog";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
 import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
 import { MediaViewer } from "@/components/chat/media-viewer";
+import { MessageSearch } from "@/components/chat/message-search";
 import { ReadersDialog } from "@/components/chat/readers-dialog";
 import { SelectionBar } from "@/components/chat/selection-bar";
 import { ComposerMode, MessageComposer, type ComposerContext } from "@/components/chat/message-composer";
@@ -49,6 +50,7 @@ import { firstUnreadOf } from "@/lib/chat/series";
 import { useAttention } from "@/lib/hooks/use-attention";
 import {
   chatKeys,
+  loadHistoryThrough,
   refreshNewestPage,
   useForwardMessages,
   useHideRoom,
@@ -137,6 +139,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const uploads = usePendingUploads();
   const [viewing, setViewing] = useState<{ messageID: string; item: number } | null>(null);
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
 
@@ -381,17 +384,33 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   useEffect(() => {
     fetchNextPageRef.current = history.fetchNextPage;
   });
+  const loadingThrough = useRef(false);
   const onLoadOlder = useCallback(() => {
+    if (loadingThrough.current) return;
     void fetchNextPageRef.current();
   }, []);
 
   const transcript = useRef<TranscriptHandle>(null);
-  const [jumpTo, setJumpTo] = useState<{ id: string } | null>(null);
-  const onJumpTo = useCallback((id: string) => setJumpTo({ id }), []);
+  const [jumpTo, setJumpTo] = useState<{ id: string; seq?: number } | null>(null);
+  const onJumpTo = useCallback((id: string, seq?: number) => setJumpTo({ id, seq }), []);
   useEffect(() => {
     if (!jumpTo) return;
     let cancelled = false;
     void (async () => {
+      if (roomID && jumpTo.seq !== undefined && !transcript.current?.reveal(jumpTo.id)) {
+        loadingThrough.current = true;
+        for (let attempt = 0; attempt < maxPagesToReveal && !cancelled; attempt += 1) {
+          try {
+            await loadHistoryThrough(queryClient, roomID, jumpTo.seq);
+            break;
+          } catch (error) {
+            if (ConnectError.from(error).code !== Code.ResourceExhausted) break;
+            await new Promise((resolve) => setTimeout(resolve, throttledRetryMs));
+          }
+        }
+        loadingThrough.current = false;
+        await nextFrames(2);
+      }
       let pages = 0;
       for (let attempt = 0; pages < maxPagesToReveal && attempt < maxPagesToReveal * 2 && !cancelled; attempt += 1) {
         if (transcript.current?.reveal(jumpTo.id)) break;
@@ -414,7 +433,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     return () => {
       cancelled = true;
     };
-  }, [jumpTo]);
+  }, [jumpTo, roomID, queryClient]);
 
   if (!user) {
     return (
@@ -509,81 +528,100 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           Drop to attach
         </div>
       ) : null}
-      <header className="flex shrink-0 items-center gap-3 border-b border-border pb-4">
-        <Link
-          href="/chat"
-          aria-label="Back to chats"
-          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "-ml-2 -mr-1 shrink-0 md:hidden")}
-        >
-          <ChevronLeft className="size-5" />
-        </Link>
-        {isDirect ? (
-          <Avatar
-            src={peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl}
-            alt=""
-            fallback={(title || "?").slice(0, 1).toUpperCase()}
-            className="size-10"
-            sizes="40px"
+      <header className="relative flex shrink-0 items-center gap-3 border-b border-border pb-4">
+        {searching && roomID ? (
+          <MessageSearch
+            roomID={roomID}
+            nameOf={nameOf}
+            onClose={() => setSearching(false)}
+            onPick={(message) => {
+              setSearching(false);
+              onJumpTo(message.id, message.seq);
+            }}
           />
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-semibold">
-            {isGroup ? (
-              <button
-                type="button"
-                className="max-w-full truncate text-left hover:underline"
-                onClick={() => setInfoOpen(true)}
-              >
-                {title}
-              </button>
-            ) : (
-              title
-            )}
-          </h1>
-          {subtitle ? (
-            <p
-              className={cn(
-                "truncate text-xs",
-                typingLine || (isDirect && peerProfile?.online)
-                  ? "text-signal"
-                  : "text-muted-foreground",
-              )}
+        ) : (
+          <>
+            <Link
+              href="/chat"
+              aria-label="Back to chats"
+              className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "-ml-2 -mr-1 shrink-0 md:hidden")}
             >
-              {subtitle}
-            </p>
-          ) : null}
-        </div>
-        {roomID ? (
-          <Button variant="ghost" size="icon" aria-label="Media" onClick={() => setMediaOpen(true)}>
-            <Images />
-          </Button>
-        ) : null}
-        {roomID && roomKind !== undefined ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon" aria-label="Chat actions">
-                  <MoreVertical />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-48">
-              {isGroup ? (
-                <DropdownMenuItem onClick={() => setInfoOpen(true)}>
-                  <Info />
-                  Group info
-                </DropdownMenuItem>
+              <ChevronLeft className="size-5" />
+            </Link>
+            {isDirect ? (
+              <Avatar
+                src={peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl}
+                alt=""
+                fallback={(title || "?").slice(0, 1).toUpperCase()}
+                className="size-10"
+                sizes="40px"
+              />
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-lg font-semibold">
+                {isGroup ? (
+                  <button
+                    type="button"
+                    className="max-w-full truncate text-left hover:underline"
+                    onClick={() => setInfoOpen(true)}
+                  >
+                    {title}
+                  </button>
+                ) : (
+                  title
+                )}
+              </h1>
+              {subtitle ? (
+                <p
+                  className={cn(
+                    "truncate text-xs",
+                    typingLine || (isDirect && peerProfile?.online)
+                      ? "text-signal"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {subtitle}
+                </p>
               ) : null}
-              <DropdownMenuItem
-                onClick={() => setConfirmingExit(true)}
-                className="text-destructive [&>svg]:text-destructive"
-              >
-                {isDirect ? <Trash2 /> : <LogOut />}
-                {isDirect ? "Delete chat" : isGroup ? "Leave group" : "Leave room"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+            </div>
+            {roomID ? (
+              <Button variant="ghost" size="icon" aria-label="Search messages" onClick={() => setSearching(true)}>
+                <Search />
+              </Button>
+            ) : null}
+            {roomID ? (
+              <Button variant="ghost" size="icon" aria-label="Media" onClick={() => setMediaOpen(true)}>
+                <Images />
+              </Button>
+            ) : null}
+            {roomID && roomKind !== undefined ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant="ghost" size="icon" aria-label="Chat actions">
+                      <MoreVertical />
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end" className="w-48">
+                  {isGroup ? (
+                    <DropdownMenuItem onClick={() => setInfoOpen(true)}>
+                      <Info />
+                      Group info
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem
+                    onClick={() => setConfirmingExit(true)}
+                    className="text-destructive [&>svg]:text-destructive"
+                  >
+                    {isDirect ? <Trash2 /> : <LogOut />}
+                    {isDirect ? "Delete chat" : isGroup ? "Leave group" : "Leave room"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </>
+        )}
       </header>
 
       {room.isError ? <Alert className="mt-3">{describe(room.error)}</Alert> : null}

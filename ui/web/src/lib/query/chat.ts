@@ -2,6 +2,7 @@
 
 import { timestampDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -22,6 +23,7 @@ export const chatKeys = {
   mediaOf: (id: string, kinds: MessageKind[]) => ["chat", "media", id, kinds.join(",")] as const,
   readers: (messageID: string) => ["chat", "readers", messageID] as const,
   pushKey: ["chat", "push-key"] as const,
+  search: (id: string, query: string) => ["chat", "search", id, query] as const,
 };
 
 export function usePushKey(enabled = true) {
@@ -265,6 +267,43 @@ export function forgetHistory(queryClient: QueryClient, roomID: string) {
     pageParams: [0],
   });
   void queryClient.invalidateQueries({ queryKey: chatKeys.history(roomID), refetchType: "none" });
+}
+
+const jumpPageSize = 200;
+
+export async function loadHistoryThrough(queryClient: QueryClient, roomID: string, seq: number) {
+  const key = chatKeys.history(roomID);
+  await queryClient.cancelQueries({ queryKey: key });
+  for (;;) {
+    const last = queryClient.getQueryData<InfiniteData<HistoryPage, number>>(key)?.pages.at(-1);
+    const oldest = last?.messages[0]?.seq;
+    if (!last?.hasMore || oldest === undefined || oldest <= seq) return;
+
+    const resp = await chatClient.listMessages({ roomId: roomID, limit: jumpPageSize, beforeSeq: BigInt(oldest) });
+    const page: HistoryPage = { messages: resp.messages.map(toWireMessage), hasMore: resp.hasMore };
+    queryClient.setQueryData<InfiniteData<HistoryPage, number>>(key, (data) =>
+      data && data.pages.at(-1)?.messages[0]?.seq === oldest
+        ? { pages: [...data.pages, page], pageParams: [...data.pageParams, oldest] }
+        : data,
+    );
+  }
+}
+
+export const minSearchQueryLength = 2;
+
+export function useSearchMessages(roomID: string, query: string) {
+  const trimmed = query.trim();
+
+  return useQuery({
+    queryKey: chatKeys.search(roomID, trimmed),
+    queryFn: async (): Promise<WireMessage[]> => {
+      const resp = await chatClient.searchMessages({ roomId: roomID, query: trimmed });
+      return resp.messages.map(toWireMessage);
+    },
+    enabled: roomID !== "" && [...trimmed].length >= minSearchQueryLength,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
 }
 
 export function useDirectRoomLookup() {
