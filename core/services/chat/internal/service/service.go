@@ -27,6 +27,7 @@ type Store interface {
 	MarkRead(ctx context.Context, roomID, userID uuid.UUID, seq int64) (int64, error)
 	Readers(ctx context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error)
 	UnreadCount(ctx context.Context, roomID, userID uuid.UUID) (int64, error)
+	LastMessages(ctx context.Context, roomIDs []uuid.UUID, userID uuid.UUID) (map[uuid.UUID]domain.Message, error)
 
 	CreateGroup(ctx context.Context, room domain.Room, owner domain.Member, members []domain.Member) (domain.Room, error)
 	AddGroupMembers(ctx context.Context, roomID uuid.UUID, members []domain.Member, limit int) ([]uuid.UUID, error)
@@ -113,6 +114,20 @@ func (s *Service) ListRooms(ctx context.Context, userID uuid.UUID) ([]domain.Roo
 	rooms, err := s.store.RoomsForUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("service: list rooms: %w", err)
+	}
+
+	ids := make([]uuid.UUID, len(rooms))
+	for i, room := range rooms {
+		ids[i] = room.ID
+	}
+	last, err := s.store.LastMessages(ctx, ids, userID)
+	if err != nil {
+		return nil, fmt.Errorf("service: list rooms: %w", err)
+	}
+	for i := range rooms {
+		if m, ok := last[rooms[i].ID]; ok {
+			rooms[i].LastMessage = &m
+		}
 	}
 	return rooms, nil
 }

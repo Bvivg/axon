@@ -37,6 +37,8 @@ type Room struct {
 	Kind          RoomKind
 	DirectUserMin *uuid.UUID
 	DirectUserMax *uuid.UUID
+
+	LastMessage *Message
 }
 
 func (r Room) DirectPeerFor(userID uuid.UUID) *uuid.UUID {

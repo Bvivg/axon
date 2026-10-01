@@ -32,6 +32,10 @@ func toProtoRoom(r domain.Room, callerID uuid.UUID) *chatv1.Room {
 		room.OthersReadSeq = &seq
 	}
 
+	if r.LastMessage != nil {
+		room.LastMessage = toProtoMessage(*r.LastMessage)
+	}
+
 	return room
 }
 

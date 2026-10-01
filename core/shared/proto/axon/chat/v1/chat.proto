@@ -61,6 +61,8 @@ message Room {
   int64 unread_count = 8;
 
   optional int64 others_read_seq = 9;
+
+  optional Message last_message = 10;
 }
 
 message Member {

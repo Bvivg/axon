@@ -322,6 +322,19 @@ func (s *fakeStore) UnreadCount(_ context.Context, roomID, userID uuid.UUID) (in
 	return unread, nil
 }
 
+func (s *fakeStore) LastMessages(_ context.Context, roomIDs []uuid.UUID, _ uuid.UUID) (map[uuid.UUID]domain.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	last := map[uuid.UUID]domain.Message{}
+	for _, id := range roomIDs {
+		if messages := s.messages[id]; len(messages) > 0 {
+			last[id] = messages[len(messages)-1]
+		}
+	}
+	return last, nil
+}
+
 func (s *fakeStore) Readers(_ context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

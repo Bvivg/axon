@@ -337,3 +337,40 @@ func reverse(messages []domain.Message) {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
 }
+
+func (r *Repository) LastMessages(ctx context.Context, roomIDs []uuid.UUID, userID uuid.UUID) (map[uuid.UUID]domain.Message, error) {
+	last := make(map[uuid.UUID]domain.Message, len(roomIDs))
+	if len(roomIDs) == 0 {
+		return last, nil
+	}
+
+	const query = `
+		SELECT m.id, m.room_id, m.author_id, m.body, m.client_id, m.seq, m.sent_at, m.kind, m.payload, m.reply_to_id,
+		       m.forwarded_from_id, m.forward_origin_author_id, m.upload_id, m.edited_at, m.deleted_at
+		FROM room_members rm
+		CROSS JOIN LATERAL (
+		    SELECT * FROM messages m
+		    WHERE m.room_id = rm.room_id AND m.seq > rm.cleared_through_seq
+		    ORDER BY m.seq DESC
+		    LIMIT 1
+		) m
+		WHERE rm.user_id = $2 AND rm.room_id = ANY($1)`
+
+	rows, err := r.q.Query(ctx, query, roomIDs, userID)
+	if err != nil {
+		return nil, fmt.Errorf("repository: last messages: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, fmt.Errorf("repository: scan last message: %w", err)
+		}
+		last[m.RoomID] = m
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: last messages: %w", err)
+	}
+	return last, nil
+}
