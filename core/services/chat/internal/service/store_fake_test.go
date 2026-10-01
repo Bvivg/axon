@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -641,4 +642,35 @@ func (s *fakeStore) changeMessage(id uuid.UUID, change func(*domain.Message)) (d
 		}
 	}
 	return domain.Message{}, domain.ErrMessageNotFound
+}
+
+func (s *fakeStore) SearchMessages(
+	_ context.Context,
+	roomID, callerID uuid.UUID,
+	query string,
+	limit int,
+) ([]domain.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+
+	clearedThrough := s.members[roomID][callerID].ClearedThroughSeq
+	needle := strings.ToLower(query)
+
+	var found []domain.Message
+	for _, m := range slices.Backward(s.messages[roomID]) {
+		if len(found) == limit {
+			break
+		}
+		if m.Seq <= clearedThrough || m.Deleted() || m.Kind == domain.MessageKindSystem {
+			continue
+		}
+		if strings.Contains(strings.ToLower(m.Body), needle) {
+			found = append(found, m)
+		}
+	}
+	return found, nil
 }

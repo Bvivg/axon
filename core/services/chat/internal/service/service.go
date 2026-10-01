@@ -42,6 +42,7 @@ type Store interface {
 	MessageByID(ctx context.Context, id uuid.UUID) (domain.Message, error)
 	AlbumUploads(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error)
 	ListMessages(ctx context.Context, roomID, callerID uuid.UUID, page domain.Page) ([]domain.Message, bool, error)
+	SearchMessages(ctx context.Context, roomID, callerID uuid.UUID, query string, limit int) ([]domain.Message, error)
 	EditMessage(ctx context.Context, id uuid.UUID, body string) (domain.Message, error)
 	DeleteMessage(ctx context.Context, id uuid.UUID) (domain.Message, error)
 
@@ -268,6 +269,24 @@ func (s *Service) ListMessages(
 	}
 
 	return History{Messages: messages, HasMore: more}, nil
+}
+
+func (s *Service) SearchMessages(ctx context.Context, roomID, userID uuid.UUID, query string) ([]domain.Message, error) {
+	query, err := domain.ValidateSearchQuery(query)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.requireMember(ctx, roomID, userID); err != nil {
+		return nil, err
+	}
+
+	messages, err := s.store.SearchMessages(ctx, roomID, userID, query, domain.MaxSearchResults)
+	if err != nil {
+		return nil, fmt.Errorf("service: search messages: %w", err)
+	}
+
+	return messages, nil
 }
 
 func (s *Service) HistoryStart(ctx context.Context, roomID, userID uuid.UUID) (int64, error) {

@@ -569,6 +569,33 @@ func (h *Handler) ListMessages(
 	}), nil
 }
 
+func (h *Handler) SearchMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.SearchMessagesRequest],
+) (*connect.Response[chatv1.SearchMessagesResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roomID, err := parseID("room_id", req.Msg.GetRoomId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	found, err := h.svc.SearchMessages(ctx, roomID, claims.UserID, req.Msg.GetQuery())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	messages := make([]*chatv1.Message, 0, len(found))
+	for _, m := range found {
+		messages = append(messages, toProtoMessage(m))
+	}
+
+	return connect.NewResponse(&chatv1.SearchMessagesResponse{Messages: messages}), nil
+}
+
 func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {
 	raw, err := authn.BearerToken(headers)
 	if err != nil {

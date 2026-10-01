@@ -27,6 +27,10 @@ const (
 
 	MinAlbumItems = 2
 	MaxAlbumItems = 10
+
+	MinSearchQueryLength = 2
+	MaxSearchQueryLength = 100
+	MaxSearchResults     = 50
 )
 
 func ValidateUserIDs(field string, raw []string, exclude uuid.UUID) ([]uuid.UUID, error) {
@@ -106,6 +110,21 @@ func ValidateMessageBody(body string) (string, error) {
 		return "", newValidationError("body", "is too long")
 	case !utf8.ValidString(trimmed):
 		return "", newValidationError("body", "is not valid UTF-8")
+	}
+
+	return trimmed, nil
+}
+
+func ValidateSearchQuery(query string) (string, error) {
+	trimmed := strings.TrimSpace(query)
+
+	switch {
+	case !utf8.ValidString(trimmed):
+		return "", newValidationError("query", "is not valid UTF-8")
+	case utf8.RuneCountInString(trimmed) < MinSearchQueryLength:
+		return "", newValidationError("query", "is too short")
+	case utf8.RuneCountInString(trimmed) > MaxSearchQueryLength:
+		return "", newValidationError("query", "is too long")
 	}
 
 	return trimmed, nil

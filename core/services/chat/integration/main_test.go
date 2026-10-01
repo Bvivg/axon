@@ -75,7 +75,10 @@ func run(m *testing.M) (int, error) {
 		tcpostgres.WithUsername(superuser),
 		tcpostgres.WithPassword(superpass),
 
-		tcpostgres.WithInitScripts("../../../deploy/postgres/init/01-schemas.sh"),
+		tcpostgres.WithInitScripts(
+			"../../../deploy/postgres/init/01-schemas.sh",
+			"../../../deploy/postgres/init/02-extensions.sql",
+		),
 		testcontainers.WithEnv(map[string]string{
 			"AUTH_DB_PASSWORD":    authPassword,
 			"CHAT_DB_PASSWORD":    chatPassword,

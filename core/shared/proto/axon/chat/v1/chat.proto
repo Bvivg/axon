@@ -18,6 +18,8 @@ service ChatService {
 
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
 
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
+
   rpc HideRoom(HideRoomRequest) returns (HideRoomResponse);
 
   rpc GetDirectRoom(GetDirectRoomRequest) returns (GetDirectRoomResponse);
@@ -252,6 +254,16 @@ message ListMessagesResponse {
   repeated Message messages = 1;
 
   bool has_more = 2;
+}
+
+message SearchMessagesRequest {
+  string room_id = 1;
+
+  string query = 2;
+}
+
+message SearchMessagesResponse {
+  repeated Message messages = 1;
 }
 
 message HideRoomRequest {

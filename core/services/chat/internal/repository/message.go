@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -250,6 +251,46 @@ func (r *Repository) ListMessages(
 	}
 
 	return messages, hasMore, nil
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func containing(s string) string {
+	return "%" + likeEscaper.Replace(s) + "%"
+}
+
+func (r *Repository) SearchMessages(
+	ctx context.Context,
+	roomID, callerID uuid.UUID,
+	query string,
+	limit int,
+) ([]domain.Message, error) {
+	const q = messageWithReply + `
+		JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $2
+		WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq
+			AND m.deleted_at IS NULL AND m.kind <> 'system' AND m.body ILIKE $3
+		ORDER BY m.seq DESC
+		LIMIT $4`
+
+	rows, err := r.q.Query(ctx, q, roomID, callerID, containing(query), limit)
+	if err != nil {
+		return nil, fmt.Errorf("repository: search messages: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]domain.Message, 0)
+	for rows.Next() {
+		m, err := scanMessageWithReply(rows)
+		if err != nil {
+			return nil, fmt.Errorf("repository: scan message: %w", err)
+		}
+		messages = append(messages, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: search messages: %w", err)
+	}
+
+	return messages, nil
 }
 
 type scannable interface {

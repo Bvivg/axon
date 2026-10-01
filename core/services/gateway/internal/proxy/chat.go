@@ -157,3 +157,10 @@ func (c *Chat) UnsubscribePush(
 ) (*connect.Response[chatv1.UnsubscribePushResponse], error) {
 	return c.client.UnsubscribePush(ctx, forward(ctx, req))
 }
+
+func (c *Chat) SearchMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.SearchMessagesRequest],
+) (*connect.Response[chatv1.SearchMessagesResponse], error) {
+	return c.client.SearchMessages(ctx, forward(ctx, req))
+}
