@@ -118,8 +118,10 @@ func run() error {
 	}
 	defer closeBus()
 
+	repo := repository.New(pool)
+
 	svc, err := service.New(service.Config{
-		Store:  repository.New(pool),
+		Store:  repo,
 		Events: publisher,
 		Logger: log,
 	})
@@ -183,7 +185,10 @@ func run() error {
 		Service:  svc,
 		Verifier: verifier,
 		Names:    names,
+		People:   names,
+		Bus:      bus,
 		Signals:  bus,
+		Users:    bus,
 		Logger:   log,
 	})
 	if err != nil {
@@ -201,6 +206,19 @@ func run() error {
 		return err
 	}
 	attachmentURLs := attachment.NewURLBuilder(cfg.Attachments.PublicURL, cfg.Attachments.Bucket)
+
+	sweeper, err := attachment.NewSweeper(attachment.SweeperConfig{
+		Objects:     attachmentStore,
+		Uploads:     repo,
+		URLs:        attachmentURLs,
+		Interval:    cfg.Attachments.SweepInterval,
+		OrphanAfter: cfg.Attachments.OrphanAfter,
+		Logger:      log,
+	})
+	if err != nil {
+		return err
+	}
+	go sweeper.Run(ctx)
 
 	mediaTools := media.NewTools(media.ToolsConfig{
 		FFmpeg:  cfg.Media.FFmpeg,

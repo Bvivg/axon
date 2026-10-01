@@ -215,3 +215,39 @@ func TestLeavingTwiceIsNotAnError(t *testing.T) {
 		}
 	}
 }
+
+func TestANewMessageBringsAHiddenChatBackWithoutItsOldHistory(t *testing.T) {
+	r := newRepo(t)
+	room, owner := newRoom(t, r, "hidden")
+
+	peer := uuid.New()
+	if _, err := r.AddMember(t.Context(), room.ID, domain.Member{UserID: peer, DisplayName: "Peer"}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	say(t, r, room.ID, owner, "before", "")
+
+	if err := r.HideRoom(t.Context(), room.ID, peer); err != nil {
+		t.Fatalf("HideRoom: %v", err)
+	}
+	rooms, err := r.RoomsForUser(t.Context(), peer)
+	if err != nil || len(rooms) != 0 {
+		t.Fatalf("rooms after hiding = %v, %v, want none", rooms, err)
+	}
+
+	after := say(t, r, room.ID, owner, "after", "")
+	if len(after.Revealed) != 1 || after.Revealed[0] != peer {
+		t.Errorf("revealed = %v, want the peer who hid the chat", after.Revealed)
+	}
+
+	rooms, err = r.RoomsForUser(t.Context(), peer)
+	if err != nil || len(rooms) != 1 {
+		t.Fatalf("rooms after a new message = %v, %v, want the chat back", rooms, err)
+	}
+	history, _, err := r.ListMessages(t.Context(), room.ID, peer, domain.Page{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(history) != 1 || history[0].Body != "after" {
+		t.Errorf("history = %+v, want only the new message", history)
+	}
+}

@@ -32,6 +32,8 @@ const (
 	typeUnsubscribe   = "unsubscribe"
 	typeSend          = "send"
 	typeWatchPresence = "watch_presence"
+	typeEdit          = "edit"
+	typeDelete        = "delete"
 
 	typeMessage    = "message"
 	typeSubscribed = "subscribed"
@@ -41,9 +43,13 @@ const (
 	typePresence   = "presence"
 	typeRoomAdded  = "room_added"
 
+	typeMessageUpdated = "message_updated"
+	typeRoomRemoved    = "room_removed"
+
 	typeTyping = "typing"
 
 	errorNotAMember = "not_a_member"
+	errorForbidden  = "forbidden"
 )
 
 type inbound struct {
@@ -57,6 +63,10 @@ type inbound struct {
 	Kind     string          `json:"kind,omitempty"`
 	Payload  json.RawMessage `json:"payload,omitempty"`
 	UploadID string          `json:"upload_id,omitempty"`
+
+	ReplyToID       string `json:"reply_to_id,omitempty"`
+	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
+	MessageID       string `json:"message_id,omitempty"`
 }
 
 type outbound struct {
@@ -78,6 +88,18 @@ type outbound struct {
 
 		Kind    string          `json:"kind"`
 		Payload json.RawMessage `json:"payload,omitempty"`
+
+		ReplyTo *struct {
+			ID       string `json:"id"`
+			AuthorID string `json:"author_id"`
+			Body     string `json:"body"`
+			Deleted  bool   `json:"deleted"`
+		} `json:"reply_to,omitempty"`
+		ForwardedFromID       string `json:"forwarded_from_id,omitempty"`
+		ForwardedFromAuthorID string `json:"forwarded_from_author_id,omitempty"`
+
+		EditedAt  *time.Time `json:"edited_at,omitempty"`
+		DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	} `json:"message,omitempty"`
 }
 

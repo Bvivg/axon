@@ -44,18 +44,23 @@ func newTestMessage(roomID uuid.UUID, seq int64, body string) domain.Message {
 	}
 }
 
-func receive(t *testing.T, ch <-chan domain.Message) domain.Message {
+func receive(t *testing.T, ch <-chan pubsub.Delivery) domain.Message {
+	t.Helper()
+	return receiveDelivery(t, ch).Message
+}
+
+func receiveDelivery(t *testing.T, ch <-chan pubsub.Delivery) pubsub.Delivery {
 	t.Helper()
 
 	select {
-	case m, ok := <-ch:
+	case d, ok := <-ch:
 		if !ok {
 			t.Fatal("the subscription closed before a message arrived")
 		}
-		return m
+		return d
 	case <-time.After(5 * time.Second):
 		t.Fatal("no message arrived")
-		return domain.Message{}
+		return pubsub.Delivery{}
 	}
 }
 
@@ -131,6 +136,45 @@ func TestARichMessageCrossesWhole(t *testing.T) {
 	}
 	if got.ForwardedFromID == nil || *got.ForwardedFromID != forwardedFrom {
 		t.Errorf("forwarded_from_id = %v, want %s", got.ForwardedFromID, forwardedFrom)
+	}
+}
+
+func TestAChangeCrossesAsAnUpdateWithItsDetails(t *testing.T) {
+	writer, reader := newBus(t), newBus(t)
+
+	roomID := uuid.New()
+
+	messages, stop, err := reader.Subscribe(t.Context(), roomID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer stop()
+
+	waitForSubscriber(t, roomID)
+
+	origin := uuid.New()
+	edited := time.Now().UTC().Truncate(time.Millisecond)
+	sent := newTestMessage(roomID, 3, "fixed typo")
+	sent.EditedAt = &edited
+	sent.ForwardOriginAuthorID = &origin
+	sent.ReplyTo = &domain.ReplyPreview{ID: uuid.New(), AuthorID: uuid.New(), Kind: domain.MessageKindText, Body: "quoted"}
+
+	if err := writer.PublishUpdate(t.Context(), sent); err != nil {
+		t.Fatalf("PublishUpdate: %v", err)
+	}
+
+	got := receiveDelivery(t, messages)
+	if !got.Update {
+		t.Error("the change arrived as a new message")
+	}
+	if got.Message.EditedAt == nil || !got.Message.EditedAt.Equal(edited) {
+		t.Errorf("edited_at = %v, want %s", got.Message.EditedAt, edited)
+	}
+	if got.Message.ForwardOriginAuthorID == nil || *got.Message.ForwardOriginAuthorID != origin {
+		t.Errorf("origin author = %v, want %s", got.Message.ForwardOriginAuthorID, origin)
+	}
+	if got.Message.ReplyTo == nil || got.Message.ReplyTo.Body != "quoted" {
+		t.Errorf("reply preview = %+v, want the quote carried across", got.Message.ReplyTo)
 	}
 }
 

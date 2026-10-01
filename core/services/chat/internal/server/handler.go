@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -23,11 +24,18 @@ type Names interface {
 	DisplayName(ctx context.Context, accessToken string) string
 }
 
+type People interface {
+	Profiles(ctx context.Context, accessToken string, ids []uuid.UUID) (map[uuid.UUID]string, error)
+}
+
 type Handler struct {
 	svc      *service.Service
 	verifier *authn.Verifier
 	names    Names
+	people   People
+	bus      pubsub.Bus
 	signals  pubsub.SignalBus
+	users    pubsub.UserSignalBus
 	log      *slog.Logger
 }
 
@@ -37,7 +45,10 @@ type Config struct {
 	Service  *service.Service
 	Verifier *authn.Verifier
 	Names    Names
+	People   People
+	Bus      pubsub.Bus
 	Signals  pubsub.SignalBus
+	Users    pubsub.UserSignalBus
 	Logger   *slog.Logger
 }
 
@@ -49,8 +60,14 @@ func New(cfg Config) (*Handler, error) {
 		return nil, errors.New("server: token verifier is required")
 	case cfg.Names == nil:
 		return nil, errors.New("server: name resolver is required")
+	case cfg.People == nil:
+		return nil, errors.New("server: a people directory is required")
+	case cfg.Bus == nil:
+		return nil, errors.New("server: a message bus is required")
 	case cfg.Signals == nil:
 		return nil, errors.New("server: a room signal bus is required")
+	case cfg.Users == nil:
+		return nil, errors.New("server: a user signal bus is required")
 	case cfg.Logger == nil:
 		return nil, errors.New("server: logger is required")
 	}
@@ -59,7 +76,10 @@ func New(cfg Config) (*Handler, error) {
 		svc:      cfg.Service,
 		verifier: cfg.Verifier,
 		names:    cfg.Names,
+		people:   cfg.People,
+		bus:      cfg.Bus,
 		signals:  cfg.Signals,
+		users:    cfg.Users,
 		log:      cfg.Logger,
 	}, nil
 }
@@ -259,11 +279,186 @@ func (h *Handler) LeaveRoom(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	if err := h.svc.LeaveRoom(ctx, roomID, claims.UserID); err != nil {
+	change, err := h.svc.LeaveRoom(ctx, roomID, claims.UserID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	h.announce(ctx, change)
+
+	return connect.NewResponse(&chatv1.LeaveRoomResponse{}), nil
+}
+
+func (h *Handler) CreateGroup(
+	ctx context.Context,
+	req *connect.Request[chatv1.CreateGroupRequest],
+) (*connect.Response[chatv1.CreateGroupResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	return connect.NewResponse(&chatv1.LeaveRoomResponse{}), nil
+	token := identity.BearerFromHeader(req.Header())
+	members, names, err := h.groupMembers(ctx, token, "member_user_ids", req.Msg.GetMemberUserIds(), claims.UserID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	change, err := h.svc.CreateGroup(ctx, service.CreateGroupInput{
+		Name:    req.Msg.GetName(),
+		Owner:   service.GroupMember{UserID: claims.UserID, DisplayName: names[claims.UserID]},
+		Members: members,
+	})
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	h.announce(ctx, change)
+
+	return connect.NewResponse(&chatv1.CreateGroupResponse{Room: toProtoRoom(change.Room, claims.UserID)}), nil
+}
+
+func (h *Handler) AddGroupMembers(
+	ctx context.Context,
+	req *connect.Request[chatv1.AddGroupMembersRequest],
+) (*connect.Response[chatv1.AddGroupMembersResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roomID, err := parseID("room_id", req.Msg.GetRoomId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	people, _, err := h.groupMembers(ctx, identity.BearerFromHeader(req.Header()),
+		"user_ids", req.Msg.GetUserIds(), claims.UserID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	change, err := h.svc.AddGroupMembers(ctx, roomID, claims.UserID, people)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	h.announce(ctx, change)
+
+	names := make(map[uuid.UUID]string, len(people))
+	for _, p := range people {
+		names[p.UserID] = p.DisplayName
+	}
+	added := make([]*chatv1.Member, 0, len(change.Added))
+	for _, id := range change.Added {
+		added = append(added, toProtoMember(domain.Member{
+			UserID:      id,
+			DisplayName: domain.ValidateDisplayName(names[id]),
+			Role:        domain.MemberRoleMember,
+		}))
+	}
+
+	return connect.NewResponse(&chatv1.AddGroupMembersResponse{Added: added}), nil
+}
+
+func (h *Handler) RemoveGroupMember(
+	ctx context.Context,
+	req *connect.Request[chatv1.RemoveGroupMemberRequest],
+) (*connect.Response[chatv1.RemoveGroupMemberResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roomID, err := parseID("room_id", req.Msg.GetRoomId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	targetID, err := parseID("user_id", req.Msg.GetUserId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	change, err := h.svc.RemoveGroupMember(ctx, roomID, claims.UserID, targetID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	h.announce(ctx, change)
+
+	return connect.NewResponse(&chatv1.RemoveGroupMemberResponse{}), nil
+}
+
+func (h *Handler) RenameGroup(
+	ctx context.Context,
+	req *connect.Request[chatv1.RenameGroupRequest],
+) (*connect.Response[chatv1.RenameGroupResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roomID, err := parseID("room_id", req.Msg.GetRoomId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	change, err := h.svc.RenameGroup(ctx, roomID, claims.UserID, req.Msg.GetName())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	h.announce(ctx, change)
+
+	return connect.NewResponse(&chatv1.RenameGroupResponse{Room: toProtoRoom(change.Room, claims.UserID)}), nil
+}
+
+func (h *Handler) groupMembers(
+	ctx context.Context,
+	token, field string,
+	raw []string,
+	callerID uuid.UUID,
+) ([]service.GroupMember, map[uuid.UUID]string, error) {
+	ids, err := domain.ValidateUserIDs(field, raw, callerID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil, &domain.ValidationError{Field: field, Reason: "needs at least one person"}
+	}
+
+	names, err := h.people.Profiles(ctx, token, append(slices.Clip(ids), callerID))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	members := make([]service.GroupMember, len(ids))
+	for i, id := range ids {
+		members[i] = service.GroupMember{UserID: id, DisplayName: names[id]}
+	}
+	return members, names, nil
+}
+
+func (h *Handler) announce(ctx context.Context, change service.GroupChange) {
+	ctx = context.WithoutCancel(ctx)
+
+	for _, userID := range change.Removed {
+		h.signalUser(ctx, userID, pubsub.SignalRoomRemoved, change.Room.ID)
+	}
+	for _, event := range change.Events {
+		if err := h.bus.Publish(ctx, event); err != nil {
+			h.log.ErrorContext(ctx, "could not fan a group event out",
+				"room_id", event.RoomID, "message_id", event.ID, "error", err)
+		}
+		for _, userID := range event.Revealed {
+			h.signalUser(ctx, userID, pubsub.SignalRoomAdded, event.RoomID)
+		}
+	}
+	for _, userID := range change.Added {
+		h.signalUser(ctx, userID, pubsub.SignalRoomAdded, change.Room.ID)
+	}
+}
+
+func (h *Handler) signalUser(ctx context.Context, userID uuid.UUID, kind pubsub.SignalKind, roomID uuid.UUID) {
+	if err := h.users.PublishUserSignal(ctx, userID, pubsub.Signal{Kind: kind, RoomID: roomID, UserID: userID}); err != nil {
+		h.log.WarnContext(ctx, "could not tell a user about a room change",
+			"room_id", roomID, "user_id", userID, "kind", kind, "error", err)
+	}
 }
 
 func (h *Handler) ListMessages(

@@ -218,14 +218,14 @@ func (r *Repository) GetOrCreateDirectRoom(
 
 func (r *Repository) AddMember(ctx context.Context, roomID uuid.UUID, m domain.Member) (bool, error) {
 	const query = `
-		INSERT INTO room_members (room_id, user_id, display_name)
-		VALUES ($1, $2, $3)
+		INSERT INTO room_members (room_id, user_id, display_name, role)
+		VALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'member'))
 		ON CONFLICT (room_id, user_id) DO UPDATE
-			SET display_name = EXCLUDED.display_name
+			SET display_name = CASE WHEN EXCLUDED.display_name = '' THEN room_members.display_name ELSE EXCLUDED.display_name END
 		RETURNING (xmax = 0)`
 
 	var inserted bool
-	err := r.q.QueryRow(ctx, query, roomID, m.UserID, m.DisplayName).Scan(&inserted)
+	err := r.q.QueryRow(ctx, query, roomID, m.UserID, m.DisplayName, string(m.Role)).Scan(&inserted)
 	if err != nil {
 		return false, fmt.Errorf("repository: add member: %w", err)
 	}
@@ -243,7 +243,7 @@ func (r *Repository) RemoveMember(ctx context.Context, roomID, userID uuid.UUID)
 
 func (r *Repository) Members(ctx context.Context, roomID uuid.UUID) ([]domain.Member, error) {
 	const query = `
-		SELECT user_id, display_name, joined_at, hidden_at, cleared_through_seq, last_read_seq
+		SELECT user_id, display_name, joined_at, hidden_at, cleared_through_seq, last_read_seq, role
 		FROM room_members
 		WHERE room_id = $1
 		ORDER BY joined_at, user_id`
@@ -256,12 +256,16 @@ func (r *Repository) Members(ctx context.Context, roomID uuid.UUID) ([]domain.Me
 
 	var members []domain.Member
 	for rows.Next() {
-		var m domain.Member
+		var (
+			m    domain.Member
+			role string
+		)
 		if err := rows.Scan(
-			&m.UserID, &m.DisplayName, &m.JoinedAt, &m.HiddenAt, &m.ClearedThroughSeq, &m.LastReadSeq,
+			&m.UserID, &m.DisplayName, &m.JoinedAt, &m.HiddenAt, &m.ClearedThroughSeq, &m.LastReadSeq, &role,
 		); err != nil {
 			return nil, fmt.Errorf("repository: scan member: %w", err)
 		}
+		m.Role = domain.MemberRole(role)
 		members = append(members, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -312,4 +316,190 @@ func (r *Repository) HideRoom(ctx context.Context, roomID, userID uuid.UUID) err
 		return domain.ErrNotAMember
 	}
 	return nil
+}
+
+func (r *Repository) CreateGroup(
+	ctx context.Context,
+	room domain.Room,
+	owner domain.Member,
+	members []domain.Member,
+) (domain.Room, error) {
+	var created domain.Room
+
+	err := r.InTx(ctx, func(tx *Repository) error {
+		const query = `
+			INSERT INTO rooms (id, name, created_by, kind)
+			VALUES ($1, $2, $3, 'group')
+			RETURNING ` + roomColumns
+
+		var err error
+		created, err = scanRoom(tx.q.QueryRow(ctx, query, room.ID, room.Name, room.CreatedBy))
+		if err != nil {
+			return fmt.Errorf("repository: create group: %w", err)
+		}
+
+		owner.Role = domain.MemberRoleOwner
+		if _, err := tx.AddMember(ctx, created.ID, owner); err != nil {
+			return err
+		}
+		for _, m := range members {
+			m.Role = domain.MemberRoleMember
+			if _, err := tx.AddMember(ctx, created.ID, m); err != nil {
+				return err
+			}
+		}
+
+		created.MemberCount = 1 + len(members)
+		return nil
+	})
+	if err != nil {
+		return domain.Room{}, err
+	}
+
+	return created, nil
+}
+
+func (r *Repository) AddGroupMembers(
+	ctx context.Context,
+	roomID uuid.UUID,
+	members []domain.Member,
+	limit int,
+) ([]uuid.UUID, error) {
+	var added []uuid.UUID
+
+	err := r.InTx(ctx, func(tx *Repository) error {
+		if err := tx.lockRoom(ctx, roomID); err != nil {
+			return err
+		}
+
+		var count int
+		if err := tx.q.QueryRow(ctx, `SELECT count(*) FROM room_members WHERE room_id = $1`, roomID).Scan(&count); err != nil {
+			return fmt.Errorf("repository: count group members: %w", err)
+		}
+
+		for _, m := range members {
+			inserted, err := tx.AddMember(ctx, roomID, m)
+			if err != nil {
+				return err
+			}
+			if inserted {
+				added = append(added, m.UserID)
+			}
+		}
+
+		if count+len(added) > limit {
+			return domain.ErrGroupFull
+		}
+		if len(added) == 0 {
+			return nil
+		}
+
+		const startHistory = `
+			UPDATE room_members
+			SET cleared_through_seq = (SELECT COALESCE(max(seq), 0) FROM messages WHERE room_id = $1)
+			WHERE room_id = $1 AND user_id = ANY($2)`
+
+		if _, err := tx.q.Exec(ctx, startHistory, roomID, added); err != nil {
+			return fmt.Errorf("repository: start history for added members: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return added, nil
+}
+
+func (r *Repository) RenameRoom(ctx context.Context, roomID uuid.UUID, name string) error {
+	const query = `UPDATE rooms SET name = $2 WHERE id = $1`
+
+	tag, err := r.q.Exec(ctx, query, roomID, name)
+	if err != nil {
+		return fmt.Errorf("repository: rename room: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrRoomNotFound
+	}
+	return nil
+}
+
+func (r *Repository) MemberRole(ctx context.Context, roomID, userID uuid.UUID) (domain.MemberRole, error) {
+	const query = `SELECT role FROM room_members WHERE room_id = $1 AND user_id = $2`
+
+	var role string
+	if err := r.q.QueryRow(ctx, query, roomID, userID).Scan(&role); err != nil {
+		if noRows(err) {
+			return "", domain.ErrNotAMember
+		}
+		return "", fmt.Errorf("repository: member role: %w", err)
+	}
+	return domain.MemberRole(role), nil
+}
+
+func (r *Repository) LeaveGroup(ctx context.Context, roomID, userID uuid.UUID) (*uuid.UUID, error) {
+	var promoted *uuid.UUID
+
+	err := r.InTx(ctx, func(tx *Repository) error {
+		if err := tx.lockRoom(ctx, roomID); err != nil {
+			return err
+		}
+		if err := tx.RemoveMember(ctx, roomID, userID); err != nil {
+			return err
+		}
+
+		var err error
+		promoted, err = tx.PromoteOwnerIfNone(ctx, roomID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return promoted, nil
+}
+
+func (r *Repository) lockRoom(ctx context.Context, roomID uuid.UUID) error {
+	var locked uuid.UUID
+	if err := r.q.QueryRow(ctx, `SELECT id FROM rooms WHERE id = $1 FOR NO KEY UPDATE`, roomID).Scan(&locked); err != nil {
+		if noRows(err) {
+			return domain.ErrRoomNotFound
+		}
+		return fmt.Errorf("repository: lock room: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) HistoryStart(ctx context.Context, roomID, userID uuid.UUID) (int64, error) {
+	const query = `SELECT cleared_through_seq FROM room_members WHERE room_id = $1 AND user_id = $2`
+
+	var seq int64
+	if err := r.q.QueryRow(ctx, query, roomID, userID).Scan(&seq); err != nil {
+		if noRows(err) {
+			return 0, domain.ErrNotAMember
+		}
+		return 0, fmt.Errorf("repository: history start: %w", err)
+	}
+	return seq, nil
+}
+
+func (r *Repository) PromoteOwnerIfNone(ctx context.Context, roomID uuid.UUID) (*uuid.UUID, error) {
+	const query = `
+		UPDATE room_members
+		SET role = 'owner'
+		WHERE room_id = $1
+			AND NOT EXISTS (SELECT 1 FROM room_members WHERE room_id = $1 AND role = 'owner')
+			AND user_id = (
+				SELECT user_id FROM room_members WHERE room_id = $1 ORDER BY joined_at, user_id LIMIT 1
+			)
+		RETURNING user_id`
+
+	var promoted uuid.UUID
+	if err := r.q.QueryRow(ctx, query, roomID).Scan(&promoted); err != nil {
+		if noRows(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("repository: promote owner: %w", err)
+	}
+	return &promoted, nil
 }

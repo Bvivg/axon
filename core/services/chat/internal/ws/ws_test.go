@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,7 @@ type fakeRooms struct {
 	mu sync.Mutex
 
 	members map[uuid.UUID]map[uuid.UUID]bool
+	starts  map[uuid.UUID]map[uuid.UUID]int64
 
 	messages map[uuid.UUID][]domain.Message
 	nextSeq  map[uuid.UUID]int64
@@ -38,11 +40,14 @@ type fakeRooms struct {
 	duplicateFor string
 
 	sends int
+
+	beforeList func()
 }
 
 func newFakeRooms() *fakeRooms {
 	return &fakeRooms{
 		members:     make(map[uuid.UUID]map[uuid.UUID]bool),
+		starts:      make(map[uuid.UUID]map[uuid.UUID]int64),
 		messages:    make(map[uuid.UUID][]domain.Message),
 		nextSeq:     make(map[uuid.UUID]int64),
 		directRooms: make(map[[2]uuid.UUID]uuid.UUID),
@@ -57,6 +62,28 @@ func (f *fakeRooms) join(roomID, userID uuid.UUID) {
 		f.members[roomID] = make(map[uuid.UUID]bool)
 	}
 	f.members[roomID][userID] = true
+}
+
+func (f *fakeRooms) joinLate(roomID, userID uuid.UUID) {
+	f.join(roomID, userID)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.starts[roomID] == nil {
+		f.starts[roomID] = make(map[uuid.UUID]int64)
+	}
+	f.starts[roomID][userID] = f.nextSeq[roomID]
+}
+
+func (f *fakeRooms) HistoryStart(_ context.Context, roomID, userID uuid.UUID) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if !f.members[roomID][userID] {
+		return 0, domain.ErrNotAMember
+	}
+	return f.starts[roomID][userID], nil
 }
 
 func (f *fakeRooms) Send(_ context.Context, in service.SendInput) (domain.Message, bool, error) {
@@ -140,6 +167,10 @@ func (f *fakeRooms) ListMessages(
 	roomID, userID uuid.UUID,
 	page domain.Page,
 ) (service.History, error) {
+	if f.beforeList != nil {
+		f.beforeList()
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -147,7 +178,12 @@ func (f *fakeRooms) ListMessages(
 		return service.History{}, domain.ErrNotAMember
 	}
 
-	all := f.messages[roomID]
+	var all []domain.Message
+	for _, m := range f.messages[roomID] {
+		if m.Seq > f.starts[roomID][userID] {
+			all = append(all, m)
+		}
+	}
 	if page.AfterSeq > 0 {
 		var after []domain.Message
 		for _, m := range all {
@@ -162,6 +198,54 @@ func (f *fakeRooms) ListMessages(
 		return service.History{Messages: all[len(all)-page.Limit:], HasMore: true}, nil
 	}
 	return service.History{Messages: all}, nil
+}
+
+func (f *fakeRooms) EditMessage(_ context.Context, in service.EditInput) (domain.Message, error) {
+	return f.change(in.MessageID, in.UserID, func(m *domain.Message) error {
+		body, err := domain.ValidateMessageBody(in.Body)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		m.Body, m.EditedAt = body, &now
+		return nil
+	})
+}
+
+func (f *fakeRooms) DeleteMessage(_ context.Context, messageID, userID uuid.UUID) (domain.Message, error) {
+	return f.change(messageID, userID, func(m *domain.Message) error {
+		now := time.Now().UTC()
+		m.Body, m.DeletedAt = "", &now
+		return nil
+	})
+}
+
+func (f *fakeRooms) change(messageID, userID uuid.UUID, apply func(*domain.Message) error) (domain.Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for roomID, messages := range f.messages {
+		for i, m := range messages {
+			if m.ID != messageID {
+				continue
+			}
+			if !f.members[roomID][userID] {
+				return domain.Message{}, domain.ErrMessageNotFound
+			}
+			if m.AuthorID != userID {
+				return domain.Message{}, domain.ErrNotMessageAuthor
+			}
+			if m.DeletedAt != nil {
+				return domain.Message{}, domain.ErrMessageDeleted
+			}
+			if err := apply(&m); err != nil {
+				return domain.Message{}, err
+			}
+			f.messages[roomID][i] = m
+			return m, nil
+		}
+	}
+	return domain.Message{}, domain.ErrMessageNotFound
 }
 
 type fakeNames struct{}
@@ -223,11 +307,25 @@ type harness struct {
 	rooms    *fakeRooms
 	bus      pubsub.Bus
 	signals  pubsub.SignalBus
+	users    pubsub.UserSignalBus
 	presence *fakePresence
 	issue    func(t *testing.T, userID uuid.UUID, ttl time.Duration) string
 }
 
+type updatesDown struct {
+	*pubsub.Memory
+}
+
+func (updatesDown) PublishUpdate(context.Context, domain.Message) error {
+	return errors.New("the bus is down")
+}
+
 func newHarness(t *testing.T) *harness {
+	t.Helper()
+	return newHarnessWithBus(t, func(m *pubsub.Memory) pubsub.Bus { return m })
+}
+
+func newHarnessWithBus(t *testing.T, busOf func(*pubsub.Memory) pubsub.Bus) *harness {
 	t.Helper()
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -257,7 +355,7 @@ func newHarness(t *testing.T) *harness {
 	handler, err := ws.New(ws.Config{
 		Service:     rooms,
 		Verifier:    verifier,
-		Bus:         bus,
+		Bus:         busOf(bus),
 		Signals:     bus,
 		UserSignals: bus,
 		Names:       fakeNames{},
@@ -276,6 +374,7 @@ func newHarness(t *testing.T) *harness {
 		rooms:    rooms,
 		bus:      bus,
 		signals:  bus,
+		users:    bus,
 		presence: presence,
 		issue: func(t *testing.T, userID uuid.UUID, ttl time.Duration) string {
 			t.Helper()
@@ -773,6 +872,189 @@ func TestAWatchedPersonsPresenceChangeIsPushed(t *testing.T) {
 
 	if got := ac.expect(ws.TypePresence); got.UserID != bob.String() {
 		t.Errorf("presence frame for %q, want %s", got.UserID, bob)
+	}
+}
+
+func TestAnEditReachesEveryoneInTheRoom(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, bob := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+
+	ac := h.connect(t, alice)
+	bc := h.connect(t, bob)
+	for _, c := range []*client{ac, bc} {
+		c.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+		c.expect(ws.TypeSubscribed)
+	}
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "helo"})
+	ac.expect(ws.TypeAck)
+	ac.expect(ws.TypeMessage)
+	sent := bc.expect(ws.TypeMessage)
+
+	ac.send(ws.Inbound{Type: ws.TypeEdit, MessageID: sent.Message.ID, Body: "hello"})
+
+	got := bc.expect(ws.TypeMessageUpdated)
+	if got.Message.ID != sent.Message.ID || got.Message.Body != "hello" || got.Message.EditedAt == nil {
+		t.Errorf("bob saw %+v, want the same message edited to hello", got.Message)
+	}
+	if own := ac.expect(ws.TypeMessageUpdated); own.Message.Body != "hello" {
+		t.Errorf("alice saw %q, want hello", own.Message.Body)
+	}
+
+	ac.send(ws.Inbound{Type: ws.TypeDelete, MessageID: sent.Message.ID})
+	if gone := bc.expect(ws.TypeMessageUpdated); gone.Message.DeletedAt == nil || gone.Message.Body != "" {
+		t.Errorf("bob saw %+v, want the message deleted", gone.Message)
+	}
+}
+
+func TestAnEditFromBeforeYouJoinedIsNotPushedToYou(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, carol := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+
+	ac := h.connect(t, alice)
+	ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	ac.expect(ws.TypeSubscribed)
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "before carol"})
+	ac.expect(ws.TypeAck)
+	old := ac.expect(ws.TypeMessage)
+
+	h.rooms.joinLate(roomID, carol)
+	cc := h.connect(t, carol)
+	cc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	cc.expect(ws.TypeSubscribed)
+
+	ac.send(ws.Inbound{Type: ws.TypeEdit, MessageID: old.Message.ID, Body: "still before carol"})
+	ac.expect(ws.TypeMessageUpdated)
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "welcome"})
+	ac.expect(ws.TypeAck)
+
+	if got := cc.expect(ws.TypeMessage); got.Message.Body != "welcome" {
+		t.Errorf("carol's next frame carried %q, want welcome", got.Message.Body)
+	}
+}
+
+func TestTheEditorHearsBackWhenTheBusIsDown(t *testing.T) {
+	h := newHarnessWithBus(t, func(m *pubsub.Memory) pubsub.Bus { return updatesDown{m} })
+
+	roomID := uuid.New()
+	alice := uuid.New()
+	h.rooms.join(roomID, alice)
+
+	ac := h.connect(t, alice)
+	ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	ac.expect(ws.TypeSubscribed)
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "helo"})
+	ac.expect(ws.TypeAck)
+	sent := ac.expect(ws.TypeMessage)
+
+	ac.send(ws.Inbound{Type: ws.TypeEdit, MessageID: sent.Message.ID, Body: "hello"})
+	if got := ac.expect(ws.TypeMessageUpdated); got.Message.Body != "hello" {
+		t.Errorf("the editor heard %q, want hello", got.Message.Body)
+	}
+}
+
+func TestSomeoneElsesMessageCannotBeChanged(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, bob := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+
+	ac := h.connect(t, alice)
+	bc := h.connect(t, bob)
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "mine"})
+	ack := ac.expect(ws.TypeAck)
+	messageID := h.rooms.messages[uuid.MustParse(ack.RoomID)][0].ID
+
+	bc.send(ws.Inbound{Type: ws.TypeEdit, MessageID: messageID.String(), Body: "yours"})
+	if refusal := bc.expect(ws.TypeError); refusal.Code != ws.ErrorForbidden {
+		t.Errorf("edit was refused with %q, want %q", refusal.Code, ws.ErrorForbidden)
+	}
+
+	bc.send(ws.Inbound{Type: ws.TypeDelete, MessageID: "nope"})
+	if refusal := bc.expect(ws.TypeError); refusal.Code != ws.ErrorInvalid {
+		t.Errorf("a bad id was refused with %q, want %q", refusal.Code, ws.ErrorInvalid)
+	}
+}
+
+func TestLeavingARoomStopsItsDelivery(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, bob := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+
+	ac := h.connect(t, alice)
+	bc := h.connect(t, bob)
+	bc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	bc.expect(ws.TypeSubscribed)
+
+	if err := h.users.PublishUserSignal(t.Context(), bob, pubsub.Signal{
+		Kind: pubsub.SignalRoomRemoved, RoomID: roomID, UserID: bob,
+	}); err != nil {
+		t.Fatalf("publish room removed: %v", err)
+	}
+	if got := bc.expect(ws.TypeRoomRemoved); got.RoomID != roomID.String() {
+		t.Errorf("room_removed for %q, want %s", got.RoomID, roomID)
+	}
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "unheard"})
+	ac.expect(ws.TypeAck)
+
+	bc.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
+	if refusal := bc.expect(ws.TypeError); refusal.Code != ws.ErrorNotAMember {
+		t.Errorf("the next frame was %+v, want the typing refusal — the room was still delivered", refusal)
+	}
+}
+
+func TestRemovalDuringCatchUpStillStopsDelivery(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, bob := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	h.rooms.beforeList = func() {
+		once.Do(func() {
+			close(entered)
+			<-release
+		})
+	}
+
+	ac := h.connect(t, alice)
+	bc := h.connect(t, bob)
+	bc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	<-entered
+
+	if err := h.users.PublishUserSignal(t.Context(), bob, pubsub.Signal{
+		Kind: pubsub.SignalRoomRemoved, RoomID: roomID, UserID: bob,
+	}); err != nil {
+		t.Fatalf("publish room removed: %v", err)
+	}
+	bc.expect(ws.TypeRoomRemoved)
+	close(release)
+	bc.expect(ws.TypeSubscribed)
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "unheard"})
+	ac.expect(ws.TypeAck)
+
+	bc.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
+	if refusal := bc.expect(ws.TypeError); refusal.Code != ws.ErrorNotAMember {
+		t.Errorf("the next frame was %+v, want the typing refusal — the room was still delivered", refusal)
 	}
 }
 

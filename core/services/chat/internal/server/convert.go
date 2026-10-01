@@ -41,6 +41,8 @@ func toProtoRoomKind(k domain.RoomKind) chatv1.RoomKind {
 		return chatv1.RoomKind_ROOM_KIND_OPEN
 	case domain.RoomKindDirect:
 		return chatv1.RoomKind_ROOM_KIND_DIRECT
+	case domain.RoomKindGroup:
+		return chatv1.RoomKind_ROOM_KIND_GROUP
 	default:
 		return chatv1.RoomKind_ROOM_KIND_UNSPECIFIED
 	}
@@ -106,6 +108,15 @@ func toProtoMember(m domain.Member) *chatv1.Member {
 		member.DisplayName = &m.DisplayName
 	}
 
+	switch m.Role {
+	case domain.MemberRoleOwner:
+		role := chatv1.MemberRole_MEMBER_ROLE_OWNER
+		member.Role = &role
+	case domain.MemberRoleMember:
+		role := chatv1.MemberRole_MEMBER_ROLE_MEMBER
+		member.Role = &role
+	}
+
 	return member
 }
 
@@ -130,6 +141,26 @@ func toProtoMessage(m domain.Message) *chatv1.Message {
 	if m.ForwardedFromID != nil {
 		forwardedFromID := m.ForwardedFromID.String()
 		message.ForwardedFromId = &forwardedFromID
+	}
+	if m.ForwardOriginAuthorID != nil {
+		origin := m.ForwardOriginAuthorID.String()
+		message.ForwardedFromAuthorId = &origin
+	}
+	if m.ReplyTo != nil {
+		message.ReplyTo = &chatv1.ReplyPreview{
+			Id:       m.ReplyTo.ID.String(),
+			AuthorId: m.ReplyTo.AuthorID.String(),
+			Kind:     toProtoMessageKind(m.ReplyTo.Kind),
+			Body:     m.ReplyTo.Body,
+			Deleted:  m.ReplyTo.Deleted,
+		}
+	}
+	if m.EditedAt != nil {
+		message.EditedAt = timestamppb.New(*m.EditedAt)
+	}
+	if m.DeletedAt != nil {
+		message.DeletedAt = timestamppb.New(*m.DeletedAt)
+		return message
 	}
 
 	setProtoMessagePayload(message, m.Kind, m.Payload)
@@ -199,9 +230,10 @@ func setProtoMessagePayload(message *chatv1.Message, kind domain.MessageKind, ra
 			return
 		}
 		message.Payload = &chatv1.Message_System{System: &chatv1.SystemPayload{
-			Event:    p.Event,
-			ActorId:  p.ActorID,
-			TargetId: p.TargetID,
+			Event:     p.Event,
+			ActorId:   p.ActorID,
+			TargetId:  p.TargetID,
+			TargetIds: p.TargetIDs,
 		}}
 	}
 }

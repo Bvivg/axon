@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,9 @@ type Rooms interface {
 	Send(ctx context.Context, in service.SendInput) (domain.Message, bool, error)
 	SendDirect(ctx context.Context, in service.SendDirectInput) (domain.Message, domain.Room, bool, error)
 	ListMessages(ctx context.Context, roomID, userID uuid.UUID, page domain.Page) (service.History, error)
+	HistoryStart(ctx context.Context, roomID, userID uuid.UUID) (int64, error)
+	EditMessage(ctx context.Context, in service.EditInput) (domain.Message, error)
+	DeleteMessage(ctx context.Context, messageID, userID uuid.UUID) (domain.Message, error)
 }
 
 type Names interface {
@@ -166,6 +170,7 @@ type session struct {
 	token    string
 	expiry   time.Time
 
+	mu   sync.Mutex
 	subs map[uuid.UUID]func()
 
 	watches map[uuid.UUID]func()
@@ -176,9 +181,11 @@ func (s *session) run(ctx context.Context, userSignals <-chan pubsub.Signal) {
 	defer cancel()
 
 	defer func() {
+		s.mu.Lock()
 		for _, stop := range s.subs {
 			stop()
 		}
+		s.mu.Unlock()
 		for _, stop := range s.watches {
 			stop()
 		}
@@ -267,6 +274,10 @@ func (s *session) handle(ctx context.Context, frame Inbound) bool {
 		return s.typing(ctx, frame)
 	case TypeWatchPresence:
 		return s.watchPresence(ctx, frame)
+	case TypeEdit:
+		return s.edit(ctx, frame)
+	case TypeDelete:
+		return s.delete(ctx, frame)
 	default:
 		_ = s.conn.Close(CloseProtocol, "unknown frame type "+sharedws.TruncateReason(frame.Type))
 		return false
@@ -279,8 +290,7 @@ func (s *session) subscribe(ctx context.Context, frame Inbound) bool {
 		return s.refuse(ctx, ErrorInvalid, "room_id is not a valid id", "")
 	}
 
-	if _, already := s.subs[roomID]; already {
-
+	if s.subscribed(roomID) {
 		return true
 	}
 
@@ -295,34 +305,40 @@ func (s *session) subscribe(ctx context.Context, frame Inbound) bool {
 		return s.internal(ctx, "subscribe to room signals", err, "")
 	}
 
-	missed, current, err := s.catchUp(ctx, roomID, frame.Since)
-	if err != nil {
+	s.mu.Lock()
+	s.subs[roomID] = func() {
 		stop()
 		stopSignals()
+	}
+	s.mu.Unlock()
+
+	missed, current, err := s.catchUp(ctx, roomID, frame.Since)
+	if err != nil {
+		s.drop(roomID)
+		return s.report(ctx, err, "")
+	}
+
+	start, err := s.h.svc.HistoryStart(ctx, roomID, s.user)
+	if err != nil {
+		s.drop(roomID)
 		return s.report(ctx, err, "")
 	}
 
 	if err := s.write(ctx, subscribedFrame(roomID.String(), current)); err != nil {
-		stop()
-		stopSignals()
+		s.drop(roomID)
 		return false
 	}
 
 	delivered := frame.Since
 	for _, m := range missed {
 		if err := s.write(ctx, messageFrame(m, s.user.String())); err != nil {
-			stop()
-			stopSignals()
+			s.drop(roomID)
 			return false
 		}
 		delivered = m.Seq
 	}
 
-	s.subs[roomID] = func() {
-		stop()
-		stopSignals()
-	}
-	go s.deliver(ctx, roomID, live, delivered)
+	go s.deliver(ctx, roomID, live, delivered, start)
 	go s.deliverSignals(ctx, roomID, liveSignals)
 
 	return true
@@ -358,14 +374,41 @@ func (s *session) catchUp(
 	return nil, current, nil
 }
 
-func (s *session) deliver(ctx context.Context, roomID uuid.UUID, live <-chan domain.Message, delivered int64) {
-	for m := range live {
-		if m.Seq <= delivered {
-			continue
-		}
-		delivered = m.Seq
+func (s *session) subscribed(roomID uuid.UUID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-		if err := s.write(ctx, messageFrame(m, s.user.String())); err != nil {
+	_, ok := s.subs[roomID]
+	return ok
+}
+
+func (s *session) drop(roomID uuid.UUID) {
+	s.mu.Lock()
+	stop, ok := s.subs[roomID]
+	delete(s.subs, roomID)
+	s.mu.Unlock()
+
+	if ok {
+		stop()
+	}
+}
+
+func (s *session) deliver(ctx context.Context, roomID uuid.UUID, live <-chan pubsub.Delivery, delivered, start int64) {
+	for d := range live {
+		var out Outbound
+		switch {
+		case d.Update && d.Message.Seq <= start:
+			continue
+		case d.Update:
+			out = messageUpdatedFrame(d.Message)
+		case d.Message.Seq <= delivered:
+			continue
+		default:
+			delivered = d.Message.Seq
+			out = messageFrame(d.Message, s.user.String())
+		}
+
+		if err := s.write(ctx, out); err != nil {
 
 			s.h.log.DebugContext(ctx, "stopped delivering to a chat socket",
 				"user_id", s.user, "room_id", roomID, "error", err)
@@ -402,10 +445,17 @@ func (s *session) deliverSignals(ctx context.Context, roomID uuid.UUID, live <-c
 
 func (s *session) deliverUserSignals(ctx context.Context, live <-chan pubsub.Signal) {
 	for sig := range live {
-		if sig.Kind != pubsub.SignalRoomAdded {
+		var out Outbound
+		switch sig.Kind {
+		case pubsub.SignalRoomAdded:
+			out = roomAddedFrame(sig.RoomID.String())
+		case pubsub.SignalRoomRemoved:
+			s.drop(sig.RoomID)
+			out = roomRemovedFrame(sig.RoomID.String())
+		default:
 			continue
 		}
-		if err := s.write(ctx, roomAddedFrame(sig.RoomID.String())); err != nil {
+		if err := s.write(ctx, out); err != nil {
 			s.h.log.DebugContext(ctx, "stopped delivering room changes to a chat socket",
 				"user_id", s.user, "error", err)
 			_ = s.conn.CloseNow()
@@ -420,7 +470,7 @@ func (s *session) typing(ctx context.Context, frame Inbound) bool {
 		return s.refuse(ctx, ErrorInvalid, "room_id is not a valid id", "")
 	}
 
-	if _, subscribed := s.subs[roomID]; !subscribed {
+	if !s.subscribed(roomID) {
 		return s.refuse(ctx, ErrorNotAMember, "no such room", "")
 	}
 
@@ -476,9 +526,43 @@ func (s *session) unsubscribe(ctx context.Context, frame Inbound) bool {
 		return s.refuse(ctx, ErrorInvalid, "room_id is not a valid id", "")
 	}
 
-	if stop, ok := s.subs[roomID]; ok {
-		stop()
-		delete(s.subs, roomID)
+	s.drop(roomID)
+	return true
+}
+
+func (s *session) edit(ctx context.Context, frame Inbound) bool {
+	messageID, err := uuid.Parse(frame.MessageID)
+	if err != nil {
+		return s.refuse(ctx, ErrorInvalid, "message_id is not a valid id", frame.ClientID)
+	}
+
+	edited, err := s.h.svc.EditMessage(ctx, service.EditInput{MessageID: messageID, UserID: s.user, Body: frame.Body})
+	if err != nil {
+		return s.report(ctx, err, frame.ClientID)
+	}
+
+	return s.publishUpdate(ctx, edited)
+}
+
+func (s *session) delete(ctx context.Context, frame Inbound) bool {
+	messageID, err := uuid.Parse(frame.MessageID)
+	if err != nil {
+		return s.refuse(ctx, ErrorInvalid, "message_id is not a valid id", frame.ClientID)
+	}
+
+	deleted, err := s.h.svc.DeleteMessage(ctx, messageID, s.user)
+	if err != nil {
+		return s.report(ctx, err, frame.ClientID)
+	}
+
+	return s.publishUpdate(ctx, deleted)
+}
+
+func (s *session) publishUpdate(ctx context.Context, m domain.Message) bool {
+	if err := s.h.bus.PublishUpdate(ctx, m); err != nil {
+		s.h.log.ErrorContext(ctx, "could not fan a message change out",
+			"room_id", m.RoomID, "message_id", m.ID, "error", err)
+		return s.write(ctx, messageUpdatedFrame(m)) == nil
 	}
 	return true
 }
@@ -571,6 +655,16 @@ func (s *session) ackAndPublish(ctx context.Context, message domain.Message, dup
 			s.h.log.ErrorContext(ctx, "could not fan a message out",
 				"room_id", message.RoomID, "message_id", message.ID, "error", err)
 		}
+		for _, userID := range message.Revealed {
+			if err := s.h.users.PublishUserSignal(ctx, userID, pubsub.Signal{
+				Kind:   pubsub.SignalRoomAdded,
+				RoomID: message.RoomID,
+				UserID: s.user,
+			}); err != nil {
+				s.h.log.WarnContext(ctx, "could not bring a hidden room back",
+					"room_id", message.RoomID, "user_id", userID, "error", err)
+			}
+		}
 	}
 
 	return true
@@ -581,6 +675,12 @@ func (s *session) report(ctx context.Context, err error, clientID string) bool {
 	case errors.Is(err, domain.ErrNotAMember), errors.Is(err, domain.ErrRoomNotFound):
 
 		return s.refuse(ctx, ErrorNotAMember, "no such room", clientID)
+	case errors.Is(err, domain.ErrNotMessageAuthor):
+		return s.refuse(ctx, ErrorForbidden, err.Error(), clientID)
+	case errors.Is(err, domain.ErrMessageNotFound),
+		errors.Is(err, domain.ErrMessageNotEditable),
+		errors.Is(err, domain.ErrMessageDeleted):
+		return s.refuse(ctx, ErrorInvalid, err.Error(), clientID)
 	case errors.Is(err, domain.ErrInvalidReplyTarget),
 		errors.Is(err, domain.ErrInvalidForwardTarget),
 		errors.Is(err, domain.ErrSystemKindNotSendable),
