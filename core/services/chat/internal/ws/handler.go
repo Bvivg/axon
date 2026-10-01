@@ -312,7 +312,7 @@ func (s *session) subscribe(ctx context.Context, frame Inbound) bool {
 	}
 	s.mu.Unlock()
 
-	missed, current, err := s.catchUp(ctx, roomID, frame.Since)
+	missed, current, behind, err := s.catchUp(ctx, roomID, frame.Since)
 	if err != nil {
 		s.drop(roomID)
 		return s.report(ctx, err, "")
@@ -324,12 +324,15 @@ func (s *session) subscribe(ctx context.Context, frame Inbound) bool {
 		return s.report(ctx, err, "")
 	}
 
-	if err := s.write(ctx, subscribedFrame(roomID.String(), current)); err != nil {
+	if err := s.write(ctx, subscribedFrame(roomID.String(), current, behind)); err != nil {
 		s.drop(roomID)
 		return false
 	}
 
 	delivered := frame.Since
+	if behind {
+		delivered = current
+	}
 	for _, m := range missed {
 		if err := s.write(ctx, messageFrame(m, s.user.String())); err != nil {
 			s.drop(roomID)
@@ -348,30 +351,32 @@ func (s *session) catchUp(
 	ctx context.Context,
 	roomID uuid.UUID,
 	since int64,
-) ([]domain.Message, int64, error) {
+) ([]domain.Message, int64, bool, error) {
 	if since > 0 {
-		history, err := s.h.svc.ListMessages(ctx, roomID, s.user, domain.Page{AfterSeq: since})
+		history, err := s.h.svc.ListMessages(ctx, roomID, s.user, domain.Page{AfterSeq: since, Limit: domain.MaxPageSize})
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 
-		current := since
-		if n := len(history.Messages); n > 0 {
-			current = history.Messages[n-1].Seq
+		if !history.HasMore {
+			current := since
+			if n := len(history.Messages); n > 0 {
+				current = history.Messages[n-1].Seq
+			}
+			return history.Messages, current, false, nil
 		}
-		return history.Messages, current, nil
 	}
 
 	latest, err := s.h.svc.ListMessages(ctx, roomID, s.user, domain.Page{Limit: 1})
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 
 	var current int64
 	if n := len(latest.Messages); n > 0 {
 		current = latest.Messages[n-1].Seq
 	}
-	return nil, current, nil
+	return nil, current, since > 0, nil
 }
 
 func (s *session) subscribed(roomID uuid.UUID) bool {

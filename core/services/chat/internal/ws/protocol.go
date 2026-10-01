@@ -100,6 +100,7 @@ type Outbound struct {
 
 	RoomID string `json:"room_id,omitempty"`
 	Seq    int64  `json:"seq,omitempty"`
+	Behind bool   `json:"behind,omitempty"`
 
 	UserID string `json:"user_id,omitempty"`
 
@@ -199,8 +200,8 @@ func ackFrame(m domain.Message) Outbound {
 	return Outbound{Type: TypeAck, ClientID: m.ClientID, Seq: m.Seq, RoomID: m.RoomID.String()}
 }
 
-func subscribedFrame(roomID string, seq int64) Outbound {
-	return Outbound{Type: TypeSubscribed, RoomID: roomID, Seq: seq}
+func subscribedFrame(roomID string, seq int64, behind bool) Outbound {
+	return Outbound{Type: TypeSubscribed, RoomID: roomID, Seq: seq, Behind: behind}
 }
 
 func readFrame(roomID, userID string, seq int64) Outbound {
