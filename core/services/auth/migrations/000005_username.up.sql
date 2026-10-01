@@ -18,16 +18,30 @@ WITH stems AS (
 ), ranked AS (
     SELECT id,
            stem,
-           row_number() OVER (PARTITION BY stem ORDER BY created_at, id) AS rank
+           row_number() OVER (PARTITION BY stem ORDER BY created_at, id) = 1
+               AND stem NOT IN ('admin', 'administrator', 'axon', 'moderator', 'official',
+                                'root', 'security', 'support', 'system') AS keeps_stem
     FROM named
+), proposed AS (
+    SELECT id,
+           keeps_stem,
+           CASE WHEN keeps_stem THEN stem
+                ELSE rtrim(left(stem, 25), '_') || '_' || left(replace(id::text, '-', ''), 6)
+           END AS username
+    FROM ranked
+), settled AS (
+    SELECT id,
+           username,
+           row_number() OVER (PARTITION BY username ORDER BY keeps_stem DESC, id) AS rank
+    FROM proposed
 )
 UPDATE users
 SET username = CASE
-        WHEN ranked.rank = 1 THEN ranked.stem
-        ELSE rtrim(left(ranked.stem, 25), '_') || '_' || left(replace(users.id::text, '-', ''), 6)
+        WHEN settled.rank = 1 THEN settled.username
+        ELSE 'u' || left(replace(users.id::text, '-', ''), 31)
     END
-FROM ranked
-WHERE ranked.id = users.id;
+FROM settled
+WHERE settled.id = users.id;
 
 ALTER TABLE users
     ALTER COLUMN username SET NOT NULL,

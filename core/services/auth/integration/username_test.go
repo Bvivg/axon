@@ -44,23 +44,35 @@ func TestTheUsernameMigrationNamesExistingAccounts(t *testing.T) {
 	migrateTo(t, versionBeforeUsernames)
 	t.Cleanup(func() { migrateTo(t, versionWithUsernames) })
 
+	type naming int
+	const (
+		natural naming = iota
+		suffixed
+		fallback
+	)
 	type legacy struct {
 		id     uuid.UUID
 		email  string
-		suffix bool
+		naming naming
 	}
+	crowded := uuid.New()
 	accounts := []legacy{
 		{email: "ada.lovelace@first.test"},
-		{email: "ada.lovelace@second.test", suffix: true},
+		{email: "ada.lovelace@second.test", naming: suffixed},
 		{email: "42.bob@axon.test"},
 		{email: "x@axon.test"},
-		{email: "yz@axon.test", suffix: true},
+		{email: "yz@axon.test", naming: suffixed},
 		{email: "a.very.long.local.part.that.never.ends.here@axon.test"},
+		{email: "admin@axon.test", naming: suffixed},
+		{id: crowded, email: "ab@axon.test", naming: fallback},
+		{email: "user." + idHex(crowded)[:6] + "@axon.test"},
 	}
 
 	created := time.Now().UTC().Add(-time.Hour)
 	for i := range accounts {
-		accounts[i].id = uuid.New()
+		if accounts[i].id == uuid.Nil {
+			accounts[i].id = uuid.New()
+		}
 		if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1, $2, $3)`,
 			accounts[i].id, accounts[i].email, created.Add(time.Duration(i)*time.Minute)); err != nil {
 			t.Fatalf("insert %s: %v", accounts[i].email, err)
@@ -76,13 +88,20 @@ func TestTheUsernameMigrationNamesExistingAccounts(t *testing.T) {
 		}
 
 		want := domain.UsernameStem(a.email)
-		if a.suffix {
-			want = domain.UsernameWithSuffix(want, strings.ReplaceAll(a.id.String(), "-", "")[:6])
+		switch a.naming {
+		case suffixed:
+			want = domain.UsernameWithSuffix(want, idHex(a.id)[:6])
+		case fallback:
+			want = "u" + idHex(a.id)[:31]
 		}
 		if got != want {
 			t.Errorf("%s got %q, want %q", a.email, got, want)
 		}
 	}
+}
+
+func idHex(id uuid.UUID) string {
+	return strings.ReplaceAll(id.String(), "-", "")
 }
 
 func TestRegistrationRollsBackOnATakenUsername(t *testing.T) {
