@@ -46,7 +46,12 @@ var procedures = map[string]Rule{
 	"/axon.chat.v1.ChatService/GetDirectRoom": {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/MarkRead":      {Public: false, Tier: TierStandard},
 
-	"/axon.chat.v1.ChatService/CreateRoom": {Public: false, Tier: TierSensitive},
+	"/axon.chat.v1.ChatService/RemoveGroupMember": {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatService/RenameGroup":       {Public: false, Tier: TierStandard},
+
+	"/axon.chat.v1.ChatService/CreateRoom":      {Public: false, Tier: TierSensitive},
+	"/axon.chat.v1.ChatService/CreateGroup":     {Public: false, Tier: TierSensitive},
+	"/axon.chat.v1.ChatService/AddGroupMembers": {Public: false, Tier: TierSensitive},
 }
 
 func For(procedure string) Rule {
