@@ -84,3 +84,37 @@ describe("local tic-tac-toe", () => {
     explore(Array(9).fill(null));
   });
 });
+
+describe("configured practice clocks", () => {
+  const configured = (human: "X" | "O" = "X") => newGame("hard", 0, { duration: 30000, human });
+  it("waits for the first move, pauses and resumes without charging hidden time", () => {
+    let game = localGameReducer(configured(), { type: "tick", now: 40000 });
+    expect(game.left).toEqual({ X: 30000, O: 30000 });
+    expect(game.result).toBeNull();
+    game = move(game, 0, 50000);
+    game = localGameReducer(game, { type: "pause", paused: true, now: 51000 });
+    expect(game.left.O).toBe(29000);
+    game = localGameReducer(game, { type: "tick", now: 100000 });
+    game = localGameReducer(game, { type: "pause", paused: false, now: 110000 });
+    expect(game.left.O).toBe(29000);
+    game = localGameReducer(game, { type: "tick", now: 139000 });
+    expect(game.result?.winner).toBe("X");
+    expect(localGameReducer(game, { type: "undo", now: 140000 }).result).toEqual(game.result);
+  });
+  it("undoes the human turn when playing O and waits again after undoing the first move", () => {
+    let game = move(move(move(configured("O"), 0), 4), 8);
+    game = localGameReducer(game, { type: "undo", now: 1000 });
+    expect(game.cells).toEqual(["X", null, null, null, null, null, null, null, null]);
+    expect(game.turn).toBe("O");
+    let first = localGameReducer(move(configured(), 0), { type: "undo", now: 1000 });
+    first = localGameReducer(first, { type: "tick", now: 100000 });
+    expect(first.clock?.started).toBe(false);
+    expect(first.result).toBeNull();
+  });
+  it("supports AI playing X and medium difficulty without mutating the board", () => {
+    const board: Cells = ["X", "X", null, "O", "O", null, null, null, null];
+    expect(aiMove(board, "hard", () => 0, "X")).toBe(2);
+    expect(board[2]).toBeNull();
+    expect(aiMove(board, "medium", () => 0, "X")).toBe(2);
+  });
+});
