@@ -127,7 +127,7 @@ function Match({ initial }: { initial: Session }) {
   useArenaShortcuts({ enabled: !modal, move: makeMove, undo: () => { if (canUndo) undo(); }, restart: () => { if (!playAgain.isPending && !playAgain.isSuccess) playAgain.mutate(); } });
   return (
     <div className={arenaClass}>
-      <ArenaHeader><ArenaTools restart={() => playAgain.mutate()} undo={undo} canUndo={canUndo}><StatisticsIcon onClick={() => setModal("stats")} /><SettingsIcon onClick={() => setModal("settings")} /></ArenaTools></ArenaHeader>
+      <ArenaHeader><ArenaTools pending={playAgain.isPending || playAgain.isSuccess} restart={() => playAgain.mutate()} undo={undo} canUndo={canUndo}><StatisticsIcon onClick={() => setModal("stats")} /><SettingsIcon onClick={() => setModal("settings")} /></ArenaTools></ArenaHeader>
       <section aria-labelledby="game-board-title" className="grid min-w-0 gap-3">
         <h2 id="game-board-title" className="sr-only">Game board</h2>
         <div role="status" aria-atomic="true" data-game-status className="sr-only">

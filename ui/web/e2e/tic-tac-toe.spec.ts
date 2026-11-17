@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
 
@@ -7,8 +8,8 @@ import { gatewayUrl, newEmail, newUsername, password } from "./support";
 const service = "/axon.game.v1.GameService/";
 const cells = ["Top left", "Top center", "Top right", "Middle left", "Middle center", "Middle right", "Bottom left", "Bottom center", "Bottom right"];
 const status = (page: Page) => page.locator("[data-game-status]");
-const board = (page: Page) => page.getByRole("grid", { name: "Tic-Tac-Toe board" });
-const cell = (page: Page, index: number, mark = "Empty") => board(page).getByRole("button", { name: `${cells[index]}, ${mark}`, exact: true });
+const board = (page: Page) => page.getByRole("grid", { name: "Tic-Tac-Toe board", includeHidden: true });
+const cell = (page: Page, index: number, mark = "Empty") => board(page).getByRole("button", { name: `${cells[index]}, ${mark}`, exact: true, includeHidden: true });
 
 async function player(browser: Browser, origin: string, name: string) {
   const context = await browser.newContext({ baseURL: origin });
@@ -98,10 +99,10 @@ test("two players invite, win, reload and draw; a third player cannot join", asy
     await expect(cell(a.page, 1)).toBeFocused();
     await a.page.keyboard.press("ArrowDown");
     await expect(cell(a.page, 4)).toBeFocused();
-    await expect(a.page.locator('[data-player="O"]')).toContainText("05:00");
-    await expect.poll(async () => a.page.locator('[data-player="X"]').innerText()).not.toContain("05:00");
+    await expect(a.page.locator('[data-player="O"]')).toContainText("5:00");
+    await expect.poll(async () => a.page.locator('[data-player="X"]').innerText()).not.toContain("5:00");
     await play([a.page, b.page], [0, 3]);
-    await a.page.getByRole("button", { name: "Отменить", exact: true }).click();
+    await a.page.getByRole("button", { name: "Отменить ход", exact: true }).click();
     await expect(cell(a.page, 3)).toBeDisabled();
     await expect(cell(b.page, 3)).toBeEnabled();
     await cell(b.page, 3).click();
@@ -112,26 +113,20 @@ test("two players invite, win, reload and draw; a third player cannot join", asy
     await play([a.page, b.page], [1, 4, 2]);
     await expect(status(a.page)).toHaveText("You won");
     await expect(status(b.page)).toHaveText("You lost");
-    await b.page.getByRole("button", { name: "Отменить", exact: true }).click();
-    await expect(status(a.page)).toHaveText("Your turn");
-    await expect(cell(a.page, 2)).toBeEnabled();
-    await expect(cell(b.page, 2)).toBeDisabled();
-    await expect(b.page.getByRole("button", { name: "Посмотреть поле" })).toHaveCount(0);
-    await cell(a.page, 2).click();
-    await expect(status(a.page)).toHaveText("You won");
-    await expect(status(b.page)).toHaveText("You lost");
+    await a.page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(a.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
     await expect(b.page.getByRole("button", { name: "Посмотреть поле" })).toBeVisible();
     await expect(board(a.page).locator("[data-winning]")).toHaveCount(3);
-    await expect(board(a.page).getByRole("button", { disabled: true })).toHaveCount(9);
+    await expect(board(a.page).getByRole("button", { disabled: true, includeHidden: true })).toHaveCount(9);
     await a.page.screenshot({ path: testInfo.outputPath("win-desktop.png"), animations: "disabled" });
 
-    await a.page.getByRole("link", { name: "Return to lobby" }).click();
+    await a.page.getByRole("link", { name: "В лобби" }).click();
     const previous = a.page.getByRole("link", { name: /Tic-Tac-Toe · You won/ });
     await expect(previous).toContainText("Cameron Beaumont-Sutherland");
     await expect(previous.locator("time")).toHaveText(/\d/);
     await a.page.screenshot({ path: testInfo.outputPath("game-history.png"), animations: "disabled" });
     await previous.click();
-    await a.page.getByRole("button", { name: "Play again" }).click();
+    await a.page.getByRole("button", { name: "Новая партия" }).click();
     await expect(status(a.page)).toHaveText(/Waiting for opponent/);
     const second = a.page.url();
     expect(second).not.toBe(first);
@@ -147,109 +142,184 @@ test("two players invite, win, reload and draw; a third player cannot join", asy
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     }
     await b.page.setViewportSize({ width: 390, height: 844 });
-    await expect(b.page.getByRole("button", { name: "Play again" })).toBeInViewport({ ratio: 1 });
+    await expect(b.page.getByRole("button", { name: "Новая партия" })).toBeInViewport({ ratio: 1 });
     await b.page.screenshot({ path: testInfo.outputPath("draw-mobile.png"), animations: "disabled" });
-    await b.page.getByRole("button", { name: "Отменить", exact: true }).click();
-    await expect(status(a.page)).toHaveText("Your turn");
-    await expect(cell(a.page, 8)).toBeEnabled();
+    await b.page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(b.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
     await a.page.reload();
-    await expect(cell(a.page, 8)).toBeEnabled();
-    await cell(a.page, 8).click();
-    await expect(status(b.page)).toHaveText("Draw");
+    await expect(status(a.page)).toHaveText("Draw");
   } finally {
     await testInfo.attach("game-sockets", { body: JSON.stringify([a.events, b.events]), contentType: "application/json" });
     await Promise.all([a.context.close(), b.context.close(), outsider.context.close()]);
   }
 });
 
-test("practice modes, undo, results, clocks, keyboard and responsive themes", async ({ browser, baseURL }, testInfo) => {
-  test.setTimeout(90_000);
+test("practice settings, clocks, undo, keyboard, results and responsive themes", async ({ browser, baseURL }, testInfo) => {
+  test.setTimeout(120_000);
   const person = await player(browser, new URL(baseURL!).origin, "Practice player");
   const page = person.page;
+  const undo = page.getByRole("button", { name: "Отменить ход", exact: true });
+  const reset = page.getByRole("button", { name: "Новая игра", exact: true });
+  const settings = () => page.getByRole("button", { name: "Настройки", exact: true }).click();
+  const radio = (group: string, name: string) => page.getByRole("group", { name: group, exact: true }).getByRole("radio", { name, exact: true });
+  const close = async () => { await page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true }).first().click(); await expect(page.getByRole("dialog")).toHaveCount(0); };
   try {
-    await page.goto("/games/tic-tac-toe");
-    await page.getByRole("link", { name: "Компьютер / Игра вдвоём" }).click();
-    await expect(page).toHaveURL(/\/practice$/);
-    const mode = page.getByRole("combobox", { name: "Режим игры" });
-    const undo = page.getByRole("button", { name: "Отменить", exact: true });
-    const reset = page.getByRole("button", { name: "Новая партия", exact: true });
+    await page.goto("/games/tic-tac-toe/practice");
+    await expect(board(page)).toBeVisible();
+    await page.clock.install();
+    await page.clock.fastForward(60000);
+    await expect(page.locator('[data-player="X"] [data-clock]')).toHaveText("1:00");
     await expect(undo).toBeDisabled();
-    await cell(page, 0).click();
-    await undo.click();
-    await page.waitForTimeout(500);
-    await expect(board(page).getByRole("button", { name: /Empty$/ })).toHaveCount(9);
-    await expect(undo).toBeDisabled();
-    await cell(page, 0).click();
-    await expect(board(page).getByRole("button", { name: /, O$/ })).toHaveCount(1);
-    await undo.click();
-    await expect(board(page).getByRole("button", { name: /Empty$/ })).toHaveCount(9);
-    await mode.selectOption("hard");
-    await cell(page, 0).click();
-    await expect(cell(page, 4, "O")).toBeVisible();
+    await page.keyboard.press("1");
     await expect(cell(page, 0, "X")).toBeVisible();
+    await page.clock.fastForward(5000);
+    await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
+    await settings();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await page.clock.fastForward(20000);
+    await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
+    await close();
+    await expect(page.getByRole("button", { name: "Настройки", exact: true })).toBeFocused();
+    await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
+    await page.clock.fastForward(20000);
+    await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
+    await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: false }); document.dispatchEvent(new Event("visibilitychange")); });
+    await page.clock.fastForward(45000);
+    await expect(page.locator('[data-player="O"] [data-clock]')).toHaveAttribute("data-low", "true");
+    await page.clock.fastForward(11000);
+    await expect(status(page)).toHaveText("Победа крестиков");
+    await expect(page.getByRole("dialog")).toContainText("Победа крестиков");
+    await page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(undo).toBeDisabled();
+    await page.keyboard.press("n");
+    await expect(board(page).getByRole("button", { name: /Empty$/, includeHidden: true })).toHaveCount(9);
+    await page.keyboard.press("1");
+    await page.keyboard.press("z");
+    await expect(board(page).getByRole("button", { name: /Empty$/, includeHidden: true })).toHaveCount(9);
+    await settings();
+    await radio("Соперник", "Компьютер").check();
+    await radio("Сложность", "Сильная").check();
+    await radio("Вы играете за", "Нолики").check();
+    await close();
+    await expect(board(page).getByRole("button", { name: /, X$/ })).toHaveCount(1);
+    await expect(page.locator('[data-player="X"]')).toContainText("Сильный");
+    await expect(page.locator('[data-player="X"]')).not.toContainText("228");
+    await expect(undo).toBeDisabled();
+    const empty = board(page).getByRole("button", { name: /Empty$/, includeHidden: true }).first();
+    await empty.click();
+    await expect(board(page).getByRole("button", { name: /, X$/ })).toHaveCount(2);
     await undo.click();
-    await expect(board(page).getByRole("button", { name: /Empty$/ })).toHaveCount(9);
-    await cell(page, 0).click();
-    await mode.selectOption("local");
-    await page.waitForTimeout(500);
-    await expect(board(page).getByRole("button", { name: /Empty$/ })).toHaveCount(9);
+    await expect(board(page).getByRole("button", { name: /, O$/ })).toHaveCount(0);
+    await settings();
+    await radio("Сложность", "Средняя").check();
+    await close();
+    await expect(page.locator('[data-player="X"]')).toContainText("Средний");
+    await settings();
+    await radio("Соперник", "Игрок").check();
+    await close();
     await cell(page, 0).focus();
     await page.keyboard.press("ArrowRight");
     await expect(cell(page, 1)).toBeFocused();
-    for (const [ply, index] of [0, 3, 1, 4, 2].entries()) {
-      await cell(page, index).click();
-      await expect(cell(page, index, ply % 2 ? "O" : "X")).toBeVisible();
-    }
+    expect(await cell(page, 1).evaluate(e => getComputedStyle(e).outlineStyle)).toBe("solid");
+    for (const index of [0, 3, 1, 4, 2]) await cell(page, index).click();
     await expect(status(page)).toHaveText("Победа крестиков");
     await expect(board(page).locator("[data-winning]")).toHaveCount(3);
-    await expect(page.getByRole("button", { name: "Посмотреть поле" })).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath("practice-win-desktop.png"), animations: "disabled" });
     await page.getByRole("button", { name: "Посмотреть поле" }).click();
-    await undo.click();
-    await expect(cell(page, 2)).toBeEnabled();
-    await expect(status(page)).toHaveText("Ход крестиков");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(undo).toBeDisabled();
     await reset.click();
     for (const index of [0, 1, 2, 4, 3, 5, 7, 6, 8]) await cell(page, index).click();
     await expect(status(page)).toHaveText("Ничья");
     await page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button", { name: "Статистика", exact: true }).click();
+    const total = () => page.getByRole("dialog").getByText("Партий сыграно").locator("..");
+    await expect(total()).toContainText("3");
+    await page.getByRole("button", { name: "Сбросить", exact: true }).click();
+    await expect(total()).toContainText("0");
+    await close();
+    await page.getByRole("button", { name: "Статистика", exact: true }).click();
+    await expect(total()).toContainText("0");
+    await close();
     await reset.click();
-    await page.clock.install();
-    await page.clock.fastForward(300_100);
-    await expect(status(page)).toHaveText("Победа ноликов");
-    await expect(page.locator('[data-player="X"]')).toContainText("00:00");
-    await expect(board(page).getByRole("button", { disabled: true })).toHaveCount(9);
-    await page.getByRole("button", { name: "Новая партия", exact: true }).first().click();
-    await expect(page.locator('[data-player="X"]')).toContainText("05:00");
-    await expect(page.locator('[data-player="O"]')).toContainText("05:00");
-    await mode.selectOption("hard");
-    await page.clock.fastForward(300_100);
-    await expect(status(page)).toHaveText("Поражение");
-    await page.getByRole("button", { name: "Новая партия", exact: true }).first().click();
-    await mode.selectOption("local");
     await cell(page, 0).click();
     await cell(page, 4).click();
+    await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
+    const reference = await person.context.newPage();
+    await reference.setContent(readFileSync(new URL("../../../docs/design/tictactoe.html", import.meta.url), "utf8"));
+    await reference.locator(".cell").nth(0).click();
+    await reference.locator(".cell").nth(4).click();
     for (const theme of ["light", "dark"]) {
-      await page.evaluate(value => document.documentElement.setAttribute("data-theme", value), theme);
-      expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(theme);
-      await expect(cell(page, 4, "O").locator("svg")).toHaveCSS("color", theme === "dark" ? "rgb(157, 184, 220)" : "rgb(80, 104, 139)");
+      await settings();
+      await radio("Тема", theme === "light" ? "Светлая" : "Тёмная").check();
+      await close();
+      await reference.evaluate(theme => document.documentElement.setAttribute("data-theme", theme), theme);
+      await expect(cell(page, 4, "O").locator("svg")).toHaveCSS("color", theme === "dark" ? "rgb(240, 239, 246)" : "rgb(37, 40, 58)");
+      const contrast = await page.evaluate(() => {
+        const luma = (color: string) => {
+          const rgb = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(value => { const channel = value / 255; return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4; });
+          return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+        };
+        return [["text", "card"], ["text2", "card"], ["text2", "bg2"], ["on-primary", "primary"], ["on-primary", "error"]].map(([fg, bg]) => {
+          const sample = document.createElement("span");
+          sample.style.cssText = `color:var(--color-game-${fg});background:var(--color-game-${bg})`;
+          document.body.append(sample);
+          const style = getComputedStyle(sample);
+          const a = luma(style.color), b = luma(style.backgroundColor);
+          sample.remove();
+          return { fg, bg, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
+        });
+      });
+      for (const pair of contrast) expect(pair.ratio, `${theme} ${pair.fg}/${pair.bg}`).toBeGreaterThanOrEqual(4.5);
+      await testInfo.attach(`contrast-${theme}`, { body: JSON.stringify(contrast), contentType: "application/json" });
       await page.mouse.move(0, 0);
-      for (const [width, height] of [[1440, 1000], [390, 844], [320, 568], [844, 390]]) {
-        await page.setViewportSize({ width, height });
-        const bounds = await board(page).boundingBox();
-        expect(bounds!.width).toBeGreaterThan(200);
-        expect(Math.abs(bounds!.height - bounds!.width)).toBeLessThan(2);
-        expect(bounds!.x).toBeGreaterThanOrEqual(0);
-        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      await reference.mouse.move(0, 0);
+      for (const width of [320, 390, 768, 1280]) {
+        await page.setViewportSize({ width, height: 900 });
+        await reference.setViewportSize({ width, height: 900 });
+        const bounds = (await board(page).boundingBox())!;
+        expect(bounds.width).toBeGreaterThan(200);
+        expect(Math.abs(bounds.height - bounds.width)).toBeLessThan(2);
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        if (width === 390 || width === 1440) await page.screenshot({ path: testInfo.outputPath(`practice-${theme}-${width}.png`), animations: "disabled" });
+        const header = page.locator("main header");
+        const actions = header.locator("a,button");
+        for (const action of await actions.all()) { const rect = (await action.boundingBox())!; expect(rect.width).toBeGreaterThanOrEqual(44); expect(rect.height).toBeGreaterThanOrEqual(44); }
+        expect((await header.boundingBox())!.y).toBeLessThanOrEqual(16);
+        await expect(header.getByRole("link", { name: "В лобби" })).toHaveText("");
+        await page.screenshot({ path: testInfo.outputPath(`game-${theme}-${width}.png`), animations: "disabled" });
+        await reference.screenshot({ path: testInfo.outputPath(`reference-${theme}-${width}.png`), animations: "disabled" });
       }
     }
+    await reference.close();
+    await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: false }); document.dispatchEvent(new Event("visibilitychange")); });
+    await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
+    await settings();
+    await radio("Тема", "Системная").check();
+    await close();
+    await expect(page.locator('[data-player="X"]')).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+    await expect(page.locator('[data-player="X"]')).toHaveCSS("background-color", "rgb(25, 29, 41)");
+    await reset.click();
+    await cell(page, 0).click();
+    expect(await cell(page, 0, "X").locator("line").first().evaluate(e => getComputedStyle(e).animationName)).toBe("none");
+    await settings();
+    await radio("Время на каждого игрока", "30 с").check();
+    await radio("Соперник", "Компьютер").check();
+    await radio("Сложность", "Лёгкая").check();
+    await radio("Тема", "Тёмная").check();
+    await close();
     await page.reload();
-    await expect(mode).toHaveValue("easy");
-    await expect(board(page).getByRole("button", { name: /Empty$/ })).toHaveCount(9);
-  } finally {
-    await person.context.close();
-  }
+    await settings();
+    await expect(radio("Время на каждого игрока", "30 с")).toBeChecked();
+    await expect(radio("Сложность", "Лёгкая")).toBeChecked();
+    await expect(radio("Тема", "Тёмная")).toBeChecked();
+    await close();
+  } finally { await person.context.close(); }
 });
 
 function fixtureSQL(id: string, sql: string) {
@@ -262,7 +332,7 @@ function shortenFixtureClock(id: string) {
   fixtureSQL(id, `UPDATE game.sessions SET clock=jsonb_build_object('remaining_ms',jsonb_build_array(1500,1500),'started_at',clock_timestamp()) WHERE id='${id}'; SELECT pg_notify('game_session_changed','${id}');`);
 }
 
-test("server clocks survive offline clients, timeout, undo and an empty room", async ({ browser, baseURL }, testInfo) => {
+test("server clocks survive offline clients, timeout and an empty room", async ({ browser, baseURL }, testInfo) => {
   test.skip(!process.env.GAME_E2E_POSTGRES_CONTAINER, "Requires fixture clock control on the dev PostgreSQL");
   test.setTimeout(90_000);
   const a = await player(browser, new URL(baseURL!).origin, "Clock player X");
@@ -277,22 +347,16 @@ test("server clocks survive offline clients, timeout, undo and an empty room", a
     await b.context.setOffline(true);
     shortenFixtureClock(first.split("/").at(-1)!);
     await expect(status(a.page)).toHaveText("You won");
-    await expect(a.page.getByText("Время вышло", { exact: true })).toBeVisible();
-    await expect(a.page.locator('[data-player="O"]')).toContainText("00:00");
-    await expect(a.page.locator('[data-player="X"]')).toContainText("00:02");
+    await expect(a.page.getByText("Время вышло", { exact: true })).toHaveCount(1);
+    await expect(a.page.locator('[data-player="O"]')).toContainText("0:00");
+    await expect(a.page.locator('[data-player="X"]')).toContainText("0:02");
     await b.context.setOffline(false);
     await b.page.reload();
     await expect(status(b.page)).toHaveText("You lost");
-    await expect(b.page.locator('[data-player="O"]')).toContainText("00:00");
-    await b.page.getByRole("button", { name: "Отменить", exact: true }).click();
-    await expect(status(a.page)).toHaveText("Your turn");
-    await expect(status(b.page)).toHaveText("Opponent’s turn");
-    await expect(board(a.page).getByRole("button", { name: /Empty$/ })).toHaveCount(9);
-    await expect(a.page.getByText("Время вышло", { exact: true })).toHaveCount(0);
-    await expect(a.page.locator('[data-player="O"]')).toContainText("05:00");
-    await b.page.setViewportSize({ width: 390, height: 844 });
-    await b.page.screenshot({ path: testInfo.outputPath("network-clock-undo-mobile.png"), animations: "disabled" });
-    await a.page.getByRole("button", { name: "Новая партия", exact: true }).click();
+    await expect(b.page.locator('[data-player="O"]')).toContainText("0:00");
+    await a.page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(a.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
+    await a.page.getByRole("button", { name: "Новая игра", exact: true }).click();
     await expect(status(a.page)).toContainText("Waiting for opponent");
     const second = a.page.url();
     expect(second).not.toBe(first);
@@ -307,7 +371,8 @@ test("server clocks survive offline clients, timeout, undo and an empty room", a
     expect(session.timedOut).toBe(true);
     await a.page.goto(second);
     await expect(status(a.page)).toHaveText("You lost");
-    await expect(a.page.getByRole("button", { name: "Отменить", exact: true })).toBeDisabled();
+    await a.page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(a.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
   } finally {
     await Promise.all([a.context.close(), b.context.close()]);
   }
