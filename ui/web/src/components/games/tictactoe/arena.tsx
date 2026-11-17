@@ -67,9 +67,9 @@ export function ArenaDialog({ title, open, onOpenChange, children, footer, hideT
     <Dialog.Portal>
       <Dialog.Backdrop className="fixed inset-0 z-50 bg-game-scrim backdrop-blur-[2px] transition-opacity duration-200 motion-reduce:transition-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
       <Dialog.Popup aria-describedby={undefined} className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-32px)] w-[min(360px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-game-lg border border-game-border bg-game-card font-sans text-[14px] leading-[1.45] text-game-text shadow-game-dialog outline-none transition-[opacity,scale] duration-200 motion-reduce:transition-none data-[ending-style]:opacity-0 data-[starting-style]:scale-[.98] data-[starting-style]:opacity-0">
-        <div className="flex items-center justify-between pt-2 pr-2 pl-5"><Dialog.Title className={cn("text-[15px] font-semibold tracking-[-.01em]", hideTitle && "sr-only")}>{title}</Dialog.Title><Dialog.Close aria-label="Закрыть" className={iconClass}><X aria-hidden /></Dialog.Close></div>
+        <div className={hideTitle ? "absolute top-2 right-2 z-10" : "flex items-center justify-between pt-2 pr-2 pl-5"}><Dialog.Title className={cn("text-[15px] font-semibold tracking-[-.01em]", hideTitle && "sr-only")}>{title}</Dialog.Title><Dialog.Close aria-label="Закрыть" className={iconClass}><X aria-hidden /></Dialog.Close></div>
         <ScrollArea className="min-h-0"><div className="grid gap-4 px-5 pt-2 pb-5">{children}</div></ScrollArea>
-        {footer ? <div className="flex flex-wrap justify-end gap-2 border-t border-game-border bg-game-sidebar px-5 py-3">{footer}</div> : null}
+        {footer ? <div className={cn("flex flex-wrap justify-end gap-2 border-t border-game-border bg-game-sidebar px-5 py-3", hideTitle && "max-[359px]:flex-col")}>{footer}</div> : null}
       </Dialog.Popup>
     </Dialog.Portal>
   </Dialog.Root>;
@@ -78,7 +78,7 @@ export function ArenaDialog({ title, open, onOpenChange, children, footer, hideT
 export function ArenaResult({ title, kind, close, restart, pending }: { title: string; kind: "win" | "lose" | "draw"; close: () => void; restart: () => void; pending?: boolean }) {
   const Icon = kind === "draw" ? Minus : kind === "lose" ? X : Check;
   return <ArenaDialog title={title} hideTitle open onOpenChange={open => { if (!open) close(); }} footer={<><button type="button" className={actionClass} onClick={close}>Посмотреть поле</button><button type="button" disabled={pending} onClick={restart} className={cn(actionClass, "border-game-primary bg-game-primary text-game-on-primary hover:bg-game-primary hover:brightness-110")}>{pending ? "Создание…" : "Новая партия"}</button></>}>
-    <div className="grid justify-items-center gap-3 py-4"><span aria-hidden className={cn("grid size-12 place-items-center rounded-full bg-game-success/15 text-game-success", kind === "lose" && "bg-game-error/15 text-game-error", kind === "draw" && "bg-game-warning/15 text-game-warning")}><Icon size={24} /></span><span className="text-[18px] font-semibold">{title}</span></div>
+    <div className="grid justify-items-center gap-3 pt-5 text-center"><span aria-hidden className={cn("grid size-12 place-items-center rounded-full bg-game-success/15 text-game-success", kind === "lose" && "bg-game-error/15 text-game-error", kind === "draw" && "bg-game-warning/15 text-game-warning")}><Icon size={24} /></span><span className="text-[18px] font-semibold">{title}</span></div>
   </ArenaDialog>;
 }
 
