@@ -1,37 +1,81 @@
-import { ArrowUpRight, Timer, X } from "lucide-react";
-import type { ReactNode } from "react";
+"use client";
+
+import { Dialog } from "@base-ui/react/dialog";
+import { ArrowLeft, Bot, Check, Minus, Plus, SlidersHorizontal, Undo2, X } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { type ReactNode } from "react";
 
 import { GameMark } from "@/components/games/tictactoe/board";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Mark } from "@/gen/axon/game/v1/game_pb";
 import { formatClock } from "@/lib/games/tictactoe";
 import { cn } from "@/lib/utils";
 
-export const arenaClass = "mx-auto flex w-full max-w-[550px] min-w-0 flex-col text-foreground";
-export const actionClass = "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground transition-colors hover:border-primary hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-35";
+
+export const arenaClass = "@container mx-auto flex w-full max-w-[380px] min-w-0 flex-col gap-3 font-sans text-[14px] leading-[1.45] text-game-text";
+export const actionClass = "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-game-md border border-game-border bg-game-card px-3 text-[14px] font-medium text-game-text transition-colors duration-200 motion-reduce:transition-none hover:bg-game-bg2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-game-primary disabled:cursor-default disabled:opacity-40";
+export const iconClass = "grid size-[44px] shrink-0 place-items-center rounded-game-sm text-game-text2 transition-colors duration-200 motion-reduce:transition-none hover:bg-game-bg2 hover:text-game-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-game-primary disabled:cursor-default disabled:opacity-40 [&_svg]:size-[18px] [&_svg]:stroke-[1.75]";
 
 export function ArenaHeader({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-[52px] items-center justify-between gap-3 pb-3.5">
-    <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight sm:text-[15px]"><span aria-hidden className="grid size-[27px] shrink-0 place-items-center rounded-lg bg-primary/15 text-[17px] text-primary">×○</span><span>Крестики-нолики</span></h1>
+  return <header className="flex min-h-11 items-center justify-between gap-1">
+    <div className="flex min-w-0 items-center gap-1"><Link href="/games/tic-tac-toe" aria-label="В лобби" title="В лобби" className={iconClass}><ArrowLeft aria-hidden /></Link><h1 className="min-w-0 truncate text-[14px] font-semibold tracking-[-.01em] @max-[350px]:sr-only">Крестики-нолики</h1></div>
+    {children}
+  </header>;
+}
+
+export function ArenaTools({ restart, undo, canUndo, children }: { restart: () => void; undo: () => void; canUndo: boolean; children: ReactNode }) {
+  return <div className="flex shrink-0 items-center">
+    <button type="button" aria-label="Новая игра" title="Новая игра (N)" className={iconClass} onClick={restart}><Plus aria-hidden /></button>
+    <button type="button" aria-label="Отменить ход" title="Отменить ход (Z)" className={iconClass} disabled={!canUndo} onClick={undo}><Undo2 aria-hidden /></button>
+    <span aria-hidden className="mx-1 h-4 w-px bg-game-border" />
     {children}
   </div>;
 }
 
-export function ArenaPlayer({ mark, name, active, time }: { mark: Mark; name: string; active: boolean; time?: number }) {
-  return <div data-player={mark === Mark.X ? "X" : "O"} data-active={active || undefined} className="flex h-[57px] min-w-0 items-center gap-2.5">
-    <span className={cn("grid size-[35px] shrink-0 place-items-center rounded-[9px] bg-muted", mark === Mark.X && "bg-primary/15")}><GameMark mark={mark} className="size-5" /></span>
-    <span className="truncate text-sm font-semibold">{name}</span>
-    {time !== undefined ? <span aria-label={`${mark === Mark.X ? "Время крестиков" : "Время ноликов"}, ${formatClock(time)}${active ? ", таймер идёт" : ""}`} className={cn("ml-auto flex h-[37px] min-w-[101px] shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 font-mono text-[19px] leading-none font-semibold tracking-[-.06em] text-muted-foreground tabular-nums", active && "border-primary/40 bg-primary/15 text-foreground shadow-[inset_3px_0_0_var(--color-primary)]", time === 0 && "border-destructive text-destructive")}><Timer aria-hidden size={15} /><span>{formatClock(time)}</span></span>
-      : active ? <span className="ml-auto size-2 shrink-0 rounded-full bg-primary" aria-label="Current turn" /> : null}
+function Identicon({ name }: { name: string }) {
+  let hash = 2166136261;
+  for (const character of name) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  const pixels = [];
+  for (let x = 0; x < 3; x++) for (let y = 0; y < 5; y++) if ((hash >>> (x * 5 + y)) & 1) {
+    pixels.push(<rect key={`${x}-${y}`} x={1.5 + x} y={1.5 + y} width="1" height="1" />);
+    if (x < 2) pixels.push(<rect key={`${4 - x}-${y}`} x={5.5 - x} y={1.5 + y} width="1" height="1" />);
+  }
+  return <svg aria-hidden viewBox="0 0 8 8" className="size-full fill-game-primary">{pixels}</svg>;
+}
+
+export function ArenaPlayer({ mark, name, active, time, rating, difficulty, avatar = "", bot = false }: { mark: Mark; name: string; active: boolean; time?: number; rating?: number; difficulty?: string; avatar?: string; bot?: boolean }) {
+  const symbol = mark === Mark.X ? "X" : "O";
+  const low = time !== undefined && time <= 10000 && (active || time === 0);
+  return <div data-player={symbol} data-active={active || undefined} className="flex h-[60px] min-w-0 items-center gap-3 rounded-game-md border border-game-border bg-game-card px-3">
+    <span className="relative size-[38px] shrink-0"><span className={cn("grid size-full place-items-center overflow-hidden rounded-full bg-game-accent text-game-text2", bot && "bg-game-bg2")}>
+      {avatar ? <Image src={avatar} alt="" width={38} height={38} unoptimized className="size-full object-cover" /> : bot ? <Bot aria-hidden size={20} strokeWidth={1.75} /> : <Identicon name={name} />}
+    </span><span className="absolute -right-1 -bottom-1 grid size-[18px] place-items-center rounded-full border border-game-border bg-game-card"><GameMark mark={mark} className="size-[11px]" /></span></span>
+    <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2"><b className="min-w-0 truncate text-[15px] font-medium">{name}</b>{difficulty || rating !== undefined ? <span className={cn("text-[13px] text-game-text2", rating !== undefined && "font-mono")}>{difficulty ?? rating}</span> : null}</span>
+    {time !== undefined ? <span data-clock data-low={low || undefined} aria-label={`${symbol === "X" ? "Время крестиков" : "Время ноликов"}, ${formatClock(time)}${active ? ", таймер идёт" : ""}`} className={cn("grid h-[38px] min-w-[84px] shrink-0 place-items-center rounded-game-sm bg-game-bg2 px-3 font-mono text-[18px] leading-none font-medium text-game-text2 tabular-nums transition-colors duration-200 motion-reduce:transition-none @max-[320px]:min-w-[72px] @max-[320px]:text-[16px]", active && "bg-game-primary text-game-on-primary", low && "bg-game-error text-game-on-primary")}>{formatClock(time).replace(/^0/, "")}</span> : null}
   </div>;
 }
 
+export function ArenaDialog({ title, open, onOpenChange, children, footer, hideTitle = false }: { title: string; open: boolean; onOpenChange: (open: boolean) => void; children: ReactNode; footer?: ReactNode; hideTitle?: boolean }) {
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Portal>
+      <Dialog.Backdrop className="fixed inset-0 z-50 bg-game-scrim backdrop-blur-[2px] transition-opacity duration-200 motion-reduce:transition-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+      <Dialog.Popup aria-describedby={undefined} className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-32px)] w-[min(360px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-game-lg border border-game-border bg-game-card font-sans text-[14px] leading-[1.45] text-game-text shadow-game-dialog outline-none transition-[opacity,scale] duration-200 motion-reduce:transition-none data-[ending-style]:opacity-0 data-[starting-style]:scale-[.98] data-[starting-style]:opacity-0">
+        <div className="flex items-center justify-between pt-2 pr-2 pl-5"><Dialog.Title className={cn("text-[15px] font-semibold tracking-[-.01em]", hideTitle && "sr-only")}>{title}</Dialog.Title><Dialog.Close aria-label="Закрыть" className={iconClass}><X aria-hidden /></Dialog.Close></div>
+        <ScrollArea className="min-h-0"><div className="grid gap-4 px-5 pt-2 pb-5">{children}</div></ScrollArea>
+        {footer ? <div className="flex flex-wrap justify-end gap-2 border-t border-game-border bg-game-sidebar px-5 py-3">{footer}</div> : null}
+      </Dialog.Popup>
+    </Dialog.Portal>
+  </Dialog.Root>;
+}
+
 export function ArenaResult({ title, kind, close, restart, pending }: { title: string; kind: "win" | "lose" | "draw"; close: () => void; restart: () => void; pending?: boolean }) {
-  return <div className="absolute inset-0 z-10 grid place-items-center rounded-[9px] bg-black/35 backdrop-blur-[1.5px] motion-safe:animate-fade">
-    <section aria-label={title} className="relative flex w-[252px] max-w-[calc(100%-42px)] flex-col items-center gap-2.5 rounded-[13px] border border-border bg-card px-[18px] pt-6 pb-[18px] text-center shadow-2xl">
-      <button type="button" aria-label="Посмотреть поле" title="Посмотреть поле" onClick={close} className="absolute top-1.5 right-2 grid size-[30px] place-items-center rounded-lg text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"><X aria-hidden size={19} /></button>
-      <span aria-hidden className={cn("grid size-11 place-items-center rounded-full bg-success/15 text-[27px] font-bold text-success", kind === "lose" && "bg-destructive/15 text-destructive", kind === "draw" && "bg-muted text-muted-foreground")}>{kind === "draw" ? "=" : kind === "lose" ? "×" : "✓"}</span>
-      <div className="text-[21px] leading-tight font-bold tracking-tight">{title}</div>
-      <button type="button" disabled={pending} onClick={restart} className="mt-1 flex min-h-[41px] w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 text-[13px] font-bold text-primary-foreground hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-35">{pending ? "Создание…" : "Новая партия"}<ArrowUpRight aria-hidden size={16} /></button>
-    </section>
-  </div>;
+  const Icon = kind === "draw" ? Minus : kind === "lose" ? X : Check;
+  return <ArenaDialog title={title} hideTitle open onOpenChange={open => { if (!open) close(); }} footer={<><button type="button" className={actionClass} onClick={close}>Посмотреть поле</button><button type="button" disabled={pending} onClick={restart} className={cn(actionClass, "border-game-primary bg-game-primary text-game-on-primary hover:bg-game-primary hover:brightness-110")}>{pending ? "Создание…" : "Новая партия"}</button></>}>
+    <div className="grid justify-items-center gap-3 py-4"><span aria-hidden className={cn("grid size-12 place-items-center rounded-full bg-game-success/15 text-game-success", kind === "lose" && "bg-game-error/15 text-game-error", kind === "draw" && "bg-game-warning/15 text-game-warning")}><Icon size={24} /></span><span className="text-[18px] font-semibold">{title}</span></div>
+  </ArenaDialog>;
+}
+
+export function SettingsIcon({ onClick }: { onClick: () => void }) {
+  return <button type="button" aria-label="Настройки" title="Настройки" className={iconClass} onClick={onClick}><SlidersHorizontal aria-hidden /></button>;
 }

@@ -1,0 +1,26 @@
+@theme {
+  --color-game-primary: light-dark(#5945b9, #ad9ffc);
+  --color-game-on-primary: light-dark(#ffffff, #0e121b);
+  --color-game-bg: light-dark(#f3f4f8, #0e121b);
+  --color-game-workspace: light-dark(#f0f1f8, #090c14);
+  --color-game-card: light-dark(#ffffff, #191d29);
+  --color-game-sidebar: light-dark(#fbfbfe, #10131d);
+  --color-game-text: light-dark(#25283a, #f0eff6);
+  --color-game-text2: light-dark(#565f73, #a5aec2);
+  --color-game-bg2: light-dark(#eceef5, #242a39);
+  --color-game-accent: light-dark(#ebe6fc, #2c2744);
+  --color-game-border: light-dark(#dadee9, #303646);
+  --color-game-success: light-dark(#237a57, #72ce9f);
+  --color-game-warning: light-dark(#98600a, #f2bd64);
+  --color-game-error: light-dark(#b8324c, #f07f91);
+  --color-game-scrim: light-dark(rgb(37 40 58 / .38), rgb(0 0 0 / .55));
+  --radius-game-sm: 9px;
+  --radius-game-md: 12px;
+  --radius-game-lg: 16px;
+  --shadow-game-dialog: 0 2px 4px light-dark(rgb(37 40 58 / .06), rgb(0 0 0 / .35)), 0 24px 56px -20px light-dark(rgb(37 40 58 / .30), rgb(0 0 0 / .70));
+  --animate-game-draw: game-draw 200ms ease-out both;
+  @keyframes game-draw {
+    from { stroke-dashoffset: 1; opacity: 0; }
+    to { stroke-dashoffset: 0; opacity: 1; }
+  }
+}
