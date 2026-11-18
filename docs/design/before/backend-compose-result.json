@@ -1,0 +1,4 @@
+{
+  "command": "docker compose -f core/deploy/docker-compose.web-e2e.yml config --quiet",
+  "exit_code": 0
+}

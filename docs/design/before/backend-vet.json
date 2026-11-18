@@ -1,0 +1,27 @@
+[
+  {
+    "module": "shared",
+    "exit_code": 0,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-shared-vet.log"
+  },
+  {
+    "module": "auth",
+    "exit_code": 0,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-auth-vet.log"
+  },
+  {
+    "module": "chat",
+    "exit_code": 0,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-chat-vet.log"
+  },
+  {
+    "module": "gateway",
+    "exit_code": 0,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-gateway-vet.log"
+  },
+  {
+    "module": "game",
+    "exit_code": 0,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-game-vet.log"
+  }
+]
