@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
@@ -132,7 +134,27 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					}
 					continue
 				}
-				item, err = h.store.Move(ctx, id, user, int(move.Ply), int(move.Cell), move.Revision)
+				data, _ := json.Marshal(tictactoe.Cell{Row: int(move.Cell) / tictactoe.Size, Col: int(move.Cell) % tictactoe.Size})
+				item, err = h.store.Move(ctx, id, user, int(move.Ply), tictactoe.Key, data, move.Revision)
+			case *gamev1.SessionCommand_ChessMove:
+				move := action.ChessMove
+				if move == nil || len(move.Uci) > 5 {
+					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
+						return
+					}
+					continue
+				}
+				data, _ := json.Marshal(chess.MoveData{UCI: move.Uci})
+				item, err = h.store.Move(ctx, id, user, int(move.Ply), chess.Key, data, move.Revision)
+			case *gamev1.SessionCommand_Draw:
+				drawAction, ok := drawActions[action.Draw.GetAction()]
+				if !ok {
+					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
+						return
+					}
+					continue
+				}
+				item, err = h.store.Draw(ctx, id, user, drawAction)
 			case *gamev1.SessionCommand_Undo:
 				if action.Undo == nil {
 					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
@@ -171,6 +193,12 @@ func moveError(err error) gamev1.SessionError {
 		return gamev1.SessionError_SESSION_ERROR_STALE_MOVE
 	case errors.Is(err, tictactoe.ErrCellTaken):
 		return gamev1.SessionError_SESSION_ERROR_CELL_TAKEN
+	case errors.Is(err, chess.ErrIllegalMove), errors.Is(err, chess.ErrBadMove):
+		return gamev1.SessionError_SESSION_ERROR_ILLEGAL_MOVE
+	case errors.Is(err, session.ErrNoDrawOffer):
+		return gamev1.SessionError_SESSION_ERROR_NO_DRAW_OFFER
+	case errors.Is(err, engine.ErrGameMismatch), errors.Is(err, engine.ErrMoveMalformed):
+		return gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND
 	case errors.Is(err, session.ErrRated):
 		return gamev1.SessionError_SESSION_ERROR_UNDO_DISABLED
 	case errors.Is(err, session.ErrNotPlaying), errors.Is(err, engine.ErrGameOver):
@@ -218,4 +246,10 @@ func (h *Handler) watchMatch(ctx context.Context, cancel context.CancelFunc, con
 			}
 		}
 	}
+}
+
+var drawActions = map[gamev1.DrawAction]session.DrawAction{
+	gamev1.DrawAction_DRAW_ACTION_OFFER:   session.OfferDraw,
+	gamev1.DrawAction_DRAW_ACTION_ACCEPT:  session.AcceptDraw,
+	gamev1.DrawAction_DRAW_ACTION_DECLINE: session.DeclineDraw,
 }

@@ -215,7 +215,7 @@ func (s *Store) pairUp(ctx context.Context, tx pgx.Tx, game engine.Key, pair mat
 	if err != nil {
 		return Session{}, err
 	}
-	clockRaw, err := json.Marshal(NewClock(now))
+	clockRaw, err := json.Marshal(s.NewClock(game, now))
 	if err != nil {
 		return Session{}, err
 	}

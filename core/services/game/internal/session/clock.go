@@ -9,8 +9,8 @@ type Clock struct {
 	StartedAt   time.Time `json:"started_at"`
 }
 
-func NewClock(now time.Time) *Clock {
-	return &Clock{RemainingMS: [2]int64{TimeLimitMS, TimeLimitMS}, StartedAt: now}
+func NewClock(now time.Time, limit int64) *Clock {
+	return &Clock{RemainingMS: [2]int64{limit, limit}, StartedAt: now}
 }
 
 func (s Session) ClockAt(now time.Time) *Clock {

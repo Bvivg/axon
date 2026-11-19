@@ -12,14 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
-	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 )
 
 var (
-	ErrNotFound   = errors.New("game session not found")
-	ErrNotPlaying = errors.New("game is not in progress")
-	ErrFull       = errors.New("game session is full")
-	ErrRated      = errors.New("rated games cannot be undone")
+	ErrNotFound    = errors.New("game session not found")
+	ErrNotPlaying  = errors.New("game is not in progress")
+	ErrFull        = errors.New("game session is full")
+	ErrRated       = errors.New("rated games cannot be undone")
+	ErrNoDrawOffer = errors.New("there is no draw offer to answer")
 )
 
 const (
@@ -28,17 +28,19 @@ const (
 )
 
 type Session struct {
-	ID        uuid.UUID
-	Game      engine.Key
-	Creator   uuid.UUID
-	Opponent  *uuid.UUID
-	State     engine.State
-	UpdatedAt time.Time
-	Revision  uint32
-	Clock     *Clock
-	TimedOut  bool
-	Rated     bool
-	Resigned  bool
+	ID         uuid.UUID
+	Game       engine.Key
+	Creator    uuid.UUID
+	Opponent   *uuid.UUID
+	State      engine.State
+	UpdatedAt  time.Time
+	Revision   uint32
+	Clock      *Clock
+	TimedOut   bool
+	Rated      bool
+	Resigned   bool
+	DrawOffer  *uuid.UUID
+	AgreedDraw bool
 }
 
 func (s Session) HasPlayer(user uuid.UUID) bool {
@@ -54,12 +56,12 @@ func NewStore(pool *pgxpool.Pool, games *engine.Registry) *Store {
 	return &Store{pool: pool, games: games}
 }
 
-const columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned"
+const columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw"
 
 func scan(row pgx.Row) (Session, error) {
 	var s Session
 	var raw, clock []byte
-	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned)
+	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned, &s.DrawOffer, &s.AgreedDraw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}
@@ -127,16 +129,27 @@ func (s *Store) Join(ctx context.Context, id, user uuid.UUID) (Session, error) {
 			return Session{}, err
 		}
 		game.Opponent, game.State = &user, state
-		game.Clock = NewClock(time.Now())
+		game.Clock = s.NewClock(game.Game, time.Now())
 		err = s.save(ctx, tx, &game)
 		return game, err
 	})
 }
 
-func (s *Store) Move(ctx context.Context, id, user uuid.UUID, ply, cell int, revision *uint32) (Session, error) {
+func (s *Store) TimeLimitMS(game engine.Key) int64 {
+	return s.games.TimeLimit(game).Milliseconds()
+}
+
+func (s *Store) NewClock(game engine.Key, now time.Time) *Clock {
+	return NewClock(now, s.TimeLimitMS(game))
+}
+
+func (s *Store) Move(ctx context.Context, id, user uuid.UUID, ply int, kind engine.Key, data json.RawMessage, revision *uint32) (Session, error) {
 	return s.change(ctx, id, func(tx pgx.Tx, game Session) (Session, error) {
 		if !game.HasPlayer(user) {
 			return Session{}, ErrNotFound
+		}
+		if game.Game != kind {
+			return Session{}, engine.ErrGameMismatch
 		}
 		if game.Opponent == nil {
 			return Session{}, ErrNotPlaying
@@ -153,7 +166,7 @@ func (s *Store) Move(ctx context.Context, id, user uuid.UUID, ply, cell int, rev
 			return s.persist(ctx, tx, game)
 		}
 		beforeState, beforeClock := game.State, game.ClockAt(now)
-		move := tictactoe.NewMove(engine.PlayerID(user.String()), ply, cell/tictactoe.Size, cell%tictactoe.Size)
+		move := engine.Move{Player: engine.PlayerID(user.String()), Ply: ply, Data: data}
 		game.State, err = rules.ApplyMove(game.State, move)
 		if err != nil {
 			return Session{}, err
@@ -170,7 +183,7 @@ func (s *Store) Move(ctx context.Context, id, user uuid.UUID, ply, cell int, rev
 			game.ID, game.State.Ply, user, move.Data, stateRaw, clockRaw); err != nil {
 			return Session{}, err
 		}
-		game.Clock = beforeClock
+		game.Clock, game.DrawOffer = beforeClock, nil
 		err = s.save(ctx, tx, &game)
 		return game, err
 	})
@@ -202,7 +215,7 @@ func (s *Store) save(ctx context.Context, tx pgx.Tx, game *Session) error {
 	if err != nil {
 		return err
 	}
-	if err := tx.QueryRow(ctx, `UPDATE game.sessions SET opponent_id=$2,state=$3,clock=$4,timed_out=$5,resigned=$6,revision=revision+1,updated_at=clock_timestamp() WHERE id=$1 RETURNING updated_at,revision`, game.ID, game.Opponent, raw, clock, game.TimedOut, game.Resigned).Scan(&game.UpdatedAt, &game.Revision); err != nil {
+	if err := tx.QueryRow(ctx, `UPDATE game.sessions SET opponent_id=$2,state=$3,clock=$4,timed_out=$5,resigned=$6,draw_offered_by=$7,agreed_draw=$8,revision=revision+1,updated_at=clock_timestamp() WHERE id=$1 RETURNING updated_at,revision`, game.ID, game.Opponent, raw, clock, game.TimedOut, game.Resigned, game.DrawOffer, game.AgreedDraw).Scan(&game.UpdatedAt, &game.Revision); err != nil {
 		return err
 	}
 	if game.Rated && game.State.Over() {
@@ -274,7 +287,7 @@ func (s *Store) Leave(ctx context.Context, id, user uuid.UUID) (Session, bool, e
 		}
 		game.Clock = game.ClockAt(now)
 		game.State = game.State.Finish(1 - seat)
-		game.Resigned = true
+		game.Resigned, game.DrawOffer = true, nil
 		return s.persist(ctx, tx, game)
 	})
 	return game, cancelled, err

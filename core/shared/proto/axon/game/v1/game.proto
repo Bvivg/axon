@@ -40,6 +40,27 @@ message Session {
   optional bool rated = 13;
   repeated RatingChange rating_changes = 14;
   optional bool resigned = 15;
+  ChessBoard chess = 16;
+  optional string draw_offer_user_id = 17;
+  optional bool agreed_draw = 18;
+}
+
+message ChessBoard {
+  string fen = 1;
+  repeated string san = 2;
+  optional string last_move = 3;
+  bool check = 4;
+  repeated string legal_moves = 5;
+  ChessEnd end = 6;
+}
+
+enum ChessEnd {
+  CHESS_END_UNSPECIFIED = 0;
+  CHESS_END_CHECKMATE = 1;
+  CHESS_END_STALEMATE = 2;
+  CHESS_END_INSUFFICIENT_MATERIAL = 3;
+  CHESS_END_THREEFOLD_REPETITION = 4;
+  CHESS_END_FIFTY_MOVES = 5;
 }
 
 message RatingChange {
@@ -172,7 +193,26 @@ message SessionCommand {
     TicTacToeMove move = 2;
     UndoMove undo = 3;
     string subscribe_match = 4;
+    ChessMove chess_move = 5;
+    DrawCommand draw = 6;
   }
+}
+
+message ChessMove {
+  uint32 ply = 1;
+  string uci = 2;
+  optional uint32 revision = 3;
+}
+
+enum DrawAction {
+  DRAW_ACTION_UNSPECIFIED = 0;
+  DRAW_ACTION_OFFER = 1;
+  DRAW_ACTION_ACCEPT = 2;
+  DRAW_ACTION_DECLINE = 3;
+}
+
+message DrawCommand {
+  DrawAction action = 1;
 }
 
 message TicTacToeMove {
@@ -195,6 +235,8 @@ enum SessionError {
   SESSION_ERROR_NOT_PLAYING = 6;
   SESSION_ERROR_UNAVAILABLE = 7;
   SESSION_ERROR_UNDO_DISABLED = 8;
+  SESSION_ERROR_ILLEGAL_MOVE = 9;
+  SESSION_ERROR_NO_DRAW_OFFER = 10;
 }
 
 message SessionEvent {

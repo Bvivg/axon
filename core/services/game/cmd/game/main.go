@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/server"
 	"github.com/bvivg/axon/core/services/game/internal/session"
@@ -71,8 +72,10 @@ func run() error {
 		return err
 	}
 	games := engine.NewRegistry()
-	if err := games.Register(tictactoe.Definition()); err != nil {
-		return err
+	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition()} {
+		if err := games.Register(def); err != nil {
+			return err
+		}
 	}
 	handler := server.New(session.NewStore(pool.Pool, games), verifier)
 	go handler.Watch(ctx, log)
