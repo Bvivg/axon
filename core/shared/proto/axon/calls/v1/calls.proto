@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+package axon.calls.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service CallsService {
+  rpc RegisterEndpoint(RegisterEndpointRequest) returns (RegisterEndpointResponse);
+  rpc StartCall(StartCallRequest) returns (StartCallResponse);
+  rpc StartDirectCall(StartDirectCallRequest) returns (StartDirectCallResponse);
+  rpc AcceptCall(AcceptCallRequest) returns (AcceptCallResponse);
+  rpc DeclineCall(DeclineCallRequest) returns (DeclineCallResponse);
+  rpc CancelCall(CancelCallRequest) returns (CancelCallResponse);
+  rpc EndCall(EndCallRequest) returns (EndCallResponse);
+  rpc ReportConnection(ReportConnectionRequest) returns (ReportConnectionResponse);
+  rpc AcknowledgeCleanup(AcknowledgeCleanupRequest) returns (AcknowledgeCleanupResponse);
+  rpc GetCall(GetCallRequest) returns (GetCallResponse);
+  rpc GetActiveCall(GetActiveCallRequest) returns (GetActiveCallResponse);
+  rpc ListCalls(ListCallsRequest) returns (ListCallsResponse);
+  rpc GetMediaCredentials(GetMediaCredentialsRequest) returns (GetMediaCredentialsResponse);
+  rpc GetCallCapabilities(GetCallCapabilitiesRequest) returns (GetCallCapabilitiesResponse);
+  rpc StartGroupCall(StartGroupCallRequest) returns (StartGroupCallResponse);
+  rpc StartGroupCallFromCall(StartGroupCallFromCallRequest) returns (StartGroupCallFromCallResponse);
+  rpc InviteCallParticipant(InviteCallParticipantRequest) returns (InviteCallParticipantResponse);
+  rpc LeaveCall(LeaveCallRequest) returns (LeaveCallResponse);
+  rpc RemoveCallParticipant(RemoveCallParticipantRequest) returns (RemoveCallParticipantResponse);
+  rpc GetSfuCredentials(GetSfuCredentialsRequest) returns (GetSfuCredentialsResponse);
+  rpc RequestCallMigration(RequestCallMigrationRequest) returns (RequestCallMigrationResponse);
+  rpc ReportCallMigration(ReportCallMigrationRequest) returns (ReportCallMigrationResponse);
+  rpc GetMigrationCredentials(GetMigrationCredentialsRequest) returns (GetMigrationCredentialsResponse);
+}
+
+enum CallMode {
+  CALL_MODE_UNSPECIFIED = 0;
+  CALL_MODE_AUDIO = 1;
+  CALL_MODE_VIDEO = 2;
+}
+
+enum CallState {
+  CALL_STATE_UNSPECIFIED = 0;
+  CALL_STATE_RINGING = 1;
+  CALL_STATE_CONNECTING = 2;
+  CALL_STATE_ACTIVE = 3;
+  CALL_STATE_ENDED = 4;
+}
+
+enum PeerSignalKind {
+  PEER_SIGNAL_KIND_UNSPECIFIED = 0;
+  PEER_SIGNAL_KIND_OFFER = 1;
+  PEER_SIGNAL_KIND_ANSWER = 2;
+  PEER_SIGNAL_KIND_ICE = 3;
+}
+
+message EndpointRef {
+  string id = 1;
+  int64 epoch = 2;
+  string proof = 3;
+}
+
+message Participant {
+  string user_id = 1;
+  string status = 2;
+  optional string endpoint_id = 3;
+  int64 endpoint_epoch = 4;
+  bool media_ready = 5;
+  bool cleanup_done = 6;
+  bool cleanup_expired = 7;
+  optional bool supports_sfu = 8;
+  optional int64 media_version = 9;
+  optional google.protobuf.Timestamp invitation_deadline = 10;
+  optional bool supports_migration = 11;
+}
+
+message Call {
+  string id = 1;
+  string room_id = 2;
+  string caller_id = 3;
+  CallMode mode = 4;
+  CallState state = 5;
+  int64 version = 6;
+  int64 generation = 7;
+  string negotiation_id = 8;
+  bool ever_active = 9;
+  google.protobuf.Timestamp created_at = 10;
+  optional google.protobuf.Timestamp started_at = 11;
+  optional google.protobuf.Timestamp ended_at = 12;
+  optional google.protobuf.Timestamp deadline = 13;
+  string end_reason = 14;
+  repeated Participant participants = 15;
+  optional string kind = 16;
+  optional string transport = 17;
+  optional string transport_phase = 18;
+  optional int64 cleanup_generation = 19;
+  optional string predecessor_call_id = 20;
+  optional string replaced_by_call_id = 21;
+  optional bool sfu_fallback_available = 22;
+  optional string owner_id = 23;
+  optional CallMigration migration = 24;
+}
+
+message MigrationPeer {
+  string user_id = 1;
+  string endpoint_id = 2;
+  int64 endpoint_epoch = 3;
+  int64 media_version = 4;
+  bool ready = 5;
+  bool switched = 6;
+  bool cleanup_done = 7;
+  bool abort_cleanup_done = 8;
+}
+message CallMigration {
+  string id = 1;
+  int64 source_generation = 2;
+  int64 target_generation = 3;
+  string phase = 4;
+  optional google.protobuf.Timestamp deadline = 5;
+  repeated MigrationPeer participants = 6;
+  string outcome = 7;
+}
+enum MigrationReport {
+  MIGRATION_REPORT_UNSPECIFIED = 0;
+  MIGRATION_REPORT_READY = 1;
+  MIGRATION_REPORT_SWITCHED = 2;
+  MIGRATION_REPORT_CLEANUP = 3;
+  MIGRATION_REPORT_FAILED = 4;
+  MIGRATION_REPORT_ABORT_CLEANUP = 5;
+}
+message RequestCallMigrationRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; int64 generation = 4; }
+message RequestCallMigrationResponse { Call call = 1; }
+message ReportCallMigrationRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; string migration_id = 4; int64 generation = 5; int64 media_version = 6; MigrationReport report = 7; bool source_healthy = 8; }
+message ReportCallMigrationResponse { Call call = 1; }
+message GetMigrationCredentialsRequest { EndpointRef endpoint = 1; string call_id = 2; string migration_id = 3; int64 generation = 4; }
+message GetMigrationCredentialsResponse { string url = 1; string token = 2; google.protobuf.Timestamp expires_at = 3; repeated IceServer ice_servers = 4; }
+
+message RegisterEndpointRequest { optional EndpointRef resume = 1; optional bool supports_sfu = 2; optional bool supports_migration = 3; }
+message RegisterEndpointResponse {
+  EndpointRef endpoint = 1;
+  google.protobuf.Timestamp lease_expires_at = 2;
+}
+message StartCallRequest { EndpointRef endpoint = 1; string request_id = 2; string room_id = 3; CallMode mode = 4; }
+message StartCallResponse { Call call = 1; }
+message StartDirectCallRequest { EndpointRef endpoint = 1; string request_id = 2; string peer_user_id = 3; CallMode mode = 4; }
+message StartDirectCallResponse { Call call = 1; }
+message AcceptCallRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; }
+message AcceptCallResponse { Call call = 1; }
+message DeclineCallRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; }
+message DeclineCallResponse { Call call = 1; }
+message CancelCallRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; }
+message CancelCallResponse { Call call = 1; }
+message EndCallRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; }
+message EndCallResponse { Call call = 1; }
+message ReportConnectionRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; int64 generation = 4; bool ready = 5; optional bool reconnecting = 6; optional int64 media_version = 7; }
+message ReportConnectionResponse { Call call = 1; }
+message AcknowledgeCleanupRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; int64 generation = 4; optional int64 media_version = 5; }
+message AcknowledgeCleanupResponse { Call call = 1; }
+message GetCallRequest { string call_id = 1; }
+message GetCallResponse { Call call = 1; }
+message GetActiveCallRequest {}
+message GetActiveCallResponse { optional Call call = 1; }
+message ListCallsRequest { optional string before_id = 1; int32 limit = 2; }
+message ListCallsResponse { repeated Call calls = 1; optional string next_before_id = 2; }
+message GetMediaCredentialsRequest { EndpointRef endpoint = 1; string call_id = 2; int64 generation = 3; }
+message GetMediaCredentialsResponse {
+  repeated IceServer ice_servers = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+message IceServer { repeated string urls = 1; string username = 2; string credential = 3; }
+
+message GetCallCapabilitiesRequest {}
+message GetCallCapabilitiesResponse { bool sfu_enabled = 1; int32 max_participants = 2; optional bool migration_enabled = 3; }
+message StartGroupCallRequest {
+  EndpointRef endpoint = 1;
+  string request_id = 2;
+  string room_id = 3;
+  repeated string participant_user_ids = 4;
+  CallMode mode = 5;
+}
+message StartGroupCallResponse { Call call = 1; }
+message StartGroupCallFromCallRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; string user_id = 4; }
+message StartGroupCallFromCallResponse { Call call = 1; }
+message InviteCallParticipantRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; string user_id = 4; }
+message InviteCallParticipantResponse { Call call = 1; }
+message LeaveCallRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; }
+message LeaveCallResponse { Call call = 1; }
+message RemoveCallParticipantRequest { EndpointRef endpoint = 1; string request_id = 2; string call_id = 3; string user_id = 4; }
+message RemoveCallParticipantResponse { Call call = 1; }
+message GetSfuCredentialsRequest { EndpointRef endpoint = 1; string call_id = 2; int64 generation = 3; }
+message GetSfuCredentialsResponse { string url = 1; string token = 2; google.protobuf.Timestamp expires_at = 3; repeated IceServer ice_servers = 4; }
+
+message CallSocketFrame {
+  EndpointRef endpoint = 1;
+  optional string event_id = 2;
+  optional PeerSignal signal = 3;
+}
+message CallSocketEvent {
+  optional string event_id = 1;
+  int64 sequence = 2;
+  optional Call call = 3;
+  optional PeerSignal signal = 4;
+  bool snapshot = 5;
+  int64 endpoint_epoch = 6;
+  optional string error_code = 7;
+  optional string error_message = 8;
+  bool resync_complete = 9;
+  bool has_more = 10;
+}
+message PeerSignal {
+  string call_id = 1;
+  int64 generation = 2;
+  string negotiation_id = 3;
+  string target_endpoint_id = 4;
+  optional string from_endpoint_id = 5;
+  PeerSignalKind kind = 6;
+  optional string sdp = 7;
+  optional IceCandidate ice = 8;
+  optional google.protobuf.Timestamp expires_at = 9;
+}
+message IceCandidate {
+  string candidate = 1;
+  optional string sdp_mid = 2;
+  optional int32 sdp_m_line_index = 3;
+  optional string username_fragment = 4;
+}

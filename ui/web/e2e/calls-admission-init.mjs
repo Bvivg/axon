@@ -1,0 +1,11 @@
+import fs from "node:fs";
+import { randomBytes } from "node:crypto";
+const directory="/evidence/.secrets";
+fs.mkdirSync(directory,{recursive:true});
+const key="axon-admission";
+const secret=randomBytes(32).toString("hex");
+const internal=randomBytes(32).toString("hex");
+fs.appendFileSync(`${directory}/calls.env`,`\nLIVEKIT_API_KEY=${key}\nLIVEKIT_API_SECRET=${secret}\nCALLS_INTERNAL_KEY=${internal}\n`,{mode:0o600});
+fs.writeFileSync(`${directory}/admission.json`,JSON.stringify({key,secret,internal}),{mode:0o600});
+fs.writeFileSync(`${directory}/livekit.yaml`,`port: 7880\nbind_addresses: ["0.0.0.0"]\nrtc:\n  tcp_port: 7881\n  udp_port: 7882\n  node_ip: 172.30.252.30\n  use_external_ip: false\nkeys:\n  ${key}: ${secret}\nroom:\n  empty_timeout: 2\n  departure_timeout: 2\nwebhook:\n  api_key: ${key}\n  urls: ["http://chat:8082/internal/calls/livekit"]\nlogging:\n  level: info\n`,{mode:0o600});
+console.log("Admission fixtures generated; credentials redacted");

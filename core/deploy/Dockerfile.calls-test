@@ -1,0 +1,4 @@
+FROM golang:1.27.4-alpine
+RUN apk add --no-cache build-base git ca-certificates
+ENV GOTOOLCHAIN=local CGO_ENABLED=1
+WORKDIR /workspace/core/services/chat

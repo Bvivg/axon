@@ -1,0 +1,17 @@
+axon.test:53 {
+    hosts {
+        100.66.60.10 axon.test
+    }
+    cache 30
+    errors
+    log
+}
+https://axon.test:8443 {
+ tls /tls/server.crt /tls/server.key
+ hosts {
+  100.66.60.10 axon.test
+ }
+ cache 30
+ errors
+ log
+}

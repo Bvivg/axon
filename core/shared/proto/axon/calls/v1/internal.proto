@@ -1,0 +1,13 @@
+syntax = "proto3";
+package axon.calls.v1;
+
+service MediaAdmissionService {
+  rpc CheckMediaAdmission(CheckMediaAdmissionRequest) returns (CheckMediaAdmissionResponse);
+}
+message CheckMediaAdmissionRequest {
+  string token = 1;
+}
+message CheckMediaAdmissionResponse {
+  string room = 1;
+  string identity = 2;
+}

@@ -1,0 +1,10 @@
+services:
+  chat:
+    environment:
+      CALLS_MIGRATION_ENABLED: "true"
+      CALLS_MIGRATION_DISABLE_NEW: "false"
+  playwright:
+    environment:
+      CALLS_PLAYWRIGHT_CONFIG: playwright.calls-migration.config.ts
+    volumes:
+      - ../../ui/web/playwright.calls-migration.config.ts:/app/playwright.calls-migration.config.ts:ro

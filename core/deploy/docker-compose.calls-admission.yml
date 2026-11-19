@@ -1,0 +1,39 @@
+services:
+  web-check:
+    profiles: ["tools"]
+    build:
+      context: ../../ui/web
+      dockerfile: ../../core/deploy/Dockerfile.web
+      target: deps
+    working_dir: /app
+    volumes:
+      - ../../ui/web:/app:ro
+      - /app/node_modules
+    command: ["sh", "-c", "npm run typecheck -- --incremental false && npx eslint src/components/calls/livekit-probe.tsx src/app/\\(app\\)/calls/spike/page.tsx e2e/calls-admission-support.ts e2e/calls-admission.spec.ts e2e/calls-admission-report.mjs e2e/calls-admission-init.mjs playwright.calls-admission.config.ts scripts/calls-admission-refresh.mjs"]
+  auth:
+    environment:
+      CALLS_INTERNAL_KEY: ${CALLS_INTERNAL_KEY:?generate admission fixtures}
+  chat:
+    environment:
+      CALLS_MEDIA_ADMISSION_PROBE: "true"
+      LIVEKIT_API_URL: http://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?generate admission fixtures}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?generate admission fixtures}
+      CALLS_INTERNAL_KEY: ${CALLS_INTERNAL_KEY:?generate admission fixtures}
+  gateway:
+    environment:
+      LIVEKIT_SIGNAL_URL: http://livekit:7880
+      CALLS_INTERNAL_KEY: ${CALLS_INTERNAL_KEY:?generate admission fixtures}
+  livekit:
+    image: livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
+    command: ["--config", "/secrets/livekit.yaml"]
+    volumes:
+      - ../../.local/evidence/calls/${CALLS_EVIDENCE_SUBDIR:-R2-admission}/.secrets:/secrets:ro
+    networks:
+      default:
+        ipv4_address: 172.30.252.30
+  playwright:
+    environment:
+      CALLS_PLAYWRIGHT_CONFIG: playwright.calls-admission.config.ts
+    volumes:
+      - ../../ui/web/playwright.calls-admission.config.ts:/app/playwright.calls-admission.config.ts:ro
