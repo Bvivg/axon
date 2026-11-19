@@ -1,0 +1,6 @@
+Selected output from browser-acceptance.log
+
+Running 2 tests using 1 worker
+  ✓  1 [chromium] › e2e/security.spec.ts:40:1 › resource authorization, private downloads and browser origin stay enforced (319ms)
+  ✓  2 [chromium] › e2e/tic-tac-toe.spec.ts:71:1 › two players invite, win, reload and draw; a third player cannot join (25.1s)
+  2 passed (26.2s)

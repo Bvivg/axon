@@ -1,0 +1,72 @@
+Selected output from go-acceptance.log
+
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1	[no test files]
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect	[no test files]
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1	[no test files]
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect	[no test files]
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1	[no test files]
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect	[no test files]
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/game/v1	[no test files]
+?   	github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect	[no test files]
+ok  	github.com/bvivg/axon/core/shared/pkg/authn	(cached)
+ok  	github.com/bvivg/axon/core/shared/pkg/config	(cached)
+ok  	github.com/bvivg/axon/core/shared/pkg/correlation	(cached)
+ok  	github.com/bvivg/axon/core/shared/pkg/health	(cached)
+?   	github.com/bvivg/axon/core/shared/pkg/internalrpc	[no test files]
+ok  	github.com/bvivg/axon/core/shared/pkg/kafka	(cached)
+ok  	github.com/bvivg/axon/core/shared/pkg/logger	(cached)
+ok  	github.com/bvivg/axon/core/shared/pkg/middleware	1.049s
+ok  	github.com/bvivg/axon/core/shared/pkg/postgres	1.010s
+ok  	github.com/bvivg/axon/core/shared/pkg/presence	1.019s
+?   	github.com/bvivg/axon/core/shared/pkg/redis	[no test files]
+?   	github.com/bvivg/axon/core/shared/pkg/revocation	[no test files]
+ok  	github.com/bvivg/axon/core/shared/pkg/safehttp	(cached)
+ok  	github.com/bvivg/axon/core/shared/pkg/ws	(cached)
+?   	github.com/bvivg/axon/core/services/auth/cmd/auth	[no test files]
+ok  	github.com/bvivg/axon/core/services/auth/internal/avatar	8.878s
+?   	github.com/bvivg/axon/core/services/auth/internal/config	[no test files]
+ok  	github.com/bvivg/axon/core/services/auth/internal/domain	(cached)
+ok  	github.com/bvivg/axon/core/services/auth/internal/jwt	(cached)
+ok  	github.com/bvivg/axon/core/services/auth/internal/oauth	1.439s
+ok  	github.com/bvivg/axon/core/services/auth/internal/password	2.234s
+?   	github.com/bvivg/axon/core/services/auth/internal/repository	[no test files]
+?   	github.com/bvivg/axon/core/services/auth/internal/server	[no test files]
+ok  	github.com/bvivg/axon/core/services/auth/internal/service	14.245s
+ok  	github.com/bvivg/axon/core/services/auth/internal/token	(cached)
+?   	github.com/bvivg/axon/core/services/chat/cmd/chat	[no test files]
+ok  	github.com/bvivg/axon/core/services/chat/internal/attachment	1.186s
+ok  	github.com/bvivg/axon/core/services/chat/internal/calls	1.031s
+?   	github.com/bvivg/axon/core/services/chat/internal/config	[no test files]
+ok  	github.com/bvivg/axon/core/services/chat/internal/domain	(cached)
+ok  	github.com/bvivg/axon/core/services/chat/internal/events	(cached)
+?   	github.com/bvivg/axon/core/services/chat/internal/identity	[no test files]
+ok  	github.com/bvivg/axon/core/services/chat/internal/media	(cached)
+ok  	github.com/bvivg/axon/core/services/chat/internal/notify	1.045s
+ok  	github.com/bvivg/axon/core/services/chat/internal/presence	(cached)
+ok  	github.com/bvivg/axon/core/services/chat/internal/pubsub	1.009s
+ok  	github.com/bvivg/axon/core/services/chat/internal/repository	1.033s
+ok  	github.com/bvivg/axon/core/services/chat/internal/server	1.040s
+ok  	github.com/bvivg/axon/core/services/chat/internal/service	(cached)
+ok  	github.com/bvivg/axon/core/services/chat/internal/uploads	1.287s
+ok  	github.com/bvivg/axon/core/services/chat/internal/ws	3.274s
+?   	github.com/bvivg/axon/core/services/gateway/cmd/gateway	[no test files]
+?   	github.com/bvivg/axon/core/services/gateway/internal/attachmentproxy	[no test files]
+?   	github.com/bvivg/axon/core/services/gateway/internal/avatarproxy	[no test files]
+?   	github.com/bvivg/axon/core/services/gateway/internal/config	[no test files]
+ok  	github.com/bvivg/axon/core/services/gateway/internal/cookie	1.056s
+ok  	github.com/bvivg/axon/core/services/gateway/internal/cors	(cached)
+ok  	github.com/bvivg/axon/core/services/gateway/internal/guard	(cached)
+?   	github.com/bvivg/axon/core/services/gateway/internal/livekitproxy	[no test files]
+?   	github.com/bvivg/axon/core/services/gateway/internal/mediaproxy	[no test files]
+ok  	github.com/bvivg/axon/core/services/gateway/internal/policy	(cached)
+?   	github.com/bvivg/axon/core/services/gateway/internal/proxy	[no test files]
+ok  	github.com/bvivg/axon/core/services/gateway/internal/ratelimit	(cached)
+ok  	github.com/bvivg/axon/core/services/gateway/internal/wsproxy	(cached)
+?   	github.com/bvivg/axon/core/services/game/cmd/game	[no test files]
+ok  	github.com/bvivg/axon/core/services/game/internal/engine	(cached)
+ok  	github.com/bvivg/axon/core/services/game/internal/games/tictactoe	(cached)
+?   	github.com/bvivg/axon/core/services/game/internal/server	[no test files]
+?   	github.com/bvivg/axon/core/services/game/internal/session	[no test files]
+ok  	github.com/bvivg/axon/core/services/auth/integration	3.094s
+ok  	github.com/bvivg/axon/core/services/chat/integration	10.983s
+ok  	github.com/bvivg/axon/core/shared/integration	32.849s

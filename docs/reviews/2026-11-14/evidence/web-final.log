@@ -1,0 +1,11 @@
+Selected output from web-final.log
+
+> tsc --noEmit
+> vitest run
+ Test Files  16 passed (16)
+      Tests  74 passed (74)
+> eslint .
+✖ 3 problems (0 errors, 3 warnings)
+> next build
+✓ Compiled successfully in 3.4s
+✓ Generating static pages using 1 worker (6/6) in 199ms

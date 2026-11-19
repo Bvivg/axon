@@ -1,0 +1,10 @@
+Selected output from go-final-security.log
+
+Govulncheck scanned the following 42 modules and the go1.27.4 standard library:
+No vulnerabilities found.
+Govulncheck scanned the following 101 modules and the go1.27.4 standard library:
+No vulnerabilities found.
+Govulncheck scanned the following 17 modules and the go1.27.4 standard library:
+No vulnerabilities found.
+Govulncheck scanned the following 23 modules and the go1.27.4 standard library:
+No vulnerabilities found.

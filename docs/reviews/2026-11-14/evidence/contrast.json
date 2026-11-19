@@ -1,0 +1,38 @@
+[
+  {
+    "pair": "light body",
+    "foreground": "#251b38",
+    "background": "#f7f4ff",
+    "contrast": 14.96
+  },
+  {
+    "pair": "light muted",
+    "foreground": "#6b5c80",
+    "background": "#f7f4ff",
+    "contrast": 5.58
+  },
+  {
+    "pair": "light primary",
+    "foreground": "#ffffff",
+    "background": "#6d28d9",
+    "contrast": 7.1
+  },
+  {
+    "pair": "dark body",
+    "foreground": "#f2ecff",
+    "background": "#171122",
+    "contrast": 15.98
+  },
+  {
+    "pair": "dark muted",
+    "foreground": "#b9a9cf",
+    "background": "#171122",
+    "contrast": 8.46
+  },
+  {
+    "pair": "dark primary",
+    "foreground": "#27123f",
+    "background": "#bf9bff",
+    "contrast": 7.51
+  }
+]

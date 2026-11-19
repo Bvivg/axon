@@ -1,0 +1,16 @@
+Selected output from browser-regression-fixed.log
+
+Running 12 tests using 1 worker
+  ✓   1 [chromium] › e2e/chat-sidebar.spec.ts:6:1 › chat search retries the failed initial requests (5.2s)
+  ✓   2 [chromium] › e2e/chat-sidebar.spec.ts:40:1 › inline search keeps the conversation open, deduplicates contacts and opens new people (13.5s)
+  ✓   3 [chromium] › e2e/chat-sidebar.spec.ts:74:1 › mobile search and group creation use the chat column and preserve the selected conversation (15.4s)
+  ✓   4 [chromium] › e2e/chat.spec.ts:6:1 › a chat starts from a contact and both people see each other's messages as they are sent (15.4s)
+  ✓   5 [chromium] › e2e/chat.spec.ts:28:1 › a page opened cold shows what was said before it existed (17.8s)
+  ✓   6 [chromium] › e2e/chat.spec.ts:52:1 › a chat is out of reach without a session, and reachable again after signing in (24.3s)
+  ✓   7 [chromium] › e2e/chat.spec.ts:76:1 › a chat starts by typing just a fragment of the person's name (12.8s)
+  ✓   8 [chromium] › e2e/media.spec.ts:69:1 › a photo loses its camera metadata on the way and both people can open it (14.8s)
+  ✓   9 [chromium] › e2e/media.spec.ts:115:1 › a video is re-encoded for the web and plays in the viewer (12.8s)
+  ✓  10 [chromium] › e2e/media.spec.ts:141:1 › files arrive byte for byte, voice messages play, and the Media panel keeps them apart (19.0s)
+  ✘  11 [chromium] › e2e/security.spec.ts:18:1 › resource authorization, private downloads and browser origin stay enforced (234ms)
+  1 failed
+  10 passed (2.5m)

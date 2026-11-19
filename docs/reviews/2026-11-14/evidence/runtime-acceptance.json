@@ -1,0 +1,64 @@
+{
+  "passed": [
+    "first DM, incoming priority and call result",
+    "mobile reconnect, editable draft and same-ID retry",
+    "profile settings and validation"
+  ],
+  "errorCount": 0,
+  "media": {
+    "before": [
+      {
+        "audio": 15,
+        "energy": 1.9558967833367135e-10,
+        "tracks": [
+          "live",
+          "live"
+        ]
+      },
+      {
+        "audio": 15,
+        "energy": 0.001206514564279439,
+        "tracks": [
+          "live",
+          "live"
+        ]
+      }
+    ],
+    "after": [
+      {
+        "audio": 21,
+        "energy": 0.004223195227886792,
+        "tracks": [
+          "live",
+          "live"
+        ]
+      },
+      {
+        "audio": 21,
+        "energy": 0.007081189896706382,
+        "tracks": [
+          "live",
+          "live"
+        ]
+      }
+    ],
+    "cleanup": [
+      {
+        "audio": 0,
+        "energy": 0,
+        "tracks": [
+          "ended",
+          "ended"
+        ]
+      },
+      {
+        "audio": 0,
+        "energy": 0,
+        "tracks": [
+          "ended",
+          "ended"
+        ]
+      }
+    ]
+  }
+}

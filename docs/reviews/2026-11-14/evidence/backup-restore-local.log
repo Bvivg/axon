@@ -1,0 +1,14 @@
+Local Compose drill, November 15 2026. Sizes in bytes, elapsed time in seconds.
+
+Running source guard PASS
+Backup:
+avatars objects=20 bytes=923782 sha256_samples=3
+chat-attachments objects=69 bytes=348367019 sha256_samples=3
+messages=3443 files=23 postgres_dump_bytes=1129032 minio_archive_bytes=349669376 elapsed_seconds=14
+
+Restore:
+avatars objects=20 bytes=923782 sha256_samples=3
+chat-attachments objects=69 bytes=348367019 sha256_samples=3
+messages=3443 files=23 postgres_dump_bytes=1129032 minio_archive_bytes=349669376 elapsed_seconds=12
+Non-empty target guard PASS
+Restored chat_service can read all 3443 restored messages
