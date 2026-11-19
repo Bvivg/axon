@@ -14,6 +14,13 @@
   --color-game-warning: light-dark(#98600a, #f2bd64);
   --color-game-error: light-dark(#b8324c, #f07f91);
   --color-game-scrim: light-dark(rgb(37 40 58 / .38), rgb(0 0 0 / .55));
+  --color-chess-light: light-dark(#eeeaf9, #cdc6ee);
+  --color-chess-dark: light-dark(#a99ce0, #8576cc);
+  --color-chess-piece-white: #fbfaff;
+  --color-chess-piece-black: #2a2640;
+  --color-chess-mark: rgb(52 36 140 / .38);
+  --color-chess-last: rgb(242 189 100 / .5);
+  --color-chess-check: light-dark(rgb(184 50 76 / .55), rgb(240 127 145 / .55));
   --radius-game-sm: 9px;
   --radius-game-md: 12px;
   --radius-game-lg: 16px;

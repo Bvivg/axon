@@ -17,9 +17,9 @@ export const arenaClass = "@container mx-auto flex w-full max-w-[380px] min-w-0 
 export const actionClass = "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-game-md border border-game-border bg-game-card px-3 text-[14px] font-medium text-game-text transition-colors duration-200 motion-reduce:transition-none hover:bg-game-bg2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-game-primary disabled:cursor-default disabled:opacity-40";
 export const iconClass = "grid size-[44px] shrink-0 place-items-center rounded-game-sm text-game-text2 transition-colors duration-200 motion-reduce:transition-none hover:bg-game-bg2 hover:text-game-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-game-primary disabled:cursor-default disabled:opacity-40 [&_svg]:size-[18px] [&_svg]:stroke-[1.75]";
 
-export function ArenaHeader({ children }: { children: ReactNode }) {
+export function ArenaHeader({ children, title = "Tic-Tac-Toe", lobby = "/games/tic-tac-toe" }: { children: ReactNode; title?: string; lobby?: string }) {
   return <header className="flex min-h-11 items-center justify-between gap-1">
-    <div className="flex min-w-0 items-center gap-1"><Link href="/games/tic-tac-toe" aria-label="Back to lobby" title="Back to lobby" className={iconClass}><ArrowLeft aria-hidden /></Link><h1 className="min-w-0 truncate text-[14px] font-semibold tracking-[-.01em] @max-[350px]:sr-only">Tic-Tac-Toe</h1></div>
+    <div className="flex min-w-0 items-center gap-1"><Link href={lobby} aria-label="Back to lobby" title="Back to lobby" className={iconClass}><ArrowLeft aria-hidden /></Link><h1 className="min-w-0 truncate text-[14px] font-semibold tracking-[-.01em] @max-[350px]:sr-only">{title}</h1></div>
     {children}
   </header>;
 }
@@ -49,16 +49,16 @@ function Identicon({ name, hue }: { name: string; hue: number }) {
   return <svg aria-hidden viewBox="0 0 8 8" className="size-full" style={{ fill: `light-dark(hsl(${hue} 42% 46%), hsl(${hue} 70% 76%))` }}>{pixels}</svg>;
 }
 
-export function ArenaPlayer({ mark, name, active, time, rating, difficulty, avatar = "", bot = false }: { mark: Mark; name: string; active: boolean; time?: number; rating?: number; difficulty?: string; avatar?: string; bot?: boolean }) {
+export function ArenaPlayer({ mark = Mark.X, badge, side, name, active, time, rating, difficulty, avatar = "", bot = false }: { mark?: Mark; badge?: ReactNode; side?: string; name: string; active: boolean; time?: number; rating?: number; difficulty?: string; avatar?: string; bot?: boolean }) {
   const hue = 235 + (profileHash(name) >>> 16) % 80;
-  const symbol = mark === Mark.X ? "X" : "O";
+  const symbol = side ?? (mark === Mark.X ? "X" : "O");
   const low = time !== undefined && time <= 10000 && (active || time === 0);
   return <div data-player={symbol} data-active={active || undefined} className="flex h-[60px] min-w-0 items-center gap-3 rounded-game-md border border-game-border bg-game-card px-3">
     <span className="relative size-[38px] shrink-0"><span className={cn("grid size-full place-items-center overflow-hidden rounded-full bg-game-accent text-game-text2", bot && "bg-game-bg2")} style={!bot && !avatar ? { backgroundColor: `light-dark(hsl(${hue} 45% 91%), hsl(${hue} 28% 24%))` } : undefined}>
       {avatar ? <Image src={avatar} alt="" width={38} height={38} unoptimized className="size-full object-cover" /> : bot ? <Bot aria-hidden size={20} strokeWidth={1.75} /> : <Identicon name={name} hue={hue} />}
-    </span><span className="absolute -right-1 -bottom-1 grid size-[18px] place-items-center rounded-full border border-game-border bg-game-card"><GameMark mark={mark} className="size-[11px]" /></span></span>
+    </span><span className="absolute -right-1 -bottom-1 grid size-[18px] place-items-center rounded-full border border-game-border bg-game-card">{badge ?? <GameMark mark={mark} className="size-[11px]" />}</span></span>
     <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2"><b className="min-w-0 truncate text-[15px] font-medium">{name}</b>{difficulty || rating !== undefined ? <span className={cn("text-[13px] text-game-text2", rating !== undefined && "font-mono")}>{difficulty ?? rating}</span> : null}</span>
-    {time !== undefined ? <span data-clock data-low={low || undefined} aria-label={`${symbol === "X" ? "X clock" : "O clock"}, ${formatClock(time)}${active ? ", running" : ""}`} className={cn("grid h-[38px] min-w-[84px] shrink-0 place-items-center rounded-game-sm bg-game-bg2 px-3 font-mono text-[18px] leading-none font-medium text-game-text2 tabular-nums transition-colors duration-200 motion-reduce:transition-none @max-[320px]:min-w-[72px] @max-[320px]:text-[16px]", active && "bg-game-primary text-game-on-primary", low && "bg-game-error text-game-on-primary")}>{formatClock(time).replace(/^0/, "")}</span> : null}
+    {time !== undefined ? <span data-clock data-low={low || undefined} aria-label={`${symbol} clock, ${formatClock(time)}${active ? ", running" : ""}`} className={cn("grid h-[38px] min-w-[84px] shrink-0 place-items-center rounded-game-sm bg-game-bg2 px-3 font-mono text-[18px] leading-none font-medium text-game-text2 tabular-nums transition-colors duration-200 motion-reduce:transition-none @max-[320px]:min-w-[72px] @max-[320px]:text-[16px]", active && "bg-game-primary text-game-on-primary", low && "bg-game-error text-game-on-primary")}>{formatClock(time).replace(/^0/, "")}</span> : null}
   </div>;
 }
 
