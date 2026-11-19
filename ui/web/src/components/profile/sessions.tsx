@@ -1,15 +1,17 @@
 "use client";
 
 import { Monitor, Smartphone } from "lucide-react";
+import { useState } from "react";
 
-import { ProfilePage } from "@/components/profile/profile-page";
+import { ProfilePage, ProfileSection } from "@/components/profile/profile-page";
 import { Alert } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorCard } from "@/components/ui/error-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { describe } from "@/lib/errors";
-import { fromTimestamp } from "@/lib/format";
+import { calendarMoment, fromTimestamp } from "@/lib/format";
 import { useRevokeSession, useSessions } from "@/lib/query/profile";
 
 function describeDevice(userAgent: string): string {
@@ -47,16 +49,20 @@ function isMobile(userAgent: string): boolean {
 }
 
 function formatMoment(at: Date | null): string {
-  return at
-    ? at.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
-    : "—";
+  return at ? calendarMoment(at) : "—";
 }
 
 export function Sessions() {
   const sessions = useSessions();
   const revoke = useRevokeSession();
+  const [target, setTarget] = useState<{ id: string; device: string }>();
+  const [ended, setEnded] = useState("");
 
   const count = sessions.data?.length ?? 0;
+  const sections = [
+    { id: "current-device", title: "Current session", sessions: sessions.data?.filter((session) => session.current) ?? [] },
+    { id: "other-devices", title: "Other devices", sessions: sessions.data?.filter((session) => !session.current) ?? [] },
+  ];
 
   return (
     <ProfilePage
@@ -67,8 +73,9 @@ export function Sessions() {
         ) : null
       }
     >
-      <div className="flex flex-col gap-3 pt-6">
+      <div className="flex flex-col gap-3">
         {revoke.isError ? <Alert>{describe(revoke.error)}</Alert> : null}
+        <div role="status">{ended ? <p className="rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-sm font-medium">{ended}</p> : null}</div>
 
         {sessions.isPending ? (
           <SessionsSkeleton />
@@ -82,51 +89,71 @@ export function Sessions() {
         ) : count === 0 ? (
           <p className="text-sm text-muted-foreground">No active sessions.</p>
         ) : (
-          <ul className="flex flex-col overflow-hidden rounded-lg border border-border">
-            {sessions.data.map((session) => {
-              const Icon = isMobile(session.userAgent) ? Smartphone : Monitor;
-              const lastUsed = fromTimestamp(session.lastUsedAt);
-              return (
-                <li
-                  key={session.id}
-                  className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 last:border-b-0"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Icon aria-hidden className="size-[18px]" strokeWidth={1.5} />
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-sm font-medium">{describeDevice(session.userAgent)}</span>
-                    <span className="truncate font-mono text-2xs text-muted-foreground">
-                      {session.ip || "unknown IP"} · signed in {formatMoment(fromTimestamp(session.startedAt))}
-                      {lastUsed ? ` · last used ${formatMoment(lastUsed)}` : ""}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {session.current ? (
-                      <Badge variant="signal" dot>
-                        This device
-                      </Badge>
-                    ) : null}
-                    <Badge variant={session.online ? "success" : "outline"} dot>
-                      {session.online ? "Online" : "Offline"}
-                    </Badge>
-                    {!session.current ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={revoke.isPending}
-                        onClick={() => revoke.mutate(session.id)}
+          sections.map((section) => (
+            <ProfileSection key={section.id} id={section.id} label={section.title}>
+              {section.sessions.length > 0 ? (
+                <ul className="flex flex-col overflow-hidden">
+                  {section.sessions.map((session) => {
+                    const Icon = isMobile(session.userAgent) ? Smartphone : Monitor;
+                    const lastUsed = fromTimestamp(session.lastUsedAt);
+                    return (
+                      <li
+                        key={session.id}
+                        className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border py-2 last:border-b-0"
                       >
-                        End session
-                      </Button>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                          <Icon aria-hidden className="size-[18px]" strokeWidth={1.5} />
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="text-sm font-medium">{describeDevice(session.userAgent)}</span>
+                          <span className="truncate font-mono text-2xs text-muted-foreground">
+                            {session.ip || "unknown IP"} · signed in {formatMoment(fromTimestamp(session.startedAt))}
+                            {lastUsed ? ` · last used ${formatMoment(lastUsed)}` : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {session.current ? (
+                            <Badge variant="signal" dot>
+                              This device
+                            </Badge>
+                          ) : null}
+                          <Badge variant={session.online ? "success" : "outline"} dot>
+                            {session.online ? "Online" : "Offline"}
+                          </Badge>
+                          {!session.current ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={revoke.isPending}
+                              onClick={() => { revoke.reset(); setEnded(""); setTarget({ id: session.id, device: describeDevice(session.userAgent) }); }}
+                            >
+                              End session
+                            </Button>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : <p className="text-sm text-muted-foreground">{section.id === "other-devices" ? "No other active sessions." : "Current session unavailable."}</p>}
+            </ProfileSection>
+          ))
         )}
       </div>
+      <AlertDialog open={!!target} onOpenChange={open => { if (!open && !revoke.isPending) setTarget(undefined); }}>
+        <AlertDialogContent>
+          <AlertDialogTitle>End this session?</AlertDialogTitle>
+          <AlertDialogDescription>{target?.device} will be signed out of Axon.</AlertDialogDescription>
+          {revoke.isError ? <Alert className="mt-3">{describe(revoke.error)}</Alert> : null}
+          <div className="mt-4 flex justify-end gap-2">
+            <AlertDialogClose render={<Button variant="outline" className="min-h-11" disabled={revoke.isPending} />}>Cancel</AlertDialogClose>
+            <Button variant="destructive" className="min-h-11" disabled={!target || revoke.isPending} onClick={() => {
+              if (!target) return;
+              revoke.mutate(target.id, { onSuccess: () => { setEnded(`Session ended on ${target.device}.`); setTarget(undefined); } });
+            }}>{revoke.isPending ? "Ending…" : "End session"}</Button>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </ProfilePage>
   );
 }

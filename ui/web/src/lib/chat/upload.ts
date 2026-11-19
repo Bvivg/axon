@@ -3,6 +3,8 @@ import axios, { isAxiosError, isCancel, type AxiosRequestConfig } from "axios";
 import { refreshSession } from "@/lib/auth/refresh";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { apiBaseUrl } from "@/lib/connect/transport";
+import { fetchWithRateLimitRetry, rateLimitRetries, retryAfterMs, waitForRetry } from "@/lib/rate-limit";
+import { hashFile } from "@/lib/chat/hash-file";
 
 export enum UploadAs {
   Media = "media",
@@ -11,6 +13,7 @@ export enum UploadAs {
 }
 
 export enum UploadStage {
+  Hashing = "hashing",
   Uploading = "uploading",
   Processing = "processing",
 }
@@ -65,8 +68,8 @@ async function call<T>(config: AxiosRequestConfig): Promise<T> {
     try {
       return await callOnce<T>(config);
     } catch (err) {
-      if (attempt >= partAttempts || !throttled(err)) throw err;
-      await pause(retryDelayMs * 2 ** (attempt - 1), config.signal as AbortSignal | undefined);
+      if (attempt > rateLimitRetries || !throttled(err)) throw err;
+      await waitForRetry(retryAfterMs(isAxiosError(err) ? err.response?.headers["retry-after"] : null), config.signal as AbortSignal | undefined);
     }
   }
 }
@@ -90,20 +93,7 @@ async function callOnce<T>(config: AxiosRequestConfig): Promise<T> {
 }
 
 const retriable = (err: unknown) =>
-  isAxiosError(err) && !isCancel(err) && (err.response === undefined || err.response.status === 429 || err.response.status >= 500);
-
-const pause = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(new UploadCancelled());
-      },
-      { once: true },
-    );
-  });
+  isAxiosError(err) && !isCancel(err) && (err.response === undefined || err.response.status >= 500);
 
 export async function uploadAttachment(
   blob: Blob,
@@ -116,15 +106,28 @@ export async function uploadAttachment(
     signal?: AbortSignal;
   } = {},
 ): Promise<Uploaded> {
-  const { signal } = options;
+  const signal = options.signal ?? new AbortController().signal;
   try {
+    options.onStage?.(UploadStage.Hashing);
+    const sourceSHA256 = await hashFile(blob, signal, options.onProgress);
+    if (signal.aborted) throw new UploadCancelled();
     const session = await call<SessionResponse>({
       method: "POST",
       url: sessionsUrl,
-      data: { as, name: filename, size: blob.size },
+      data: { as, name: filename, size: blob.size, source_sha256: sourceSHA256 },
       signal,
     });
     options.onSession?.(session.id);
+    if (signal.aborted) {
+      void withdrawUpload(session.id);
+      throw new UploadCancelled();
+    }
+    if (session.status === "ready" && session.upload) {
+      options.onProgress?.(1);
+      return { uploadId: session.upload.upload_id, kind: session.upload.kind, payload: session.upload.payload };
+    }
+    options.onStage?.(UploadStage.Uploading);
+    options.onProgress?.(0);
 
     let sent = 0;
     for (let number = 1; number <= session.part_count; number += 1) {
@@ -148,6 +151,7 @@ export async function uploadAttachment(
     }
     throw failed(state.failure, as);
   } catch (err) {
+    if (signal.aborted) throw new UploadCancelled();
     throw explain(err, as);
   }
 }
@@ -173,7 +177,7 @@ async function sendPart(
     } catch (err) {
       if (attempt >= partAttempts || !retriable(err)) throw err;
       onLoaded(0);
-      await pause(retryDelayMs * 2 ** (attempt - 1), signal);
+      await waitForRetry(retryDelayMs * 2 ** (attempt - 1), signal);
     }
   }
 }
@@ -182,7 +186,7 @@ export async function withdrawUpload(sessionID: string, options: { keepalive?: b
   const token = getAccessToken();
   if (!token) return;
   try {
-    await fetch(`${sessionsUrl}/${sessionID}`, {
+    await fetchWithRateLimitRetry(`${sessionsUrl}/${sessionID}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
       credentials: "include",
@@ -195,6 +199,8 @@ export async function withdrawUpload(sessionID: string, options: { keepalive?: b
 
 function failed(reason: string | undefined, as: UploadAs): Error {
   switch (reason) {
+    case "hash_mismatch":
+      return new Error("The file changed while it was being uploaded. Attach it again.");
     case "too_large":
       return new Error(`That file is too large. ${limits[as]}`);
     case "unsupported":
@@ -224,7 +230,7 @@ function explain(err: unknown, as: UploadAs): Error {
     case 413:
       return new Error(`That file is too large. ${limits[as]}`);
     case 429:
-      return new Error("Too many uploads at once. Wait a moment and try again.");
+      return new Error(`Too many uploads at once. Try again in ${Math.ceil(retryAfterMs(err.response.headers["retry-after"]) / 1_000)} seconds.`);
     default:
       return new Error("The upload failed. Try again.");
   }

@@ -8,7 +8,7 @@ import { HistoryMode, navigateTo } from "@/lib/chat/address";
 
 export const signInPath = "/login";
 
-export const homePath = "/";
+export const homePath = "/chat";
 
 export const nextParam = "next";
 
@@ -29,7 +29,7 @@ export function useRequireSession(): void {
 
     const here = window.location.pathname + window.location.search + window.location.hash;
     const resumable =
-      !heldASession.current && here !== "/" && !here.startsWith(signInPath);
+      !heldASession.current && here !== "/" && here !== homePath && !here.startsWith(signInPath);
 
     router.replace(
       resumable

@@ -13,6 +13,7 @@ export default function ErrorPage({
   reset: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
 
   const details = [
     `digest: ${error.digest ?? "none"}`,
@@ -29,25 +30,28 @@ export default function ErrorPage({
         500
       </span>
       <h1 className="text-2xl font-semibold tracking-tight">Something broke on our side</h1>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-lg border border-border bg-card p-3 text-sm">
-        <dt className="text-muted-foreground">Reference</dt>
-        <dd className="truncate text-right font-mono text-xs leading-5">{error.digest ?? "—"}</dd>
-        <dt className="text-muted-foreground">Error</dt>
-        <dd className="truncate text-right font-mono text-xs leading-5">{error.name}</dd>
-      </dl>
       <div className="flex flex-col gap-2 pt-2">
         <Button size="lg" className="w-full" onClick={reset}>
-          Reload
+          Try again
         </Button>
+        <details className="rounded-lg border border-border bg-card p-3 text-sm">
+          <summary className="cursor-pointer font-medium">Technical details</summary>
+          <pre className="my-3 whitespace-pre-wrap break-all text-xs">{details}</pre>
         <Button
           variant="outline"
           size="lg"
           className="w-full"
-          onClick={() => void navigator.clipboard.writeText(details).then(() => setCopied(true))}
+          onClick={() => {
+            setCopyFailed(false);
+            if (!navigator.clipboard) { setCopyFailed(true); return; }
+            void navigator.clipboard.writeText(details).then(() => setCopied(true), () => setCopyFailed(true));
+          }}
         >
           {copied ? <Check strokeWidth={1.5} className="text-success" /> : <Copy strokeWidth={1.5} />}
           {copied ? "Copied" : "Copy details"}
         </Button>
+          {copyFailed ? <p role="status" className="mt-2 text-sm">Couldn’t copy. Select the details to copy them manually.</p> : null}
+        </details>
       </div>
     </main>
   );

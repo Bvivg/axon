@@ -23,17 +23,21 @@ export function Appearance() {
           {choices.map((choice) => {
             const checked = current === choice.theme;
             return (
-              <button
+              <label
                 key={choice.theme}
-                type="button"
-                role="radio"
-                aria-checked={checked}
-                onClick={() => setTheme(choice.theme)}
-                className="flex flex-col gap-2 text-left"
+                className="relative flex cursor-pointer flex-col gap-2 text-left"
               >
+                <input
+                  type="radio"
+                  name="appearance-theme"
+                  value={choice.theme}
+                  checked={checked}
+                  onChange={() => setTheme(choice.theme)}
+                  className="peer sr-only"
+                />
                 <span
                   className={cn(
-                    "flex h-24 w-full overflow-hidden rounded-lg transition-shadow duration-[120ms] ease-signal",
+                    "flex h-24 w-full overflow-hidden rounded-lg transition-shadow duration-[120ms] ease-signal peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-ring",
                     checked ? "ring-2 ring-signal" : "ring-1 ring-border hover:ring-muted-foreground",
                   )}
                 >
@@ -50,7 +54,7 @@ export function Appearance() {
                   />
                   {choice.label}
                 </span>
-              </button>
+              </label>
             );
           })}
         </div>
@@ -59,29 +63,13 @@ export function Appearance() {
   );
 }
 
-const previewPalettes = {
-  light: {
-    surface: "bg-[oklch(0.99_0.002_90)]",
-    ink: "bg-[oklch(0.18_0.005_90)]",
-    rule: "bg-[oklch(0.915_0.004_90)]",
-    action: "bg-[oklch(0.2_0.005_90)]",
-  },
-  dark: {
-    surface: "bg-[oklch(0.155_0.004_90)]",
-    ink: "bg-[oklch(0.96_0.003_90)]",
-    rule: "bg-[oklch(1_0_0/9%)]",
-    action: "bg-[oklch(0.96_0.003_90)]",
-  },
-};
-
 function Preview({ scheme }: { scheme: "light" | "dark" }) {
-  const palette = previewPalettes[scheme];
   return (
-    <span className={cn("flex flex-1 flex-col gap-[5px] p-2", palette.surface)}>
-      <span className={cn("h-2 w-3/5 rounded-[3px]", palette.ink)} />
-      <span className={cn("h-1.5 w-[85%] rounded-[3px]", palette.rule)} />
-      <span className={cn("h-1.5 w-[70%] rounded-[3px]", palette.rule)} />
-      <span className={cn("mt-auto h-3.5 w-1/2 rounded-sm", palette.action)} />
+    <span style={{ colorScheme: scheme }} className="flex flex-1 flex-col gap-[5px] bg-background p-2">
+      <span className="h-2 w-3/5 rounded-[3px] bg-foreground" />
+      <span className="h-1.5 w-[85%] rounded-[3px] bg-border" />
+      <span className="h-1.5 w-[70%] rounded-[3px] bg-border" />
+      <span className="mt-auto h-3.5 w-1/2 rounded-sm bg-primary" />
     </span>
   );
 }

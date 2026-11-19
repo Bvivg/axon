@@ -6,7 +6,7 @@ export interface ProfilePage {
   icon: LucideIcon;
 }
 
-export const profileOverview: ProfilePage = { href: "/profile", label: "Overview", icon: UserRound };
+export const profileOverview: ProfilePage = { href: "/profile?view=account", label: "My profile", icon: UserRound };
 
 export const profilePages: ProfilePage[] = [
   { href: "/profile/my", label: "Personal info", icon: IdCard },

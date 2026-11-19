@@ -9,18 +9,18 @@ const cameraMake = "AxonTestCam";
 
 const clip = fileURLToPath(new URL("./fixtures/clip.mov", import.meta.url));
 
-async function drawnJpeg(page: Page): Promise<Buffer> {
-  const dataUrl = await page.evaluate(() => {
+async function drawnJpeg(page: Page, width = 640, height = 480): Promise<Buffer> {
+  const dataUrl = await page.evaluate(({ width, height }) => {
     const canvas = document.createElement("canvas");
-    canvas.width = 640;
-    canvas.height = 480;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = "#1d6fe8";
-    ctx.fillRect(0, 0, 640, 480);
+    ctx.fillRect(0, 0, width, height);
     ctx.fillStyle = "#ffd23f";
     ctx.fillRect(40, 40, 200, 120);
     return canvas.toDataURL("image/jpeg", 0.9);
-  });
+  }, { width, height });
   return Buffer.from(dataUrl.split(",")[1], "base64");
 }
 
@@ -57,13 +57,15 @@ async function attach(
 }
 
 async function sendAttachments(page: Page, caption = ""): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: /^1 (media|file)$/ });
+  await expect(dialog).toBeVisible();
   if (caption) {
-    await page.getByLabel("Message", { exact: true }).fill(caption);
+    await dialog.getByLabel("Caption").fill(caption);
   }
-  const send = page.getByRole("button", { name: "Send", exact: true });
+  const send = dialog.getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeEnabled({ timeout: 30_000 });
   await send.click();
-  await expect(page.getByRole("list", { name: "Attachments" })).toHaveCount(0);
+  await expect(dialog).toBeHidden();
 }
 
 test("a photo loses its camera metadata on the way and both people can open it", async ({ browser }) => {
@@ -110,6 +112,43 @@ test("a photo loses its camera metadata on the way and both people can open it",
 
   await ada.close();
   await grace.close();
+});
+
+test("portrait photo captions fit the image and direct messages have no sender avatars", async ({ browser }) => {
+  const ada = await newPerson(browser, "portrait", "Ada");
+  const grace = await newPerson(browser, "portrait-peer", "Grace");
+  const caption = "A long photo caption that wraps beneath the image instead of leaving an empty block beside it";
+  try {
+    await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "portrait layout");
+    await attach(ada.page, "Photo or video", { name: "portrait.jpg", mimeType: "image/jpeg", buffer: await drawnJpeg(ada.page, 360, 640) });
+    await sendAttachments(ada.page, caption);
+    await openChatWith(grace.page, "Ada");
+    for (const page of [ada.page, grace.page]) {
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        const photo = page.getByRole("button", { name: `Open photo: ${caption}`, exact: true });
+        await expect(photo).toBeVisible();
+        const layout = await photo.evaluate((element) => {
+          const article = element.closest("article")!;
+          const image = element.getBoundingClientRect();
+          const bubble = article.getBoundingClientRect();
+          const caption = article.querySelector("p")!.getBoundingClientRect();
+          const row = article.parentElement!;
+          return { width: image.width, gap: bubble.width - image.width, below: caption.top >= image.bottom, fits: article.scrollWidth <= article.clientWidth, gutter: parseFloat(getComputedStyle(row).paddingLeft), overflow: document.documentElement.scrollWidth > innerWidth };
+        });
+        expect(layout.width).toBeGreaterThan(width === 1440 ? 300 : width === 390 ? 280 : 230);
+        expect(layout.gap).toBeLessThanOrEqual(11);
+        expect(layout.below).toBe(true);
+        expect(layout.fits).toBe(true);
+        expect(layout.gutter).toBeLessThanOrEqual(8);
+        expect(layout.overflow).toBe(false);
+        await expect(page.locator("[data-message-avatar]")).toHaveCount(0);
+      }
+    }
+  } finally {
+    await ada.close();
+    await grace.close();
+  }
 });
 
 test("a video is re-encoded for the web and plays in the viewer", async ({ browser }) => {
@@ -164,7 +203,8 @@ test("files arrive byte for byte, voice messages play, and the Media panel keeps
 
   await expect(grace.page.getByRole("button", { name: "Play voice message" })).toBeVisible();
 
-  await grace.page.getByRole("button", { name: "Media", exact: true }).click();
+  await grace.page.getByRole("button", { name: "Chat actions" }).click();
+  await grace.page.getByRole("menuitem", { name: "Media", exact: true }).click();
   const panel = grace.page.getByRole("dialog", { name: "Media" });
   await expect(panel.getByRole("heading", { name: "No photos or videos yet" })).toBeVisible();
 

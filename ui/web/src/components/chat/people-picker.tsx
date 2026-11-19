@@ -3,13 +3,11 @@
 import { Check, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { DirectoryList } from "@/components/chat/directory-list";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
-import { describe } from "@/lib/errors";
 import { profileName } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useSearchUsers } from "@/lib/query/people";
@@ -111,8 +109,7 @@ export function UserSearch({
   const trimmed = debouncedQuery.trim();
   const search = useSearchUsers(debouncedQuery);
 
-  const results = (search.data ?? []).filter((profile) => !hidden?.(profile));
-  const noMatches = trimmed !== "" && !search.isLoading && results.length === 0;
+  const results = query.trim() === trimmed ? (search.data ?? []).filter((profile) => !hidden?.(profile)) : [];
 
   return (
     <>
@@ -126,43 +123,36 @@ export function UserSearch({
         />
       </div>
 
-      {search.isError ? <Alert>{describe(search.error)}</Alert> : null}
       {notice}
 
-      <ScrollArea className={className}>
-        <ul className="divide-y divide-border">
-          {results.map((profile) => (
-            <li key={profile.id}>
-              <button
-                type="button"
-                aria-pressed={pressed?.(profile)}
-                disabled={disabled}
-                onClick={() => onPick(profile)}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-muted disabled:opacity-50"
-              >
-                <Avatar
-                  src={profile.avatarUrls?.small || profile.avatarUrl}
-                  alt=""
-                  fallback={(profileName(profile) || "?").slice(0, 1).toUpperCase()}
-                  className="size-9"
-                  sizes="36px"
-                />
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate font-medium">{profileName(profile) || "No name"}</span>
-                  {profile.displayName && profile.username ? (
-                    <span className="truncate text-xs text-muted-foreground">@{profile.username}</span>
-                  ) : null}
-                </span>
-                {trailing(profile)}
-              </button>
-            </li>
-          ))}
-
-          {noMatches ? (
-            <li className="px-2 py-6 text-center text-sm text-muted-foreground">No match for &quot;{trimmed}&quot;.</li>
-          ) : null}
-        </ul>
-      </ScrollArea>
+      <DirectoryList
+        key={query.trim()}
+        label="People directory"
+        className={className}
+        search={search}
+        loading={query.trim() !== trimmed || search.isPending}
+        empty={trimmed ? `No match for "${trimmed}".` : "No people found."}
+        sections={[{ label: "Available people", title: "People", rows: results.map((profile) => ({
+          id: profile.id,
+          height: 72,
+          content: (
+            <button
+              type="button"
+              aria-pressed={pressed?.(profile)}
+              disabled={disabled}
+              onClick={() => onPick(profile)}
+              className="flex h-18 w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              <Avatar src={profile.avatarUrls?.small || profile.avatarUrl} alt="" fallback={(profileName(profile) || "?").slice(0, 1).toUpperCase()} className="size-9" sizes="36px" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-medium">{profileName(profile) || "No name"}</span>
+                {profile.username ? <span className="truncate text-xs text-muted-foreground">@{profile.username}</span> : null}
+              </span>
+              {trailing(profile)}
+            </button>
+          ),
+        })) }]}
+      />
     </>
   );
 }

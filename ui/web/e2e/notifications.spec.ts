@@ -35,7 +35,7 @@ test("the profile offers to turn notifications on when the server has a key", as
   const ada = await newPerson(browser, "push", "Ada");
   await ada.page.context().grantPermissions(["notifications"]);
   await ada.page.goto("/profile/notifications");
-  await expect(ada.page.getByRole("heading", { name: "Notifications" })).toBeVisible();
+  await expect(ada.page.getByRole("heading", { name: "Notifications", exact: true })).toBeVisible();
   await expect(ada.page.getByText("New messages on this device")).toBeVisible();
   await expect(ada.page.getByText("When Axon isn't open")).toBeVisible();
   await expect(ada.page.getByRole("button", { name: "Turn on" })).toBeEnabled();

@@ -1,6 +1,6 @@
 import { chatClient } from "@/lib/connect/clients";
 
-const workerUrl = "/sw.js";
+const workerUrl = "/calls-sw.js";
 
 export function pushSupported(): boolean {
   return (

@@ -4,6 +4,7 @@ import { ConnectError } from "@connectrpc/connect";
 import { useEffect, useState } from "react";
 
 import { ProfilePage } from "@/components/profile/profile-page";
+import { useSounds } from "@/components/nav/sound-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ enum PushState {
 
 export function Notifications() {
   const key = usePushKey();
+  const sounds = useSounds();
   const [state, setState] = useState(PushState.Checking);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,12 +61,19 @@ export function Notifications() {
   return (
     <ProfilePage title="Notifications">
       <div className="flex flex-col gap-3 pt-6">
+        <section aria-labelledby="sound-settings" className="space-y-1 rounded-[14px] border border-line bg-surface px-4 py-3">
+          <h2 id="sound-settings" className="text-sm font-semibold">Sounds in Axon</h2>
+          <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={sounds.calls} onChange={event => sounds.setCalls(event.target.checked)} />Call sounds</label>
+          <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={sounds.messages} onChange={event => sounds.setMessages(event.target.checked)} />Message sounds</label>
+        </section>
+        <h2 className="mt-2 text-sm font-semibold">Browser notifications</h2>
         {error ? <Alert>{error}</Alert> : null}
         {state === PushState.Blocked ? (
           <Alert variant="warning">
             Notifications are blocked for this site. Allow them in the browser&apos;s site settings.
           </Alert>
         ) : null}
+        {key.isError ? <Alert variant="warning">Couldn’t check browser notifications. <Button variant="ghost" onClick={() => void key.refetch()}>Try again</Button></Alert> : null}
         <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border px-4 py-3">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="text-sm font-medium">New messages on this device</span>
@@ -78,7 +87,7 @@ export function Notifications() {
           </div>
           {loading ? (
             <Skeleton className="h-8 w-20 rounded-md" />
-          ) : state === PushState.Unsupported || unavailable ? null : (
+          ) : state === PushState.Unsupported || unavailable || key.isError ? null : (
             <div className="flex items-center gap-2">
               <Badge variant={state === PushState.On ? "success" : "outline"} dot>
                 {state === PushState.On ? "On" : "Off"}

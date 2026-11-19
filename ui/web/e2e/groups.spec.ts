@@ -12,10 +12,10 @@ import {
 import { newPerson } from "./support";
 
 async function pickPerson(page: Page, email: string, name: string): Promise<void> {
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Add people").fill(email);
-  await dialog.getByRole("button", { name }).click();
-  await expect(dialog.getByRole("list", { name: "Selected people" })).toContainText(name);
+  const composer = chatList(page).getByRole("region", { name: "New conversation" });
+  await composer.getByLabel("Search people").fill(email);
+  await composer.getByRole("button", { name, exact: false }).filter({ hasNotText: "Remove" }).click();
+  await expect(composer.getByRole("list", { name: "Selected people" })).toContainText(name);
 }
 
 async function openGroup(page: Page, name: string): Promise<void> {
@@ -25,19 +25,28 @@ async function openGroup(page: Page, name: string): Promise<void> {
   await expectReady(page);
 }
 
-test("a group is built from contacts and run by its owner", async ({ browser }) => {
+test("a group is built from contacts and run by its owner", async ({ browser }, testInfo) => {
   const ada = await newPerson(browser, "group", "Ada");
   const grace = await newPerson(browser, "group-member", "Grace");
   const linus = await newPerson(browser, "group-other", "Linus");
 
   await goToChats(ada.page);
   await ada.page.getByRole("button", { name: "New chat" }).click();
-  const dialog = ada.page.getByRole("dialog");
-  await dialog.getByRole("tab", { name: "New group" }).click();
-  await dialog.getByLabel("Group name").fill("Weekend");
+  const composer = chatList(ada.page).getByRole("region", { name: "New conversation" });
+  await composer.getByRole("button", { name: "Create group" }).click();
+  await expect(composer.getByRole("button", { name: "Next" })).toBeDisabled();
   await pickPerson(ada.page, grace.email, "Grace");
   await pickPerson(ada.page, linus.email, "Linus");
-  await dialog.getByRole("button", { name: "Create group" }).click();
+  await composer.getByRole("button", { name: "Next · 2" }).click();
+  await expect(composer.getByRole("button", { name: "Create group" })).toBeDisabled();
+  await composer.getByLabel("Group name").fill("Weekend");
+  await composer.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(composer.getByRole("list", { name: "Selected people" })).toContainText("Grace");
+  await expect(composer.getByRole("list", { name: "Selected people" })).toContainText("Linus");
+  await composer.getByRole("button", { name: "Next · 2" }).click();
+  await expect(composer.getByLabel("Group name")).toHaveValue("Weekend");
+  await ada.page.screenshot({ path: testInfo.outputPath("group-details.png") });
+  await composer.getByRole("button", { name: "Create group" }).click();
 
   await expect(ada.page).toHaveURL(/\/chat#[0-9a-f-]{36}$/);
   await expect(ada.page.getByRole("heading", { name: "Weekend" })).toBeVisible();
@@ -50,6 +59,8 @@ test("a group is built from contacts and run by its owner", async ({ browser }) 
   await say(ada.page, "hello group");
   await expectSaid(grace.page, "Ada", "hello group");
   await expectSaid(linus.page, "Ada", "hello group");
+  await expect(grace.page.locator("[data-message-avatar]")).toHaveCount(1);
+  await expect(linus.page.locator("[data-message-avatar]")).toHaveCount(1);
 
   await chooseChatAction(grace.page, "Group info");
   const memberView = grace.page.getByRole("dialog");

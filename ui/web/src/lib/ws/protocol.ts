@@ -60,7 +60,7 @@ export type Incoming =
   | { type: "typing"; room_id: string; user_id: string }
   | { type: "presence"; user_id: string }
   | { type: "message_updated"; message: WireMessage }
-  | { type: "room_added"; room_id: string }
+  | { type: "room_added"; room_id: string; message?: WireMessage }
   | { type: "room_removed"; room_id: string }
   | { type: "error"; code: string; reason: string; client_id?: string };
 

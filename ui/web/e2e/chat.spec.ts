@@ -72,3 +72,23 @@ test("a chat is out of reach without a session, and reachable again after signin
   await ada.close();
   await grace.close();
 });
+
+test("a chat starts by typing just a fragment of the person's name", async ({ browser }) => {
+  const tag = Math.random().toString(36).slice(2, 8);
+  const name = `Grace Fragment${tag}`;
+  const ada = await newPerson(browser, "fragment", "Ada");
+  const grace = await newPerson(browser, "fragment-peer", name);
+
+  await goToChats(ada.page);
+  await ada.page.getByRole("button", { name: "New chat" }).click();
+
+  const composer = chatList(ada.page).getByRole("region", { name: "New conversation" });
+  await composer.getByLabel("Search people").fill(`RAGMENT${tag.slice(0, 3).toUpperCase()}`);
+  await composer.getByRole("button", { name }).click();
+
+  await expect(ada.page).toHaveURL(chatAt(grace.username));
+  await expect(ada.page.getByRole("heading", { name })).toBeVisible();
+
+  await ada.close();
+  await grace.close();
+});

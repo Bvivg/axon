@@ -1,9 +1,11 @@
 "use client";
 
-import { FileText, Film, ImageIcon, Mic, Paperclip, Pencil, Reply, SendHorizontal, Trash2, X } from "lucide-react";
-import Image from "next/image";
+import { FileText, ImageIcon, Mic, Paperclip, Pencil, Plus, Reply, SendHorizontal, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 
+import { AttachmentDialog } from "@/components/chat/attachment-dialog";
+import { EmojiPicker } from "@/components/chat/emoji-picker";
+import { useChatDrafts } from "@/components/chat/chat-activity";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,12 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { messageLengthError, messageTooLong } from "@/lib/chat/message-limits";
+import { useChatAddress } from "@/lib/chat/address";
 import { UploadAs, UploadCancelled, uploadAttachment } from "@/lib/chat/upload";
 import {
-  PendingShape,
   PendingStatus,
-  type PendingUpload,
   type usePendingUploads,
 } from "@/lib/chat/use-pending-uploads";
 import { RecorderState, useVoiceRecorder } from "@/lib/chat/use-voice-recorder";
@@ -58,7 +59,9 @@ export function MessageComposer({
   onCancelContext: () => void;
   onTyping: () => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const address = useChatAddress();
+  const drafts = useChatDrafts();
+  const [draft, setDraft] = useState(() => drafts?.get(address) ?? "");
   const input = useRef<HTMLTextAreaElement>(null);
   const editing = context?.mode === ComposerMode.Edit;
   const replyToId = context?.mode === ComposerMode.Reply ? context.messageId : undefined;
@@ -94,14 +97,18 @@ export function MessageComposer({
   }, [contextKey]);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [voiceSending, setVoiceSending] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const mediaInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const recorder = useVoiceRecorder();
 
-  const hasUploads = uploads.items.length > 0;
-  const canSend = editing
+  const recording = recorder.state !== RecorderState.Idle;
+  const attachmentsOpen = uploads.items.length > 0 && !editing && !recording && !voiceSending;
+  const canSendText = editing
     ? connected && !saving && (context.bodyOptional || draft.trim() !== "") && draft !== context.body
-    : connected && !uploads.busy && (draft.trim() !== "" || uploads.ready.length > 0);
+    : connected && !attachmentsOpen && draft.trim() !== "";
+  const canSendAttachments = connected && !uploads.busy && uploads.items.length > 0
+    && uploads.items.every((item) => item.status === PendingStatus.Ready);
 
   const cancelContext = () => {
     onCancelContext();
@@ -113,7 +120,7 @@ export function MessageComposer({
   };
 
   const submit = () => {
-    if (!canSend) {
+    if (!canSendText) {
       return;
     }
 
@@ -132,30 +139,30 @@ export function MessageComposer({
       return;
     }
 
-    if (uploads.ready.length === 0) {
-      if (onSend(draft, { replyToId })) {
-        setDraft("");
-        onCancelContext();
-      }
-      return;
-    }
-
-    const sent: string[] = [];
-    batchesOf(uploads.ready).forEach((batch, index) => {
-      const first = index === 0;
-      const options = {
-        uploadIds: batch.map((item) => item.uploaded?.uploadId ?? ""),
-        replyToId: first ? replyToId : undefined,
-      };
-      if (onSend(first ? draft : "", options)) {
-        sent.push(...batch.map((item) => item.id));
-      }
-    });
-    if (sent.length > 0) {
-      uploads.take(sent);
+    if (onSend(draft, { replyToId })) {
+      drafts?.delete(address);
       setDraft("");
       onCancelContext();
     }
+  };
+
+  const submitAttachments = () => {
+    if (!attachmentsOpen || !canSendAttachments) return;
+    if (messageTooLong(draft)) {
+      setAttachmentError(messageLengthError);
+      return;
+    }
+
+    setAttachmentError(null);
+    const uploadIds = uploads.items.flatMap((item) => item.uploaded ? [item.uploaded.uploadId] : []);
+    if (uploadIds.length !== uploads.items.length || !onSend(draft, { uploadIds, replyToId })) {
+      setAttachmentError("Couldn’t send the attachments. Try again when connected.");
+      return;
+    }
+    uploads.take(uploads.items.map((item) => item.id));
+    drafts?.delete(address);
+    setDraft("");
+    onCancelContext();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -172,9 +179,25 @@ export function MessageComposer({
 
   const onDraftChange = (value: string) => {
     setDraft(value);
+    if (!editing) {
+      if (value.trim() !== "") drafts?.set(address, value);
+      else drafts?.delete(address);
+    }
+    setAttachmentError(null);
     if (value.trim() !== "") {
       onTyping();
     }
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const field = input.current;
+    const start = field?.selectionStart ?? draft.length;
+    const end = field?.selectionEnd ?? draft.length;
+    onDraftChange(draft.slice(0, start) + emoji + draft.slice(end));
+    requestAnimationFrame(() => {
+      field?.focus();
+      field?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
   };
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -192,6 +215,36 @@ export function MessageComposer({
       uploads.add(files, as);
     }
   };
+
+  const attachmentMenu = (inDialog: boolean) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size={inDialog ? "sm" : "icon"}
+            aria-label={inDialog ? "Add more" : "Attach"}
+            disabled={!connected}
+            className={inDialog ? "min-h-9 gap-1 rounded-full px-2 text-signal [&>svg]:size-3.5" : "chat-composer-circle"}
+          >
+            {inDialog ? <Plus /> : <Paperclip aria-hidden />}
+            {inDialog ? "Add more" : null}
+          </Button>
+        }
+      />
+      <DropdownMenuContent side={inDialog ? "bottom" : "top"} align={inDialog ? "end" : "start"} className="w-48">
+        <DropdownMenuItem onClick={() => mediaInput.current?.click()}>
+          <ImageIcon />
+          Photo or video
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => fileInput.current?.click()}>
+          <FileText />
+          File
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const startVoice = () => {
     setVoiceError(null);
@@ -221,12 +274,10 @@ export function MessageComposer({
     }
   };
 
-  const recording = recorder.state !== RecorderState.Idle;
-  const failed = uploads.items.filter((item) => item.status === PendingStatus.Failed);
-  const error = voiceError ?? recorder.error;
+  const error = voiceError ?? recorder.error ?? (attachmentsOpen ? null : uploads.selectionError);
 
   return (
-    <div className="shrink-0 pt-3">
+    <div className="chat-composer-card shrink-0">
       {context ? (
         <div className="mb-2 flex items-center gap-3 rounded-lg border-l-2 border-signal bg-muted/60 py-1.5 pr-1 pl-3">
           {editing ? (
@@ -249,21 +300,27 @@ export function MessageComposer({
         </div>
       ) : null}
 
-      {hasUploads && !editing ? (
-        <ScrollArea orientation="horizontal" className="mb-2">
-          <ul aria-label="Attachments" className="flex w-max gap-2 pb-3">
-            {uploads.items.map((item) => (
-              <PendingChip key={item.id} item={item} onRemove={() => uploads.remove(item.id)} />
-            ))}
-          </ul>
-        </ScrollArea>
-      ) : null}
-
-      {failed.map((item) => (
-        <p key={item.id} role="alert" className="mb-2 text-xs text-destructive">
-          {item.name}: {item.error}
-        </p>
-      ))}
+      <AttachmentDialog
+        open={attachmentsOpen}
+        items={uploads.items}
+        caption={draft}
+        reply={context?.mode === ComposerMode.Reply ? context : undefined}
+        picker={attachmentMenu(true)}
+        busy={uploads.busy}
+        canSend={canSendAttachments}
+        error={attachmentError ?? uploads.selectionError ?? (!connected ? "Waiting for the connection…" : null)}
+        returnFocus={input}
+        onCaption={onDraftChange}
+        onRemove={(id) => {
+          setAttachmentError(null);
+          uploads.remove(id);
+        }}
+        onCancel={() => {
+          setAttachmentError(null);
+          uploads.clear();
+        }}
+        onSend={submitAttachments}
+      />
       {error ? (
         <p role="alert" className="mb-2 text-xs text-destructive">
           {error}
@@ -301,28 +358,8 @@ export function MessageComposer({
           </Button>
         </div>
       ) : (
-        <form className="flex items-end gap-2" onSubmit={onSubmit}>
-          {editing ? null : (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button variant="ghost" size="icon" aria-label="Attach" disabled={!connected}>
-                    <Paperclip />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent side="top" className="w-48">
-                <DropdownMenuItem onClick={() => mediaInput.current?.click()}>
-                  <ImageIcon />
-                  Photo or video
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => fileInput.current?.click()}>
-                  <FileText />
-                  File
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+        <form className="chat-composer-row" onSubmit={onSubmit}>
+          {editing ? null : attachmentMenu(false)}
           <input
             ref={mediaInput}
             type="file"
@@ -341,12 +378,13 @@ export function MessageComposer({
             onChange={(event) => pick(event.currentTarget, UploadAs.File)}
           />
 
+          <div className="chat-composer-field">
           <Textarea
             ref={input}
             aria-label="Message"
             rows={1}
-            className="max-h-40"
-            value={draft}
+            className="chat-composer-input"
+            value={attachmentsOpen ? "" : draft}
             onChange={(event) => onDraftChange(event.target.value)}
             onPaste={editing ? undefined : onPaste}
             onKeyDown={onKeyDown}
@@ -355,101 +393,28 @@ export function MessageComposer({
                 ? "Waiting for the connection…"
                 : editing
                   ? "Edit the message"
-                  : hasUploads
-                    ? "Add a caption"
-                    : "Say something"
+                  : "Message…"
             }
-            disabled={!connected}
           />
+          <EmojiPicker onPick={insertEmoji} returnFocus={input} />
+          </div>
 
-          {draft.trim() === "" && !hasUploads && !editing ? (
+          {draft.trim() === "" && !editing ? (
             <Button
               variant="ghost"
               size="icon"
               aria-label="Record voice message"
+              className="chat-composer-circle"
               onClick={startVoice}
               disabled={!connected}
             >
-              <Mic />
+              <Mic aria-hidden />
             </Button>
-          ) : null}
-          <Button type="submit" variant="signal" disabled={!canSend} aria-busy={editing ? saving : uploads.busy}>
-            {editing ? "Save" : "Send"}
-          </Button>
+          ) : <Button type="submit" variant="signal" size={editing ? "default" : "icon"} className={cn("chat-composer-send", !editing && "chat-composer-circle")} aria-label={editing ? "Save" : "Send"} disabled={!canSendText} aria-busy={editing && saving}>
+            {editing ? "Save" : <SendHorizontal aria-hidden />}
+          </Button>}
         </form>
       )}
     </div>
-  );
-}
-
-const albumLimit = 10;
-
-function batchesOf(ready: PendingUpload[]): PendingUpload[][] {
-  const uploaded = ready.filter((item) => item.uploaded);
-  const media = uploaded.filter((item) => item.uploaded?.kind === "image" || item.uploaded?.kind === "video");
-  const rest = uploaded.filter((item) => !media.includes(item));
-  const albums: PendingUpload[][] = [];
-  for (let start = 0; start < media.length; start += albumLimit) {
-    albums.push(media.slice(start, start + albumLimit));
-  }
-  return [...albums, ...rest.map((item) => [item])];
-}
-
-function PendingChip({ item, onRemove }: { item: PendingUpload; onRemove: () => void }) {
-  const failed = item.status === PendingStatus.Failed;
-  const uploading = item.status === PendingStatus.Uploading;
-
-  return (
-    <li
-      aria-label={item.name}
-      className={cn(
-        "relative flex h-14 max-w-56 shrink-0 items-center gap-2 rounded-lg border bg-card pr-8 pl-1.5",
-        failed ? "border-destructive" : "border-border",
-      )}
-    >
-      <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
-        {item.shape === PendingShape.Image && item.previewUrl ? (
-          <Image src={item.previewUrl} alt="" fill unoptimized sizes="44px" className="object-cover" />
-        ) : item.shape === PendingShape.Video ? (
-          <Film aria-hidden className="size-5" strokeWidth={1.5} />
-        ) : (
-          <FileText aria-hidden className="size-5" strokeWidth={1.5} />
-        )}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium">{item.name}</span>
-        {uploading && (item.processing || item.progress >= 1) ? (
-          <span role="status" className="block text-[10px] text-muted-foreground">
-            Processing…
-          </span>
-        ) : uploading ? (
-          <span
-            role="progressbar"
-            aria-label={`Uploading ${item.name}`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(item.progress * 100)}
-            className="mt-1.5 block h-1 w-24 overflow-hidden rounded-full bg-muted"
-          >
-            <span
-              className="block h-full rounded-full bg-signal transition-[width] duration-200"
-              style={{ width: `${Math.max(4, item.progress * 100)}%` }}
-            />
-          </span>
-        ) : (
-          <span className={cn("block text-[10px]", failed ? "text-destructive" : "text-muted-foreground")}>
-            {failed ? "Failed" : "Ready"}
-          </span>
-        )}
-      </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Remove ${item.name}`}
-        className="absolute top-1 right-1 flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <X aria-hidden className="size-3.5" />
-      </button>
-    </li>
   );
 }

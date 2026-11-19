@@ -16,7 +16,7 @@ import {
   submitCredentials,
 } from "./support";
 
-test("registration signs you in and lands on Games", async ({ page }) => {
+test("registration signs you in and lands on Chats", async ({ page }) => {
   const email = newEmail("register");
 
   await open(page, "/register");
@@ -43,7 +43,7 @@ test("an existing account signs in with its password", async ({ page }) => {
   await expect(page.getByLabel("Email")).toHaveValue(email);
 });
 
-test("the fake provider carries the browser through to Games", async ({
+test("the fake provider carries the browser through to Chats", async ({
   page,
 }) => {
 
@@ -77,7 +77,11 @@ test("a reload keeps the session", async ({ page }) => {
 
 test("the refresh token is out of the page's reach", async ({ page }) => {
   const email = newEmail("cookie");
+  const registration = page.waitForResponse(response => response.url().endsWith("/axon.auth.v1.AuthService/Register") && response.ok());
   await register(page, email);
+  const { tokens } = await (await registration).json();
+  expect(tokens.accessToken).toBeTruthy();
+  expect(tokens.refreshToken).toBeFalsy();
 
   const cookie = await refreshCookie(page);
   expect(cookie, "no refresh cookie was stored").toBeDefined();
@@ -101,7 +105,8 @@ test("the refresh token is out of the page's reach", async ({ page }) => {
   expect(visible.cookies).not.toContain(cookie!.value);
 
   expect(visible.local).toEqual([]);
-  expect(visible.session).toEqual([]);
+  expect(JSON.stringify(visible.session)).not.toContain(cookie!.value);
+  expect(JSON.stringify(visible.session)).not.toContain(tokens.accessToken);
 
   expect(JSON.stringify(visible)).not.toContain(password);
   expect(JSON.stringify(visible)).not.toContain(email);
@@ -138,7 +143,7 @@ test("the sign-in pages bounce somebody who is already signed in", async ({
   await expectHome(page);
 });
 
-test("the root is Games for a session, and sign-in for none", async ({ page }) => {
+test("the root is Chats for a session, and sign-in for none", async ({ page }) => {
   await register(page, newEmail("root"));
 
   await open(page, "/");

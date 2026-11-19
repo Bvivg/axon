@@ -121,6 +121,7 @@ function payloadOf(m: Message): Record<string, unknown> | undefined {
           duration_ms: Number(item.durationMs),
           size_bytes: Number(item.sizeBytes),
           mime: item.mime,
+          filename: item.filename,
         })),
       };
     case "system":
@@ -297,8 +298,8 @@ export function useSearchMessages(roomID: string, query: string) {
 
   return useQuery({
     queryKey: chatKeys.search(roomID, trimmed),
-    queryFn: async (): Promise<WireMessage[]> => {
-      const resp = await chatClient.searchMessages({ roomId: roomID, query: trimmed });
+    queryFn: async ({ signal }): Promise<WireMessage[]> => {
+      const resp = await chatClient.searchMessages({ roomId: roomID, query: trimmed }, { signal });
       return resp.messages.map(toWireMessage);
     },
     enabled: roomID !== "" && [...trimmed].length >= minSearchQueryLength,
@@ -325,6 +326,7 @@ export function useRoomMedia(roomID: string, kinds: MessageKind[]) {
       const resp = await chatClient.listMessages({
         roomId: roomID,
         kinds,
+        includeGroupedItems: true,
         limit: 60,
         beforeSeq: pageParam > 0 ? BigInt(pageParam) : undefined,
       });

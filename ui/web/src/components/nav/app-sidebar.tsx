@@ -2,134 +2,50 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ChevronRight } from "lucide-react";
 
-import { useRoomTyping } from "@/components/chat/chat-activity";
-import { useRoomDirectory, type RoomEntry } from "@/components/chat/use-room-directory";
-import { AccountMenu } from "@/components/nav/account-menu";
+import { useRoomDirectory } from "@/components/chat/use-room-directory";
 import { BrandMark } from "@/components/nav/brand";
-import { navItems, sectionFor, type NavItem } from "@/components/nav/items";
+import { navItems, Section, sectionFor } from "@/components/nav/items";
 import { Avatar } from "@/components/ui/avatar";
-import { CountBadge } from "@/components/ui/badge";
-import { KbdCombo } from "@/components/ui/kbd";
-import { PresenceDot } from "@/components/ui/status";
-import { chatHref, isRoomAt, useChatAddress } from "@/lib/chat/address";
-import { initials } from "@/lib/format";
-import { cn } from "@/lib/utils";
-
-const unreadShown = 6;
-
-const rowClass =
-  "flex h-8 items-center gap-2.5 rounded-md px-2 transition-colors duration-[120ms] ease-signal hover:bg-accent";
+import { useSession } from "@/lib/auth/session";
+import { initials, personName } from "@/lib/format";
 
 export function AppSidebar() {
-  const pathname = usePathname();
-  const active = sectionFor(pathname);
-  const { entries, unread } = useRoomDirectory();
-  const typing = useRoomTyping();
-  const address = useChatAddress();
-
-  const unreadRooms = entries.filter((entry) => entry.unread > 0).slice(0, unreadShown);
+  const section = sectionFor(usePathname());
+  const { unread } = useRoomDirectory();
+  const { user } = useSession();
+  const current = section === Section.Gateway || section === Section.ServiceMap || section === Section.Admin ? Section.Profile
+    : section === Section.Contacts || section === Section.Media ? Section.Chats : section;
 
   return (
-    <aside className="sticky top-0 hidden h-dvh w-62 shrink-0 flex-col gap-[18px] border-r border-border bg-sidebar px-2 py-2.5 text-sm lg:flex">
-      <Link href="/" className={cn(rowClass, "h-9 gap-2.5")}>
-        <BrandMark />
-        <span className="font-semibold">Axon</span>
+    <aside className="workspace-rail call-app-tabbar">
+      <Link href="/chat" className="workspace-brand" aria-label="Axon home">
+        <BrandMark className="size-8 rounded-[10px]" />
+        <span className="workspace-brand-copy"><strong>AXON</strong></span>
       </Link>
-
-      <nav aria-label="Primary" className="flex flex-col gap-px">
-        {navItems.map((item) => (
-          <SidebarLink
-            key={item.href}
-            item={item}
-            active={item.section === active}
-            count={item.href === "/chat" ? unread : 0}
-          />
+      <nav aria-label="Primary">
+        {navItems.map(({ href, section, icon: Icon, label }) => (
+          <Link key={href} href={href} title={label} aria-label={label}
+            aria-current={current === section ? "page" : undefined}
+            aria-describedby={section === Section.Chats && unread > 0 ? "workspace-chat-unread" : undefined}
+            className="workspace-rail-link">
+            <span className="workspace-nav-icon">
+              <Icon aria-hidden size={22} strokeWidth={1.8} />
+            {section === Section.Chats && unread > 0 ? (
+              <><span aria-hidden className="workspace-unread-dot" /><span id="workspace-chat-unread" className="sr-only">{unread} unread messages</span></>
+            ) : null}
+            </span>
+            <span className="workspace-nav-label">{label}</span>
+          </Link>
         ))}
       </nav>
-
-      {unreadRooms.length > 0 ? (
-        <section aria-labelledby="sidebar-unread" className="flex flex-col gap-px">
-          <h2 id="sidebar-unread" className="eyebrow px-2 pb-1.5">
-            Unread
-          </h2>
-          {unreadRooms.map((entry) => (
-            <UnreadRow
-              key={entry.room.id}
-              entry={entry}
-              current={isRoomAt(address, entry.room, entry.peer)}
-              typing={(typing.get(entry.room.id)?.size ?? 0) > 0}
-            />
-          ))}
-        </section>
-      ) : null}
-
-      <div className="flex-1" />
-
-      <AccountMenu />
+      <div className="workspace-rail-bottom">
+        {user ? <Link href="/profile?view=account" className="workspace-user-link" aria-label="My account">
+          <Avatar self src={user.avatarUrls?.small || user.avatarUrl} alt="" fallback={initials(personName(user))} sizes="38px" className="size-[38px] rounded-xl text-xs" />
+          <span><strong>{personName(user)}</strong><small>{user.username ? `@${user.username}` : user.email}</small></span><ChevronRight aria-hidden size={17} />
+        </Link> : null}
+      </div>
     </aside>
-  );
-}
-
-function SidebarLink({ item, active, count }: { item: NavItem; active: boolean; count: number }) {
-  const Icon = item.icon;
-  return (
-    <Link
-      href={item.href}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        rowClass,
-        active ? "bg-accent font-medium text-foreground" : "text-muted-foreground",
-      )}
-    >
-      <Icon aria-hidden className="size-4 shrink-0" strokeWidth={1.5} />
-      <span className="flex-1">{item.label}</span>
-      {count > 0 ? (
-        <CountBadge count={count} />
-      ) : item.keys ? (
-        <KbdCombo aria-hidden keys={item.keys} className="gap-0.5" />
-      ) : null}
-    </Link>
-  );
-}
-
-function UnreadRow({
-  entry,
-  current,
-  typing,
-}: {
-  entry: RoomEntry;
-  current: boolean;
-  typing: boolean;
-}) {
-  return (
-    <Link
-      href={chatHref(entry.address)}
-      scroll={false}
-      aria-current={current ? "page" : undefined}
-      className={cn(rowClass, "font-medium text-foreground", current && "bg-accent")}
-    >
-      {entry.direct ? (
-        <Avatar
-          src={entry.avatarSrc}
-          alt=""
-          fallback={initials(entry.label)}
-          sizes="16px"
-          className="size-4 text-[8px]"
-        >
-          <PresenceDot online={!!entry.peer?.online} className="size-[7px] ring-sidebar" />
-        </Avatar>
-      ) : (
-        <span aria-hidden className="w-4 text-center font-mono text-muted-foreground">
-          #
-        </span>
-      )}
-      <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-      {typing ? (
-        <span className="font-mono text-2xs text-signal">typing…</span>
-      ) : (
-        <span className="font-mono text-2xs text-muted-foreground tabular-nums">{entry.unread}</span>
-      )}
-    </Link>
   );
 }

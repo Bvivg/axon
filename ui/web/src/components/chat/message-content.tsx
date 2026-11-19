@@ -1,16 +1,17 @@
 "use client";
 
-import { Download, FileText, Pause, Play } from "lucide-react";
+import { CheckCircle2, Circle, Download, FileText, Pause, Play } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
+import { VoiceWaveform } from "@/components/chat/voice-waveform";
 import {
   ContentKind,
-  type AlbumItem,
   type Content,
   type FileContent,
   type ImageContent,
   type VideoContent,
+  type VisualAlbumItem,
   type VoiceContent,
 } from "@/lib/chat/content";
 import { formatBytes, formatDuration } from "@/lib/format";
@@ -20,11 +21,13 @@ const maxMediaWidth = 280;
 const maxMediaHeight = 320;
 const minMediaWidth = 140;
 
-export function mediaBoxSize(width: number, height: number): { width: number; height: number } {
+export function mediaBoxSize(width: number, height: number, kind: "photo" | "video" = "video"): { width: number; height: number } {
+  const maxWidth = kind === "photo" ? 360 : maxMediaWidth;
+  const maxHeight = kind === "photo" ? 560 : maxMediaHeight;
   if (width <= 0 || height <= 0) {
-    return { width: maxMediaWidth, height: Math.round(maxMediaWidth * 0.75) };
+    return { width: maxWidth, height: Math.round(maxWidth * 0.75) };
   }
-  const scale = Math.min(1, maxMediaWidth / width, maxMediaHeight / height);
+  const scale = Math.min(1, maxWidth / width, maxHeight / height);
   const w = Math.max(minMediaWidth, Math.round(width * scale));
   return { width: w, height: Math.round((w * height) / width) };
 }
@@ -45,22 +48,44 @@ export function MessageMedia({
   onTogglePicked?: (item: number) => void;
 }) {
   switch (content.kind) {
-    case ContentKind.Album:
+    case ContentKind.Album: {
+      const visuals = content.items.flatMap((item, position) => item.kind === ContentKind.File ? [] : [{ item, position }]);
+      const files = content.items.flatMap((item, position) => item.kind === ContentKind.File ? [{ file: item.file, position }] : []);
       return (
-        <AlbumGrid
-          items={content.items}
-          caption={caption}
-          onOpen={onOpen}
-          picked={picked}
-          onTogglePicked={onTogglePicked}
-        />
+        <div className="flex min-w-0 flex-col gap-1">
+          {visuals.length > 0 ? (
+            <AlbumGrid
+              items={visuals}
+              caption={caption}
+              onOpen={onOpen}
+              picked={picked}
+              onTogglePicked={onTogglePicked}
+            />
+          ) : null}
+          {files.length > 0 ? (
+            <div className={cn("flex min-w-0 flex-col gap-1", visuals.length > 0 && "px-2 pt-1")}>
+              {files.map(({ file, position }) => (
+                <FileCard
+                  key={position}
+                  file={file}
+                  mine={mine}
+                  pick={onTogglePicked ? {
+                    selected: picked?.(position) ?? false,
+                    onToggle: () => onTogglePicked(position),
+                  } : undefined}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
       );
+    }
     case ContentKind.Image:
       return <PhotoTile image={content.image} caption={caption} onOpen={() => onOpen(0)} />;
     case ContentKind.Video:
       return <VideoTile video={content.video} onOpen={() => onOpen(0)} />;
     case ContentKind.Voice:
-      return <VoicePlayer voice={content.voice} mine={mine} />;
+      return <VoicePlayer voice={content.voice} />;
     case ContentKind.File:
       return <FileCard file={content.file} mine={mine} />;
     default:
@@ -80,7 +105,7 @@ const albumRows: Record<number, number[]> = {
   10: [2, 2, 3, 3],
 };
 
-const ratioOf = (item: AlbumItem) => {
+const ratioOf = (item: VisualAlbumItem) => {
   const { width, height } = item.kind === ContentKind.Image ? item.image : item.video;
   return width > 0 && height > 0 ? Math.min(2, Math.max(0.5, width / height)) : 1;
 };
@@ -92,7 +117,7 @@ export function AlbumGrid({
   picked,
   onTogglePicked,
 }: {
-  items: AlbumItem[];
+  items: { item: VisualAlbumItem; position: number }[];
   caption: string;
   onOpen: (item: number) => void;
   picked?: (item: number) => boolean;
@@ -106,17 +131,17 @@ export function AlbumGrid({
         const start = starts[row];
         return (
           <div key={row} className="flex gap-0.5">
-            {items.slice(start, start + count).map((item, offset) => {
+            {items.slice(start, start + count).map(({ item, position }, offset) => {
               const index = start + offset;
               const ratio = ratioOf(item);
               const thumb = item.kind === ContentKind.Image ? item.image.thumbnailUrl : item.video.posterUrl;
               const selecting = onTogglePicked !== undefined;
               return (
                 <button
-                  key={index}
+                  key={position}
                   type="button"
                   role={selecting ? "checkbox" : undefined}
-                  aria-checked={selecting ? (picked?.(index) ?? false) : undefined}
+                  aria-checked={selecting ? (picked?.(position) ?? false) : undefined}
                   aria-label={
                     selecting
                       ? `Select item ${index + 1} of the album`
@@ -125,9 +150,9 @@ export function AlbumGrid({
                         : `Play video ${index + 1} of ${items.length}`
                   }
                   onClick={(event) => {
-                    if (!selecting) return onOpen(index);
+                    if (!selecting) return onOpen(position);
                     event.stopPropagation();
-                    onTogglePicked(index);
+                    onTogglePicked(position);
                   }}
                   className="relative min-w-0 overflow-hidden bg-muted"
                   style={{ flexGrow: ratio, flexBasis: 0, aspectRatio: String(ratio) }}
@@ -146,7 +171,7 @@ export function AlbumGrid({
                       aria-hidden
                       className={cn(
                         "absolute top-1.5 right-1.5 size-5 rounded-full border-2 border-white shadow",
-                        picked?.(index) ? "bg-signal" : "bg-black/25",
+                        picked?.(position) ? "bg-signal" : "bg-black/25",
                       )}
                     />
                   ) : null}
@@ -171,7 +196,7 @@ export function PhotoTile({
   onOpen: () => void;
   className?: string;
 }) {
-  const box = mediaBoxSize(image.width, image.height);
+  const box = mediaBoxSize(image.width, image.height, "photo");
   return (
     <button
       type="button"
@@ -227,7 +252,7 @@ export function VideoTile({
 
 let playing: HTMLAudioElement | null = null;
 
-export function VoicePlayer({ voice, mine }: { voice: VoiceContent; mine: boolean }) {
+export function VoicePlayer({ voice }: { voice: VoiceContent }) {
   const audio = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
@@ -274,7 +299,7 @@ export function VoicePlayer({ voice, mine }: { voice: VoiceContent; mine: boolea
         aria-label={isPlaying ? "Pause voice message" : "Play voice message"}
         className={cn(
           "flex size-9 shrink-0 items-center justify-center rounded-full transition-colors",
-          mine ? "bg-signal-foreground/20 text-signal-foreground" : "bg-signal text-signal-foreground",
+          "bg-signal text-signal-foreground",
         )}
       >
         {isPlaying ? (
@@ -284,17 +309,8 @@ export function VoicePlayer({ voice, mine }: { voice: VoiceContent; mine: boolea
         )}
       </button>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <input
-          type="range"
-          min={0}
-          max={Math.max(voice.durationMs, 1)}
-          step={100}
-          value={Math.min(positionMs, voice.durationMs)}
-          onChange={seek}
-          aria-label="Voice message position"
-          className={cn("h-1 w-full cursor-pointer", mine ? "accent-signal-foreground" : "accent-signal")}
-        />
-        <span className={cn("font-mono text-[10px]", mine ? "text-signal-foreground/80" : "text-muted-foreground")}>
+        <VoiceWaveform url={voice.url} durationMs={voice.durationMs} positionMs={positionMs} onSeek={seek} />
+        <span className="voice-duration font-mono text-[10px] text-muted-foreground">
           {formatDuration(shown)}
         </span>
       </div>
@@ -314,7 +330,40 @@ export function VoicePlayer({ voice, mine }: { voice: VoiceContent; mine: boolea
   );
 }
 
-export function FileCard({ file, mine, className }: { file: FileContent; mine: boolean; className?: string }) {
+export function FileCard({ file, mine, className, pick }: {
+  file: FileContent;
+  mine: boolean;
+  className?: string;
+  pick?: { selected: boolean; onToggle: () => void };
+}) {
+  const style = cn("flex w-64 max-w-full items-center gap-3 rounded-lg py-0.5 text-left", className);
+  const details = (
+    <>
+      <span
+        className={cn(
+          "flex size-10 shrink-0 items-center justify-center rounded-lg",
+          mine ? "bg-accent" : "bg-card",
+        )}
+      >
+        <FileText aria-hidden className="size-5" strokeWidth={1.5} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{file.filename}</span>
+        <span className="block text-xs text-muted-foreground">
+          {formatBytes(file.sizeBytes)}
+        </span>
+      </span>
+    </>
+  );
+  if (pick) {
+    const Icon = pick.selected ? CheckCircle2 : Circle;
+    return (
+      <button type="button" role="checkbox" aria-label={`Select ${file.filename}`} aria-checked={pick.selected} className={style} onClick={pick.onToggle}>
+        {details}
+        <Icon aria-hidden className="size-4 shrink-0 opacity-70" />
+      </button>
+    );
+  }
   return (
     <a
       href={file.url}
@@ -322,22 +371,9 @@ export function FileCard({ file, mine, className }: { file: FileContent; mine: b
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`Download ${file.filename}`}
-      className={cn("flex w-64 max-w-full items-center gap-3 rounded-lg py-0.5", className)}
+      className={style}
     >
-      <span
-        className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-lg",
-          mine ? "bg-signal-foreground/20" : "bg-card",
-        )}
-      >
-        <FileText aria-hidden className="size-5" strokeWidth={1.5} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{file.filename}</span>
-        <span className={cn("block text-xs", mine ? "text-signal-foreground/75" : "text-muted-foreground")}>
-          {formatBytes(file.sizeBytes)}
-        </span>
-      </span>
+      {details}
       <Download aria-hidden className="size-4 shrink-0 opacity-70" />
     </a>
   );

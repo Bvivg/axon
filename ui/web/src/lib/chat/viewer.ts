@@ -1,4 +1,4 @@
-import { ContentKind, contentOf, isDeleted, type AlbumItem } from "@/lib/chat/content";
+import { ContentKind, contentOf, isDeleted, type VisualAlbumItem } from "@/lib/chat/content";
 import type { WireMessage } from "@/lib/ws/protocol";
 
 export interface ViewerSlide {
@@ -13,7 +13,7 @@ export interface ViewerSlide {
   caption: string;
 }
 
-function slideOf(message: WireMessage, item: number, media: AlbumItem, caption: string): ViewerSlide {
+function slideOf(message: WireMessage, item: number, media: VisualAlbumItem, caption: string): ViewerSlide {
   const common = { key: `${message.id}:${item}`, messageID: message.id, item, caption };
   return media.kind === ContentKind.Image
     ? {
@@ -41,7 +41,9 @@ export function viewerSlidesOf(messages: readonly WireMessage[]): ViewerSlide[] 
     const content = contentOf(message);
     const caption = message.body.trim();
     if (content.kind === ContentKind.Album) {
-      content.items.forEach((media, item) => slides.push(slideOf(message, item, media, caption)));
+      content.items.forEach((media, item) => {
+        if (media.kind !== ContentKind.File) slides.push(slideOf(message, item, media, caption));
+      });
     } else if (content.kind === ContentKind.Image || content.kind === ContentKind.Video) {
       slides.push(slideOf(message, 0, content, caption));
     }

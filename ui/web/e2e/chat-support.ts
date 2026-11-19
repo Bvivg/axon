@@ -2,6 +2,11 @@ import { expect, type Page } from "@playwright/test";
 
 import { expectLobby } from "./support";
 
+export async function startCallFromChat(page: Page, mode: "Audio call" | "Video call") {
+  await page.getByRole("button", { name: "Start call", exact: true }).click();
+  await page.getByRole("menuitem", { name: mode, exact: true }).click();
+}
+
 export interface Contact {
   email: string;
   username: string;
@@ -13,7 +18,9 @@ export function chatAt(address: string): RegExp {
 }
 
 export async function goToChats(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Chats" }).click();
+  const nav = page.getByRole("navigation", { name: "Primary", exact: true });
+  if (await nav.isVisible()) await nav.getByRole("link", { name: "Chats", exact: true }).click();
+  else await page.getByRole("link", { name: "Back to chats", exact: true }).click();
   await expectLobby(page);
 }
 
@@ -25,9 +32,9 @@ export async function startChat(page: Page, contact: Contact, first: string): Pr
   await goToChats(page);
   await page.getByRole("button", { name: "New chat" }).click();
 
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Search").fill(contact.email);
-  await dialog.getByRole("button", { name: contact.name }).click();
+  const composer = chatList(page).getByRole("region", { name: "New conversation" });
+  await composer.getByLabel("Search people").fill(contact.email);
+  await composer.getByRole("button", { name: contact.name }).click();
 
   await expect(page).toHaveURL(chatAt(contact.username));
   await expect(page.getByRole("heading", { name: contact.name })).toBeVisible();

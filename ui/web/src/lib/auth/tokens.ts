@@ -3,6 +3,7 @@ import type { TokenPair } from "@/gen/axon/auth/v1/auth_pb";
 let accessToken: string | null = null;
 
 let expiresAt = 0;
+let revision = 0;
 
 const expiryMargin = 30_000;
 
@@ -14,6 +15,11 @@ export function setAccessToken(tokens: TokenPair | undefined): void {
 
   accessToken = tokens.accessToken;
   expiresAt = Date.now() + Number(tokens.expiresIn) * 1000;
+  revision += 1;
+}
+
+export function tokenRevision(): number {
+  return revision;
 }
 
 export function getAccessToken(): string | null {
@@ -26,4 +32,5 @@ export function getAccessToken(): string | null {
 export function clearAccessToken(): void {
   accessToken = null;
   expiresAt = 0;
+  revision += 1;
 }

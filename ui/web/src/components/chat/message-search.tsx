@@ -75,7 +75,7 @@ export function MessageSearch({
                     >
                       <span className="flex items-baseline gap-2">
                         <span className="min-w-0 flex-1 truncate font-medium">{nameOf(message.author_id)}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{whenOf(message.sent_at)}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{shortWhen(fromISO(message.sent_at))}</span>
                       </span>
                       <span className="line-clamp-2 break-words text-muted-foreground">
                         <Snippet body={message.body} query={debounced} />
@@ -90,11 +90,6 @@ export function MessageSearch({
       ) : null}
     </>
   );
-}
-
-function whenOf(iso: string): string {
-  const at = fromISO(iso);
-  return at ? shortWhen(at) : "";
 }
 
 function Snippet({ body, query }: { body: string; query: string }) {

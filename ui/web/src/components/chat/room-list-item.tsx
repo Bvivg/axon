@@ -1,18 +1,16 @@
 "use client";
 
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { Check, CheckCheck } from "lucide-react";
-import Link from "next/link";
 
 import { Avatar } from "@/components/ui/avatar";
+import { ListBadge, ListItem } from "@/components/ui/list-item";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { MessageKind, RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
 import { chatHref, roomAddress } from "@/lib/chat/address";
 import { previewOf } from "@/lib/chat/content";
-import { profileName, shortID } from "@/lib/format";
+import { fromTimestamp, profileName, shortID, shortWhen } from "@/lib/format";
 import { toWireMessage } from "@/lib/query/chat";
-import { cn } from "@/lib/utils";
 
 export function RoomListItem({
   room,
@@ -38,80 +36,51 @@ export function RoomListItem({
   const unread = Number(room.unreadCount);
 
   return (
-    <Link
+    <ListItem
       href={chatHref(roomAddress(room, peerProfile))}
       scroll={false}
       data-room-id={room.id}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "flex items-center gap-3 border-b border-border px-4 py-3 transition-colors",
-        active ? "bg-signal/5" : "hover:bg-muted",
-      )}
-    >
-      <span className="relative shrink-0">
-        <Avatar
-          src={avatarSrc}
-          alt=""
-          fallback={name.slice(0, 1).toUpperCase()}
-          className="size-12 text-base"
-          sizes="48px"
-        />
-        {!isGroup && peerProfile?.online ? (
-          <span
-            aria-label="Online"
-            className="absolute bottom-0 right-0 size-3.5 rounded-full border-2 border-background bg-green-500"
+      active={active}
+      leading={
+        <>
+          <Avatar
+            src={avatarSrc}
+            alt=""
+            fallback={name.slice(0, 1).toUpperCase()}
+            className="size-8 rounded-[10px] text-[11px]"
+            sizes="32px"
           />
-        ) : null}
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium">{name}</span>
-          <time className="shrink-0 text-xs text-muted-foreground">
-            {formatWhen(lastMessage?.sentAt)}
-          </time>
-        </div>
-        <div className="flex items-center gap-1">
-          {typing ? (
-            <p className="min-w-0 flex-1 truncate text-sm text-signal">typing…</p>
-          ) : (
-            <>
-              {mine ? (
-                readByOthers ? (
-                  <CheckCheck aria-label="Read" className="size-3.5 shrink-0 text-signal" />
-                ) : (
-                  <Check aria-label="Sent" className="size-3.5 shrink-0 text-muted-foreground" />
-                )
-              ) : null}
-              <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                {previewFor(lastMessage)}
-              </p>
-            </>
-          )}
-          {unread > 0 ? (
-            <span className="ml-1 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">
-              {unread > 99 ? "99+" : unread}
-            </span>
+          {!isGroup && peerProfile?.online ? (
+            <span
+              aria-label="Online"
+              className="absolute bottom-0 right-0 size-3.5 rounded-full border-2 border-background bg-green-500"
+            />
           ) : null}
-        </div>
-      </div>
-    </Link>
+        </>
+      }
+      title={name}
+      meta={<time>{shortWhen(fromTimestamp(lastMessage?.sentAt))}</time>}
+      subtitle={
+        typing ? (
+          <span className="truncate text-signal">typing…</span>
+        ) : (
+          <>
+            {mine ? (
+              readByOthers ? (
+                <CheckCheck aria-label="Read" className="size-3.5 shrink-0 text-signal" />
+              ) : (
+                <Check aria-label="Sent" className="size-3.5 shrink-0" />
+              )
+            ) : null}
+            <span className="truncate">{previewFor(lastMessage)}</span>
+          </>
+        )
+      }
+      trailing={unread > 0 ? <ListBadge>{unread > 99 ? "99+" : unread}</ListBadge> : null}
+    />
   );
 }
 
 function previewFor(message: Message | null | undefined): string {
   return message ? previewOf(toWireMessage(message)) : "No messages yet";
-}
-
-function formatWhen(ts?: Timestamp): string {
-  if (!ts) return "";
-
-  const at = new Date(Number(ts.seconds) * 1000);
-  if (Number.isNaN(at.getTime())) return "";
-
-  const now = new Date();
-  if (at.toDateString() === now.toDateString()) {
-    return at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  }
-  return at.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" });
 }

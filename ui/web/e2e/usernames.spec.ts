@@ -51,10 +51,8 @@ test("a username in the address opens a chat with that person and keeps the addr
   const ada = await newPerson(browser, "address", "Ada");
   const grace = await newPerson(browser, "address-peer", "Grace");
 
-  const breadcrumb = ada.page.getByRole("navigation", { name: "Breadcrumb" });
-  await open(ada.page, `/chat#${grace.username}`);
+  await ada.page.goto(`/chat#${grace.username}`);
   await expect(ada.page.getByRole("heading", { name: "Grace" })).toBeVisible();
-  await expect(breadcrumb.getByText("New message")).toBeVisible();
 
   await say(ada.page, "found you by name");
   await expectSaid(ada.page, "You", "found you by name");
@@ -70,11 +68,9 @@ test("a username in the address opens a chat with that person and keeps the addr
 
   await ada.page.goto(`/chat#${newUsername("nobody")}`);
   await expect(ada.page.getByText("User not found.")).toBeVisible();
-  await expect(breadcrumb.getByText("New message")).toHaveCount(0);
 
   await ada.page.goto(`/chat#${ada.username}`);
   await expect(ada.page.getByText("You can't message yourself.")).toBeVisible();
-  await expect(breadcrumb.getByText("New message")).toHaveCount(0);
 
   await ada.close();
   await grace.close();
@@ -115,7 +111,7 @@ test("old chat links and history land on the right chat", async ({ browser }) =>
   }, `@${linus.username.toUpperCase()}`);
   await expect.poll(() => ada.page.evaluate(() => window.location.hash)).toBe(`#${linus.username}`);
 
-  await ada.page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Lobby" }).click();
+  await ada.page.goto("/");
   await expectHome(ada.page);
   await goToChats(ada.page);
 

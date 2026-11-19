@@ -15,7 +15,7 @@ export function describe(err: unknown): string {
         : "That email is already registered.";
 
     case Code.ResourceExhausted:
-      return "Too many attempts. Wait a minute and try again.";
+      return `Too many attempts. ${retryAfterMessage(connectErr)}`;
 
     case Code.NotFound:
       return "Not found.";
@@ -61,4 +61,12 @@ function capitalise(text: string): string {
     return "Something went wrong. Try again.";
   }
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export function retryAfterMessage(err: unknown): string {
+  const raw = ConnectError.from(err).metadata.get("Retry-After");
+  const seconds = raw === null ? NaN : Number(raw);
+  return Number.isFinite(seconds) && seconds > 0
+    ? `Try again in ${Math.ceil(seconds)} ${Math.ceil(seconds) === 1 ? "second" : "seconds"}.`
+    : "Try again shortly.";
 }

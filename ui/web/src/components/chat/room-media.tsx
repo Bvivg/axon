@@ -17,7 +17,7 @@ import { MessageKind } from "@/gen/axon/chat/v1/chat_pb";
 import { ContentKind, contentOf } from "@/lib/chat/content";
 import { viewerSlidesOf } from "@/lib/chat/viewer";
 import { describe } from "@/lib/errors";
-import { formatDuration } from "@/lib/format";
+import { calendarMoment, formatDuration, fromISO } from "@/lib/format";
 import { useRoomMedia } from "@/lib/query/chat";
 import { cn } from "@/lib/utils";
 import type { WireMessage } from "@/lib/ws/protocol";
@@ -28,7 +28,7 @@ enum Section {
   Voice = "voice",
 }
 
-const mediaKinds = [MessageKind.IMAGE, MessageKind.VIDEO, MessageKind.ALBUM];
+const mediaKinds = [MessageKind.IMAGE, MessageKind.VIDEO];
 const fileKinds = [MessageKind.ATTACHMENT];
 const voiceKinds = [MessageKind.VOICE];
 
@@ -55,31 +55,37 @@ export function RoomMedia({
           </DialogClose>
         </div>
         {open ? (
-          <Tabs defaultValue={Section.Media} className="flex min-h-0 flex-1 flex-col gap-3">
-            <TabsList className="self-start">
-              <TabsTrigger value={Section.Media}>Media</TabsTrigger>
-              <TabsTrigger value={Section.Files}>Files</TabsTrigger>
-              <TabsTrigger value={Section.Voice}>Voice</TabsTrigger>
-            </TabsList>
-            <TabsContent value={Section.Media} className="flex min-h-0 flex-1 flex-col">
-              <ScrollArea className="flex-1">
-                <MediaGrid roomID={roomID} />
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value={Section.Files} className="flex min-h-0 flex-1 flex-col">
-              <ScrollArea className="flex-1">
-                <MessageList roomID={roomID} kinds={fileKinds} names={names} selfID={selfID} />
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value={Section.Voice} className="flex min-h-0 flex-1 flex-col">
-              <ScrollArea className="flex-1">
-                <MessageList roomID={roomID} kinds={voiceKinds} names={names} selfID={selfID} />
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+          <RoomMediaLibrary roomID={roomID} names={names} selfID={selfID} />
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function RoomMediaLibrary({ roomID, names, selfID }: { roomID: string; names: Map<string, string>; selfID: string }) {
+  return (
+    <Tabs defaultValue={Section.Media} className="flex min-h-0 flex-1 flex-col gap-3">
+      <TabsList className="self-start">
+        <TabsTrigger value={Section.Media}>Media</TabsTrigger>
+        <TabsTrigger value={Section.Files}>Files</TabsTrigger>
+        <TabsTrigger value={Section.Voice}>Voice</TabsTrigger>
+      </TabsList>
+      <TabsContent value={Section.Media} className="flex min-h-0 flex-1 flex-col">
+        <ScrollArea className="flex-1">
+          <MediaGrid roomID={roomID} />
+        </ScrollArea>
+      </TabsContent>
+      <TabsContent value={Section.Files} className="flex min-h-0 flex-1 flex-col">
+        <ScrollArea className="flex-1">
+          <MessageList roomID={roomID} kinds={fileKinds} names={names} selfID={selfID} />
+        </ScrollArea>
+      </TabsContent>
+      <TabsContent value={Section.Voice} className="flex min-h-0 flex-1 flex-col">
+        <ScrollArea className="flex-1">
+          <MessageList roomID={roomID} kinds={voiceKinds} names={names} selfID={selfID} />
+        </ScrollArea>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -211,8 +217,12 @@ function MessageList({
               </span>
               {content.kind === ContentKind.File ? (
                 <FileCard file={content.file} mine={false} />
+              ) : content.kind === ContentKind.Album ? (
+                content.items.map((item, index) => item.kind === ContentKind.File ? (
+                  <FileCard key={index} file={item.file} mine={false} />
+                ) : null)
               ) : content.kind === ContentKind.Voice ? (
-                <VoicePlayer voice={content.voice} mine={false} />
+                <VoicePlayer voice={content.voice} />
               ) : null}
             </li>
           );
@@ -224,9 +234,6 @@ function MessageList({
 }
 
 function formatDate(iso: string): string {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) {
-    return "";
-  }
-  return at.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const at = fromISO(iso);
+  return at ? calendarMoment(at) : "";
 }

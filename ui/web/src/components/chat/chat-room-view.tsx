@@ -1,15 +1,17 @@
 "use client";
 
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, Images, Info, Loader2, LogOut, MoreVertical, Search, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, Images, Info, Loader2, LogOut, MoreVertical, Search, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { ConfirmDialog } from "@/components/chat/confirm-dialog";
+import { CallButtons } from "@/components/calls/call-buttons";
+import { CallMiniBar } from "@/components/calls/call-mini-bar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
 import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
 import { MediaViewer } from "@/components/chat/media-viewer";
@@ -47,7 +49,7 @@ import {
 import { slideIndexOf, viewerSlidesOf } from "@/lib/chat/viewer";
 import { usePendingUploads } from "@/lib/chat/use-pending-uploads";
 import { describe } from "@/lib/errors";
-import { profileName } from "@/lib/format";
+import { fromTimestamp, initials, lastSeen, profileName } from "@/lib/format";
 import { firstUnreadOf } from "@/lib/chat/series";
 import { useAttention } from "@/lib/hooks/use-attention";
 import {
@@ -207,6 +209,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const forwardMessages = useForwardMessages();
   const [confirmingExit, setConfirmingExit] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [details, setDetails] = useState(false);
 
   const nameOfRef = useRef(nameOf);
   useEffect(() => {
@@ -475,7 +478,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     (isDirect
       ? peerProfile?.online
         ? "online"
-        : lastSeen(peerProfile?.lastSeenAt)
+        : lastSeen(fromTimestamp(peerProfile?.lastSeenAt))
       : socket.connected
         ? room.data?.room
           ? membersLabel(room.data.room.memberCount)
@@ -483,16 +486,17 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         : "Reconnecting…");
 
   const carriesFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
+  const canAttach = socket.connected && selection === null && context?.mode !== ComposerMode.Edit;
 
   const onDragEnter = (event: DragEvent) => {
-    if (!carriesFiles(event) || !socket.connected) return;
+    if (!carriesFiles(event) || !canAttach) return;
     event.preventDefault();
     dragDepth.current += 1;
     setDragging(true);
   };
 
   const onDragOver = (event: DragEvent) => {
-    if (!carriesFiles(event) || !socket.connected) return;
+    if (!carriesFiles(event) || !canAttach) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
   };
@@ -511,14 +515,14 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     dragDepth.current = 0;
     setDragging(false);
     const files = [...event.dataTransfer.files];
-    if (files.length > 0 && socket.connected) {
+    if (files.length > 0 && canAttach) {
       uploads.add(files);
     }
   };
 
   return (
     <main
-      className="relative flex min-h-0 flex-1 flex-col px-4 py-4 md:px-6"
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -530,158 +534,188 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           Drop to attach
         </div>
       ) : null}
-      <header className="relative flex shrink-0 items-center gap-3 border-b border-border pb-4">
-        {searching && roomID ? (
-          <MessageSearch
-            roomID={roomID}
-            nameOf={nameOf}
-            onClose={() => setSearching(false)}
-            onPick={(message) => {
-              setSearching(false);
-              onJumpTo(message.id, message.seq);
-            }}
-          />
-        ) : (
-          <>
-            <Link
-              href="/chat"
-              aria-label="Back to chats"
-              className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "-ml-2 -mr-1 shrink-0 md:hidden")}
-            >
-              <ChevronLeft className="size-5" />
-            </Link>
-            {isDirect ? (
-              <Avatar
-                src={peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl}
-                alt=""
-                fallback={(title || "?").slice(0, 1).toUpperCase()}
-                className="size-10"
-                sizes="40px"
-              />
-            ) : null}
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-lg font-semibold">
-                {isGroup ? (
-                  <button
-                    type="button"
-                    className="max-w-full truncate text-left hover:underline"
-                    onClick={() => setInfoOpen(true)}
-                  >
-                    {title}
-                  </button>
-                ) : (
-                  title
-                )}
-              </h1>
-              {subtitle ? (
-                <p
-                  className={cn(
-                    "truncate text-xs",
-                    typingLine || (isDirect && peerProfile?.online)
-                      ? "text-signal"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {subtitle}
-                </p>
-              ) : null}
-            </div>
-            {roomID ? (
-              <Button variant="ghost" size="icon" aria-label="Search messages" onClick={() => setSearching(true)}>
-                <Search />
-              </Button>
-            ) : null}
-            {roomID ? (
-              <Button variant="ghost" size="icon" aria-label="Media" onClick={() => setMediaOpen(true)}>
-                <Images />
-              </Button>
-            ) : null}
-            {roomID && roomKind !== undefined ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button variant="ghost" size="icon" aria-label="Chat actions">
-                      <MoreVertical />
-                    </Button>
-                  }
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="chat-workspace-header">
+          {searching && roomID ? (
+            <MessageSearch
+              roomID={roomID}
+              nameOf={nameOf}
+              onClose={() => setSearching(false)}
+              onPick={(message) => {
+                setSearching(false);
+                onJumpTo(message.id, message.seq);
+              }}
+            />
+          ) : (
+            <>
+              <Link
+                href="/chat"
+                aria-label="Back to chats"
+                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "-ml-2 -mr-1 shrink-0 min-[651px]:hidden")}
+              >
+                <ChevronLeft className="size-5" />
+              </Link>
+              {isDirect || isGroup ? (
+                <Avatar
+                  src={peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl}
+                  alt=""
+                  fallback={(title || "?").slice(0, 1).toUpperCase()}
+                  className="size-9 rounded-[11px]"
+                  sizes="36px"
                 />
-                <DropdownMenuContent align="end" className="w-48">
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-[13px] font-semibold" title={title}>
                   {isGroup ? (
-                    <DropdownMenuItem onClick={() => setInfoOpen(true)}>
-                      <Info />
-                      Group info
-                    </DropdownMenuItem>
-                  ) : null}
-                  <DropdownMenuItem
-                    onClick={() => setConfirmingExit(true)}
-                    className="text-destructive [&>svg]:text-destructive"
+                    <button
+                      type="button"
+                      className="max-w-full truncate text-left hover:underline"
+                      onClick={() => setInfoOpen(true)}
+                    >
+                      {title}
+                    </button>
+                  ) : (
+                    title
+                  )}
+                </h1>
+                {subtitle ? (
+                  <p
+                    className={cn(
+                      "truncate text-xs",
+                      typingLine || (isDirect && peerProfile?.online)
+                        ? "text-signal"
+                        : "text-muted-foreground",
+                    )}
                   >
-                    {isDirect ? <Trash2 /> : <LogOut />}
-                    {isDirect ? "Delete chat" : isGroup ? "Leave group" : "Leave room"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </>
-        )}
-      </header>
+                    {subtitle}
+                  </p>
+                ) : null}
+              </div>
+              {roomID && (isDirect || isGroup) ? <CallButtons target={{ roomId: roomID, group: isGroup }} /> : isDirect && effectivePeerID ? <CallButtons target={{ peerUserId: effectivePeerID }} /> : null}
+              {roomID ? (
+                <Button variant="ghost" size="icon" aria-label="Search messages" onClick={() => setSearching(true)}>
+                  <Search />
+                </Button>
+              ) : null}
+              {roomID ? (
+                <Button variant="ghost" size="icon" aria-label="Conversation information" aria-expanded={details} onClick={() => setDetails(!details)}>
+                  <Info />
+                </Button>
+              ) : null}
+              {roomID && roomKind !== undefined ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button variant="ghost" size="icon" aria-label="Chat actions">
+                        <MoreVertical />
+                      </Button>
+                    }
+                  />
+                  <DropdownMenuContent align="end" className="w-48">
+                    {isGroup ? (
+                      <DropdownMenuItem onClick={() => setInfoOpen(true)}>
+                        <Info />
+                        Group info
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem onClick={() => setMediaOpen(true)}><Images /> Media</DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setConfirmingExit(true)}
+                      className="text-destructive [&>svg]:text-destructive"
+                    >
+                      {isDirect ? <Trash2 /> : <LogOut />}
+                      {isDirect ? "Delete chat" : isGroup ? "Leave group" : "Leave room"}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </>
+          )}
+        </header>
 
-      {room.isError ? <Alert className="mt-3">{describe(room.error)}</Alert> : null}
-      {history.isError ? <Alert className="mt-3">{describe(history.error)}</Alert> : null}
-      {socket.error ? <Alert className="mt-3">{socket.error}</Alert> : null}
+        {room.isError ? <Alert className="mt-3">{describe(room.error)}</Alert> : null}
+        {history.isError ? <Alert className="mt-3">{describe(history.error)}</Alert> : null}
+        {socket.error ? <Alert className="mt-3">{socket.error}</Alert> : null}
 
-      {roomID && (!openedHere || !historyReady) && !room.isError && !history.isError ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 aria-label="Loading messages" className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <Transcript
-          key={roomID ?? peerID}
-          ref={transcript}
-          messages={socket.messages}
-          firstUnreadSeq={firstUnreadSeq}
-          onJumpTo={onJumpTo}
-          selfID={user.id}
-          nameOf={nameOf}
-          avatars={avatars}
-          readSeqs={readSeqs}
-          onVisibleSeqChange={setVisibleSeq}
-          onLoadOlder={onLoadOlder}
-          hasOlder={history.hasNextPage}
-          loadingOlder={history.isFetchingNextPage}
-          onOpenMedia={onOpenMedia}
-          actions={socket.connected ? actions : undefined}
-          showNames={!isDirect}
-          selection={selection}
-          onToggleSelected={onToggleSelected}
-          onToggleItem={onToggleItem}
-          onSelectMessages={socket.connected ? setSelection : undefined}
-        />
-      )}
-
-      <div className="relative shrink-0">
-        <div inert={selection !== null}>
-          <MessageComposer
+        {roomID && (!openedHere || !historyReady) && !room.isError && !history.isError ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Loader2 aria-label="Loading messages" className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <Transcript
+            key={roomID ?? peerID}
+            ref={transcript}
+            messages={socket.messages}
+            outgoing={socket.outgoing}
             connected={socket.connected}
-            uploads={uploads}
-            context={context}
-            onSend={socket.send}
-            onEdit={socket.edit}
-            onCancelContext={() => setContext(null)}
-            onTyping={socket.notifyTyping}
+            onRetrySend={socket.retrySend}
+            onDismissSend={socket.dismissSend}
+            firstUnreadSeq={firstUnreadSeq}
+            onJumpTo={onJumpTo}
+            selfID={user.id}
+            nameOf={nameOf}
+            avatars={avatars}
+            readSeqs={readSeqs}
+            onVisibleSeqChange={setVisibleSeq}
+            onLoadOlder={onLoadOlder}
+            hasOlder={history.hasNextPage}
+            loadingOlder={history.isFetchingNextPage}
+            onOpenMedia={onOpenMedia}
+            actions={socket.connected ? actions : undefined}
+            showNames={!isDirect}
+            selection={selection}
+            onToggleSelected={onToggleSelected}
+            onToggleItem={onToggleItem}
+            onSelectMessages={socket.connected ? setSelection : undefined}
           />
+        )}
+
+        <CallMiniBar placement="chat" />
+        <div className="relative shrink-0 px-[15px] pt-2.5 pb-[15px] max-[550px]:px-2.5" data-chat-composer>
+          <div role="status" aria-atomic="true">
+            {!socket.connected ? <p className="border-t border-warning/40 bg-warning/12 px-3 py-2 text-sm font-medium">Connecting to chat… You can keep typing.</p> : null}
+          </div>
+          <div inert={selection !== null}>
+            <MessageComposer
+              connected={socket.connected}
+              uploads={uploads}
+              context={context}
+              onSend={socket.send}
+              onEdit={socket.edit}
+              onCancelContext={() => setContext(null)}
+              onTyping={socket.notifyTyping}
+            />
+          </div>
+          {selection !== null ? (
+            <SelectionBar
+              count={selectedCount(selection, socket.messages)}
+              canDelete={canDeleteSelected}
+              onCopy={copySelected}
+              onForward={() => setForwarding(forwardRequest(selection, socket.messages))}
+              onDelete={() => setDeleting(selected.map((message) => message.id))}
+              onCancel={() => setSelection(null)}
+            />
+          ) : null}
         </div>
-        {selection !== null ? (
-          <SelectionBar
-            count={selectedCount(selection, socket.messages)}
-            canDelete={canDeleteSelected}
-            onCopy={copySelected}
-            onForward={() => setForwarding(forwardRequest(selection, socket.messages))}
-            onDelete={() => setDeleting(selected.map((message) => message.id))}
-            onCancel={() => setSelection(null)}
-          />
-        ) : null}
+
       </div>
+      {details && roomID ? (
+        <aside className="chat-workspace-details" aria-label="Conversation information">
+          <header className="flex items-center justify-between border-b border-border px-4 py-2">
+            <h2 className="text-sm font-semibold">Information</h2>
+            <Button variant="ghost" size="icon" aria-label="Close conversation information" onClick={() => setDetails(false)}><X /></Button>
+          </header>
+          <div className="flex flex-col items-center gap-2 border-b border-border p-5 text-center">
+            <Avatar src={peerProfile?.avatarUrls?.medium || peerProfile?.avatarUrl} fallback={initials(title)} alt="" className="size-16 rounded-[20px] text-xl" />
+            <strong className="max-w-full truncate text-base">{title}</strong>
+            {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
+          </div>
+          <div className="grid gap-2 px-3 py-4">
+            {isGroup ? <Button variant="ghost" className="justify-start" onClick={() => setInfoOpen(true)}><Info /> Group info</Button> : null}
+            <Button variant="ghost" className="justify-start" onClick={() => setMediaOpen(true)}><Images /> Shared media</Button>
+          </div>
+        </aside>
+      ) : null}
 
       <ForwardDialog
         open={forwarding !== null}
@@ -695,7 +729,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           }
         }}
         onForward={(roomIds, comment) => {
-          if (!forwarding) return;
+          if (!forwarding || forwardMessages.isPending) return;
           forwardMessages.mutate(
             { ...forwarding, roomIds, comment, clientId: newClientID() },
             {
@@ -802,35 +836,4 @@ function describeTypists(names: string[]): string {
     default:
       return `${names.length} people are typing…`;
   }
-}
-
-function lastSeen(ts?: Timestamp): string {
-  if (!ts) {
-    return "";
-  }
-
-  const at = new Date(Number(ts.seconds) * 1000);
-  if (Number.isNaN(at.getTime())) {
-    return "";
-  }
-
-  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-
-  const today = new Date();
-  if (at.toDateString() === today.toDateString()) {
-    return `last seen at ${time}`;
-  }
-
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (at.toDateString() === yesterday.toDateString()) {
-    return `last seen yesterday at ${time}`;
-  }
-
-  const day = at.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: at.getFullYear() === today.getFullYear() ? undefined : "numeric",
-  });
-  return `last seen ${day} at ${time}`;
 }

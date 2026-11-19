@@ -195,13 +195,13 @@ export function PersonalInfo({ user }: { user: User }) {
             <Input id="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} />
           </Field>
 
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex flex-wrap items-center gap-3 pt-2">
             <Button type="submit" disabled={updateProfile.isPending} aria-busy={updateProfile.isPending}>
               {updateProfile.isPending ? <Spinner /> : null}
               {updateProfile.isPending ? "Saving…" : "Save changes"}
             </Button>
             {saved ? (
-              <span role="status" className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <span role="status" className="flex min-h-10 items-center gap-2 rounded-lg border border-success/40 bg-success/10 px-3 text-sm font-medium text-foreground motion-safe:animate-fade">
                 <Check aria-hidden className="size-4 text-success" strokeWidth={2} />
                 Changes saved
               </span>

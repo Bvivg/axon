@@ -1,14 +1,14 @@
 "use client";
 
 import { Code } from "@connectrpc/connect";
-import { useQuery, type QueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-query";
 
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { apiClient } from "@/lib/connect/clients";
 import { isCode } from "@/lib/errors";
 
 export const peopleKeys = {
-  search: (query: string) => ["people", "search", query] as const,
+  search: (query: string) => ["people", "search-pages", query] as const,
   profiles: (userIds: string[]) => ["people", "profiles", ...userIds] as const,
   byUsername: (username: string) => ["people", "username", username] as const,
 };
@@ -22,17 +22,20 @@ export function invalidateProfilesOf(queryClient: QueryClient, userID: string): 
   });
 }
 
-export function useSearchUsers(query: string) {
+export function useSearchUsers(query: string, enabled = true) {
   const trimmed = query.trim();
 
-  return useQuery({
+  const result = useInfiniteQuery({
     queryKey: peopleKeys.search(trimmed),
-    queryFn: async (): Promise<PublicProfile[]> => {
-      const resp = await apiClient.searchUsers({ query: trimmed });
-      return resp.users;
-    },
-    enabled: trimmed !== "",
+    queryFn: ({ pageParam, signal }) => apiClient.searchUsers({ query: trimmed, pageSize: 20, pageToken: pageParam }, { signal }),
+    initialPageParam: "",
+    getNextPageParam: (lastPage) => lastPage.nextPageToken || undefined,
+    staleTime: 30_000,
+    enabled,
   });
+
+  const people = result.data?.pages.flatMap((page) => page.users);
+  return { ...result, data: people ? [...new Map(people.map((person) => [person.id, person])).values()] : undefined };
 }
 
 export function usePublicProfiles(userIDs: string[]) {

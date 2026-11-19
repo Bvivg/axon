@@ -74,8 +74,8 @@ export async function expectLobby(page: Page): Promise<void> {
 }
 
 export async function expectHome(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: "No active games" })).toBeVisible();
+  await expect(page).toHaveURL(/\/chat$/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Chats", exact: true })).toBeVisible();
 }
 
 export async function register(
@@ -104,19 +104,22 @@ export async function newPerson(
 }
 
 export async function goToProfile(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Account" }).click();
-  await page.getByRole("menuitem", { name: "Personal info" }).click();
+  await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Profile", exact: true }).click();
+  await page.getByRole("navigation", { name: "Profile", exact: true }).getByRole("link", { name: "Personal info", exact: true }).click();
   await expectProfile(page);
   await expect(page.getByRole("menu")).toHaveCount(0);
 }
 
 export async function goToSessions(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Sessions" }).click();
+  await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Profile", exact: true }).click();
+  await page.getByRole("navigation", { name: "Profile", exact: true }).getByRole("link", { name: "Sessions", exact: true }).click();
   await expectSessions(page);
 }
 
 export async function signOut(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Profile", exact: true }).click();
+  await page.getByRole("navigation", { name: "Profile", exact: true }).getByRole("link", { name: "My profile", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
 }
 

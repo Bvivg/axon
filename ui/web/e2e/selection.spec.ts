@@ -36,8 +36,12 @@ test("several messages go to two chats with a comment, and own ones are deleted 
   await expect(forwarded.nth(0)).toContainText("point one");
   await expect(forwarded.nth(2)).toContainText("point three");
 
+  await grace.page.bringToFront();
   await openChatWith(grace.page, "Ada");
   await expect(grace.page.getByRole("article", { name: "Message from Ada" }).filter({ hasText: "Forwarded from" })).toHaveCount(3);
+  const latest = grace.page.getByRole("button", { name: "Scroll to latest" });
+  if (await latest.isVisible()) await latest.click();
+  await expect(messageWith(ada.page, "point three").first().getByText("Read", { exact: true })).toBeAttached();
 
   await chooseMessageAction(ada.page, "point three", "Read by");
   await expect(ada.page.getByRole("dialog")).toContainText(/Read (Today|Yesterday)/);

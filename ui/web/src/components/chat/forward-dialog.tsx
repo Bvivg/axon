@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { messageLengthError, messageTooLong } from "@/lib/chat/message-limits";
 import { cn } from "@/lib/utils";
 
 export const maxForwardTargets = 50;
@@ -45,6 +46,7 @@ export function ForwardDialog({
   const needle = query.trim().toLowerCase();
   const matches = needle ? entries.filter((entry) => entry.label.toLowerCase().includes(needle)) : entries;
   const full = picked.length >= maxForwardTargets;
+  const tooLong = messageTooLong(comment);
 
   const toggle = (roomID: string) =>
     setPicked((current) =>
@@ -52,10 +54,11 @@ export function ForwardDialog({
     );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => { if (!pending) onOpenChange(value); }}>
       <DialogContent className="space-y-3">
         <DialogTitle>{count === 1 ? "Forward message to…" : `Forward ${count} messages to…`}</DialogTitle>
         <Input
+          disabled={pending}
           aria-label="Find a chat"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -71,7 +74,7 @@ export function ForwardDialog({
                     type="button"
                     role="checkbox"
                     aria-checked={checked}
-                    disabled={!checked && full}
+                    disabled={pending || (!checked && full)}
                     onClick={() => toggle(entry.room.id)}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-muted disabled:opacity-50",
@@ -101,24 +104,25 @@ export function ForwardDialog({
           </ul>
         </ScrollArea>
         <Input
+          disabled={pending}
           aria-label="Comment"
           value={comment}
           onChange={(event) => setComment(event.target.value)}
           placeholder="Add a comment"
-          maxLength={4096}
         />
+        {tooLong ? <p role="alert" className="text-sm text-destructive">{messageLengthError}</p> : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             variant="signal"
-            disabled={picked.length === 0 || pending}
+            disabled={picked.length === 0 || pending || tooLong}
             aria-busy={pending}
             onClick={() => onForward(picked, comment.trim())}
           >
-            {picked.length > 1 ? `Forward to ${picked.length} chats` : "Forward"}
+            {pending ? "Forwarding…" : picked.length > 1 ? `Forward to ${picked.length} chats` : "Forward"}
           </Button>
         </div>
       </DialogContent>

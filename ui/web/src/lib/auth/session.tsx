@@ -14,15 +14,17 @@ import {
 
 import type { TokenPair, User } from "@/gen/axon/auth/v1/auth_pb";
 import { authClient, apiClient } from "@/lib/connect/clients";
-import { refreshSession } from "@/lib/auth/refresh";
+import { cancelSessionRefresh, refreshSession } from "@/lib/auth/refresh";
 import { disablePush } from "@/lib/push";
 import { clearAccessToken, setAccessToken } from "@/lib/auth/tokens";
+import { beforeSignOut } from "@/lib/auth/before-sign-out";
 
 export type SessionStatus = "restoring" | "authenticated" | "anonymous";
 
 interface Session {
   status: SessionStatus;
   user: User | null;
+  beginSignIn: () => void;
 
   signedIn: (user: User, tokens: TokenPair | undefined) => void;
 
@@ -40,19 +42,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const settled = useRef(false);
 
+  const beginSignIn = useCallback(() => {
+    settled.current = true;
+    cancelSessionRefresh();
+    clearAccessToken();
+    queryClient.clear();
+    setUser(null);
+    setStatus("anonymous");
+  }, [queryClient]);
+
   const signedIn = useCallback((next: User, tokens: TokenPair | undefined) => {
     settled.current = true;
+    cancelSessionRefresh();
+    queryClient.clear();
     setAccessToken(tokens);
     setUser(next);
     setStatus("authenticated");
-  }, []);
+  }, [queryClient]);
 
   const updateUser = useCallback((next: User) => {
-    setUser(next);
+    setUser((current) => current?.id === next.id ? next : current);
   }, []);
 
   const signOut = useCallback(async () => {
     settled.current = true;
+    await beforeSignOut();
+    cancelSessionRefresh();
 
     await disablePush().catch(() => undefined);
 
@@ -63,6 +78,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     }
 
+    cancelSessionRefresh();
     clearAccessToken();
     queryClient.clear();
     setUser(null);
@@ -70,6 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   useEffect(() => {
+    if (settled.current) return;
     let cancelled = false;
 
     const stale = () => cancelled || settled.current;
@@ -82,6 +99,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (stale()) return;
       try {
         const resp = await apiClient.getMe({});
         if (!stale()) {
@@ -102,8 +120,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Session>(
-    () => ({ status, user, signedIn, updateUser, signOut }),
-    [status, user, signedIn, updateUser, signOut],
+    () => ({ status, user, beginSignIn, signedIn, updateUser, signOut }),
+    [status, user, beginSignIn, signedIn, updateUser, signOut],
   );
 
   return <SessionContext value={value}>{children}</SessionContext>;

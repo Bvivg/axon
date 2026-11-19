@@ -7,6 +7,8 @@ import {
   CheckCheck,
   CheckCircle2,
   Circle,
+  CircleAlert,
+  Clock,
   Copy,
   Eye,
   Forward,
@@ -31,7 +33,7 @@ import {
 } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
 
-import { MessageMedia } from "@/components/chat/message-content";
+import { mediaBoxSize, MessageMedia } from "@/components/chat/message-content";
 import { Avatar } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -50,6 +52,7 @@ import { useLongPress, useSwipeToReply } from "@/lib/chat/swipe";
 import { clockTime, dayLabel, fromISO } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { WireMessage } from "@/lib/ws/protocol";
+import type { OutgoingMessage } from "@/lib/ws/use-chat-socket";
 
 export interface MessageActions {
   onReply: (message: WireMessage) => void;
@@ -69,6 +72,10 @@ export interface TranscriptHandle {
 interface TranscriptProps {
   ref?: Ref<TranscriptHandle>;
   messages: WireMessage[];
+  outgoing?: OutgoingMessage[];
+  connected?: boolean;
+  onRetrySend?: (id: string) => void;
+  onDismissSend?: (id: string) => void;
   selfID: string;
   nameOf: NameOf;
   avatars?: Map<string, string>;
@@ -116,6 +123,7 @@ const flashMs = 1600;
 const settleStableFrames = 2;
 const settleMaxFrames = 30;
 const revealHoldMs = 1500;
+const noOutgoing: OutgoingMessage[] = [];
 
 const rowOf = (frame: HTMLElement, messageID: string) =>
   frame.querySelector<HTMLElement>(`[data-id="${CSS.escape(messageID)}"]`);
@@ -132,6 +140,10 @@ function lastStartedSeq(item: TranscriptItem, frame: HTMLElement): number {
 export const Transcript = memo(function Transcript({
   ref,
   messages,
+  outgoing = noOutgoing,
+  connected = false,
+  onRetrySend,
+  onDismissSend,
   selfID,
   nameOf,
   avatars,
@@ -165,6 +177,22 @@ export const Transcript = memo(function Transcript({
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const items = useMemo(() => groupTranscript(messages, firstUnreadSeq), [messages, firstUnreadSeq]);
+
+  const pending = useMemo(() => outgoing.map(item => {
+    const reply = item.frame.reply_to_id ? messages.find(message => message.id === item.frame.reply_to_id) : undefined;
+    const message: WireMessage = {
+      id: `pending-${item.frame.client_id}`,
+      client_id: item.frame.client_id,
+      room_id: item.roomId ?? ("room_id" in item.frame ? item.frame.room_id : ""),
+      author_id: selfID,
+      body: item.frame.body || (item.frame.upload_ids?.length ? "Attachments" : "Attachment"),
+      seq: item.seq ?? 0,
+      sent_at: item.createdAt,
+      reply_to_id: item.frame.reply_to_id,
+      reply_to: reply ? { id: reply.id, author_id: reply.author_id, body: reply.body, kind: reply.kind ?? ContentKind.Text, deleted: isDeleted(reply) } : undefined,
+    };
+    return { item, message };
+  }), [outgoing, messages, selfID]);
 
   const readSeq = useMemo(() => {
     let max = 0;
@@ -206,7 +234,7 @@ export const Transcript = memo(function Transcript({
 
   const firstID = messages[0]?.id ?? null;
   const lastID = messages.at(-1)?.id ?? null;
-  const hasMessages = lastID !== null;
+  const hasMessages = lastID !== null || pending.length > 0;
   const [edges, setEdges] = useState<Edges>({ firstID, lastID, prepended: false });
   if (edges.firstID !== firstID || edges.lastID !== lastID) {
     setEdges({
@@ -235,6 +263,14 @@ export const Transcript = memo(function Transcript({
     if (element) element.scrollTop = element.scrollHeight;
   }, []);
 
+  const lastPendingID = pending.at(-1)?.message.id;
+  useLayoutEffect(() => {
+    if (!lastPendingID) return;
+    userMoved.current = true;
+    atBottom.current = true;
+    pinToBottom();
+  }, [lastPendingID, pinToBottom]);
+
   const measureBottom = useCallback(() => {
     const element = viewport.current;
     if (!element) return;
@@ -252,8 +288,8 @@ export const Transcript = memo(function Transcript({
       const last = current[current.length - 1];
       seq = last.messages[last.messages.length - 1].seq;
     } else {
-      const index = handle.findItemIndex(handle.scrollOffset + handle.viewportSize - 1);
-      seq = lastStartedSeq(current[Math.min(index, current.length - 1)], frame);
+      const index = Math.max(0, Math.min(handle.findItemIndex(handle.scrollOffset + handle.viewportSize - 1), current.length - 1));
+      seq = lastStartedSeq(current[index], frame);
     }
     setSeenSeq((previous) => Math.max(previous, seq));
     report?.(seq);
@@ -347,7 +383,7 @@ export const Transcript = memo(function Transcript({
     let frames = 0;
     let stableFrames = 0;
     let lastHeight = -1;
-    const initialUnread = latest.current.items.find((item) => item.unreadStart)?.key ?? null;
+    const initialUnread = lastPendingID ? null : latest.current.items.find((item) => item.unreadStart)?.key ?? null;
     let anchorUnread = false;
     const place = () => {
       const handle = list.current;
@@ -386,7 +422,7 @@ export const Transcript = memo(function Transcript({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [settled, hasMessages, pinToBottom, loadOlderIfNear, reportVisible]);
+  }, [settled, hasMessages, lastPendingID, pinToBottom, loadOlderIfNear, reportVisible]);
 
   const unreadKey = items.find((item) => item.unreadStart)?.key ?? null;
   useEffect(() => {
@@ -460,7 +496,7 @@ export const Transcript = memo(function Transcript({
     [away, messages, seenSeq, selfID],
   );
 
-  if (messages.length === 0) {
+  if (!hasMessages) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <p className="text-sm text-muted-foreground">Nothing said yet. Go ahead.</p>
@@ -491,6 +527,14 @@ export const Transcript = memo(function Transcript({
               />
             )}
           </Virtualizer>
+          {pending.map(({ item, message }, index) => {
+            const at = fromISO(message.sent_at);
+            const previous = fromISO(index ? pending[index - 1].message.sent_at : messages.at(-1)?.sent_at ?? "");
+            return <div key={message.id}>
+              {at && (!previous || at.toDateString() !== previous.toDateString()) ? <DayDivider label={dayLabel(at)} /> : null}
+              <MessageRow message={message} context={context} first={index === 0} last={index === pending.length - 1} flash={false} delivery={{ item, connected, retry: () => onRetrySend?.(item.frame.client_id), dismiss: () => onDismissSend?.(item.frame.client_id) }} />
+            </div>;
+          })}
         </div>
         <div aria-hidden className="h-2 shrink-0" />
       </ScrollArea>
@@ -579,9 +623,10 @@ function Series({ item, context, flashID }: { item: TranscriptItem; context: Row
           flash={flashID === message.id}
         />
       ))}
-      {mine ? null : (
+      {mine || !context.showNames ? null : (
         <div
           aria-hidden
+          data-message-avatar
           className={cn(
             "pointer-events-none absolute top-1 bottom-0 flex w-7 flex-col justify-end",
             context.selection !== null ? "left-11" : "left-2",
@@ -618,7 +663,7 @@ function SystemLine({ text }: { text: string }) {
   );
 }
 
-function MessageText({ text, mine }: { text: string; mine: boolean }) {
+function MessageText({ text }: { text: string }) {
   const segments = useMemo(() => splitLinks(text), [text]);
   return (
     <>
@@ -631,7 +676,7 @@ function MessageText({ text, mine }: { text: string; mine: boolean }) {
             rel="noopener noreferrer"
             className={cn(
               "break-all underline underline-offset-2",
-              mine ? "text-signal-foreground decoration-signal-foreground/60" : "text-signal decoration-signal/50",
+              "text-signal decoration-signal/70",
             )}
           >
             {segment.text}
@@ -650,17 +695,19 @@ const MessageRow = memo(function MessageRow({
   first,
   last,
   flash,
+  delivery,
 }: {
   message: WireMessage;
   context: RowContext;
   first: boolean;
   last: boolean;
   flash: boolean;
+  delivery?: { item: OutgoingMessage; connected: boolean; retry: () => void; dismiss: () => void };
 }) {
   const { selfID, nameOf, actions, menuFor, setMenuFor, onOpenMedia, onJumpTo, selection, onToggleSelected, onToggleItem } =
     context;
   const selecting = selection !== null;
-  const selectable = selecting && canSelect(message);
+  const selectable = !delivery && selecting && canSelect(message);
   const selected = selectable && selection.has(message.id);
   const partial = selected && selection.get(message.id) !== null;
   const mine = message.author_id === selfID;
@@ -670,43 +717,72 @@ const MessageRow = memo(function MessageRow({
   const content = contentOf(message);
   const isMedia = !deleted && content.kind !== ContentKind.Text;
   const visual =
-    isMedia && (content.kind === ContentKind.Image || content.kind === ContentKind.Video || content.kind === ContentKind.Album);
+    isMedia && (
+      content.kind === ContentKind.Image || content.kind === ContentKind.Video ||
+      (content.kind === ContentKind.Album && content.items.some((item) => item.kind !== ContentKind.File))
+    );
   const caption = message.body.trim();
+  const mediaWidth = visual
+    ? content.kind === ContentKind.Image
+      ? mediaBoxSize(content.image.width, content.image.height, "photo").width
+      : content.kind === ContentKind.Video
+        ? mediaBoxSize(content.video.width, content.video.height).width
+        : 280
+    : undefined;
   const padded = cn(visual && "px-2");
   const hasText = deleted || !isMedia || caption !== "";
   const menuOpen = menuFor === message.id;
   const onMenuOpenChange = (open: boolean) => setMenuFor(open ? message.id : null);
-  const interactive = actions !== undefined && !deleted && !selecting;
+  const interactive = !delivery && actions !== undefined && !deleted && !selecting;
   const swipe = useSwipeToReply(() => actions?.onReply(message), interactive);
   const longPress = useLongPress(() => onMenuOpenChange(true), interactive);
 
   const meta = (
     <span
-      className={cn("ml-auto flex shrink-0 items-center gap-1", mine ? "text-signal-foreground/70" : "text-muted-foreground")}
+      className={cn(
+        "ml-auto flex shrink-0 items-center gap-1",
+        hasText && "leading-none",
+        "text-muted-foreground",
+      )}
     >
       {message.edited_at && !deleted ? <span className="text-[10px]">edited</span> : null}
       <time className="text-[10px]" dateTime={message.sent_at}>
         {formatTime(message.sent_at)}
       </time>
-      {mine ? read ? <CheckCheck className="size-3.5 shrink-0" /> : <Check className="size-3.5 shrink-0" /> : null}
+      {mine && delivery && delivery.item.status !== "sent" ? (
+        delivery.item.status === "failed"
+          ? <CircleAlert role="img" aria-label="Not sent" className="size-3.5 shrink-0 text-destructive" />
+          : <Clock role="img" aria-label={delivery.item.status === "sending" ? "Sending" : "Delivery unconfirmed"} className="size-3.5 shrink-0" />
+      ) : mine ? (
+        <>
+          <span className="sr-only">{read ? "Read" : "Sent"}</span>
+          {read ? <CheckCheck aria-hidden className="size-3.5 shrink-0 text-signal" /> : <Check aria-hidden className="size-3.5 shrink-0" />}
+        </>
+      ) : null}
     </span>
   );
 
   return (
     <div
       data-id={message.id}
-      data-seq={message.seq}
+      data-seq={delivery ? undefined : message.seq}
       {...swipe.handlers}
       {...longPress}
       className={cn(
         "group relative flex items-end gap-2 px-2 py-0.5 transition-colors",
-        mine ? "flex-row-reverse" : "flex-row pl-11",
-        selecting && (mine ? "pl-11" : "pl-20"),
+        mine ? "flex-row-reverse" : "flex-row",
+        !mine && context.showNames && "pl-11",
+        selecting && (!mine && context.showNames ? "pl-20" : "pl-11"),
         selected && "bg-signal/10",
         "pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]",
       )}
       onContextMenu={(event) => {
         if (!interactive) return;
+        event.preventDefault();
+        onMenuOpenChange(true);
+      }}
+      onKeyDown={(event) => {
+        if (!interactive || menuOpen || !(event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))) return;
         event.preventDefault();
         onMenuOpenChange(true);
       }}
@@ -719,12 +795,16 @@ const MessageRow = memo(function MessageRow({
         />
       ) : null}
       <article
-        style={swipe.shift > 0 ? { transform: `translateX(${-swipe.shift}px)` } : undefined}
+        style={{
+          width: mediaWidth === undefined ? undefined : mediaWidth + 10,
+          transform: swipe.shift > 0 ? `translateX(${-swipe.shift}px)` : undefined,
+        }}
         aria-label={mine ? "Your message" : `Message from ${name}`}
+        data-voice={content.kind === ContentKind.Voice && !caption && !deleted || undefined}
         className={cn(
-          "max-w-[75%] min-w-0 rounded-2xl transition-shadow duration-300",
+          "max-w-[86%] min-w-0 rounded-2xl border border-border/65 text-foreground transition-shadow duration-300 sm:max-w-[75%]",
           visual ? "p-1" : "px-3 py-2",
-          mine ? "bg-signal text-signal-foreground" : "bg-muted text-foreground",
+          mine ? "bg-message-outgoing" : "bg-message-incoming",
           last && (mine ? "rounded-br-sm" : "rounded-bl-sm"),
           flash && "ring-2 ring-signal/60 ring-offset-2 ring-offset-background",
         )}
@@ -736,7 +816,7 @@ const MessageRow = memo(function MessageRow({
         {deleted ? null : (
           <>
             {message.forwarded_from_id ? (
-              <p className={cn("text-xs", padded, mine ? "text-signal-foreground/80" : "text-signal")}>
+              <p className={cn("text-xs text-signal", padded)}>
                 Forwarded from <span className="font-medium">{nameOf(message.forwarded_from_author_id)}</span>
               </p>
             ) : null}
@@ -749,14 +829,14 @@ const MessageRow = memo(function MessageRow({
                 className={cn(
                   "my-1 block w-full min-w-0 rounded-md border-l-2 px-2 py-1 text-left",
                   visual && "mx-1 w-[calc(100%-0.5rem)]",
-                  mine ? "border-signal-foreground/70 bg-signal-foreground/15" : "border-signal bg-background/60",
+                  "border-signal bg-background/60",
                 )}
               >
                 <span className="block truncate text-xs font-medium">{nameOf(message.reply_to.author_id)}</span>
                 <span
                   className={cn(
                     "block truncate text-xs",
-                    mine ? "text-signal-foreground/80" : "text-muted-foreground",
+                    "text-muted-foreground",
                     message.reply_to.deleted && "italic",
                   )}
                 >
@@ -794,7 +874,7 @@ const MessageRow = memo(function MessageRow({
               <p
                 className={cn(
                   "flex min-w-0 items-center gap-1.5 text-sm italic",
-                  mine ? "text-signal-foreground/80" : "text-muted-foreground",
+                  "text-muted-foreground",
                 )}
               >
                 <Ban aria-hidden className="size-3.5 shrink-0" />
@@ -803,11 +883,11 @@ const MessageRow = memo(function MessageRow({
             ) : (
               <p
                 className={cn(
-                  "min-w-0 whitespace-pre-wrap break-words text-sm",
+                  "min-w-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]",
                   message.body.trim().includes("\n") && "basis-full",
                 )}
               >
-                <MessageText text={message.body} mine={mine} />
+                <MessageText text={message.body} />
               </p>
             )}
             {meta}
@@ -815,6 +895,15 @@ const MessageRow = memo(function MessageRow({
         ) : (
           <div className={cn("mt-0.5 flex", visual && "px-2 pb-1")}>{meta}</div>
         )}
+        {delivery && (delivery.item.status === "unconfirmed" || delivery.item.status === "failed") ? (
+          <div className="mt-1.5 border-t border-border/40 pt-1.5 text-xs">
+            <p role="status" className={delivery.item.status === "failed" ? "text-destructive" : "text-muted-foreground"}>{delivery.item.reason || "Delivery unconfirmed"}</p>
+            <div className="mt-1 flex gap-3">
+              {delivery.item.status === "unconfirmed" ? <button type="button" className="min-h-8 text-signal disabled:opacity-50" disabled={!delivery.connected} onClick={delivery.retry}>Retry</button> : null}
+              <button type="button" className="min-h-8 text-muted-foreground" onClick={delivery.dismiss}>Dismiss</button>
+            </div>
+          </div>
+        ) : null}
       </article>
 
       {interactive ? (
@@ -866,6 +955,7 @@ function MessageMenu({
           <button
             type="button"
             aria-label="Message actions"
+            aria-keyshortcuts="Shift+F10"
             className="mb-1 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 outline-none transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:opacity-100 pointer-coarse:opacity-100"
           >
             <MoreHorizontal aria-hidden className="size-4" />

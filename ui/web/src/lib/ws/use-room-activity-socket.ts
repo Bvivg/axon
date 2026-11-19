@@ -15,6 +15,7 @@ import { invalidateProfilesOf } from "@/lib/query/people";
 import { refreshSoon } from "@/lib/query/refresh";
 import { bearerPrefix, closeCodes, parseFrame, subprotocol, type Incoming, type WireMessage } from "@/lib/ws/protocol";
 import { useTyping, type TypingByRoom } from "@/lib/ws/use-typing";
+import { CallChannel } from "@/lib/calls/channel";
 
 const socketUrl = apiBaseUrl.replace(/^http/, "ws") + "/ws/chat";
 
@@ -25,7 +26,8 @@ export function useRoomActivitySocket(
   roomIds: string[],
   peerIds: string[],
   onMessage?: (message: WireMessage) => void,
-): TypingByRoom {
+): { typing: TypingByRoom; calls: CallChannel } {
+  const [calls] = useState(() => new CallChannel());
   const queryClient = useQueryClient();
   const onMessageRef = useRef(onMessage);
   useEffect(() => {
@@ -38,7 +40,14 @@ export function useRoomActivitySocket(
   const subscribed = useRef(new Set<string>());
   const watched = useRef(new Set<string>());
   const opened = useRef(false);
+  const announced = useRef(new Set<string>());
   const typingTracker = useTyping();
+  const announce = (message: WireMessage) => {
+    if (announced.current.has(message.id)) return;
+    announced.current.add(message.id);
+    if (announced.current.size > 512) announced.current.delete(announced.current.values().next().value!);
+    onMessageRef.current?.(message);
+  };
 
   useEffect(() => {
     if (token) {
@@ -78,7 +87,7 @@ export function useRoomActivitySocket(
       case "message":
         typingTracker.stop(frame.message.room_id, frame.message.author_id);
         refreshSoon(queryClient, chatKeys.rooms);
-        onMessageRef.current?.(frame.message);
+        announce(frame.message);
         break;
 
       case "read":
@@ -100,6 +109,7 @@ export function useRoomActivitySocket(
         break;
 
       case "room_added":
+        if (frame.message) announce(frame.message);
         if (!subscribed.current.has(frame.room_id)) {
           void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
         }
@@ -113,7 +123,7 @@ export function useRoomActivitySocket(
     }
   };
 
-  const { sendJsonMessage, readyState } = useWebSocket(
+  const { sendJsonMessage, readyState, getWebSocket } = useWebSocket(
     token ? socketUrl : null,
     {
       protocols,
@@ -126,7 +136,7 @@ export function useRoomActivitySocket(
           setToken(null);
           return false;
         }
-        if (event.code === closeCodes.sessionRevoked) {
+        if (event.code === closeCodes.sessionRevoked && event.reason !== "call lease unavailable") {
           clearAccessToken();
           setToken(null);
           setRevoked(true);
@@ -135,6 +145,7 @@ export function useRoomActivitySocket(
         return event.code !== closeCodes.unauthenticated;
       },
       onOpen: () => {
+        void calls.open();
         subscribed.current.clear();
         watched.current.clear();
         if (opened.current) {
@@ -146,14 +157,21 @@ export function useRoomActivitySocket(
         if (typeof event.data !== "string") {
           return;
         }
+        if (calls.receive(event.data)) return;
         const frame = parseFrame(event.data);
         if (frame) {
           onFrame(frame);
         }
       },
       filter: () => false,
+      onClose: () => calls.closed(),
     },
   );
+
+  useEffect(() => {
+    calls.bind((frame) => sendJsonMessage(frame, false), () => getWebSocket()?.close(1000, "reconnect"));
+  }, [calls, sendJsonMessage, getWebSocket]);
+  useEffect(() => () => calls.dispose(), [calls]);
 
   useEffect(() => {
     if (revoked) {
@@ -185,5 +203,5 @@ export function useRoomActivitySocket(
     }
   }, [peerIds, readyState, sendJsonMessage]);
 
-  return typingTracker.typing;
+  return { typing: typingTracker.typing, calls };
 }
