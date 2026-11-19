@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "start:dev": "node scripts/start-dev.mjs"
+  },
+  "devDependencies": {
+    "shadcn": "^4.17.0"
+  }
+}

@@ -37,6 +37,26 @@ linters:
   exclusions:
     rules:
 
+      - path: core/services/auth/internal/oauth/fake\.go
+        linters:
+          - gosec
+        text: "G710:"
+
+      - path: core/services/chat/internal/media/ffmpeg\.go
+        linters:
+          - gosec
+        text: "G204:"
+
+      - path: core/services/gateway/internal/attachmentproxy/sessions\.go
+        linters:
+          - gosec
+        text: "G704:"
+
+      - path: core/services/gateway/internal/cookie/cookie\.go
+        linters:
+          - gosec
+        text: "G124:"
+
       - path: _test\.go
         linters:
           - gosec

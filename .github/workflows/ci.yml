@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  GOLANGCI_LINT_VERSION: v2.9.0
+  GOLANGCI_LINT_VERSION: v2.15.0
 
 jobs:
   go:
@@ -46,6 +46,14 @@ jobs:
 
       - name: Unit tests
         run: make test
+
+      - name: Check reachable Go vulnerabilities
+        working-directory: core
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          for module in shared services/auth services/chat services/gateway services/game; do
+            (cd "$module" && govulncheck ./...)
+          done
 
   lint:
     name: golangci-lint
@@ -191,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [auth, chat, gateway]
+        service: [auth, chat, gateway, game]
     steps:
       - uses: actions/checkout@v4
 
@@ -238,6 +246,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Check production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lint
         run: npm run lint
 
@@ -266,3 +277,16 @@ jobs:
 
       - name: Browser e2e tests
         run: make test-web-e2e
+
+  calls-e2e:
+    name: Calls native media E2E
+    runs-on: ubuntu-latest
+    needs: web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Calls RPC WS and UI media gates
+        run: bash core/deploy/calls-e2e.sh
+      - name: Calls SFU groups fallback and cleanup gates
+        run: bash core/deploy/calls-sfu-e2e.sh
+      - name: Calls active transport migration and cleanup gates
+        run: bash core/deploy/calls-migration-e2e.sh

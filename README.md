@@ -31,8 +31,49 @@ docs/                    architecture notes and diagrams
 
 ## Getting started
 
-Requires Docker. Go is only needed for formatting and unit tests; everything
-else — Postgres, Redis, `buf`, `golangci-lint` — runs in a container.
+Requires Node.js 24 (`nvm use`), Go, Docker and ffmpeg/ffprobe on the device.
+The launcher also detects Node.js 24+ already installed through nvm when the
+shell still uses an older version. The workspace selects its Go toolchain.
+
+```sh
+npm run start:dev
+```
+
+This single command prepares the development environment, installs native web
+dependencies, generates missing contracts, applies migrations, and starts
+Next.js plus all implemented Go services (`auth`, `chat`, `game`, `gateway`)
+directly on the device. Shared modules compile with the services. The SwiftUI
+client has not been implemented yet. The web client supports hot reload; restart
+the command after changing Go code.
+
+The launcher starts only infrastructure in Docker: Postgres, Redis, Kafka and
+MinIO, plus configured calling infrastructure. It preserves an existing Axon
+Compose stack and does not stop infrastructure on exit. Ctrl+C stops all local
+application processes, including child processes. An occupied port or a failed
+service aborts startup and stops the processes started by this command.
+
+Defaults: web `http://localhost:3000`, gateway `http://localhost:28080`,
+auth/chat/game `28081`/`28082`/`28083`, admin ports `29091`/`29092`/`29090`.
+Logs are in `.local/dev/`. Local development uses the configured development
+database; migrations apply to that database.
+
+Configuration loads from `core/deploy/.env.example`, `core/deploy/.env`, root
+`.env.local`, then the shell environment. Missing `.env` and JWT signing keys
+are created automatically. Keep secrets in ignored env files. Calling feature
+flags and credentials retain their configured values.
+
+Override `DEV_WEB_PORT`, `DEV_GATEWAY_PORT`, `DEV_AUTH_PORT`, `DEV_CHAT_PORT`,
+`DEV_GAME_PORT`, `DEV_AUTH_ADMIN_PORT`, `DEV_CHAT_ADMIN_PORT`, or
+`DEV_GATEWAY_ADMIN_PORT` in root `.env.local` to change application ports.
+Infrastructure uses the host ports from `core/deploy/.env`. For infrastructure
+already running outside Compose, set `AXON_DEV_INFRA=external` and configure
+service DSNs, `REDIS_ADDR`, `DEV_KAFKA_BROKERS`, `DEV_S3_ENDPOINT`,
+`DEV_S3_PUBLIC_URL`, and, if SFU is enabled, `DEV_LIVEKIT_URL`.
+
+Before handing changes over for review, build and verify the application in
+Docker Compose. `startup.sh` and `make up` start that Docker stack; they are
+not the local application dev launcher. Keep its ports separate from local
+dev processes. The following commands manage the Docker stack:
 
 ```sh
 make env     # create core/deploy/.env from the example

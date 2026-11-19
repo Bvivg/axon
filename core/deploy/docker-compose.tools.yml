@@ -2,8 +2,19 @@ name: axon-tools
 
 services:
 
+  go:
+    image: golang:1.27.4-alpine
+    working_dir: /workspace/core
+    environment:
+      GOTOOLCHAIN: local
+    volumes:
+      - ../..:/workspace
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: ["go", "test", "./shared/...", "./services/auth/...", "./services/chat/...", "./services/gateway/...", "./services/game/..."]
+
   buf:
-    image: bufbuild/buf:1.61.0
+    image: bufbuild/buf:1.75.0
     working_dir: /workspace
     volumes:
       - ../..:/workspace
@@ -13,7 +24,7 @@ services:
     command: ["generate"]
 
   golangci-lint:
-    image: golangci/golangci-lint:v2.9.0-alpine
+    image: golangci/golangci-lint:v2.15.0-alpine
     working_dir: /workspace/core
     volumes:
       - ../..:/workspace

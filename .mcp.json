@@ -21,20 +21,6 @@
         "-y",
         "@playwright/mcp@latest"
       ]
-    },
-    "docker": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "docker-mcp"
-      ]
-    },
-    "github": {
-      "command": "sh",
-      "args": [
-        "-c",
-        "GITHUB_PERSONAL_ACCESS_TOKEN=\"$(gh auth token)\" exec npx -y @modelcontextprotocol/server-github"
-      ]
     }
   }
 }

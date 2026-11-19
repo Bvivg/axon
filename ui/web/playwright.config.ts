@@ -4,6 +4,7 @@ const baseURL = process.env.WEB_BASE_URL ?? "http://web:3000";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: ["calls-*.spec.ts"],
 
   workers: 1,
   fullyParallel: false,
