@@ -159,12 +159,12 @@ func TestUserByUsernameAndExactSearch(t *testing.T) {
 		t.Errorf("unknown username err = %v, want ErrUserNotFound", err)
 	}
 
-	users, err := repo.SearchExact(ctx, "@"+strings.ToUpper(target.Username), caller.ID)
+	users, err := repo.SearchUsers(ctx, "@"+strings.ToUpper(target.Username), caller.ID, 20, nil)
 	if err != nil {
-		t.Fatalf("SearchExact: %v", err)
+		t.Fatalf("SearchUsers: %v", err)
 	}
 	if len(users) != 1 || users[0].ID != target.ID {
-		t.Errorf("SearchExact = %v, want exactly %s", users, target.ID)
+		t.Errorf("SearchUsers = %v, want exactly %s", users, target.ID)
 	}
 }
 

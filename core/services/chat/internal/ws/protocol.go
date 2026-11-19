@@ -69,8 +69,9 @@ const (
 )
 
 type Inbound struct {
-	Type   string `json:"type"`
-	RoomID string `json:"room_id,omitempty"`
+	Type   string          `json:"type"`
+	Call   json.RawMessage `json:"call,omitempty"`
+	RoomID string          `json:"room_id,omitempty"`
 
 	ToUserID string `json:"to_user_id,omitempty"`
 
@@ -94,7 +95,8 @@ type Inbound struct {
 }
 
 type Outbound struct {
-	Type string `json:"type"`
+	Type string          `json:"type"`
+	Call json.RawMessage `json:"call,omitempty"`
 
 	Message *Message `json:"message,omitempty"`
 

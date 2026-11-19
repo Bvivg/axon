@@ -4,7 +4,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 
@@ -65,7 +67,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.limiter.Allow("user:" + claims.UserID.String()) {
+	if allowed, retryAfter := h.limiter.AllowWithRetry("user:" + claims.UserID.String()); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(retryAfter.Seconds())))))
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}

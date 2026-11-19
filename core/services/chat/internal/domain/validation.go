@@ -7,11 +7,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+
+	"github.com/bvivg/axon/core/shared/pkg/safehttp"
 )
 
 const (
 	MaxRoomNameLength = 120
-	MaxMessageLength  = 4096
+	MaxMessageLength  = 65536
 
 	MaxClientIDLength = 64
 
@@ -233,14 +235,23 @@ func ValidatePayload(kind MessageKind, raw json.RawMessage) (json.RawMessage, er
 			return nil, newValidationError("payload", "is not a valid album payload")
 		}
 		if len(p.Items) < MinAlbumItems || len(p.Items) > MaxAlbumItems {
-			return nil, newValidationError("payload", "an album holds 2 to 10 photos or videos")
+			return nil, newValidationError("payload", "a group holds 2 to 10 attachments")
 		}
 		for _, item := range p.Items {
-			if item.Kind != MessageKindImage && item.Kind != MessageKindVideo {
-				return nil, newValidationError("payload", "an album holds only photos and videos")
+			if strings.TrimSpace(item.URL) == "" || item.SizeBytes <= 0 {
+				return nil, newValidationError("payload", "a grouped attachment is missing url or size_bytes")
 			}
-			if strings.TrimSpace(item.URL) == "" || item.Width <= 0 || item.Height <= 0 || item.SizeBytes <= 0 {
-				return nil, newValidationError("payload", "an album item is missing url, width, height, or size_bytes")
+			switch item.Kind {
+			case MessageKindImage, MessageKindVideo:
+				if item.Width <= 0 || item.Height <= 0 {
+					return nil, newValidationError("payload", "a photo or video is missing width or height")
+				}
+			case MessageKindAttachment:
+				if strings.TrimSpace(item.Filename) == "" || strings.TrimSpace(item.Mime) == "" {
+					return nil, newValidationError("payload", "a file is missing filename or mime")
+				}
+			default:
+				return nil, newValidationError("payload", "a group holds only photos, videos, and files")
 			}
 		}
 		return json.Marshal(p)
@@ -285,8 +296,10 @@ func ValidatePage(p Page) (Page, error) {
 }
 
 func AlbumItemOf(kind MessageKind, payload json.RawMessage) (AlbumItem, error) {
-	if kind != MessageKindImage && kind != MessageKindVideo {
-		return AlbumItem{}, newValidationError("upload_ids", "an album holds only photos and videos")
+	switch kind {
+	case MessageKindImage, MessageKindVideo, MessageKindAttachment:
+	default:
+		return AlbumItem{}, newValidationError("upload_ids", "a group holds only photos, videos, and files")
 	}
 	var item AlbumItem
 	if err := json.Unmarshal(payload, &item); err != nil {
@@ -306,8 +319,10 @@ func (i AlbumItem) Single() (MessageKind, json.RawMessage, error) {
 			URL: i.URL, PosterURL: i.PosterURL, Width: i.Width, Height: i.Height,
 			DurationMS: i.DurationMS, SizeBytes: i.SizeBytes, Mime: i.Mime,
 		}
+	case MessageKindAttachment:
+		payload = AttachmentPayload{URL: i.URL, Filename: i.Filename, SizeBytes: i.SizeBytes, Mime: i.Mime}
 	default:
-		return "", nil, newValidationError("payload", "an album holds only photos and videos")
+		return "", nil, newValidationError("payload", "a group holds only photos, videos, and files")
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -327,7 +342,7 @@ func ValidatePushSubscription(s PushSubscription) (PushSubscription, error) {
 	s.Auth = strings.TrimSpace(s.Auth)
 
 	switch {
-	case !strings.HasPrefix(s.Endpoint, "https://") || len(s.Endpoint) > maxPushEndpoint:
+	case safehttp.ValidateURL(s.Endpoint) != nil || len(s.Endpoint) > maxPushEndpoint:
 		return PushSubscription{}, newValidationError("endpoint", "must be an https URL")
 	case s.P256DH == "" || len(s.P256DH) > maxPushKey:
 		return PushSubscription{}, newValidationError("p256dh", "is missing or too long")

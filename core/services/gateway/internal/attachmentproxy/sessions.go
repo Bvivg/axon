@@ -4,8 +4,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
@@ -82,7 +84,8 @@ func (h *Sessions) forward(w http.ResponseWriter, r *http.Request, prefix string
 		http.Error(w, "access token is not valid", http.StatusUnauthorized)
 		return
 	}
-	if !limiter.Allow("user:" + claims.UserID.String()) {
+	if allowed, retryAfter := limiter.AllowWithRetry("user:" + claims.UserID.String()); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(retryAfter.Seconds())))))
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}

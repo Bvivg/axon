@@ -50,6 +50,35 @@ func (f *fakeSessions) CreateSession(_ context.Context, s domain.UploadSession) 
 	return s, nil
 }
 
+func (f *fakeSessions) ReuseSession(_ context.Context, s domain.UploadSession) (domain.UploadSession, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id, ok := f.sources[sourceKey(s.Mode, s.ExpectedSHA256)]
+	if !ok {
+		return domain.UploadSession{}, false, nil
+	}
+	for _, old := range f.sessions {
+		if old.UploadID == nil || old.UploaderID != s.UploaderID || old.SizeBytes != s.SizeBytes {
+			continue
+		}
+		upload := f.uploads[*old.UploadID]
+		if upload.FileID == nil || *upload.FileID != id {
+			continue
+		}
+		file := f.files[id]
+		payload, err := file.PayloadFor(s.Filename)
+		if err != nil {
+			return domain.UploadSession{}, false, err
+		}
+		next := domain.Upload{ID: uuid.New(), UploaderID: s.UploaderID, Kind: file.Kind, FileID: &file.ID, Payload: payload}
+		f.uploads[next.ID] = next
+		s.Status, s.UploadID = domain.UploadReady, &next.ID
+		f.sessions[s.ID] = s
+		return s, true, nil
+	}
+	return domain.UploadSession{}, false, nil
+}
+
 func (f *fakeSessions) SessionByID(_ context.Context, id uuid.UUID) (domain.UploadSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -155,7 +184,7 @@ func (f *fakeSessions) FileBySource(_ context.Context, mode domain.UploadMode, s
 	return f.files[id], true, nil
 }
 
-func (f *fakeSessions) SaveFile(_ context.Context, file domain.StoredFile, mode domain.UploadMode, source []byte) (domain.StoredFile, bool, error) {
+func (f *fakeSessions) SaveFile(_ context.Context, file domain.StoredFile, mode domain.UploadMode, source []byte, _ int64) (domain.StoredFile, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, existing := range f.files {
@@ -314,8 +343,15 @@ func (p *fakeProcessor) Voice(_ context.Context, _ uuid.UUID, path string, _ int
 	return p.run(path)
 }
 
-func (p *fakeProcessor) File(_ context.Context, _ uuid.UUID, path, _ string, _ int64) (attachment.Result, error) {
-	return p.run(path)
+func (p *fakeProcessor) File(_ context.Context, _ uuid.UUID, path, filename string, size int64) (attachment.Result, error) {
+	result, err := p.run(path)
+	if err != nil {
+		return result, err
+	}
+	result.Kind = domain.MessageKindAttachment
+	result.Payload, _ = json.Marshal(domain.AttachmentPayload{URL: keysOf(result.Payload)[0], Filename: filename, SizeBytes: size})
+	result.Size = size
+	return result, nil
 }
 
 func keysOf(payload json.RawMessage) []string {
@@ -367,7 +403,7 @@ func content(size int, seed byte) []byte {
 
 func (h harness) upload(t *testing.T, user uuid.UUID, raw []byte, order ...int) domain.UploadSession {
 	t.Helper()
-	s, err := h.m.Start(t.Context(), user, domain.UploadModeMedia, "photo.jpg", int64(len(raw)))
+	s, err := h.m.Start(t.Context(), user, domain.UploadModeMedia, "photo.jpg", int64(len(raw)), nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -451,13 +487,13 @@ func TestLimitsAndOwnership(t *testing.T) {
 	h := newHarness(t)
 	user := uuid.New()
 
-	if _, err := h.m.Start(t.Context(), user, domain.UploadModeMedia, "big", 4*testPart+1); !errors.Is(err, ErrTooLarge) {
+	if _, err := h.m.Start(t.Context(), user, domain.UploadModeMedia, "big", 4*testPart+1, nil); !errors.Is(err, ErrTooLarge) {
 		t.Errorf("a media file over the limit: err = %v, want ErrTooLarge", err)
 	}
-	if _, err := h.m.Start(t.Context(), user, domain.UploadModeVoice, "long", testPart+1); !errors.Is(err, ErrTooLarge) {
+	if _, err := h.m.Start(t.Context(), user, domain.UploadModeVoice, "long", testPart+1, nil); !errors.Is(err, ErrTooLarge) {
 		t.Errorf("a voice note over its own limit: err = %v, want ErrTooLarge", err)
 	}
-	if _, err := h.m.Start(t.Context(), user, domain.UploadModeMedia, "empty", 0); !errors.Is(err, ErrEmpty) {
+	if _, err := h.m.Start(t.Context(), user, domain.UploadModeMedia, "empty", 0, nil); !errors.Is(err, ErrEmpty) {
 		t.Errorf("an empty file: err = %v, want ErrEmpty", err)
 	}
 
@@ -561,11 +597,11 @@ func TestCompleteTwiceIsHarmless(t *testing.T) {
 	}
 }
 
-func TestWithdrawingADocumentDraftRemovesItsObject(t *testing.T) {
+func TestWithdrawingADocumentDraftKeepsTheSharedFileForTheSweeper(t *testing.T) {
 	h := newHarness(t)
 	user := uuid.New()
 
-	s, err := h.m.Start(t.Context(), user, domain.UploadModeFile, "notes.txt", 10)
+	s, err := h.m.Start(t.Context(), user, domain.UploadModeFile, "notes.txt", 10, nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -573,8 +609,8 @@ func TestWithdrawingADocumentDraftRemovesItsObject(t *testing.T) {
 		t.Fatalf("PutPart: %v", err)
 	}
 	view := h.finish(t, user, s)
-	if view.Upload == nil || view.Upload.FileID != nil {
-		t.Fatalf("view = %+v, want a document upload without a shared file", view)
+	if view.Upload == nil || view.Upload.FileID == nil {
+		t.Fatalf("view = %+v, want a document upload backed by a shared file", view)
 	}
 	key := keysOf(view.Upload.Payload)[0]
 	if !h.objects.has(key) {
@@ -584,7 +620,80 @@ func TestWithdrawingADocumentDraftRemovesItsObject(t *testing.T) {
 	if err := h.m.Delete(t.Context(), user, s.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if h.objects.has(key) {
-		t.Error("the withdrawn document stayed in storage")
+	if _, found := h.sessions.uploads[view.Upload.ID]; found {
+		t.Error("the withdrawn draft stayed in the database")
+	}
+	if !h.objects.has(key) {
+		t.Error("a shared file was removed before the sweeper checked its references")
+	}
+}
+
+func TestHashPreflightReusesTheFileBeforeReceivingParts(t *testing.T) {
+	h := newHarness(t)
+	user := uuid.New()
+	raw := content(100, 14)
+	sum := sha256.Sum256(raw)
+	first, err := h.m.Start(t.Context(), user, domain.UploadModeFile, "one.txt", int64(len(raw)), sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.PutPart(t.Context(), user, first.ID, 1, bytes.NewReader(raw), int64(len(raw))); err != nil {
+		t.Fatal(err)
+	}
+	view := h.finish(t, user, first)
+	again, err := h.m.Start(t.Context(), user, domain.UploadModeFile, "two.txt", int64(len(raw)), sum[:])
+	if err != nil || again.Status != domain.UploadReady || again.MultipartID != "" {
+		t.Fatalf("preflight: %+v, %v", again, err)
+	}
+	reused, err := h.m.Status(t.Context(), user, again.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Upload.ID == view.Upload.ID || *reused.Upload.FileID != *view.Upload.FileID {
+		t.Fatal("want a new upload pointing at the same file")
+	}
+	var payload domain.AttachmentPayload
+	if err := json.Unmarshal(reused.Upload.Payload, &payload); err != nil || payload.Filename != "two.txt" {
+		t.Fatalf("payload=%+v, %v", payload, err)
+	}
+	if h.processor.calls != 1 {
+		t.Fatalf("processed %d times", h.processor.calls)
+	}
+	for _, tc := range []struct {
+		user uuid.UUID
+		mode domain.UploadMode
+	}{{uuid.New(), domain.UploadModeFile}, {user, domain.UploadModeMedia}} {
+		session, err := h.m.Start(t.Context(), tc.user, tc.mode, "one", int64(len(raw)), sum[:])
+		if err != nil || session.Status != domain.UploadUploading {
+			t.Fatalf("unexpected reuse: %+v, %v", session, err)
+		}
+	}
+}
+
+func TestHashMismatchDoesNotProcessOrRememberTheClaimedSource(t *testing.T) {
+	h := newHarness(t)
+	user := uuid.New()
+	raw := content(100, 18)
+	claim := sha256.Sum256([]byte("different file"))
+	session, err := h.m.Start(t.Context(), user, domain.UploadModeFile, "wrong.txt", int64(len(raw)), claim[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.PutPart(t.Context(), user, session.ID, 1, bytes.NewReader(raw), int64(len(raw))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.m.Complete(t.Context(), user, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.m.process(t.Context(), session.ID)
+	state, err := h.m.Status(t.Context(), user, session.ID)
+	if err != nil || state.Session.Status != domain.UploadFailed || state.Session.Failure != "hash_mismatch" {
+		t.Fatalf("state=%+v, %v", state, err)
+	}
+	if h.processor.calls != 0 || len(h.sessions.sources) != 0 {
+		t.Fatal("unverified bytes were processed or cached")
+	}
+	if _, err := h.m.Start(t.Context(), user, domain.UploadModeFile, "bad.txt", 1, []byte("bad")); !errors.Is(err, ErrBadHash) {
+		t.Fatalf("invalid hash: %v", err)
 	}
 }

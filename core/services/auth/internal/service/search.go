@@ -2,24 +2,64 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-func (s *Service) SearchUsers(ctx context.Context, callerID uuid.UUID, query string) ([]domain.PublicProfile, error) {
+const searchResultLimit = 20
+
+type searchPageToken struct {
+	Query string `json:"q"`
+	domain.UserSearchCursor
+}
+
+func (s *Service) SearchUsers(ctx context.Context, callerID uuid.UUID, query string, pageSize int32, pageToken string) ([]domain.PublicProfile, string, error) {
 	normalized, err := domain.ValidateSearchQuery(query)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if pageSize < 0 || pageSize > 100 {
+		return nil, "", &domain.ValidationError{Field: "page_size", Reason: "must be between 1 and 100"}
+	}
+	limit := int(pageSize)
+	if limit == 0 {
+		limit = searchResultLimit
+	}
+	var after *domain.UserSearchCursor
+	if pageToken != "" {
+		var token searchPageToken
+		data, decodeErr := base64.RawURLEncoding.DecodeString(pageToken)
+		if len(pageToken) > 2048 || decodeErr != nil || json.Unmarshal(data, &token) != nil ||
+			token.Query != strings.ToLower(normalized) || token.ID == uuid.Nil || token.Rank < 0 || token.Rank > 2 {
+			return nil, "", &domain.ValidationError{Field: "page_token", Reason: "is invalid for this query"}
+		}
+		after = &token.UserSearchCursor
 	}
 
-	users, err := s.store.SearchExact(ctx, normalized, callerID)
+	results, err := s.store.SearchUsers(ctx, normalized, callerID, limit+1, after)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	var next string
+	if len(results) > limit {
+		results = results[:limit]
+		data, err := json.Marshal(searchPageToken{Query: strings.ToLower(normalized), UserSearchCursor: results[limit-1].Cursor})
+		if err != nil {
+			return nil, "", err
+		}
+		next = base64.RawURLEncoding.EncodeToString(data)
+	}
+	users := make([]domain.User, len(results))
+	for i, result := range results {
+		users[i] = result.User
 	}
 
-	return s.withOnlineStatus(ctx, users), nil
+	return s.withOnlineStatus(ctx, users), next, nil
 }
 
 func (s *Service) UsersPublicProfiles(ctx context.Context, userIDs []uuid.UUID) ([]domain.PublicProfile, error) {

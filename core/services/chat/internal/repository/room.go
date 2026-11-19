@@ -247,10 +247,21 @@ func (r *Repository) AddMember(ctx context.Context, roomID uuid.UUID, m domain.M
 }
 
 func (r *Repository) RemoveMember(ctx context.Context, roomID, userID uuid.UUID) error {
+	if r.sfu && r.pool != nil {
+		return r.InTx(ctx, func(tx *Repository) error {
+			if err := tx.lockRoom(ctx, roomID); err != nil {
+				return err
+			}
+			return tx.RemoveMember(ctx, roomID, userID)
+		})
+	}
 	const query = `DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`
 
 	if _, err := r.q.Exec(ctx, query, roomID, userID); err != nil {
 		return fmt.Errorf("repository: remove member: %w", err)
+	}
+	if r.sfu {
+		return r.revokeRoomCalls(ctx, roomID, userID)
 	}
 	return nil
 }

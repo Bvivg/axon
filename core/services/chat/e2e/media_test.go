@@ -61,13 +61,14 @@ func (u *user) upload(t *testing.T, as, filename string, body []byte) (uploaded,
 	return out, resp.StatusCode
 }
 
-func fetch(t *testing.T, rawURL string) ([]byte, http.Header) {
+func (u *user) fetch(t *testing.T, rawURL string) ([]byte, http.Header) {
 	t.Helper()
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, privateMediaURL(rawURL), nil)
 	if err != nil {
 		t.Fatalf("build fetch %s: %v", rawURL, err)
 	}
+	req.Header.Set("Authorization", "Bearer "+u.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("fetch %s: %v", rawURL, err)
@@ -176,7 +177,7 @@ func TestAPhotoArrivesAsAnImageWithoutItsMetadata(t *testing.T) {
 		t.Errorf("payload = %+v, want a 64x32 photo with a thumbnail", payload)
 	}
 
-	stored, _ := fetch(t, payload.URL)
+	stored, _ := ada.fetch(t, payload.URL)
 	if bytes.Contains(stored, []byte("home-at-55.7558N")) || bytes.Contains(stored, []byte("Exif")) {
 		t.Error("the stored photo still carries its EXIF")
 	}
@@ -229,7 +230,7 @@ func TestAVideoIsReencodedAndLosesItsLocation(t *testing.T) {
 		t.Errorf("duration = %dms, want about a second", payload.DurationMS)
 	}
 
-	video, headers := fetch(t, payload.URL)
+	video, headers := ada.fetch(t, payload.URL)
 	if ct := headers.Get("Content-Type"); ct != "video/mp4" {
 		t.Errorf("content type = %q, want video/mp4", ct)
 	}
@@ -239,7 +240,7 @@ func TestAVideoIsReencodedAndLosesItsLocation(t *testing.T) {
 		}
 	}
 
-	poster, _ := fetch(t, payload.PosterURL)
+	poster, _ := ada.fetch(t, payload.PosterURL)
 	if _, _, err := image.DecodeConfig(bytes.NewReader(poster)); err != nil {
 		t.Errorf("the poster is not an image: %v", err)
 	}
@@ -270,7 +271,7 @@ func TestAFileIsKeptByteForByte(t *testing.T) {
 		t.Errorf("upload = %s %+v, want the file as sent", up.Kind, payload)
 	}
 
-	stored, headers := fetch(t, payload.URL)
+	stored, headers := ada.fetch(t, payload.URL)
 	if !bytes.Equal(stored, original) {
 		t.Error("the stored file differs from what was sent")
 	}
@@ -336,4 +337,12 @@ func TestWhatCannotBeSentIsRefused(t *testing.T) {
 	if out := s.expect(typeError); !strings.Contains(out.Reason, "payload") {
 		t.Errorf("a client payload: reason = %q", out.Reason)
 	}
+}
+
+func privateMediaURL(raw string) string {
+	key := strings.SplitN(raw, "/chat-attachments/", 2)
+	if len(key) != 2 {
+		return raw
+	}
+	return gatewayURL + "/api/media/" + key[1]
 }

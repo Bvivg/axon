@@ -3,28 +3,68 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
+	"github.com/bvivg/axon/core/shared/pkg/postgres"
 )
 
-func (r *Repository) SearchExact(ctx context.Context, query string, excludeUserID uuid.UUID) ([]domain.User, error) {
+func (r *Repository) SearchUsers(ctx context.Context, query string, excludeUserID uuid.UUID, limit int, after *domain.UserSearchCursor) ([]domain.UserSearchResult, error) {
 	const stmt = `
-		SELECT ` + userColumns + `
+		WITH matches AS (
+		SELECT ` + userColumns + `,
+			CASE
+				WHEN $1 = '' OR email = lower($1) OR lower(display_name) = lower($1) OR username = $4 THEN 0
+				WHEN display_name ILIKE $6 OR nickname ILIKE $6 OR ($4 <> '' AND username LIKE $7) THEN 1
+				ELSE 2
+			END AS search_rank,
+			lower(display_name) COLLATE "C" AS search_name
 		FROM users
-		WHERE (email = lower($1) OR lower(display_name) = lower($1) OR username = lower(ltrim($1, '@'))) AND id != $2
-		ORDER BY id`
+		WHERE id != $2 AND (
+			$1 = '' OR email = lower($1)
+			OR display_name ILIKE $3
+			OR nickname ILIKE $3
+			OR ($4 <> '' AND username LIKE $5)
+		))
+		SELECT ` + userColumns + `, search_rank, search_name FROM matches
+		WHERE $9::uuid IS NULL OR (search_rank, search_name, username COLLATE "C", id) >
+			($10::int, $11::text COLLATE "C", $12::text COLLATE "C", $9::uuid)
+		ORDER BY search_rank, search_name, username COLLATE "C", id
+		LIMIT $8`
 
-	rows, err := r.q.Query(ctx, stmt, query, excludeUserID)
+	username := strings.ToLower(strings.TrimLeft(query, "@"))
+	var afterID any
+	var cursor domain.UserSearchCursor
+	if after != nil {
+		cursor = *after
+		afterID = cursor.ID
+	}
+	rows, err := r.q.Query(ctx, stmt,
+		query, excludeUserID,
+		postgres.Containing(query), username, postgres.Containing(username),
+		postgres.StartingWith(query), postgres.StartingWith(username),
+		limit, afterID, cursor.Rank, cursor.Name, cursor.Username,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("repository: search exact: %w", err)
+		return nil, fmt.Errorf("repository: search users: %w", err)
 	}
 	defer rows.Close()
 
-	users, err := scanUsers(rows)
-	if err != nil {
-		return nil, fmt.Errorf("repository: search exact: %w", err)
+	var users []domain.UserSearchResult
+	for rows.Next() {
+		var result domain.UserSearchResult
+		result.User, err = scanUser(rows, &result.Cursor.Rank, &result.Cursor.Name)
+		if err != nil {
+			return nil, fmt.Errorf("repository: search users: %w", err)
+		}
+		result.Cursor.ID = result.ID
+		result.Cursor.Username = result.Username
+		users = append(users, result)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: search users: %w", err)
 	}
 	return users, nil
 }

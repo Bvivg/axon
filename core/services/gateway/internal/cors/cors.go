@@ -23,6 +23,7 @@ var allowedHeaders = []string{
 }
 
 var exposedHeaders = []string{
+	"Retry-After",
 	"Content-Type",
 	"X-Correlation-Id",
 	"Connect-Protocol-Version",
@@ -39,6 +40,11 @@ func Middleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
+			w.Header().Add("Vary", "Origin")
+			if origin != "" && !slices.Contains(allowedOrigins, origin) {
+				http.Error(w, "origin is not allowed", http.StatusForbidden)
+				return
+			}
 
 			if origin == "" || !slices.Contains(allowedOrigins, origin) {
 
@@ -52,8 +58,6 @@ func Middleware(allowedOrigins []string) func(http.Handler) http.Handler {
 
 			header := w.Header()
 			header.Set("Access-Control-Allow-Origin", origin)
-
-			header.Add("Vary", "Origin")
 
 			header.Set("Access-Control-Allow-Credentials", "true")
 			header.Set("Access-Control-Expose-Headers", exposeHeaders)

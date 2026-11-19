@@ -21,6 +21,10 @@ type WebPush struct {
 }
 
 func (w WebPush) Send(ctx context.Context, sub domain.PushSubscription, payload []byte, topic string) (int, error) {
+	return w.SendTTL(ctx, sub, payload, topic, pushTTL)
+}
+
+func (w WebPush) SendTTL(ctx context.Context, sub domain.PushSubscription, payload []byte, topic string, ttl int) (int, error) {
 	resp, err := webpush.SendNotificationWithContext(ctx, payload, &webpush.Subscription{
 		Endpoint: sub.Endpoint,
 		Keys:     webpush.Keys{P256dh: sub.P256DH, Auth: sub.Auth},
@@ -28,7 +32,7 @@ func (w WebPush) Send(ctx context.Context, sub domain.PushSubscription, payload 
 		HTTPClient:      w.Client,
 		Subscriber:      w.Subject,
 		Topic:           topic,
-		TTL:             pushTTL,
+		TTL:             ttl,
 		Urgency:         webpush.UrgencyHigh,
 		VAPIDPublicKey:  w.PublicKey,
 		VAPIDPrivateKey: w.PrivateKey,

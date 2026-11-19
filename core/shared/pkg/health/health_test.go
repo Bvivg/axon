@@ -34,7 +34,7 @@ func probe(t *testing.T, h *health.Handler, path string) (int, map[string]any) {
 	h.Register(mux)
 
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
 
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -142,7 +142,7 @@ func TestProbesAreNotCacheable(t *testing.T) {
 
 	for _, path := range []string{health.PathLive, health.PathReady} {
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
 
 		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 			t.Errorf("%s Cache-Control = %q, want no-store", path, got)

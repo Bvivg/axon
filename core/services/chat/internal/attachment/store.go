@@ -156,6 +156,14 @@ func (s *Store) Download(ctx context.Context, key, path string) error {
 	return nil
 }
 
+func (s *Store) EnsurePrivate(ctx context.Context) error {
+	return s.client.SetBucketPolicy(ctx, s.bucket, "")
+}
+
+func (s *Store) Open(ctx context.Context, key string) (*minio.Object, error) {
+	return s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+}
+
 func wrapMultipart(what string, err error) error {
 	if minio.ToErrorResponse(err).Code == "NoSuchUpload" {
 		return ErrNoSuchUpload

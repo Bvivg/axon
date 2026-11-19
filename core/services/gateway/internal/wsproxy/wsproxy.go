@@ -16,14 +16,17 @@ import (
 const BearerPrefix = "axon.bearer."
 
 type Handler struct {
-	upstream string
-	protocol string
-	verifier *authn.Verifier
-	origins  []string
-	log      *slog.Logger
+	upstream      string
+	protocol      string
+	verifier      *authn.Verifier
+	origins       []string
+	log           *slog.Logger
+	socketOptions ws.Options
 }
 
 type Config struct {
+	SocketOptions ws.Options
+
 	Upstream string
 
 	Protocol string
@@ -50,11 +53,12 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		upstream: cfg.Upstream,
-		protocol: cfg.Protocol,
-		verifier: cfg.Verifier,
-		origins:  cfg.Origins,
-		log:      cfg.Logger,
+		socketOptions: cfg.SocketOptions,
+		upstream:      cfg.Upstream,
+		protocol:      cfg.Protocol,
+		verifier:      cfg.Verifier,
+		origins:       cfg.Origins,
+		log:           cfg.Logger,
 	}, nil
 }
 
@@ -72,11 +76,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	options := h.socketOptions
+	options.Logger = h.log
 	client, err := ws.Accept(w, r, ws.AcceptOptions{
 
 		Subprotocols:   []string{h.protocol},
 		OriginPatterns: h.origins,
-		Options:        ws.Options{Logger: h.log},
+		Options:        options,
 	})
 	if err != nil {
 		h.log.WarnContext(ctx, "websocket upgrade failed", "error", err)
@@ -90,7 +96,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	upstream, err := ws.Dial(ctx, h.upstream, ws.DialOptions{
 		Subprotocols: []string{h.protocol},
 		Header:       header,
-		Options:      ws.Options{Logger: h.log},
+		Options:      options,
 	})
 	if err != nil {
 		h.log.ErrorContext(ctx, "could not reach the realtime service",

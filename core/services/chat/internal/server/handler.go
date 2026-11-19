@@ -549,10 +549,11 @@ func (h *Handler) ListMessages(
 	}
 
 	history, err := h.svc.ListMessages(ctx, roomID, claims.UserID, domain.Page{
-		Limit:     int(req.Msg.GetLimit()),
-		BeforeSeq: req.Msg.GetBeforeSeq(),
-		AfterSeq:  req.Msg.GetAfterSeq(),
-		Kinds:     fromProtoMessageKinds(req.Msg.GetKinds()),
+		Limit:               int(req.Msg.GetLimit()),
+		BeforeSeq:           req.Msg.GetBeforeSeq(),
+		AfterSeq:            req.Msg.GetAfterSeq(),
+		Kinds:               fromProtoMessageKinds(req.Msg.GetKinds()),
+		IncludeGroupedItems: req.Msg.GetIncludeGroupedItems(),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)

@@ -166,7 +166,7 @@ func TestClientIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httpRequest(tt.remoteAddr, tt.forwardedFor)
+			req := httpRequest(t, tt.remoteAddr, tt.forwardedFor)
 
 			if got := ratelimit.ClientIP(req, tt.trustedProxies); got != tt.want {
 				t.Fatalf("ClientIP = %q, want %q", got, tt.want)
@@ -175,11 +175,31 @@ func TestClientIP(t *testing.T) {
 	}
 }
 
-func httpRequest(remoteAddr, forwardedFor string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "http://gateway/x", nil)
+func httpRequest(t *testing.T, remoteAddr, forwardedFor string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://gateway/x", nil)
 	req.RemoteAddr = remoteAddr
 	if forwardedFor != "" {
 		req.Header.Set(ratelimit.ForwardedForHeader, forwardedFor)
 	}
 	return req
+}
+
+func TestRetryAfterTracksRefillWithoutExtendingTheWait(t *testing.T) {
+	clock := time.Now()
+	l := ratelimit.New(ratelimit.Config{PerMinute: 10, Burst: 1, Now: func() time.Time { return clock }})
+	l.Allow("caller")
+	if allowed, wait := l.AllowWithRetry("caller"); allowed || wait != 6*time.Second {
+		t.Fatalf("got (%v, %v), want (false, 6s)", allowed, wait)
+	}
+	clock = clock.Add(1500 * time.Millisecond)
+	for range 2 {
+		if allowed, wait := l.AllowWithRetry("caller"); allowed || wait != 4500*time.Millisecond {
+			t.Fatalf("got (%v, %v), want (false, 4.5s)", allowed, wait)
+		}
+	}
+	clock = clock.Add(4500 * time.Millisecond)
+	if allowed, wait := l.AllowWithRetry("caller"); !allowed || wait != 0 {
+		t.Fatalf("got (%v, %v), want (true, 0)", allowed, wait)
+	}
 }

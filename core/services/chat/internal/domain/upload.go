@@ -42,8 +42,9 @@ type UploadSession struct {
 	PartSize  int64
 	PartCount int
 
-	StagingKey  string
-	MultipartID string
+	StagingKey     string
+	MultipartID    string
+	ExpectedSHA256 []byte
 
 	Status   UploadStatus
 	Failure  string
@@ -67,4 +68,16 @@ type StoredFile struct {
 	Payload    json.RawMessage
 	ObjectKeys []string
 	SizeBytes  int64
+}
+
+func (f StoredFile) PayloadFor(filename string) (json.RawMessage, error) {
+	if f.Kind != MessageKindAttachment {
+		return f.Payload, nil
+	}
+	var payload AttachmentPayload
+	if err := json.Unmarshal(f.Payload, &payload); err != nil {
+		return nil, err
+	}
+	payload.Filename = filename
+	return json.Marshal(payload)
 }

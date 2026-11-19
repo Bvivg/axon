@@ -166,7 +166,7 @@ func TestSearchUsersFindsAUsername(t *testing.T) {
 	target := h.register(t, "eve.online@example.com", validPassword)
 
 	for _, query := range []string{"eve_online", "@Eve_Online"} {
-		found, err := h.svc.SearchUsers(context.Background(), caller.User.ID, query)
+		found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, query, 0, "")
 		if err != nil {
 			t.Fatalf("SearchUsers(%q): %v", query, err)
 		}

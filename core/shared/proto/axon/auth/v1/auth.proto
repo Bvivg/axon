@@ -176,7 +176,7 @@ message UpdateProfileResponse {
   User user = 1;
 }
 
-message ListSessionsRequest {}
+message ListSessionsRequest { optional bool include_presence = 1; }
 
 message ListSessionsResponse {
   repeated Session sessions = 1;
@@ -262,10 +262,13 @@ message PublicProfile {
 
 message SearchUsersRequest {
   string query = 1;
+  optional int32 page_size = 2;
+  optional string page_token = 3;
 }
 
 message SearchUsersResponse {
   repeated PublicProfile users = 1;
+  optional string next_page_token = 2;
 }
 
 message GetUsersPublicProfilesRequest {

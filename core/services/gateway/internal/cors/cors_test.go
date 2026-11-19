@@ -29,8 +29,9 @@ func serve(t *testing.T, req *http.Request, origins ...string) (*httptest.Respon
 	return rec, reached
 }
 
-func preflight(origin string) *http.Request {
-	req := httptest.NewRequest(http.MethodOptions, "/axon.auth.v1.AuthService/Login", nil)
+func preflight(t *testing.T, origin string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodOptions, "/axon.auth.v1.AuthService/Login", nil)
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	req.Header.Set("Access-Control-Request-Headers", "content-type,connect-protocol-version")
@@ -38,7 +39,7 @@ func preflight(origin string) *http.Request {
 }
 
 func TestPreflightFromAnAllowedOrigin(t *testing.T) {
-	rec, reached := serve(t, preflight(allowed))
+	rec, reached := serve(t, preflight(t, allowed))
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
@@ -73,7 +74,7 @@ func TestPreflightFromAnAllowedOrigin(t *testing.T) {
 }
 
 func TestPreflightFromADisallowedOrigin(t *testing.T) {
-	rec, reached := serve(t, preflight("https://evil.example"))
+	rec, reached := serve(t, preflight(t, "https://evil.example"))
 
 	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
 		t.Error("a disallowed origin was granted CORS headers")
@@ -87,7 +88,7 @@ func TestPreflightFromADisallowedOrigin(t *testing.T) {
 }
 
 func TestActualRequestFromAnAllowedOrigin(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/axon.auth.v1.AuthService/Login", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/axon.auth.v1.AuthService/Login", nil)
 	req.Header.Set("Origin", allowed)
 
 	rec, reached := serve(t, req)
@@ -100,14 +101,14 @@ func TestActualRequestFromAnAllowedOrigin(t *testing.T) {
 	}
 }
 
-func TestActualRequestFromADisallowedOriginGetsNoHeaders(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/axon.auth.v1.AuthService/Login", nil)
+func TestActualRequestFromADisallowedOriginIsRejected(t *testing.T) {
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/axon.auth.v1.AuthService/Login", nil)
 	req.Header.Set("Origin", "https://evil.example")
 
 	rec, reached := serve(t, req)
 
-	if !reached {
-		t.Fatal("the request did not reach the handler")
+	if reached || rec.Code != http.StatusForbidden {
+		t.Fatal("a disallowed origin reached the handler")
 	}
 	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
 		t.Error("a disallowed origin was granted CORS headers")
@@ -115,7 +116,7 @@ func TestActualRequestFromADisallowedOriginGetsNoHeaders(t *testing.T) {
 }
 
 func TestResponseVariesByOrigin(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/x", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/x", nil)
 	req.Header.Set("Origin", allowed)
 
 	rec, _ := serve(t, req)
@@ -126,7 +127,7 @@ func TestResponseVariesByOrigin(t *testing.T) {
 }
 
 func TestRequestWithoutOriginIsUntouched(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/x", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/x", nil)
 
 	rec, reached := serve(t, req)
 
@@ -142,7 +143,7 @@ func TestMultipleAllowedOrigins(t *testing.T) {
 	origins := []string{"http://localhost:3000", "https://axon.example"}
 
 	for _, origin := range origins {
-		req := httptest.NewRequest(http.MethodPost, "/x", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/x", nil)
 		req.Header.Set("Origin", origin)
 
 		rec, _ := serve(t, req, origins...)
@@ -161,7 +162,7 @@ func TestOriginMatchingIsExact(t *testing.T) {
 		"https://localhost:3000",
 		"http://LOCALHOST:3000",
 	} {
-		req := httptest.NewRequest(http.MethodPost, "/x", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/x", nil)
 		req.Header.Set("Origin", origin)
 
 		rec, _ := serve(t, req)

@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
+	"github.com/bvivg/axon/core/shared/pkg/postgres"
 )
 
 const messageColumns = `id, room_id, author_id, body, client_id, seq, sent_at, kind, payload, reply_to_id, forwarded_from_id,
@@ -192,38 +192,38 @@ func (r *Repository) ListMessages(
 	roomID, callerID uuid.UUID,
 	page domain.Page,
 ) ([]domain.Message, bool, error) {
-
-	limit := page.Limit + 1
+	const kindFilter = `
+		AND (cardinality($5::text[]) = 0 OR (m.deleted_at IS NULL AND (
+			m.kind = ANY($5::text[]) OR ($6 AND m.kind = 'album' AND EXISTS (
+				SELECT 1 FROM unnest($5::text[]) AS wanted(kind)
+				WHERE m.payload @> jsonb_build_object('items', jsonb_build_array(jsonb_build_object('kind', wanted.kind)))
+			))
+		)))`
 
 	kinds := make([]string, 0, len(page.Kinds))
 	for _, kind := range page.Kinds {
 		kinds = append(kinds, string(kind))
 	}
 
-	var (
-		query string
-		args  []any
-	)
+	var query string
+	cursor := page.AfterSeq
 
 	if page.Backward() {
 		query = messageWithReply + `
 			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
-			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND ($2 = 0 OR m.seq < $2)
-				AND (cardinality($5::text[]) = 0 OR (m.kind = ANY($5::text[]) AND m.deleted_at IS NULL))
+			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND ($2 = 0 OR m.seq < $2)` + kindFilter + `
 			ORDER BY m.seq DESC
 			LIMIT $3`
-		args = []any{roomID, page.BeforeSeq, limit, callerID, kinds}
+		cursor = page.BeforeSeq
 	} else {
 		query = messageWithReply + `
 			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
-			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND m.seq > $2
-				AND (cardinality($5::text[]) = 0 OR (m.kind = ANY($5::text[]) AND m.deleted_at IS NULL))
+			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND m.seq > $2` + kindFilter + `
 			ORDER BY m.seq ASC
 			LIMIT $3`
-		args = []any{roomID, page.AfterSeq, limit, callerID, kinds}
 	}
 
-	rows, err := r.q.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, roomID, cursor, page.Limit+1, callerID, kinds, page.IncludeGroupedItems)
 	if err != nil {
 		return nil, false, fmt.Errorf("repository: list messages: %w", err)
 	}
@@ -253,12 +253,6 @@ func (r *Repository) ListMessages(
 	return messages, hasMore, nil
 }
 
-var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-
-func containing(s string) string {
-	return "%" + likeEscaper.Replace(s) + "%"
-}
-
 func (r *Repository) SearchMessages(
 	ctx context.Context,
 	roomID, callerID uuid.UUID,
@@ -272,7 +266,7 @@ func (r *Repository) SearchMessages(
 		ORDER BY m.seq DESC
 		LIMIT $4`
 
-	rows, err := r.q.Query(ctx, q, roomID, callerID, containing(query), limit)
+	rows, err := r.q.Query(ctx, q, roomID, callerID, postgres.Containing(query), limit)
 	if err != nil {
 		return nil, fmt.Errorf("repository: search messages: %w", err)
 	}

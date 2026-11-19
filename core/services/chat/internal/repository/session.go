@@ -12,7 +12,7 @@ import (
 )
 
 const sessionColumns = `id, uploader_id, mode, filename, size_bytes, part_size, part_count,
-	staging_key, multipart_id, status, failure, upload_id, created_at, updated_at`
+	staging_key, multipart_id, status, failure, upload_id, created_at, updated_at, expected_sha256`
 
 func scanSession(row scannable) (domain.UploadSession, error) {
 	var (
@@ -22,7 +22,7 @@ func scanSession(row scannable) (domain.UploadSession, error) {
 	)
 	if err := row.Scan(
 		&s.ID, &s.UploaderID, &mode, &s.Filename, &s.SizeBytes, &s.PartSize, &s.PartCount,
-		&s.StagingKey, &s.MultipartID, &status, &s.Failure, &s.UploadID, &s.CreatedAt, &s.UpdatedAt,
+		&s.StagingKey, &s.MultipartID, &status, &s.Failure, &s.UploadID, &s.CreatedAt, &s.UpdatedAt, &s.ExpectedSHA256,
 	); err != nil {
 		return domain.UploadSession{}, err
 	}
@@ -33,16 +33,68 @@ func scanSession(row scannable) (domain.UploadSession, error) {
 
 func (r *Repository) CreateSession(ctx context.Context, s domain.UploadSession) (domain.UploadSession, error) {
 	const query = `
-		INSERT INTO upload_sessions (id, uploader_id, mode, filename, size_bytes, part_size, part_count, staging_key, multipart_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO upload_sessions (id, uploader_id, mode, filename, size_bytes, part_size, part_count, staging_key, multipart_id, expected_sha256, status, upload_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING ` + sessionColumns
 
+	if s.Status == "" {
+		s.Status = domain.UploadUploading
+	}
 	stored, err := scanSession(r.q.QueryRow(ctx, query,
-		s.ID, s.UploaderID, string(s.Mode), s.Filename, s.SizeBytes, s.PartSize, s.PartCount, s.StagingKey, s.MultipartID))
+		s.ID, s.UploaderID, string(s.Mode), s.Filename, s.SizeBytes, s.PartSize, s.PartCount, s.StagingKey, s.MultipartID,
+		s.ExpectedSHA256, string(s.Status), s.UploadID))
 	if err != nil {
 		return domain.UploadSession{}, fmt.Errorf("repository: create upload session: %w", err)
 	}
 	return stored, nil
+}
+
+func (r *Repository) ReuseSession(ctx context.Context, session domain.UploadSession) (domain.UploadSession, bool, error) {
+	var saved domain.UploadSession
+	var found bool
+	err := r.InTx(ctx, func(tx *Repository) error {
+		const query = `
+			SELECT f.id, f.kind, f.sha256, f.payload, f.object_keys, f.size_bytes
+			FROM files f JOIN file_sources s ON s.file_id = f.id
+			WHERE s.mode = $1 AND s.source_sha256 = $2
+			  AND (s.source_size_bytes IS NULL OR s.source_size_bytes = $4)
+			  AND EXISTS (
+				SELECT 1 FROM uploads u WHERE u.file_id = f.id AND (
+					(u.uploader_id = $3
+					 AND NOT EXISTS (SELECT 1 FROM messages WHERE upload_id = u.id)
+					 AND NOT EXISTS (SELECT 1 FROM message_uploads WHERE upload_id = u.id))
+					OR EXISTS (
+						SELECT 1 FROM messages m JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $3
+						WHERE m.deleted_at IS NULL AND m.seq > rm.cleared_through_seq AND rm.hidden_at IS NULL
+						  AND (m.upload_id = u.id OR EXISTS (
+							SELECT 1 FROM message_uploads mu WHERE mu.message_id = m.id AND mu.upload_id = u.id))
+					)
+				)
+			  )
+			FOR UPDATE OF f`
+		file, err := scanFile(tx.q.QueryRow(ctx, query, string(session.Mode), session.ExpectedSHA256, session.UploaderID, session.SizeBytes))
+		if noRows(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("repository: reusable file: %w", err)
+		}
+		payload, err := file.PayloadFor(session.Filename)
+		if err != nil {
+			return fmt.Errorf("repository: reusable payload: %w", err)
+		}
+		upload, err := tx.CreateUpload(ctx, domain.Upload{
+			ID: uuid.New(), UploaderID: session.UploaderID, Kind: file.Kind, Payload: payload, FileID: &file.ID,
+		})
+		if err != nil {
+			return err
+		}
+		session.Status, session.UploadID = domain.UploadReady, &upload.ID
+		saved, err = tx.CreateSession(ctx, session)
+		found = err == nil
+		return err
+	})
+	return saved, found, err
 }
 
 func (r *Repository) SessionByID(ctx context.Context, id uuid.UUID) (domain.UploadSession, error) {
@@ -198,6 +250,7 @@ func (r *Repository) SaveFile(
 	file domain.StoredFile,
 	mode domain.UploadMode,
 	source []byte,
+	sourceSize int64,
 ) (domain.StoredFile, bool, error) {
 	var (
 		saved   domain.StoredFile
@@ -217,10 +270,10 @@ func (r *Repository) SaveFile(
 		}
 
 		const remember = `
-			INSERT INTO file_sources (mode, source_sha256, file_id)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (mode, source_sha256) DO NOTHING`
-		if _, err := tx.q.Exec(ctx, remember, string(mode), source, stored.ID); err != nil {
+			INSERT INTO file_sources (mode, source_sha256, file_id, source_size_bytes)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (mode, source_sha256) DO UPDATE SET source_size_bytes = EXCLUDED.source_size_bytes`
+		if _, err := tx.q.Exec(ctx, remember, string(mode), source, stored.ID, sourceSize); err != nil {
 			return fmt.Errorf("repository: remember file source: %w", err)
 		}
 

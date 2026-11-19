@@ -47,7 +47,7 @@ type Store interface {
 	RevokeRole(ctx context.Context, userID, roleID uuid.UUID) error
 	UserHasPermission(ctx context.Context, userID uuid.UUID, namespace, action string) (bool, error)
 
-	SearchExact(ctx context.Context, query string, excludeUserID uuid.UUID) ([]domain.User, error)
+	SearchUsers(ctx context.Context, query string, excludeUserID uuid.UUID, limit int, after *domain.UserSearchCursor) ([]domain.UserSearchResult, error)
 	UsersByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.User, error)
 }
 

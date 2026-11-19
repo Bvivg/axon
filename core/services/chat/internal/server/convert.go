@@ -250,6 +250,9 @@ func setProtoMessagePayload(message *chatv1.Message, kind domain.MessageKind, ra
 				SizeBytes:    item.SizeBytes,
 				Mime:         item.Mime,
 			}
+			if item.Filename != "" {
+				album.Items[i].Filename = &item.Filename
+			}
 		}
 		message.Payload = &chatv1.Message_Album{Album: album}
 	case domain.MessageKindSystem:

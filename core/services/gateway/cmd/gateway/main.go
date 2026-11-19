@@ -14,11 +14,14 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/ws"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/attachmentproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/avatarproxy"
@@ -26,6 +29,8 @@ import (
 	"github.com/bvivg/axon/core/services/gateway/internal/cookie"
 	"github.com/bvivg/axon/core/services/gateway/internal/cors"
 	"github.com/bvivg/axon/core/services/gateway/internal/guard"
+	"github.com/bvivg/axon/core/services/gateway/internal/livekitproxy"
+	"github.com/bvivg/axon/core/services/gateway/internal/mediaproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/proxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
 	"github.com/bvivg/axon/core/services/gateway/internal/wsproxy"
@@ -91,6 +96,7 @@ func run() error {
 		return err
 	}
 
+	search := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.SearchPerMinute})
 	standard := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.StandardPerMinute})
 	sensitive := ratelimit.New(ratelimit.Config{
 		PerMinute: cfg.RateLimit.SensitivePerMinute,
@@ -98,12 +104,15 @@ func run() error {
 	})
 	uploads := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadsPerMinute, Burst: uploadsBurst})
 	uploadParts := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadPartsPerMinute})
+	go search.Start(ctx)
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
 	go uploads.Start(ctx)
+	go uploadParts.Start(ctx)
 
 	policyGuard, err := guard.New(guard.Config{
 		Verifier:  verifier,
+		Search:    search,
 		Standard:  standard,
 		Sensitive: sensitive,
 		Logger:    log,
@@ -134,11 +143,21 @@ func run() error {
 	)
 
 	chatSocket, err := wsproxy.New(wsproxy.Config{
-		Upstream: cfg.ChatSocketURL,
-		Protocol: chatSubprotocol,
-		Verifier: verifier,
-		Origins:  cfg.CORS.AllowedOrigins,
-		Logger:   log,
+		SocketOptions: ws.Options{Compression: true, ReadLimit: ws.LargeMessageReadLimit},
+		Upstream:      cfg.ChatSocketURL,
+		Protocol:      chatSubprotocol,
+		Verifier:      verifier,
+		Origins:       cfg.CORS.AllowedOrigins,
+		Logger:        log,
+	})
+	if err != nil {
+		return err
+	}
+
+	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(middleware.NewCorrelationInterceptor()))
+	gameSocket, err := wsproxy.New(wsproxy.Config{
+		SocketOptions: ws.Options{ReadLimit: 4096},
+		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
 	})
 	if err != nil {
 		return err
@@ -156,6 +175,10 @@ func run() error {
 	}
 
 	chatProxy, err := proxy.NewChat(chatClient)
+	if err != nil {
+		return err
+	}
+	callsProxy, err := proxy.NewCalls(upstream, cfg.ChatServiceURL, connect.WithInterceptors(middleware.NewCorrelationInterceptor()))
 	if err != nil {
 		return err
 	}
@@ -202,9 +225,27 @@ func run() error {
 
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, chatSocket, presenceSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
+	}
+	mediaDownload, err := mediaproxy.New(cfg.ChatServiceURL, verifier)
+	if err != nil {
+		return err
+	}
+	mediaMux := http.NewServeMux()
+	mediaMux.Handle(authn.MediaPath+"/", cors.Middleware(cfg.CORS.AllowedOrigins)(mediaDownload))
+	mediaMux.Handle("/", publicSrv.Handler)
+	publicSrv.Handler = mediaMux
+	if cfg.LiveKitURL != "" {
+		mediaProxy, err := livekitproxy.New(livekitproxy.Config{Upstream: cfg.LiveKitURL, ChatURL: cfg.ChatServiceURL, InternalKey: cfg.CallsInternalKey.Reveal(), Origins: cfg.CORS.AllowedOrigins})
+		if err != nil {
+			return err
+		}
+		mux := http.NewServeMux()
+		mux.Handle("/livekit/", cors.Middleware(cfg.CORS.AllowedOrigins)(mediaProxy))
+		mux.Handle("/", publicSrv.Handler)
+		publicSrv.Handler = mux
 	}
 
 	adminSrv := &http.Server{
@@ -241,8 +282,11 @@ func publicHandler(
 	cfg config.Config,
 	authProxy authv1connect.AuthServiceHandler,
 	chatProxy chatv1connect.ChatServiceHandler,
+	callsProxy callsv1connect.CallsServiceHandler,
+	gameProxy gamev1connect.GameServiceHandler,
 	chatSocket http.Handler,
 	presenceSocket http.Handler,
+	gameSocket http.Handler,
 	avatarUpload http.Handler,
 	attachmentUpload http.Handler,
 	uploadSessions *attachmentproxy.Sessions,
@@ -254,9 +298,12 @@ func publicHandler(
 
 	mux.Handle(chatSocketPath, chatSocket)
 	mux.Handle(presenceSocketPath, presenceSocket)
+	mux.Handle("/ws/game", gameSocket)
 	mux.Handle("POST "+avatarUploadPath, avatarUpload)
 	mux.Handle("POST "+attachmentUploadPath, attachmentUpload)
 	uploadSessions.Register(mux, uploadSessionsPath)
+	mux.Handle(callsv1connect.NewCallsServiceHandler(callsProxy, connect.WithInterceptors(middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
+	mux.Handle(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(

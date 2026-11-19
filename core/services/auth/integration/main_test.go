@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -181,7 +182,7 @@ func startMinio(ctx context.Context) (*tcminio.MinioContainer, error) {
 	}
 
 	avatarPublicURL = "http://" + endpoint
-	avatarPipeline = avatar.NewPipeline(store, avatar.NewURLBuilder(avatarPublicURL, avatarsBucket))
+	avatarPipeline = avatar.NewPipeline(store, avatar.NewURLBuilder(avatarPublicURL, avatarsBucket), http.DefaultClient)
 	return minioContainer, nil
 }
 

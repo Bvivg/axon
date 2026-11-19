@@ -259,7 +259,7 @@ func TestAvatarUploadIsResizedAndPublic(t *testing.T) {
 	}
 }
 
-func TestOAuthSignInImportsTheProviderAvatar(t *testing.T) {
+func TestOAuthSignInRejectsPrivateProviderAvatar(t *testing.T) {
 	c := newCaller(t)
 
 	sourceURL := stageTestImageInMinio(t)
@@ -276,22 +276,8 @@ func TestOAuthSignInImportsTheProviderAvatar(t *testing.T) {
 		t.Fatalf("sign in with an avatar_url: %v", err)
 	}
 
-	if result.GetUser().GetAvatarUrls() == nil {
-		t.Fatal("the signed-in user has no avatar_urls; the provider avatar was not imported")
-	}
-
-	fetchReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
-		result.GetUser().GetAvatarUrls().GetMedium(), nil)
-	if err != nil {
-		t.Fatalf("build fetch request: %v", err)
-	}
-	fetched, err := http.DefaultClient.Do(fetchReq)
-	if err != nil {
-		t.Fatalf("fetch the imported avatar publicly: %v", err)
-	}
-	defer func() { _ = fetched.Body.Close() }()
-	if fetched.StatusCode != http.StatusOK {
-		t.Errorf("public fetch of the imported avatar: status %d", fetched.StatusCode)
+	if result.GetUser().GetAvatarUrls() != nil {
+		t.Fatal("an avatar from the private storage network was imported")
 	}
 }
 

@@ -9,6 +9,10 @@ import (
 )
 
 func (s *Service) ListSessions(ctx context.Context, userID, currentFamilyID uuid.UUID) ([]domain.Session, error) {
+	return s.ListSessionsWithPresence(ctx, userID, currentFamilyID, true)
+}
+
+func (s *Service) ListSessionsWithPresence(ctx context.Context, userID, currentFamilyID uuid.UUID, includePresence bool) ([]domain.Session, error) {
 	sessions, err := s.store.Sessions(ctx, userID, s.now().UTC())
 	if err != nil {
 		return nil, err
@@ -18,7 +22,7 @@ func (s *Service) ListSessions(ctx context.Context, userID, currentFamilyID uuid
 		sessions[i].Current = sessions[i].FamilyID == currentFamilyID
 	}
 
-	if s.presence == nil || len(sessions) == 0 {
+	if !includePresence || s.presence == nil || len(sessions) == 0 {
 		return sessions, nil
 	}
 
@@ -37,6 +41,19 @@ func (s *Service) ListSessions(ctx context.Context, userID, currentFamilyID uuid
 		sessions[i].Online = online[sessions[i].FamilyID.String()]
 	}
 	return sessions, nil
+}
+
+func (s *Service) SessionFamilyActive(ctx context.Context, userID, familyID uuid.UUID) (bool, error) {
+	sessions, err := s.store.Sessions(ctx, userID, s.now().UTC())
+	if err != nil {
+		return false, err
+	}
+	for _, session := range sessions {
+		if session.FamilyID == familyID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {

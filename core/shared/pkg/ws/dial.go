@@ -27,6 +27,10 @@ type DialOptions struct {
 
 func Dial(ctx context.Context, url string, opts DialOptions) (*Conn, error) {
 	opts.applyDefaults()
+	compression := websocket.CompressionDisabled
+	if opts.Compression {
+		compression = websocket.CompressionNoContextTakeover
+	}
 	if opts.HandshakeTimeout == 0 {
 		opts.HandshakeTimeout = DefaultHandshakeTimeout
 	}
@@ -45,9 +49,10 @@ func Dial(ctx context.Context, url string, opts DialOptions) (*Conn, error) {
 	defer cancel()
 
 	raw, _, err := websocket.Dial(handshakeCtx, url, &websocket.DialOptions{ //nolint:bodyclose // owned by the library
-		HTTPClient:   opts.HTTPClient,
-		HTTPHeader:   header,
-		Subprotocols: opts.Subprotocols,
+		HTTPClient:      opts.HTTPClient,
+		HTTPHeader:      header,
+		Subprotocols:    opts.Subprotocols,
+		CompressionMode: compression,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("ws: dial %s: %w", url, err)

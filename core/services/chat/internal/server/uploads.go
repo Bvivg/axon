@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -58,9 +59,10 @@ func (h *UploadSessionsHandler) Register(mux *http.ServeMux) {
 }
 
 type startRequest struct {
-	As   string `json:"as"`
-	Name string `json:"name"`
-	Size int64  `json:"size"`
+	As           string `json:"as"`
+	Name         string `json:"name"`
+	Size         int64  `json:"size"`
+	SourceSHA256 string `json:"source_sha256"`
 }
 
 type sessionResponse struct {
@@ -90,12 +92,29 @@ func (h *UploadSessionsHandler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.manager.Start(r.Context(), user, domain.UploadMode(mode), sanitizeFilename(req.Name), req.Size)
+	var source []byte
+	if req.SourceSHA256 != "" {
+		var err error
+		source, err = hex.DecodeString(req.SourceSHA256)
+		if err != nil || len(source) != 32 {
+			http.Error(w, "source_sha256 must be a SHA-256 hex digest", http.StatusBadRequest)
+			return
+		}
+	}
+	s, err := h.manager.Start(r.Context(), user, domain.UploadMode(mode), sanitizeFilename(req.Name), req.Size, source)
 	if err != nil {
 		h.fail(r.Context(), w, err)
 		return
 	}
-	h.write(w, http.StatusCreated, uploads.View{Session: s})
+	view := uploads.View{Session: s}
+	if s.Status == domain.UploadReady {
+		view, err = h.manager.Status(r.Context(), user, s.ID)
+		if err != nil {
+			h.fail(r.Context(), w, err)
+			return
+		}
+	}
+	h.write(w, http.StatusCreated, view)
 }
 
 func (h *UploadSessionsHandler) putPart(w http.ResponseWriter, r *http.Request) {
@@ -245,6 +264,7 @@ func (h *UploadSessionsHandler) fail(ctx context.Context, w http.ResponseWriter,
 	case errors.Is(err, uploads.ErrTooLarge), errors.As(err, &tooLarge):
 		http.Error(w, "the file is too large", http.StatusRequestEntityTooLarge)
 	case errors.Is(err, uploads.ErrPartSize),
+		errors.Is(err, uploads.ErrBadHash),
 		errors.Is(err, uploads.ErrBadPart),
 		errors.Is(err, uploads.ErrEmpty):
 		http.Error(w, err.Error(), http.StatusBadRequest)

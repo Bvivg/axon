@@ -182,9 +182,9 @@ type scanRow interface {
 	Scan(dest ...any) error
 }
 
-func scanUser(row scanRow) (domain.User, error) {
+func scanUser(row scanRow, extra ...any) (domain.User, error) {
 	var u domain.User
-	err := row.Scan(
+	dest := []any{
 		&u.ID,
 		&u.Email,
 		&u.EmailVerified,
@@ -198,6 +198,7 @@ func scanUser(row scanRow) (domain.User, error) {
 		&u.CreatedAt,
 		&u.UpdatedAt,
 		&u.LastSeenAt,
-	)
+	}
+	err := row.Scan(append(dest, extra...)...)
 	return u, err
 }

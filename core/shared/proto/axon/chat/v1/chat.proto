@@ -145,6 +145,7 @@ message AlbumItem {
   int64 duration_ms = 7;
   int64 size_bytes = 8;
   string mime = 9;
+  optional string filename = 10;
 }
 
 message AlbumPayload {
@@ -247,6 +248,8 @@ message ListMessagesRequest {
   optional int64 after_seq = 4;
 
   repeated MessageKind kinds = 5;
+
+  optional bool include_grouped_items = 6;
 }
 
 message ListMessagesResponse {

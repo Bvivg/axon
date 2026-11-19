@@ -1,6 +1,7 @@
 package uploads
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -33,14 +34,17 @@ const (
 )
 
 var (
-	ErrTooLarge = errors.New("uploads: the file is too large")
-	ErrPartSize = errors.New("uploads: the part has the wrong size")
-	ErrBadPart  = errors.New("uploads: no such part number")
-	ErrEmpty    = errors.New("uploads: the file is empty")
+	ErrTooLarge     = errors.New("uploads: the file is too large")
+	ErrPartSize     = errors.New("uploads: the part has the wrong size")
+	ErrBadPart      = errors.New("uploads: no such part number")
+	ErrEmpty        = errors.New("uploads: the file is empty")
+	ErrBadHash      = errors.New("uploads: invalid source hash")
+	ErrHashMismatch = errors.New("uploads: the file does not match its source hash")
 )
 
 type Sessions interface {
 	CreateSession(ctx context.Context, s domain.UploadSession) (domain.UploadSession, error)
+	ReuseSession(ctx context.Context, s domain.UploadSession) (domain.UploadSession, bool, error)
 	SessionByID(ctx context.Context, id uuid.UUID) (domain.UploadSession, error)
 	MarkSessionProcessing(ctx context.Context, id uuid.UUID) error
 	ClaimSession(ctx context.Context, id uuid.UUID, staleAfter time.Duration) (domain.UploadSession, bool, error)
@@ -54,7 +58,7 @@ type Sessions interface {
 	UploadByID(ctx context.Context, id uuid.UUID) (domain.Upload, error)
 
 	FileBySource(ctx context.Context, mode domain.UploadMode, source []byte) (domain.StoredFile, bool, error)
-	SaveFile(ctx context.Context, file domain.StoredFile, mode domain.UploadMode, source []byte) (domain.StoredFile, bool, error)
+	SaveFile(ctx context.Context, file domain.StoredFile, mode domain.UploadMode, source []byte, sourceSize int64) (domain.StoredFile, bool, error)
 }
 
 type Objects interface {
@@ -151,12 +155,15 @@ func (m *Manager) Start(
 	mode domain.UploadMode,
 	filename string,
 	size int64,
+	source []byte,
 ) (domain.UploadSession, error) {
 	switch {
 	case size <= 0:
 		return domain.UploadSession{}, ErrEmpty
 	case size > m.limitFor(mode):
 		return domain.UploadSession{}, ErrTooLarge
+	case len(source) != 0 && len(source) != sha256.Size:
+		return domain.UploadSession{}, ErrBadHash
 	}
 
 	parts := int((size + m.partSize - 1) / m.partSize)
@@ -165,23 +172,28 @@ func (m *Manager) Start(
 	}
 
 	id := m.newID()
+	session := domain.UploadSession{
+		ID: id, UploaderID: uploader, Mode: mode, Filename: filename, SizeBytes: size,
+		PartSize: m.partSize, PartCount: parts, ExpectedSHA256: bytes.Clone(source),
+	}
+	if len(source) > 0 {
+		ready, found, err := m.sessions.ReuseSession(ctx, session)
+		if err != nil || found {
+			return ready, err
+		}
+	}
 	key := "staging/" + id.String()
 	multipart, err := m.objects.StartMultipart(ctx, key)
 	if err != nil {
 		return domain.UploadSession{}, err
 	}
 
-	return m.sessions.CreateSession(ctx, domain.UploadSession{
-		ID:          id,
-		UploaderID:  uploader,
-		Mode:        mode,
-		Filename:    filename,
-		SizeBytes:   size,
-		PartSize:    m.partSize,
-		PartCount:   parts,
-		StagingKey:  key,
-		MultipartID: multipart,
-	})
+	session.StagingKey, session.MultipartID = key, multipart
+	stored, err := m.sessions.CreateSession(ctx, session)
+	if err != nil {
+		_ = m.objects.AbortMultipart(context.WithoutCancel(ctx), key, multipart)
+	}
+	return stored, err
 }
 
 func (m *Manager) owned(ctx context.Context, uploader, id uuid.UUID) (domain.UploadSession, error) {
@@ -455,19 +467,12 @@ func (m *Manager) produce(ctx context.Context, s domain.UploadSession) (domain.U
 		return domain.Upload{}, fmt.Errorf("uploads: assembled %d bytes, expected %d: %w", info.Size(), s.SizeBytes, domain.ErrPartsMissing)
 	}
 
-	if s.Mode == domain.UploadModeFile {
-		result, err := m.processor.File(ctx, s.UploaderID, path, s.Filename, s.SizeBytes)
-		if err != nil {
-			return domain.Upload{}, err
-		}
-		return m.sessions.CreateUpload(ctx, domain.Upload{
-			ID: m.newID(), UploaderID: s.UploaderID, Kind: result.Kind, Payload: result.Payload,
-		})
-	}
-
 	source, err := hashOf(path)
 	if err != nil {
 		return domain.Upload{}, err
+	}
+	if len(s.ExpectedSHA256) > 0 && !bytes.Equal(s.ExpectedSHA256, source) {
+		return domain.Upload{}, ErrHashMismatch
 	}
 
 	file, found, err := m.sessions.FileBySource(ctx, s.Mode, source)
@@ -481,8 +486,12 @@ func (m *Manager) produce(ctx context.Context, s domain.UploadSession) (domain.U
 		}
 	}
 
+	payload, err := file.PayloadFor(s.Filename)
+	if err != nil {
+		return domain.Upload{}, err
+	}
 	return m.sessions.CreateUpload(ctx, domain.Upload{
-		ID: m.newID(), UploaderID: s.UploaderID, Kind: file.Kind, Payload: file.Payload, FileID: &file.ID,
+		ID: m.newID(), UploaderID: s.UploaderID, Kind: file.Kind, Payload: payload, FileID: &file.ID,
 	})
 }
 
@@ -491,9 +500,12 @@ func (m *Manager) processFresh(ctx context.Context, s domain.UploadSession, path
 		result attachment.Result
 		err    error
 	)
-	if s.Mode == domain.UploadModeVoice {
+	switch s.Mode {
+	case domain.UploadModeFile:
+		result, err = m.processor.File(ctx, s.UploaderID, path, s.Filename, s.SizeBytes)
+	case domain.UploadModeVoice:
 		result, err = m.processor.Voice(ctx, s.UploaderID, path, s.SizeBytes)
-	} else {
+	default:
 		result, err = m.processor.Media(ctx, s.UploaderID, path, s.SizeBytes)
 	}
 	if err != nil {
@@ -507,7 +519,7 @@ func (m *Manager) processFresh(ctx context.Context, s domain.UploadSession, path
 		Payload:    result.Payload,
 		ObjectKeys: result.Keys,
 		SizeBytes:  result.Size,
-	}, s.Mode, source)
+	}, s.Mode, source, s.SizeBytes)
 	if err != nil {
 		m.objects.Remove(context.WithoutCancel(ctx), result.Keys)
 		return domain.StoredFile{}, err
@@ -542,6 +554,8 @@ func hashOf(path string) ([]byte, error) {
 
 func failureOf(err error) string {
 	switch {
+	case errors.Is(err, ErrHashMismatch):
+		return "hash_mismatch"
 	case errors.Is(err, media.ErrTooLarge):
 		return "too_large"
 	case errors.Is(err, media.ErrUnsupported):

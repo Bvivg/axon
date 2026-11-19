@@ -891,6 +891,13 @@ func TestAFirstDirectMessageAnnouncesTheNewRoomToBothPeople(t *testing.T) {
 		if got.RoomID != ack.RoomID {
 			t.Errorf("%s was told about room %q, want %q", name, got.RoomID, ack.RoomID)
 		}
+		if c == bc {
+			if got.Message == nil || got.Message.Body != "hi bob" || got.Message.ClientID != "" || got.Message.AuthorID != alice.String() {
+				t.Errorf("bob got unexpected notification preview: %+v", got.Message)
+			}
+		} else if got.Message != nil {
+			t.Errorf("sender's other tab got a notification preview: %+v", got.Message)
+		}
 	}
 
 	if got := ac.expect(ws.TypeRoomAdded); got.RoomID != ack.RoomID {

@@ -33,13 +33,18 @@ const (
 	SignalRoomAdded SignalKind = "room_added"
 
 	SignalRoomRemoved SignalKind = "room_removed"
+	SignalCallState   SignalKind = "call_state"
+	SignalCallPeer    SignalKind = "call_peer"
 )
 
 type Signal struct {
-	Kind   SignalKind
-	RoomID uuid.UUID
-	UserID uuid.UUID
-	Seq    int64
+	Kind       SignalKind
+	RoomID     uuid.UUID
+	UserID     uuid.UUID
+	Seq        int64
+	EventID    uuid.UUID
+	EndpointID uuid.UUID
+	Payload    string
 }
 
 type SignalBus interface {
@@ -69,7 +74,9 @@ type subscription struct {
 }
 
 type signalSubscription struct {
-	ch chan Signal
+	ch   chan Signal
+	stop func()
+	done chan struct{}
 }
 
 func NewMemory() *Memory {
@@ -165,25 +172,25 @@ func newSignalHub() *signalHub {
 
 func (h *signalHub) publish(topic uuid.UUID, sig Signal) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	var overflow []*signalSubscription
 
 	for sub := range h.topics[topic] {
 		select {
 		case sub.ch <- sig:
 		default:
+			if sig.Kind == SignalCallState || sig.Kind == SignalCallPeer {
+				overflow = append(overflow, sub)
+			}
 		}
+	}
+	h.mu.RUnlock()
+	for _, sub := range overflow {
+		sub.stop()
 	}
 }
 
 func (h *signalHub) subscribe(ctx context.Context, topic uuid.UUID) (<-chan Signal, func()) {
-	sub := &signalSubscription{ch: make(chan Signal, Backlog)}
-
-	h.mu.Lock()
-	if h.topics[topic] == nil {
-		h.topics[topic] = make(map[*signalSubscription]struct{})
-	}
-	h.topics[topic][sub] = struct{}{}
-	h.mu.Unlock()
+	sub := &signalSubscription{ch: make(chan Signal, Backlog), done: make(chan struct{})}
 
 	var once sync.Once
 	stop := func() {
@@ -196,12 +203,23 @@ func (h *signalHub) subscribe(ctx context.Context, topic uuid.UUID) (<-chan Sign
 			h.mu.Unlock()
 
 			close(sub.ch)
+			close(sub.done)
 		})
 	}
+	sub.stop = stop
+	h.mu.Lock()
+	if h.topics[topic] == nil {
+		h.topics[topic] = make(map[*signalSubscription]struct{})
+	}
+	h.topics[topic][sub] = struct{}{}
+	h.mu.Unlock()
 
 	go func() {
-		<-ctx.Done()
-		stop()
+		select {
+		case <-ctx.Done():
+			stop()
+		case <-sub.done:
+		}
 	}()
 
 	return sub.ch, stop

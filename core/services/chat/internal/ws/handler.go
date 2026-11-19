@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	sharedws "github.com/bvivg/axon/core/shared/pkg/ws"
 
+	"github.com/bvivg/axon/core/services/chat/internal/calls"
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 	"github.com/bvivg/axon/core/services/chat/internal/pubsub"
 	"github.com/bvivg/axon/core/services/chat/internal/service"
@@ -55,6 +57,7 @@ type Handler struct {
 	log        *slog.Logger
 	origins    []string
 	now        func() time.Time
+	calls      *calls.Service
 }
 
 type Config struct {
@@ -70,7 +73,8 @@ type Config struct {
 
 	Origins []string
 
-	Now func() time.Time
+	Now   func() time.Time
+	Calls *calls.Service
 }
 
 func New(cfg Config) (*Handler, error) {
@@ -108,6 +112,7 @@ func New(cfg Config) (*Handler, error) {
 		log:        cfg.Logger,
 		origins:    cfg.Origins,
 		now:        now,
+		calls:      cfg.Calls,
 	}, nil
 }
 
@@ -129,7 +134,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := sharedws.Accept(w, r, sharedws.AcceptOptions{
 		Subprotocols:   []string{Subprotocol},
 		OriginPatterns: h.origins,
-		Options:        sharedws.Options{Logger: h.log},
+		Options:        sharedws.Options{Logger: h.log, Compression: true, ReadLimit: sharedws.LargeMessageReadLimit},
 	})
 	if err != nil {
 
@@ -173,7 +178,11 @@ type session struct {
 	mu   sync.Mutex
 	subs map[uuid.UUID]func()
 
-	watches map[uuid.UUID]func()
+	watches        map[uuid.UUID]func()
+	callRef        *calls.EndpointRef
+	callConnection uuid.UUID
+	callWindow     time.Time
+	callSignals    int
 }
 
 func (s *session) run(ctx context.Context, userSignals <-chan pubsub.Signal) {
@@ -254,6 +263,13 @@ func (s *session) watchRevocation(ctx context.Context, cancel context.CancelFunc
 		select {
 		case <-signal:
 			_ = s.conn.Close(CloseSessionRevoked, "session revoked")
+			if s.h.calls != nil {
+				revokeCtx, stopRevoke := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+				if err := s.h.calls.FamilyRevoked(revokeCtx, s.user, s.familyID); err != nil {
+					s.h.log.WarnContext(revokeCtx, "call family expiry deferred", "error", err)
+				}
+				stopRevoke()
+			}
 			cancel()
 		case <-ctx.Done():
 		}
@@ -263,6 +279,9 @@ func (s *session) watchRevocation(ctx context.Context, cancel context.CancelFunc
 }
 
 func (s *session) handle(ctx context.Context, frame Inbound) bool {
+	if isCallFrame(frame.Type) {
+		return s.handleCall(ctx, frame)
+	}
 	switch frame.Type {
 	case TypeSubscribe:
 		return s.subscribe(ctx, frame)
@@ -449,11 +468,22 @@ func (s *session) deliverSignals(ctx context.Context, roomID uuid.UUID, live <-c
 }
 
 func (s *session) deliverUserSignals(ctx context.Context, live <-chan pubsub.Signal) {
+	defer func() { _ = s.conn.Close(1013, "resync required") }()
 	for sig := range live {
+		if sig.Kind == pubsub.SignalCallState || sig.Kind == pubsub.SignalCallPeer {
+			s.deliverCall(ctx, sig)
+			continue
+		}
 		var out Outbound
 		switch sig.Kind {
 		case pubsub.SignalRoomAdded:
 			out = roomAddedFrame(sig.RoomID.String())
+			if sig.Payload != "" && sig.UserID != s.user {
+				var preview Message
+				if json.Unmarshal([]byte(sig.Payload), &preview) == nil && preview.RoomID == out.RoomID && preview.AuthorID == sig.UserID.String() {
+					out.Message = &preview
+				}
+			}
 		case pubsub.SignalRoomRemoved:
 			s.drop(sig.RoomID)
 			out = roomRemovedFrame(sig.RoomID.String())
@@ -667,11 +697,7 @@ func (s *session) sendDirect(ctx context.Context, frame Inbound) bool {
 
 	if !duplicate {
 		for _, userID := range []uuid.UUID{toUserID, s.user} {
-			if err := s.h.users.PublishUserSignal(ctx, userID, pubsub.Signal{
-				Kind:   pubsub.SignalRoomAdded,
-				RoomID: room.ID,
-				UserID: s.user,
-			}); err != nil {
+			if err := s.announceRoom(ctx, userID, message, message.Seq == 1); err != nil {
 				s.h.log.WarnContext(ctx, "could not announce a direct room",
 					"room_id", room.ID, "user_id", userID, "error", err)
 			}
@@ -692,11 +718,7 @@ func (s *session) ackAndPublish(ctx context.Context, message domain.Message, dup
 				"room_id", message.RoomID, "message_id", message.ID, "error", err)
 		}
 		for _, userID := range message.Revealed {
-			if err := s.h.users.PublishUserSignal(ctx, userID, pubsub.Signal{
-				Kind:   pubsub.SignalRoomAdded,
-				RoomID: message.RoomID,
-				UserID: s.user,
-			}); err != nil {
+			if err := s.announceRoom(ctx, userID, message, true); err != nil {
 				s.h.log.WarnContext(ctx, "could not bring a hidden room back",
 					"room_id", message.RoomID, "user_id", userID, "error", err)
 			}
@@ -704,6 +726,22 @@ func (s *session) ackAndPublish(ctx context.Context, message domain.Message, dup
 	}
 
 	return true
+}
+
+func (s *session) announceRoom(ctx context.Context, user uuid.UUID, message domain.Message, preview bool) error {
+	signal := pubsub.Signal{Kind: pubsub.SignalRoomAdded, RoomID: message.RoomID, UserID: s.user}
+	if preview && user != s.user {
+		wire := messageFrame(message, user.String()).Message
+		if body := []rune(wire.Body); len(body) > 120 {
+			wire.Body = string(body[:120]) + "…"
+		}
+		wire.Payload, wire.ReplyTo = nil, nil
+		data, err := json.Marshal(wire)
+		if err == nil {
+			signal.Payload = string(data)
+		}
+	}
+	return s.h.users.PublishUserSignal(ctx, user, signal)
 }
 
 func (s *session) report(ctx context.Context, err error, clientID string) bool {

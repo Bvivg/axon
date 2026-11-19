@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 
+	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
@@ -23,8 +25,10 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 	"github.com/bvivg/axon/core/shared/pkg/revocation"
+	"github.com/bvivg/axon/core/shared/pkg/safehttp"
 
 	"github.com/bvivg/axon/core/services/chat/internal/attachment"
+	"github.com/bvivg/axon/core/services/chat/internal/calls"
 	"github.com/bvivg/axon/core/services/chat/internal/config"
 	"github.com/bvivg/axon/core/services/chat/internal/events"
 	"github.com/bvivg/axon/core/services/chat/internal/identity"
@@ -120,7 +124,10 @@ func run() error {
 	}
 	defer closeBus()
 
-	repo := repository.New(pool)
+	if cfg.Calls.MigrationEnabled && !cfg.Calls.SFUEnabled {
+		return errors.New("migration requires SFU")
+	}
+	repo := repository.NewWithOptions(pool, repository.Options{SFU: cfg.Calls.SFUEnabled, Migration: cfg.Calls.MigrationEnabled})
 
 	cache, err := redis.Connect(ctx, cfg.Redis, log)
 	if err != nil {
@@ -143,7 +150,7 @@ func run() error {
 				PublicKey:  cfg.Push.PublicKey,
 				PrivateKey: cfg.Push.PrivateKey,
 				Subject:    cfg.Push.Subject,
-				Client:     &http.Client{Timeout: 15 * time.Second},
+				Client:     safehttp.NewClient(15 * time.Second),
 			},
 			Logger: log,
 		})
@@ -179,6 +186,42 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	var callService *calls.Service
+	var callHandler *server.CallsHandler
+	var mediaHandler *server.MediaAdmissionHandler
+	if cfg.Calls.Enabled {
+		var media *calls.MediaProvider
+		if cfg.Calls.SFUEnabled {
+			if len(cfg.Calls.InternalKey.Reveal()) < 32 || len(cfg.Calls.MediaAPISecret.Reveal()) < 32 || cfg.Calls.MediaAPIKey == "" || cfg.Calls.MediaURL == "" || cfg.Calls.PublicMediaURL == "" {
+				return errors.New("SFU credentials and URLs required")
+			}
+			media = &calls.MediaProvider{Rooms: lksdk.NewRoomServiceClient(cfg.Calls.MediaURL, cfg.Calls.MediaAPIKey, cfg.Calls.MediaAPISecret.Reveal()), APIKey: cfg.Calls.MediaAPIKey, APISecret: cfg.Calls.MediaAPISecret.Reveal(), PublicURL: cfg.Calls.PublicMediaURL}
+		}
+		callService, err = calls.NewService(calls.Config{MigrationEnabled: cfg.Calls.MigrationEnabled, DisableNewMigration: cfg.Calls.DisableNewMigration, Media: media, DisableNewSFU: cfg.Calls.DisableNewSFU, Store: repo, Families: names, Peers: names, Publisher: pubsub.CallsPublisher{Bus: bus}, Logger: log, TURNURLs: cfg.Calls.TURNURLs, TURNSecret: cfg.Calls.TURNSecret.Reveal()})
+		if err != nil {
+			return err
+		}
+		go callService.Run(ctx)
+		if cfg.Push.PublicKey != "" && cfg.Push.PrivateKey != "" {
+			callNotifier := notify.CallNotifier{Store: repo, Sender: notify.WebPush{PublicKey: cfg.Push.PublicKey, PrivateKey: cfg.Push.PrivateKey, Subject: cfg.Push.Subject, Client: safehttp.NewClient(3 * time.Second)}, Logger: log}
+			go callNotifier.Run(ctx)
+		}
+		callHandler = server.NewCalls(callService, verifier, log)
+		if cfg.Calls.MediaProbe || cfg.Calls.SFUEnabled {
+			if len(cfg.Calls.InternalKey.Reveal()) < 32 || len(cfg.Calls.MediaAPISecret.Reveal()) < 32 || cfg.Calls.MediaAPIKey == "" {
+				return errors.New("media admission credentials required")
+			}
+			mediaHandler = &server.MediaAdmissionHandler{Admission: &calls.MediaAdmission{AllowP2PProbe: cfg.Calls.MediaProbe, Store: repo, Families: names, APIKey: cfg.Calls.MediaAPIKey, APISecret: cfg.Calls.MediaAPISecret.Reveal(), InternalKey: cfg.Calls.InternalKey.Reveal()}}
+			if cfg.Calls.MediaURL == "" {
+				return errors.New("media API URL required")
+			}
+			mediaHandler.Reconciler = &calls.MediaReconciler{Admission: mediaHandler.Admission, Rooms: lksdk.NewRoomServiceClient(cfg.Calls.MediaURL, cfg.Calls.MediaAPIKey, cfg.Calls.MediaAPISecret.Reveal()), Log: log}
+			if cfg.Calls.SFUEnabled {
+				mediaHandler.Reconciler.Jobs = repo
+			}
+			go mediaHandler.Reconciler.Run(ctx)
+		}
+	}
 
 	socket, err := chatws.New(chatws.Config{
 		Service:     svc,
@@ -189,6 +232,7 @@ func run() error {
 		Names:       names,
 		Revocation:  revocationSubscriber,
 		Presence:    presenceTracker,
+		Calls:       callService,
 		Logger:      log,
 	})
 	if err != nil {
@@ -232,6 +276,9 @@ func run() error {
 		return err
 	}
 	attachmentURLs := attachment.NewURLBuilder(cfg.Attachments.PublicURL, cfg.Attachments.Bucket)
+	if err := attachmentStore.EnsurePrivate(ctx); err != nil {
+		return fmt.Errorf("make attachments private: %w", err)
+	}
 
 	sweeper, err := attachment.NewSweeper(attachment.SweeperConfig{
 		Objects:     attachmentStore,
@@ -299,10 +346,16 @@ func run() error {
 
 	publicSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(handler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log),
+		Handler:           withMediaAdmission(publicHandler(handler, callHandler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log), mediaHandler),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
 	}
+	mediaMux := http.NewServeMux()
+	mediaMux.Handle("/internal/media/", middleware.Chain(middleware.Correlation, middleware.Recovery(log), middleware.RequestLogger(log))(
+		server.MediaDownload{Verifier: verifier, Access: repo, Families: names, Objects: attachmentStore},
+	))
+	mediaMux.Handle("/", publicSrv.Handler)
+	publicSrv.Handler = mediaMux
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
@@ -323,6 +376,17 @@ func run() error {
 	}
 
 	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
+}
+
+func withMediaAdmission(base http.Handler, handler *server.MediaAdmissionHandler) http.Handler {
+	if handler == nil {
+		return base
+	}
+	mux := http.NewServeMux()
+	mux.Handle(callsv1connect.NewMediaAdmissionServiceHandler(handler))
+	mux.HandleFunc("POST /internal/calls/livekit", handler.Reconciler.Webhook)
+	mux.Handle("/", base)
+	return mux
 }
 
 func buildEvents(cfg config.Config, log *slog.Logger) (service.Events, func(), error) {
@@ -350,6 +414,7 @@ func buildEvents(cfg config.Config, log *slog.Logger) (service.Events, func(), e
 
 func publicHandler(
 	handler *server.Handler,
+	callHandler *server.CallsHandler,
 	socket *chatws.Handler,
 	presenceSocket *chatpresence.Handler,
 	attachmentUpload *server.AttachmentHandler,
@@ -363,6 +428,9 @@ func publicHandler(
 	mux.Handle(chatpresence.Path, presenceSocket)
 	mux.Handle("POST "+server.AttachmentUploadPath, attachmentUpload)
 	uploadSessions.Register(mux)
+	if callHandler != nil {
+		mux.Handle(callsv1connect.NewCallsServiceHandler(callHandler, connect.WithInterceptors(middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log))))
+	}
 
 	mux.Handle(chatv1connect.NewChatServiceHandler(handler,
 		connect.WithInterceptors(

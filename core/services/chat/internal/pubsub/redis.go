@@ -74,17 +74,35 @@ func signalChannel(roomID uuid.UUID) string { return "chat:room:" + roomID.Strin
 func userSignalChannel(userID uuid.UUID) string { return "chat:user:" + userID.String() + ":signals" }
 
 type signalWire struct {
-	Kind   string `json:"kind"`
-	RoomID string `json:"room_id"`
-	UserID string `json:"user_id"`
-	Seq    int64  `json:"seq,omitempty"`
+	Kind       string          `json:"kind"`
+	RoomID     string          `json:"room_id"`
+	UserID     string          `json:"user_id"`
+	Seq        int64           `json:"seq,omitempty"`
+	EventID    string          `json:"event_id,omitempty"`
+	EndpointID string          `json:"endpoint_id,omitempty"`
+	Payload    json.RawMessage `json:"payload,omitempty"`
 }
 
 func toSignalWire(sig Signal) signalWire {
-	return signalWire{Kind: string(sig.Kind), RoomID: sig.RoomID.String(), UserID: sig.UserID.String(), Seq: sig.Seq}
+	return signalWire{Kind: string(sig.Kind), RoomID: sig.RoomID.String(), UserID: sig.UserID.String(), Seq: sig.Seq, EventID: sig.EventID.String(), EndpointID: sig.EndpointID.String(), Payload: json.RawMessage(sig.Payload)}
 }
 
 func (w signalWire) toDomain() (Signal, error) {
+	if SignalKind(w.Kind) == SignalCallState || SignalKind(w.Kind) == SignalCallPeer {
+		user, err := uuid.Parse(w.UserID)
+		if err != nil {
+			return Signal{}, errors.New("pubsub: invalid call recipient")
+		}
+		event, _ := uuid.Parse(w.EventID)
+		endpoint, _ := uuid.Parse(w.EndpointID)
+		if SignalKind(w.Kind) == SignalCallState && event == uuid.Nil {
+			return Signal{}, errors.New("pubsub: invalid call event")
+		}
+		if SignalKind(w.Kind) == SignalCallPeer && (endpoint == uuid.Nil || len(w.Payload) > 24576) {
+			return Signal{}, errors.New("pubsub: invalid peer signal")
+		}
+		return Signal{Kind: SignalKind(w.Kind), UserID: user, EventID: event, EndpointID: endpoint, Payload: string(w.Payload)}, nil
+	}
 	roomID, err := uuid.Parse(w.RoomID)
 	if err != nil {
 		return Signal{}, fmt.Errorf("pubsub: signal room id: %w", err)
@@ -94,7 +112,11 @@ func (w signalWire) toDomain() (Signal, error) {
 		return Signal{}, fmt.Errorf("pubsub: signal user id: %w", err)
 	}
 
-	return Signal{Kind: SignalKind(w.Kind), RoomID: roomID, UserID: userID, Seq: w.Seq}, nil
+	signal := Signal{Kind: SignalKind(w.Kind), RoomID: roomID, UserID: userID, Seq: w.Seq}
+	if signal.Kind == SignalRoomAdded {
+		signal.Payload = string(w.Payload)
+	}
+	return signal, nil
 }
 
 type wire struct {
@@ -373,11 +395,12 @@ func (r *Redis) subscribeSignals(
 	id uuid.UUID,
 	local func(context.Context, uuid.UUID) (<-chan Signal, func(), error),
 ) (<-chan Signal, func(), error) {
-	r.acquireSignals(topic, id)
-
 	signals, stopLocal, err := local(ctx, id)
 	if err != nil {
-		r.releaseSignals(topic, id)
+		return nil, nil, err
+	}
+	if err := r.acquireSignals(ctx, topic, id); err != nil {
+		stopLocal()
 		return nil, nil, err
 	}
 
@@ -392,22 +415,31 @@ func (r *Redis) subscribeSignals(
 	return signals, stop, nil
 }
 
-func (r *Redis) acquireSignals(topic *signalTopic, id uuid.UUID) {
+func (r *Redis) acquireSignals(caller context.Context, topic *signalTopic, id uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if existing, ok := topic.subs[id]; ok {
 		existing.listeners++
-		return
+		return nil
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sub := r.client.Subscribe(ctx, topic.channel(id))
+	ready, stopReady := context.WithTimeout(caller, 3*time.Second)
+	_, err := sub.Receive(ready)
+	stopReady()
+	if err != nil {
+		cancel()
+		_ = sub.Close()
+		return fmt.Errorf("pubsub: subscription ready: %w", err)
+	}
 	subscription := &roomSubscription{sub: sub, listeners: 1, stop: cancel, done: make(chan struct{})}
 	topic.subs[id] = subscription
 
 	go r.pumpSignals(ctx, topic, id, sub, subscription.done)
+	return nil
 }
 
 func (r *Redis) releaseSignals(topic *signalTopic, id uuid.UUID) {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 
 	"connectrpc.com/connect"
 
@@ -36,6 +38,7 @@ func ClientIPMiddleware(trustedProxies int) func(http.Handler) http.Handler {
 
 type Interceptor struct {
 	verifier  *authn.Verifier
+	search    *ratelimit.Limiter
 	standard  *ratelimit.Limiter
 	sensitive *ratelimit.Limiter
 	log       *slog.Logger
@@ -46,6 +49,7 @@ var _ connect.Interceptor = (*Interceptor)(nil)
 type Config struct {
 	Verifier *authn.Verifier
 
+	Search    *ratelimit.Limiter
 	Standard  *ratelimit.Limiter
 	Sensitive *ratelimit.Limiter
 
@@ -56,14 +60,15 @@ func New(cfg Config) (*Interceptor, error) {
 	switch {
 	case cfg.Verifier == nil:
 		return nil, errors.New("guard: verifier is required")
-	case cfg.Standard == nil || cfg.Sensitive == nil:
-		return nil, errors.New("guard: both rate limiters are required")
+	case cfg.Search == nil || cfg.Standard == nil || cfg.Sensitive == nil:
+		return nil, errors.New("guard: all rate limiters are required")
 	case cfg.Logger == nil:
 		return nil, errors.New("guard: logger is required")
 	}
 
 	return &Interceptor{
 		verifier:  cfg.Verifier,
+		search:    cfg.Search,
 		standard:  cfg.Standard,
 		sensitive: cfg.Sensitive,
 		log:       cfg.Logger,
@@ -112,13 +117,18 @@ func (i *Interceptor) apply(ctx context.Context, procedure string, headers http.
 		limiter = i.sensitive
 	}
 
-	if !limiter.Allow(subject) {
+	if rule.Tier == policy.TierSearch {
+		limiter = i.search
+	}
+
+	if allowed, retryAfter := limiter.AllowWithRetry(subject); !allowed {
 		i.log.WarnContext(ctx, "rate limit exceeded",
 			"procedure", procedure,
 			"tier", rule.Tier,
 		)
-		return ctx, connect.NewError(connect.CodeResourceExhausted,
-			errors.New("too many requests"))
+		err := connect.NewError(connect.CodeResourceExhausted, errors.New("too many requests"))
+		err.Meta().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(retryAfter.Seconds())))))
+		return ctx, err
 	}
 
 	return ctx, nil

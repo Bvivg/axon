@@ -581,7 +581,7 @@ func (s *Service) resolveContent(
 		return content{}, &domain.ValidationError{Field: "positions", Reason: "pick album items only when forwarding"}
 
 	case len(rawUploadIDs) > domain.MaxAlbumItems:
-		return content{}, &domain.ValidationError{Field: "upload_ids", Reason: "an album holds up to 10 photos or videos"}
+		return content{}, &domain.ValidationError{Field: "upload_ids", Reason: "a message holds up to 10 attachments"}
 
 	case len(rawUploadIDs) > 1:
 		if rawKind != "" && requested != domain.MessageKindAlbum {

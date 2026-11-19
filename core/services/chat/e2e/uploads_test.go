@@ -148,7 +148,7 @@ func TestABigFileGoesUpInPartsResumesAfterADropAndReachesThePeer(t *testing.T) {
 	if payload.Filename != "dump.bin" || payload.SizeBytes != int64(len(body)) {
 		t.Fatalf("bob got %+v, want the 25 MB dump", payload)
 	}
-	served, _ := fetch(t, payload.URL)
+	served, _ := bob.fetch(t, payload.URL)
 	if !bytes.Equal(served, body) {
 		t.Fatalf("served %d bytes that differ from the %d sent", len(served), len(body))
 	}
@@ -166,8 +166,9 @@ func TestATextDocumentIsStoredWithBrotli(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, payload.URL, nil)
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, privateMediaURL(payload.URL), nil)
 	req.Header.Set("Accept-Encoding", "br")
+	req.Header.Set("Authorization", "Bearer "+alice.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("fetch: %v", err)

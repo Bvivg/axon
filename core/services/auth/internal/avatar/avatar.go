@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/bvivg/axon/core/shared/pkg/safehttp"
 )
 
 type Size string
@@ -67,11 +69,14 @@ type Pipeline struct {
 	client *http.Client
 }
 
-func NewPipeline(store *Store, urls URLBuilder) *Pipeline {
+func NewPipeline(store *Store, urls URLBuilder, client *http.Client) *Pipeline {
+	if client == nil {
+		client = safehttp.NewClient(5 * time.Second)
+	}
 	return &Pipeline{
 		store:  store,
 		urls:   urls,
-		client: &http.Client{Timeout: 5 * time.Second},
+		client: client,
 	}
 }
 

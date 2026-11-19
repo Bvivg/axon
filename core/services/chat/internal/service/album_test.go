@@ -103,10 +103,15 @@ func TestAlbumsRefuseWhatTheyCannotHold(t *testing.T) {
 func TestForwardingAWholeAlbumOrSomeOfIt(t *testing.T) {
 	h := newHarness(t)
 	room, owner, _ := h.group(t, 1)
-	ids := []string{}
-	for n := range 3 {
-		ids = append(ids, h.photo(t, owner, n).ID.String())
+	filePayload := domain.AttachmentPayload{
+		URL: "http://media/notes.txt", Filename: "notes.txt", SizeBytes: 42, Mime: "text/plain",
 	}
+	payload, _ := json.Marshal(filePayload)
+	file, err := h.svc.RecordUpload(t.Context(), owner, domain.MessageKindAttachment, payload)
+	if err != nil {
+		t.Fatalf("RecordUpload: %v", err)
+	}
+	ids := []string{h.photo(t, owner, 0).ID.String(), file.ID.String(), h.photo(t, owner, 2).ID.String()}
 	album, _, err := h.svc.Send(t.Context(), service.SendInput{RoomID: room.ID, AuthorID: owner, UploadIDs: ids, Body: "trip"})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
@@ -131,6 +136,11 @@ func TestForwardingAWholeAlbumOrSomeOfIt(t *testing.T) {
 	if whole.Kind != domain.MessageKindAlbum || whole.Body != "trip" || len(albumOf(t, whole).Items) != 3 || len(whole.AlbumUploads) != 3 {
 		t.Fatalf("whole forward = %+v, want the album with its uploads", whole)
 	}
+	groupedFile := albumOf(t, whole).Items[1]
+	if groupedFile.Kind != domain.MessageKindAttachment || groupedFile.Filename != filePayload.Filename ||
+		groupedFile.Mime != filePayload.Mime || whole.AlbumUploads[1] != file.ID {
+		t.Fatalf("grouped file = %+v, want the original file at position 1", groupedFile)
+	}
 
 	two := forward([]service.ForwardPart{{MessageID: album.ID.String(), Positions: []int{2, 0}}})
 	items := albumOf(t, two).Items
@@ -140,8 +150,12 @@ func TestForwardingAWholeAlbumOrSomeOfIt(t *testing.T) {
 	}
 
 	one := forward([]service.ForwardPart{{MessageID: album.ID.String(), Positions: []int{1}}})
-	if one.Kind != domain.MessageKindImage || one.UploadID == nil || one.UploadID.String() != ids[1] {
-		t.Fatalf("one picked = %+v, want an ordinary photo backed by its upload", one)
+	if one.Kind != domain.MessageKindAttachment || one.UploadID == nil || *one.UploadID != file.ID {
+		t.Fatalf("one picked = %+v, want a standalone file backed by its upload", one)
+	}
+	var forwardedFile domain.AttachmentPayload
+	if err := json.Unmarshal(one.Payload, &forwardedFile); err != nil || forwardedFile.Filename != filePayload.Filename {
+		t.Fatalf("forwarded file = %+v, %v; want the original filename", forwardedFile, err)
 	}
 
 	_, err = h.svc.ForwardMessages(t.Context(), service.ForwardInput{

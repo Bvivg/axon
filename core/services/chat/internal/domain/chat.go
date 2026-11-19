@@ -156,6 +156,7 @@ type AlbumItem struct {
 	URL          string      `json:"url"`
 	ThumbnailURL string      `json:"thumbnail_url,omitempty"`
 	PosterURL    string      `json:"poster_url,omitempty"`
+	Filename     string      `json:"filename,omitempty"`
 	Width        int         `json:"width"`
 	Height       int         `json:"height"`
 	DurationMS   int64       `json:"duration_ms,omitempty"`
@@ -263,7 +264,8 @@ type Page struct {
 	BeforeSeq int64
 	AfterSeq  int64
 
-	Kinds []MessageKind
+	Kinds               []MessageKind
+	IncludeGroupedItems bool
 }
 
 func (p Page) Backward() bool { return p.AfterSeq == 0 }

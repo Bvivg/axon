@@ -5,6 +5,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"image"
 	"image/png"
@@ -22,6 +23,124 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/media"
 	"github.com/bvivg/axon/core/services/chat/internal/uploads"
 )
+
+func TestUploadPreflightRespectsAccessAndKeepsSharedStorage(t *testing.T) {
+	m, stop := newUploads(t)
+	defer stop()
+	repo := newRepo(t)
+	room, alice, members := newGroup(t, repo, 1)
+	bob, stranger := members[0], uuid.New()
+	raw := []byte("preflight document content")
+	sum := sha256.Sum256(raw)
+	first, err := m.Start(t.Context(), alice, domain.UploadModeFile, "first.txt", int64(len(raw)), sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.PutPart(t.Context(), alice, first.ID, 1, bytes.NewReader(raw), int64(len(raw))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Complete(t.Context(), alice, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	ready := awaitReady(t, m, alice, first.ID)
+	if ready.Upload == nil || ready.Upload.FileID == nil {
+		t.Fatal("want a stored file")
+	}
+	url := publicURLOf(t, ready.Upload.Payload)
+	check := func(user uuid.UUID, mode domain.UploadMode, size int64, wantReady bool) {
+		t.Helper()
+		session, err := m.Start(t.Context(), user, mode, "renamed.txt", size, sum[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (session.Status == domain.UploadReady) != wantReady {
+			t.Fatalf("user=%s mode=%s size=%d status=%s, want ready=%v", user, mode, size, session.Status, wantReady)
+		}
+		if wantReady {
+			view, err := m.Status(t.Context(), user, session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if view.Upload.ID == ready.Upload.ID || *view.Upload.FileID != *ready.Upload.FileID || publicURLOf(t, view.Upload.Payload) != url {
+				t.Fatal("want a fresh draft with the same file and URL")
+			}
+			var payload domain.AttachmentPayload
+			if err := json.Unmarshal(view.Upload.Payload, &payload); err != nil || payload.Filename != "renamed.txt" {
+				t.Fatalf("renamed payload=%+v, %v", payload, err)
+			}
+		}
+		if err := m.Delete(t.Context(), user, session.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check(alice, domain.UploadModeFile, int64(len(raw)), true)
+	check(bob, domain.UploadModeFile, int64(len(raw)), false)
+	check(stranger, domain.UploadModeFile, int64(len(raw)), false)
+	check(alice, domain.UploadModeMedia, int64(len(raw)), false)
+	check(alice, domain.UploadModeFile, int64(len(raw)+1), false)
+
+	message, _, err := repo.AppendMessage(t.Context(), domain.Message{
+		ID: uuid.New(), RoomID: room.ID, AuthorID: alice, Kind: domain.MessageKindAttachment,
+		UploadID: &ready.Upload.ID, Payload: ready.Upload.Payload,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(bob, domain.UploadModeFile, int64(len(raw)), true)
+	check(stranger, domain.UploadModeFile, int64(len(raw)), false)
+	if _, err := pool.Exec(t.Context(), "UPDATE room_members SET cleared_through_seq=$3 WHERE room_id=$1 AND user_id=$2", room.ID, bob, message.Seq); err != nil {
+		t.Fatal(err)
+	}
+	check(bob, domain.UploadModeFile, int64(len(raw)), false)
+	if _, err := pool.Exec(t.Context(), "UPDATE room_members SET cleared_through_seq=0 WHERE room_id=$1 AND user_id=$2", room.ID, bob); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.DeleteMessage(t.Context(), message.ID); err != nil {
+		t.Fatal(err)
+	}
+	check(alice, domain.UploadModeFile, int64(len(raw)), false)
+	check(bob, domain.UploadModeFile, int64(len(raw)), false)
+	if _, _, err := repo.AppendMessage(t.Context(), domain.Message{
+		ID: uuid.New(), RoomID: room.ID, AuthorID: alice, Kind: domain.MessageKindAlbum,
+		AlbumUploads: []uuid.UUID{ready.Upload.ID}, Payload: json.RawMessage(`{"items":[]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	check(bob, domain.UploadModeFile, int64(len(raw)), true)
+	if err := repo.RemoveMember(t.Context(), room.ID, bob); err != nil {
+		t.Fatal(err)
+	}
+	check(bob, domain.UploadModeFile, int64(len(raw)), false)
+	if !reachable(t, url) {
+		t.Fatal("withdrawing a reused draft deleted shared storage")
+	}
+
+	type outcome struct {
+		session domain.UploadSession
+		err     error
+	}
+	results := make(chan outcome, 8)
+	for range 8 {
+		go func() {
+			session, err := m.Start(t.Context(), alice, domain.UploadModeFile, "parallel.txt", int64(len(raw)), sum[:])
+			results <- outcome{session, err}
+		}()
+	}
+	ids := map[uuid.UUID]bool{}
+	for range 8 {
+		result := <-results
+		if result.err != nil || result.session.Status != domain.UploadReady || ids[*result.session.UploadID] {
+			t.Fatalf("concurrent reuse: %+v", result)
+		}
+		ids[*result.session.UploadID] = true
+		if err := m.Delete(t.Context(), alice, result.session.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !reachable(t, url) {
+		t.Fatal("concurrent withdrawal deleted the original")
+	}
+}
 
 const testPartBytes = 5 << 20
 
@@ -77,7 +196,7 @@ func newUploads(t *testing.T) (*uploads.Manager, context.CancelFunc) {
 
 func sendInParts(t *testing.T, m *uploads.Manager, user uuid.UUID, raw []byte, order ...int) domain.UploadSession {
 	t.Helper()
-	s, err := m.Start(t.Context(), user, domain.UploadModeMedia, "noise.png", int64(len(raw)))
+	s, err := m.Start(t.Context(), user, domain.UploadModeMedia, "noise.png", int64(len(raw)), nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -199,7 +318,7 @@ func TestCompleteRefusesAnUploadWithAPartMissing(t *testing.T) {
 
 	raw := noisyPNG(t, 2)
 	user := uuid.New()
-	s, err := m.Start(t.Context(), user, domain.UploadModeMedia, "noise.png", int64(len(raw)))
+	s, err := m.Start(t.Context(), user, domain.UploadModeMedia, "noise.png", int64(len(raw)), nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
