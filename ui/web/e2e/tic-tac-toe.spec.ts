@@ -43,7 +43,8 @@ async function player(browser: Browser, origin: string, name: string) {
 }
 
 async function createGame(page: Page) {
-  await page.getByRole("button", { name: "Create game", exact: true }).click();
+  await page.getByRole("button", { name: "Start a game", exact: true }).click();
+  await page.getByRole("button", { name: /Private game/ }).click();
   await expect(page).toHaveURL(/\/games\/tic-tac-toe\/[0-9a-f-]+$/);
   await expect(status(page)).toContainText("Waiting for opponent");
   await expect(cell(page, 0)).toBeDisabled();
@@ -102,7 +103,7 @@ test("two players invite, win, reload and draw; a third player cannot join", asy
     await expect(a.page.locator('[data-player="O"]')).toContainText("5:00");
     await expect.poll(async () => a.page.locator('[data-player="X"]').innerText()).not.toContain("5:00");
     await play([a.page, b.page], [0, 3]);
-    await a.page.getByRole("button", { name: "Отменить ход", exact: true }).click();
+    await a.page.getByRole("button", { name: "Undo move", exact: true }).click();
     await expect(cell(a.page, 3)).toBeDisabled();
     await expect(cell(b.page, 3)).toBeEnabled();
     await cell(b.page, 3).click();
@@ -113,20 +114,20 @@ test("two players invite, win, reload and draw; a third player cannot join", asy
     await play([a.page, b.page], [1, 4, 2]);
     await expect(status(a.page)).toHaveText("You won");
     await expect(status(b.page)).toHaveText("You lost");
-    await a.page.getByRole("button", { name: "Посмотреть поле" }).click();
-    await expect(a.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
-    await expect(b.page.getByRole("button", { name: "Посмотреть поле" })).toBeVisible();
+    await a.page.getByRole("button", { name: "View board" }).click();
+    await expect(a.page.getByRole("button", { name: "Undo move", exact: true })).toBeDisabled();
+    await expect(b.page.getByRole("button", { name: "View board" })).toBeVisible();
     await expect(board(a.page).locator("[data-winning]")).toHaveCount(3);
     await expect(board(a.page).getByRole("button", { disabled: true, includeHidden: true })).toHaveCount(9);
     await a.page.screenshot({ path: testInfo.outputPath("win-desktop.png"), animations: "disabled" });
 
-    await a.page.getByRole("link", { name: "В лобби" }).click();
-    const previous = a.page.getByRole("link", { name: /Tic-Tac-Toe · You won/ });
+    await a.page.getByRole("link", { name: "Back to lobby" }).click();
+    const previous = a.page.getByRole("link", { name: /Cameron Beaumont-Sutherland · You won/ });
     await expect(previous).toContainText("Cameron Beaumont-Sutherland");
     await expect(previous.locator("time")).toHaveText(/\d/);
     await a.page.screenshot({ path: testInfo.outputPath("game-history.png"), animations: "disabled" });
     await previous.click();
-    await a.page.getByRole("button", { name: "Новая партия" }).click();
+    await a.page.getByRole("button", { name: "Play again" }).click();
     await expect(status(a.page)).toHaveText(/Waiting for opponent/);
     const second = a.page.url();
     expect(second).not.toBe(first);
@@ -142,10 +143,10 @@ test("two players invite, win, reload and draw; a third player cannot join", asy
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     }
     await b.page.setViewportSize({ width: 390, height: 844 });
-    await expect(b.page.getByRole("button", { name: "Новая партия" })).toBeInViewport({ ratio: 1 });
+    await expect(b.page.getByRole("button", { name: "Play again" })).toBeInViewport({ ratio: 1 });
     await b.page.screenshot({ path: testInfo.outputPath("draw-mobile.png"), animations: "disabled" });
-    await b.page.getByRole("button", { name: "Посмотреть поле" }).click();
-    await expect(b.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
+    await b.page.getByRole("button", { name: "View board" }).click();
+    await expect(b.page.getByRole("button", { name: "Undo move", exact: true })).toBeDisabled();
     await a.page.reload();
     await expect(status(a.page)).toHaveText("Draw");
   } finally {
@@ -158,11 +159,11 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
   test.setTimeout(120_000);
   const person = await player(browser, new URL(baseURL!).origin, "Practice player");
   const page = person.page;
-  const undo = page.getByRole("button", { name: "Отменить ход", exact: true });
-  const reset = page.getByRole("button", { name: "Новая игра", exact: true });
-  const settings = () => page.getByRole("button", { name: "Настройки", exact: true }).click();
+  const undo = page.getByRole("button", { name: "Undo move", exact: true });
+  const reset = page.getByRole("button", { name: "New game", exact: true });
+  const settings = () => page.getByRole("button", { name: "Settings", exact: true }).click();
   const radio = (group: string, name: string) => page.getByRole("group", { name: group, exact: true }).getByRole("radio", { name, exact: true });
-  const close = async () => { await page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true }).first().click(); await expect(page.getByRole("dialog")).toHaveCount(0); };
+  const close = async () => { await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).first().click(); await expect(page.getByRole("dialog")).toHaveCount(0); };
   try {
     await page.goto("/games/tic-tac-toe/practice");
     await expect(board(page)).toBeVisible();
@@ -175,13 +176,13 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await page.clock.fastForward(5000);
     await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
     await settings();
-    await expect(page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true })).toBeFocused();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Close", exact: true })).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
     await page.clock.fastForward(20000);
     await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
     await close();
-    await expect(page.getByRole("button", { name: "Настройки", exact: true })).toBeFocused();
+    await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeFocused();
     await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
     await page.clock.fastForward(20000);
     await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
@@ -189,9 +190,9 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await page.clock.fastForward(45000);
     await expect(page.locator('[data-player="O"] [data-clock]')).toHaveAttribute("data-low", "true");
     await page.clock.fastForward(11000);
-    await expect(status(page)).toHaveText("Победа крестиков");
-    await expect(page.getByRole("dialog")).toContainText("Победа крестиков");
-    await page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(status(page)).toHaveText("X wins");
+    await expect(page.getByRole("dialog")).toContainText("X wins");
+    await page.getByRole("button", { name: "View board" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(undo).toBeDisabled();
     await page.keyboard.press("n");
@@ -200,12 +201,12 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await page.keyboard.press("z");
     await expect(board(page).getByRole("button", { name: /Empty$/, includeHidden: true })).toHaveCount(9);
     await settings();
-    await radio("Соперник", "Компьютер").check();
-    await radio("Сложность", "Сильная").check();
-    await radio("Вы играете за", "Нолики").check();
+    await radio("Opponent", "Computer").check();
+    await radio("Difficulty", "Hard").check();
+    await radio("You play as", "O").check();
     await close();
     await expect(board(page).getByRole("button", { name: /, X$/ })).toHaveCount(1);
-    await expect(page.locator('[data-player="X"]')).toContainText("Сильный");
+    await expect(page.locator('[data-player="X"]')).toContainText("Hard");
     await expect(page.locator('[data-player="X"]')).not.toContainText("228");
     await expect(undo).toBeDisabled();
     const empty = board(page).getByRole("button", { name: /Empty$/, includeHidden: true }).first();
@@ -214,34 +215,34 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await undo.click();
     await expect(board(page).getByRole("button", { name: /, O$/ })).toHaveCount(0);
     await settings();
-    await radio("Сложность", "Средняя").check();
+    await radio("Difficulty", "Medium").check();
     await close();
-    await expect(page.locator('[data-player="X"]')).toContainText("Средний");
+    await expect(page.locator('[data-player="X"]')).toContainText("Medium");
     await settings();
-    await radio("Соперник", "Игрок").check();
+    await radio("Opponent", "Player").check();
     await close();
     await cell(page, 0).focus();
     await page.keyboard.press("ArrowRight");
     await expect(cell(page, 1)).toBeFocused();
     expect(await cell(page, 1).evaluate(e => getComputedStyle(e).outlineStyle)).toBe("solid");
     for (const index of [0, 3, 1, 4, 2]) await cell(page, index).click();
-    await expect(status(page)).toHaveText("Победа крестиков");
+    await expect(status(page)).toHaveText("X wins");
     await expect(board(page).locator("[data-winning]")).toHaveCount(3);
-    await page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await page.getByRole("button", { name: "View board" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(undo).toBeDisabled();
     await reset.click();
     for (const index of [0, 1, 2, 4, 3, 5, 7, 6, 8]) await cell(page, index).click();
-    await expect(status(page)).toHaveText("Ничья");
-    await page.getByRole("button", { name: "Посмотреть поле" }).click();
+    await expect(status(page)).toHaveText("Draw");
+    await page.getByRole("button", { name: "View board" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.getByRole("button", { name: "Статистика", exact: true }).click();
-    const total = () => page.getByRole("dialog").getByText("Партий сыграно").locator("..");
+    await page.getByRole("button", { name: "Statistics", exact: true }).click();
+    const total = () => page.getByRole("dialog").getByText("Games played").locator("..");
     await expect(total()).toContainText("3");
-    await page.getByRole("button", { name: "Сбросить", exact: true }).click();
+    await page.getByRole("button", { name: "Reset", exact: true }).click();
     await expect(total()).toContainText("0");
     await close();
-    await page.getByRole("button", { name: "Статистика", exact: true }).click();
+    await page.getByRole("button", { name: "Statistics", exact: true }).click();
     await expect(total()).toContainText("0");
     await close();
     await reset.click();
@@ -254,7 +255,7 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await reference.locator(".cell").nth(4).click();
     for (const theme of ["light", "dark"]) {
       await settings();
-      await radio("Тема", theme === "light" ? "Светлая" : "Тёмная").check();
+      await radio("Theme", theme === "light" ? "Light" : "Dark").check();
       await close();
       await reference.evaluate(theme => document.documentElement.setAttribute("data-theme", theme), theme);
       await expect(cell(page, 4, "O").locator("svg")).toHaveCSS("color", theme === "dark" ? "rgb(240, 239, 246)" : "rgb(37, 40, 58)");
@@ -290,7 +291,7 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
         const actions = header.locator("a,button");
         for (const action of await actions.all()) { const rect = (await action.boundingBox())!; expect(rect.width).toBeGreaterThanOrEqual(44); expect(rect.height).toBeGreaterThanOrEqual(44); }
         expect((await header.boundingBox())!.y).toBeLessThanOrEqual(16);
-        await expect(header.getByRole("link", { name: "В лобби" })).toHaveText("");
+        await expect(header.getByRole("link", { name: "Back to lobby" })).toHaveText("");
         await page.screenshot({ path: testInfo.outputPath(`game-${theme}-${width}.png`), animations: "disabled" });
         await reference.screenshot({ path: testInfo.outputPath(`reference-${theme}-${width}.png`), animations: "disabled" });
       }
@@ -299,7 +300,7 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: false }); document.dispatchEvent(new Event("visibilitychange")); });
     await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
     await settings();
-    await radio("Тема", "Системная").check();
+    await radio("Theme", "System").check();
     await close();
     await expect(page.locator('[data-player="X"]')).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
@@ -308,16 +309,16 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await cell(page, 0).click();
     expect(await cell(page, 0, "X").locator("line").first().evaluate(e => getComputedStyle(e).animationName)).toBe("none");
     await settings();
-    await radio("Время на каждого игрока", "30 с").check();
-    await radio("Соперник", "Компьютер").check();
-    await radio("Сложность", "Лёгкая").check();
-    await radio("Тема", "Тёмная").check();
+    await radio("Time per player", "30 s").check();
+    await radio("Opponent", "Computer").check();
+    await radio("Difficulty", "Easy").check();
+    await radio("Theme", "Dark").check();
     await close();
     await page.reload();
     await settings();
-    await expect(radio("Время на каждого игрока", "30 с")).toBeChecked();
-    await expect(radio("Сложность", "Лёгкая")).toBeChecked();
-    await expect(radio("Тема", "Тёмная")).toBeChecked();
+    await expect(radio("Time per player", "30 s")).toBeChecked();
+    await expect(radio("Difficulty", "Easy")).toBeChecked();
+    await expect(radio("Theme", "Dark")).toBeChecked();
     await close();
   } finally { await person.context.close(); }
 });
@@ -347,16 +348,16 @@ test("server clocks survive offline clients, timeout and an empty room", async (
     await b.context.setOffline(true);
     shortenFixtureClock(first.split("/").at(-1)!);
     await expect(status(a.page)).toHaveText("You won");
-    await expect(a.page.getByText("Время вышло", { exact: true })).toHaveCount(1);
+    await expect(a.page.getByText("Time's up", { exact: true })).toHaveCount(1);
     await expect(a.page.locator('[data-player="O"]')).toContainText("0:00");
     await expect(a.page.locator('[data-player="X"]')).toContainText("0:02");
     await b.context.setOffline(false);
     await b.page.reload();
     await expect(status(b.page)).toHaveText("You lost");
     await expect(b.page.locator('[data-player="O"]')).toContainText("0:00");
-    await a.page.getByRole("button", { name: "Посмотреть поле" }).click();
-    await expect(a.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
-    await a.page.getByRole("button", { name: "Новая игра", exact: true }).click();
+    await a.page.getByRole("button", { name: "View board" }).click();
+    await expect(a.page.getByRole("button", { name: "Undo move", exact: true })).toBeDisabled();
+    await a.page.getByRole("button", { name: "New game", exact: true }).click();
     await expect(status(a.page)).toContainText("Waiting for opponent");
     const second = a.page.url();
     expect(second).not.toBe(first);
@@ -371,9 +372,72 @@ test("server clocks survive offline clients, timeout and an empty room", async (
     expect(session.timedOut).toBe(true);
     await a.page.goto(second);
     await expect(status(a.page)).toHaveText("You lost");
-    await a.page.getByRole("button", { name: "Посмотреть поле" }).click();
-    await expect(a.page.getByRole("button", { name: "Отменить ход", exact: true })).toBeDisabled();
+    await a.page.getByRole("button", { name: "View board" }).click();
+    await expect(a.page.getByRole("button", { name: "Undo move", exact: true })).toBeDisabled();
   } finally {
     await Promise.all([a.context.close(), b.context.close()]);
+  }
+});
+
+test("quick match pairs two players into a rated game and moves both ratings", async ({ browser, baseURL }) => {
+  test.setTimeout(90_000);
+  const origin = new URL(baseURL!).origin;
+  const a = await player(browser, origin, "Quick Alpha");
+  const b = await player(browser, origin, "Quick Bravo");
+  try {
+    for (const person of [a, b]) {
+      await person.page.goto(origin + "/games/tic-tac-toe");
+      await expect(person.page.getByTestId("my-rating")).toHaveText("1200");
+      await person.page.getByRole("button", { name: "Start a game", exact: true }).click();
+      await person.page.getByRole("button", { name: /Quick match/ }).click();
+    }
+    await expect(a.page).toHaveURL(/\/games\/tic-tac-toe\/[0-9a-f-]+$/, { timeout: 20_000 });
+    await expect(b.page).toHaveURL(a.page.url(), { timeout: 20_000 });
+    await expect(a.page.getByRole("button", { name: "Undo move", exact: true })).toHaveCount(0);
+    const [first, second] = (await status(a.page).innerText()).includes("Your turn") ? [a, b] : [b, a];
+    await expect(status(second.page)).toContainText("Opponent’s turn");
+    await play([first.page, second.page], [0, 3, 1, 4, 2]);
+    await expect(status(first.page)).toHaveText("You won");
+    await expect(first.page.locator("[data-rating-delta]")).toHaveText("Rating +20");
+    await expect(second.page.locator("[data-rating-delta]")).toHaveText("Rating −20");
+    await first.page.getByRole("button", { name: "View board" }).click();
+    await first.page.getByRole("link", { name: "Back to lobby" }).first().click();
+    await expect(first.page.getByTestId("my-rating")).toHaveText("1220");
+    await expect(first.page.locator("#game-history")).toContainText("+20");
+  } finally {
+    await a.context.close();
+    await b.context.close();
+  }
+});
+
+test("a player cancels a search and a waiting game, and resigns a started one", async ({ browser, baseURL }) => {
+  test.setTimeout(60_000);
+  const origin = new URL(baseURL!).origin;
+  const a = await player(browser, origin, "Leaving Alpha");
+  const b = await player(browser, origin, "Leaving Bravo");
+  try {
+    await a.page.goto(origin + "/games/tic-tac-toe");
+    await a.page.getByRole("button", { name: "Start a game", exact: true }).click();
+    await a.page.getByRole("button", { name: /Quick match/ }).click();
+    await expect(a.page.getByText(/Searching ·/)).toBeVisible();
+    await a.page.getByRole("button", { name: "Cancel search", exact: true }).click();
+    await expect(a.page.getByText(/Searching ·/)).toHaveCount(0);
+    expect((await (await a.rpc("GetMatch", { game: "tictactoe" })).json()).ticket?.status ?? "MATCH_STATUS_IDLE").toBe("MATCH_STATUS_IDLE");
+
+    const waiting = await createGame(a.page);
+    await a.page.getByRole("button", { name: "Cancel game", exact: true }).click();
+    await a.page.getByRole("button", { name: "Cancel game", exact: true }).click();
+    await expect(a.page).toHaveURL(/\/games\/tic-tac-toe$/);
+    expect((await a.rpc("GetSession", { sessionId: waiting.split("/").at(-1) })).status()).toBe(404);
+
+    const started = await createGame(a.page);
+    await joinGame(b.page, started);
+    await b.page.getByRole("button", { name: "Resign", exact: true }).click();
+    await b.page.getByRole("button", { name: "Resign", exact: true }).click();
+    await expect(status(b.page)).toHaveText("You resigned");
+    await expect(status(a.page)).toHaveText("Opponent resigned");
+  } finally {
+    await a.context.close();
+    await b.context.close();
   }
 });

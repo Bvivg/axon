@@ -6,6 +6,7 @@ const (
 	TierStandard Tier = iota
 
 	TierSensitive
+	TierSearch
 )
 
 type Rule struct {
@@ -14,6 +15,39 @@ type Rule struct {
 }
 
 var procedures = map[string]Rule{
+	"/axon.game.v1.GameService/CreateSession": {Public: false, Tier: TierSensitive},
+	"/axon.game.v1.GameService/JoinSession":   {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/GetSession":    {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/ListSessions":  {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/FindMatch":     {Public: false, Tier: TierSensitive},
+	"/axon.game.v1.GameService/CancelMatch":   {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/GetMatch":      {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/GetRatings":    {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/LeaveSession":  {Public: false, Tier: TierStandard},
+
+	"/axon.calls.v1.CallsService/RegisterEndpoint":        {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/StartCall":               {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/StartDirectCall":         {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/AcceptCall":              {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/DeclineCall":             {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/CancelCall":              {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/EndCall":                 {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/ReportConnection":        {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/AcknowledgeCleanup":      {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/GetCall":                 {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/GetActiveCall":           {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/ListCalls":               {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/GetMediaCredentials":     {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/GetCallCapabilities":     {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/StartGroupCall":          {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/StartGroupCallFromCall":  {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/InviteCallParticipant":   {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/LeaveCall":               {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/RemoveCallParticipant":   {Public: false, Tier: TierSensitive},
+	"/axon.calls.v1.CallsService/GetSfuCredentials":       {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/RequestCallMigration":    {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/ReportCallMigration":     {Public: false, Tier: TierStandard},
+	"/axon.calls.v1.CallsService/GetMigrationCredentials": {Public: false, Tier: TierStandard},
 
 	"/axon.auth.v1.AuthService/Register":      {Public: true, Tier: TierSensitive},
 	"/axon.auth.v1.AuthService/Login":         {Public: true, Tier: TierSensitive},
@@ -33,7 +67,7 @@ var procedures = map[string]Rule{
 	"/axon.auth.v1.AuthService/AssignRole": {Public: false, Tier: TierSensitive},
 	"/axon.auth.v1.AuthService/RevokeRole": {Public: false, Tier: TierSensitive},
 
-	"/axon.auth.v1.AuthService/SearchUsers":                {Public: false, Tier: TierSensitive},
+	"/axon.auth.v1.AuthService/SearchUsers":                {Public: false, Tier: TierSearch},
 	"/axon.auth.v1.AuthService/GetUsersPublicProfiles":     {Public: false, Tier: TierStandard},
 	"/axon.auth.v1.AuthService/GetPublicProfileByUsername": {Public: false, Tier: TierStandard},
 	"/axon.auth.v1.AuthService/UpdateLastSeen":             {Public: false, Tier: TierStandard},
@@ -46,7 +80,7 @@ var procedures = map[string]Rule{
 	"/axon.chat.v1.ChatService/HideRoom":       {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/GetDirectRoom":  {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/MarkRead":       {Public: false, Tier: TierStandard},
-	"/axon.chat.v1.ChatService/SearchMessages": {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatService/SearchMessages": {Public: false, Tier: TierSearch},
 
 	"/axon.chat.v1.ChatService/RemoveGroupMember": {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/RenameGroup":       {Public: false, Tier: TierStandard},

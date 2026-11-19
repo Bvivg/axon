@@ -9,7 +9,7 @@ import { setTheme, Theme, useTheme } from "@/lib/theme";
 
 export type GamePreferences = { mode: LocalMode; duration: number; side: LocalMark };
 export const defaultPreferences: GamePreferences = { mode: "local", duration: 60000, side: "X" };
-export const difficultyLabels = { easy: "Лёгкий", medium: "Средний", hard: "Сильный", local: "" };
+export const difficultyLabels = { easy: "Easy", medium: "Medium", hard: "Hard", local: "" };
 const preferencesKey = "axon-ttt-settings-v1";
 
 export function readPreferences(): GamePreferences {
@@ -31,12 +31,12 @@ function Segments<T extends string | number>({ label, value, options, change, di
 
 export function GameSettings({ open, onOpenChange, preferences, change, online = false, children }: { open: boolean; onOpenChange: (open: boolean) => void; preferences: GamePreferences; change?: (value: GamePreferences) => void; online?: boolean; children?: ReactNode }) {
   const theme = useTheme();
-  return <ArenaDialog title="Настройки" open={open} onOpenChange={onOpenChange}>
-    <Segments label="Тема" value={theme} options={[[Theme.System, "Системная"], [Theme.Light, "Светлая"], [Theme.Dark, "Тёмная"]]} change={setTheme} />
-    <Segments label="Соперник" value={preferences.mode === "local" ? "local" : "ai"} options={[["local", online ? "Игрок онлайн" : "Игрок"], ["ai", "Компьютер"]]} disabled={online} change={value => change?.({ ...preferences, mode: value === "local" ? "local" : "hard" })} />
-    <Segments label="Время на каждого игрока" value={preferences.duration} options={[[30000, "30 с"], [60000, "1 мин"], [180000, "3 мин"], [300000, "5 мин"]]} disabled={online} change={duration => change?.({ ...preferences, duration })} />
-    {!online && preferences.mode !== "local" ? <><Segments label="Сложность" value={preferences.mode} options={[["easy", "Лёгкая"], ["medium", "Средняя"], ["hard", "Сильная"]]} change={mode => change?.({ ...preferences, mode })} /><Segments label="Вы играете за" value={preferences.side} options={[["X", "Крестики"], ["O", "Нолики"]]} change={side => change?.({ ...preferences, side })} /></> : null}
-    {online ? <p className="text-[13px] text-game-text2">Параметры сетевой партии и часы определяет сервер.</p> : null}{children}
+  return <ArenaDialog title="Settings" open={open} onOpenChange={onOpenChange}>
+    <Segments label="Theme" value={theme} options={[[Theme.System, "System"], [Theme.Light, "Light"], [Theme.Dark, "Dark"]]} change={setTheme} />
+    <Segments label="Opponent" value={preferences.mode === "local" ? "local" : "ai"} options={[["local", online ? "Online player" : "Player"], ["ai", "Computer"]]} disabled={online} change={value => change?.({ ...preferences, mode: value === "local" ? "local" : "hard" })} />
+    <Segments label="Time per player" value={preferences.duration} options={[[30000, "30 s"], [60000, "1 min"], [180000, "3 min"], [300000, "5 min"]]} disabled={online} change={duration => change?.({ ...preferences, duration })} />
+    {!online && preferences.mode !== "local" ? <><Segments label="Difficulty" value={preferences.mode} options={[["easy", "Easy"], ["medium", "Medium"], ["hard", "Hard"]]} change={mode => change?.({ ...preferences, mode })} /><Segments label="You play as" value={preferences.side} options={[["X", "X"], ["O", "O"]]} change={side => change?.({ ...preferences, side })} /></> : null}
+    {online ? <p className="text-[13px] text-game-text2">The server sets the rules and clock for online games.</p> : null}{children}
   </ArenaDialog>;
 }
 
@@ -62,11 +62,11 @@ export function GameStatistics({ open, onOpenChange, winner, gameKey, storageKey
     }
     setStats(next);
   }, [winner, gameKey, storageKey]);
-  return <ArenaDialog title="Статистика" open={open} onOpenChange={onOpenChange} footer={<><button type="button" className={`${actionClass} text-game-error`} onClick={() => { setStats(emptyStats); try { localStorage.setItem(storageKey, JSON.stringify({ ...emptyStats, games: [gameKey] })); } catch {} }}>Сбросить</button><button type="button" className={actionClass} onClick={() => onOpenChange(false)}>Закрыть</button></>}>
-    <div className="grid grid-cols-3 gap-2">{([['X', 'Крестики'], ['draw', 'Ничьи'], ['O', 'Нолики']] as const).map(([key, label]) => <div key={key} className="grid justify-items-center gap-1.5 rounded-game-md border border-game-border bg-game-bg px-2 pt-3.5 pb-3"><b className="font-mono text-[26px] leading-none font-medium">{stats[key]}</b><span className="text-[13px] text-game-text2">{label}</span></div>)}</div><div className="flex justify-between text-game-text2"><span>Партий сыграно</span><span className="font-mono">{stats.X + stats.O + stats.draw}</span></div>
+  return <ArenaDialog title="Statistics" open={open} onOpenChange={onOpenChange} footer={<><button type="button" className={`${actionClass} text-game-error`} onClick={() => { setStats(emptyStats); try { localStorage.setItem(storageKey, JSON.stringify({ ...emptyStats, games: [gameKey] })); } catch {} }}>Reset</button><button type="button" className={actionClass} onClick={() => onOpenChange(false)}>Close</button></>}>
+    <div className="grid grid-cols-3 gap-2">{([['X', 'X wins'], ['draw', 'Draws'], ['O', 'O wins']] as const).map(([key, label]) => <div key={key} className="grid justify-items-center gap-1.5 rounded-game-md border border-game-border bg-game-bg px-2 pt-3.5 pb-3"><b className="font-mono text-[26px] leading-none font-medium">{stats[key]}</b><span className="text-[13px] text-game-text2">{label}</span></div>)}</div><div className="flex justify-between text-game-text2"><span>Games played</span><span className="font-mono">{stats.X + stats.O + stats.draw}</span></div>
   </ArenaDialog>;
 }
 
 export function StatisticsIcon({ onClick }: { onClick: () => void }) {
-  return <button type="button" aria-label="Статистика" title="Статистика" className={iconClass} onClick={onClick}><ChartNoAxesColumn aria-hidden /></button>;
+  return <button type="button" aria-label="Statistics" title="Statistics" className={iconClass} onClick={onClick}><ChartNoAxesColumn aria-hidden /></button>;
 }

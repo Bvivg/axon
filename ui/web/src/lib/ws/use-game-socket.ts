@@ -20,6 +20,7 @@ const reasons: Partial<Record<SessionError, string>> = {
   [SessionError.CELL_TAKEN]: "That square is already taken.",
   [SessionError.NOT_PLAYING]: "This game is not in progress.",
   [SessionError.UNAVAILABLE]: "The game service is unavailable.",
+  [SessionError.UNDO_DISABLED]: "Undo is off in rated games.",
 };
 
 function command(action: MessageInitShape<typeof SessionCommandSchema>) {

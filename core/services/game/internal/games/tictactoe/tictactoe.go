@@ -82,7 +82,7 @@ func (Game) ApplyMove(state engine.State, move engine.Move) (engine.State, error
 	next := state.Advance(data, (seat+1)%len(state.Players))
 
 	switch {
-	case b.wins(seat):
+	case b.winningLine(seat) != nil:
 		next = next.Finish(seat)
 	case b.full():
 		next = next.Finish(engine.NoSeat)

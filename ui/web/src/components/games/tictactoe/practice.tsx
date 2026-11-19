@@ -10,14 +10,13 @@ import { useArenaShortcuts } from "@/components/games/tictactoe/shortcuts";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Mark, TicTacToeBoardSchema } from "@/gen/axon/game/v1/game_pb";
 import { aiMove, localGameReducer, newGame } from "@/lib/games/tictactoe";
-import { ticTacToeProfiles as profiles } from "@/lib/games/tictactoe-profiles";
 
 const options = (settings: GamePreferences) => ({ duration: settings.duration, human: settings.side });
 
 const subscribeHydration = () => () => {};
 export function PracticeGame() {
   const hydrated = useSyncExternalStore(subscribeHydration, () => true, () => false);
-  return hydrated ? <PracticeArena /> : <span role="status" className="sr-only">Загрузка игры</span>;
+  return hydrated ? <PracticeArena /> : <span role="status" className="sr-only">Loading game</span>;
 }
 
 function PracticeArena() {
@@ -56,17 +55,17 @@ function PracticeArena() {
   const playable = !result && !paused && (mode === "local" || turn === human);
   const move = (cell: number) => { if (playable) dispatch({ type: "move", cell, mark: turn, now: Date.now() }); };
   useArenaShortcuts({ enabled: !paused, move, undo, restart: () => reset() });
-  const title = result?.winner === "draw" ? "Ничья" : mode === "local" ? `Победа ${result?.winner === "X" ? "крестиков" : "ноликов"}` : result?.winner === human ? "Победа" : "Поражение";
+  const title = result?.winner === "draw" ? "Draw" : mode === "local" ? `${result?.winner === "X" ? "X" : "O"} wins` : result?.winner === human ? "You won" : "You lost";
   const board = create(TicTacToeBoardSchema, { cells: cells.map(cell => cell === "X" ? Mark.X : cell === "O" ? Mark.O : Mark.UNSPECIFIED), winningCells: result?.line ?? [] });
   const bottom = mode === "local" ? "X" : human;
   const top = bottom === "X" ? "O" : "X";
-  return <ScrollArea className="min-h-0 flex-1 bg-game-workspace" viewportProps={{ className: "[&>div]:min-h-full" }}><main lang="ru" className="flex min-h-full w-full flex-col px-[max(16px,env(safe-area-inset-left))] pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))] text-game-text">
+  return <ScrollArea className="min-h-0 flex-1 bg-game-workspace" viewportProps={{ className: "[&>div]:min-h-full" }}><main className="flex min-h-full w-full flex-col px-[max(16px,env(safe-area-inset-left))] pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))] text-game-text">
     <div className={arenaClass}>
       <ArenaHeader><ArenaTools restart={() => reset()} undo={undo} canUndo={canUndo}><StatisticsIcon onClick={() => setModal("stats")} /><SettingsIcon onClick={() => setModal("settings")} /></ArenaTools></ArenaHeader>
-      <ArenaPlayer mark={top === "X" ? Mark.X : Mark.O} name={mode === "local" ? profiles.opponent.nick : profiles.bot.nick} rating={mode === "local" ? profiles.opponent.rating : undefined} difficulty={mode === "local" ? undefined : difficultyLabels[mode]} avatar={mode === "local" ? profiles.opponent.avatar : profiles.bot.avatar} bot={mode !== "local"} active={!result && turn === top} time={game.left[top]} />
-      <section aria-label="Игровое поле" className="relative"><Board board={board} lastMove={game.history.length ? cells.findIndex((cell, index) => cell !== game.history.at(-1)?.cells[index]) : undefined} turn={turn === "X" ? Mark.X : Mark.O} playable={playable} move={move} /></section>
-      <ArenaPlayer mark={bottom === "X" ? Mark.X : Mark.O} name={profiles.me.nick} rating={mode === "local" ? profiles.me.rating : undefined} avatar={profiles.me.avatar} active={!result && turn === bottom} time={game.left[bottom]} />
-      <span role="status" aria-live="polite" aria-atomic="true" data-game-status className="sr-only">{result ? title : turn === "X" ? "Ход крестиков" : "Ход ноликов"}</span>
+      <ArenaPlayer mark={top === "X" ? Mark.X : Mark.O} name={mode === "local" ? `Player ${top}` : "Computer"} difficulty={mode === "local" ? undefined : difficultyLabels[mode]} bot={mode !== "local"} active={!result && turn === top} time={game.left[top]} />
+      <section aria-label="Game board" className="relative"><Board board={board} lastMove={game.history.length ? cells.findIndex((cell, index) => cell !== game.history.at(-1)?.cells[index]) : undefined} turn={turn === "X" ? Mark.X : Mark.O} playable={playable} move={move} /></section>
+      <ArenaPlayer mark={bottom === "X" ? Mark.X : Mark.O} name={mode === "local" ? `Player ${bottom}` : "You"} active={!result && turn === bottom} time={game.left[bottom]} />
+      <span role="status" aria-live="polite" aria-atomic="true" data-game-status className="sr-only">{result ? title : turn === "X" ? "X to move" : "O to move"}</span>
     </div>
     {result && !dismissed ? <ArenaResult title={title} kind={result.winner === "draw" ? "draw" : mode !== "local" && result.winner !== human ? "lose" : "win"} close={() => setDismissed(true)} restart={() => reset()} /> : null}
     <GameSettings open={modal === "settings"} onOpenChange={open => setModal(open ? "settings" : null)} preferences={settings} change={next => { setSettings(next); storePreferences(next); reset(next); }} />
