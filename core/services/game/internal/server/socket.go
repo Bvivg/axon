@@ -93,21 +93,21 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 	if push(initial, nil) != nil {
 		return
 	}
-	commands := make(chan *gamev1.SessionCommand)
+	commands := make(chan incoming)
 	go func() {
 		defer cancel()
-		limiter := rate.NewLimiter(4, 8)
+		limiter, flood := rate.NewLimiter(4, 8), rate.NewLimiter(20, 40)
 		for {
 			command, err := read(ctx)
 			if err != nil && !errors.Is(err, invalidCommand) {
 				return
 			}
-			if !limiter.Allow() {
+			if !flood.Allow() {
 				_ = conn.Close(ws.StatusPolicyViolation, "Too many commands")
 				return
 			}
 			select {
-			case commands <- command:
+			case commands <- incoming{command: command, limited: !limiter.Allow()}:
 			case <-ctx.Done():
 				return
 			}
@@ -122,7 +122,14 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 			if push(h.store.Get(ctx, id, user)) != nil {
 				return
 			}
-		case command := <-commands:
+		case next := <-commands:
+			if next.limited {
+				if fail(gamev1.SessionError_SESSION_ERROR_RATE_LIMITED) != nil {
+					return
+				}
+				continue
+			}
+			command := next.command
 			var item session.Session
 			var err error
 			switch action := command.GetAction().(type) {
@@ -181,6 +188,11 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+type incoming struct {
+	command *gamev1.SessionCommand
+	limited bool
 }
 
 func moveError(err error) gamev1.SessionError {

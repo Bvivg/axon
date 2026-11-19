@@ -23,6 +23,7 @@ const reasons: Partial<Record<SessionError, string>> = {
   [SessionError.UNDO_DISABLED]: "Undo is off in rated games.",
   [SessionError.ILLEGAL_MOVE]: "That move is not allowed.",
   [SessionError.NO_DRAW_OFFER]: "The draw offer is no longer open.",
+  [SessionError.RATE_LIMITED]: "You are moving too fast. Try again.",
 };
 
 function command(action: MessageInitShape<typeof SessionCommandSchema>) {
