@@ -348,16 +348,15 @@ jobs:
 
   app:
     name: SwiftUI app
-    runs-on: macos-latest
+    runs-on: macos-26
     timeout-minutes: 30
-    env:
-      XCODE_VERSION: "26.6"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode ${{ env.XCODE_VERSION }}
+      - name: Select the newest Xcode
         run: |
-          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select --switch "$xcode"
           xcodebuild -version
 
       - uses: bufbuild/buf-setup-action@v1
