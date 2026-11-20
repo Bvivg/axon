@@ -18,6 +18,8 @@ export function EvalBar({ position }: { position?: PositionAnalysis }) {
   );
 }
 
+const inside = (percent: number, margin: number) => Math.min(100 - margin, Math.max(margin, percent));
+
 export function EvalChart({ positions, at, onSelect }: { positions: PositionAnalysis[]; at: number; onSelect: (ply: number) => void }) {
   const last = Math.max(1, positions.length - 1);
   const heights = positions.map(position => (1 - whiteShare(position)) * 100);
@@ -36,7 +38,7 @@ export function EvalChart({ positions, at, onSelect }: { positions: PositionAnal
       {positions.map(position => {
         const mark = moveMark(position.moveClass);
         return mark ? <span key={position.ply} aria-hidden data-chart-mark={mark} className={cn("pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-game-card", mark === MoveMark.Blunder ? "bg-game-error" : "bg-game-warning")}
-          style={{ left: `${(position.ply / last) * 100}%`, top: `${heights[position.ply]}%` }} /> : null;
+          style={{ left: `${inside((position.ply / last) * 100, 2)}%`, top: `${inside(heights[position.ply] ?? 50, 8)}%` }} /> : null;
       })}
     </div>
   );
