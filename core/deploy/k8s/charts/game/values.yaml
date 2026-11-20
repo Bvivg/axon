@@ -31,7 +31,7 @@ hpa:
   minReplicas: 2
   maxReplicas: 6
   metric: game_active_sessions
-  averageValue: "100"
+  averageValue: "50"
   scaleDownWindowSeconds: 60
 pdb:
   minAvailable: 1
