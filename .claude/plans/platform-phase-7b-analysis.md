@@ -44,8 +44,10 @@
 - **Метрики**: `analysis_jobs_total{outcome}` (ready/failed/duplicate/skipped/invalid),
   `analysis_duration_seconds`, `analysis_engine_restarts_total`, плюс общие RPC-метрики.
   Дашборда у rating нет, поэтому панель Grafana не добавляется; Prometheus получает job.
-- **Образ**: в `Dockerfile.service` flavor `runtime-analysis` — `alpine` + `apk add stockfish`,
-  непривилегированный пользователь 65532; путь к бинарю — `STOCKFISH_PATH`.
+- **Образ**: в `Dockerfile.service` flavor `runtime-analysis` — `debian:trixie-slim` +
+  `apt-get install stockfish` (17.1, `/usr/games/stockfish`), непривилегированный пользователь
+  65532; путь к бинарю — `STOCKFISH_PATH`. В Alpine 3.24 пакета `stockfish` нет (только
+  `edge/testing`, 19-r0), тянуть testing-репозиторий в рантайм отклонено.
 - **Gateway**: прокси `AnalysisService`, запись в `policy` (стандартный tier, только вошедшие),
   `GetAnalysis` в списке повторяемых процедур, `ANALYSIS_SERVICE_URL`.
 - **Web**: в реплее шахмат `useAnalysis` (TanStack Query) спрашивает `GetAnalysis` у
@@ -78,8 +80,8 @@
   политика gateway покрывает новый RPC.
 - Integration: `go test -tags integration ./services/analysis/integration/...` (testcontainers:
   Postgres с `01-schemas.sh` и миграциями, Kafka) — pending → ready, повторная доставка того же
-  события в Kafka не добавляет строк; движок — тот же тег в контейнере с `apk add stockfish`
-  (детский мат, перезапуск убитого процесса).
+  события в Kafka не добавляет строк; движок — тот же тег, Stockfish в `debian:trixie-slim`
+  за `socat` (детский мат, перезапуск убитого процесса, остановка по таймауту).
 - E2E: `make test-e2e-analysis` — проект `axon-analysis-e2e` на базовом стеке + CDC: детский мат
   `e2e4 e7e5 f1c4 b8c6 d1h5 g8f6 h5f7` через сокет gateway, `GetAnalysis` через gateway до
   `ready`; ply 6 (`g8f6`) — `blunder`, последняя позиция — мат, позиций = ply + 1; затем `down -v`.
@@ -89,3 +91,37 @@
 ## Критерий готовности
 Детский мат, сыгранный через gateway, через несколько секунд показывает в реплее зевок `Nf6??`
 и мат на последнем ходу, а повторная доставка события не меняет число строк анализа.
+
+## Результаты (2026-11-20)
+- **`golangci-lint` v2.15.0** по всем семи модулям — 0 замечаний (в Docker, с `--timeout=25m`:
+  при загрузке VM дефолтного таймаута не хватило).
+- **Unit, `go test -race -count=1`**: `shared` (16 пакетов), `game` (12), `gateway` (7), `analysis`
+  (5: `uci`, `review`, `analyser`, `consumer`, `server`) — все зелёные.
+- **Integration (testcontainers, 7 тестов, 138 с)**: Stockfish 17.1 в `debian:trixie-slim` за `socat`.
+  Детский мат через Kafka: 8 позиций на глубине 12, `ready` через 4,75 с после публикации события,
+  чистое время движка 2,23 с. Три доставки одного события: `reports` 1, `positions` 8,
+  `processed_events` 1, исходы ready 1 / duplicate 2. Убитый процесс заменён, позиция пересчитана
+  (`restarts` 1). Поиск на глубину 40 с таймаутом 300 мс остановлен `stop` без перезапуска.
+  Pending → ready, failed с ошибкой, гонка двух доставок — одна запись.
+- **E2E `make test-e2e-analysis`** (проект `axon-analysis-e2e`, `down -v` после прогона), два
+  прогона: `ready` через 3,05 с и 5,17 с после мата, время движка (`analysis_duration_seconds_sum`)
+  0,58 с и 0,81 с. Оценки: ply 5 `d1h5` — inaccuracy (потеря 65), ply 6 `g8f6` — blunder, мат в 1,
+  лучший `h5f7`, потеря 10038; ply 7 — мат 0, +10000, без лучшего хода; позиций 8 = 7 ходов + 1.
+- **Web**: `tsc` чистый, `eslint` 0 ошибок (3 старых предупреждения вне фазы), vitest 138/138
+  (Node 24; на Node 20 падает репортер на `Map.groupBy`, тесты при этом проходят). Playwright
+  `e2e/analysis.spec.ts` на `docker-compose.web-e2e.yml` (проект `axon-web-e2e-p7b`) — зелёный
+  в трёх прогонах: «Analysis pending», шкала `1-0`/`+M1`, график из 8 точек с одной меткой `??`,
+  `Nf6??`, `Qh5?!`, «Best g6»; анализ на стенде занял 2,4–5,9 с. После — `down -v --rmi local`.
+- **Найдено и исправлено по ходу**: в `docker-compose.web-e2e.yml` `pg_isready` по сокету
+  срабатывал во время init-скриптов Postgres, и миграция падала `connection refused` — теперь
+  проверка по TCP; в overlay e2e у `auth`/`chat` был `wget`, которого нет в runtime-образе.
+  При нагрузке Docker VM ~210 на 10 vCPU поиск ply 0 не уложился в 10 с, отчёт стал `failed` —
+  тестовые стеки получили `ANALYSIS_POSITION_TIMEOUT=60s`, по умолчанию остаётся 10 с.
+
+### Не проверено
+- `docker-compose.mtls.yml`/`mtls-e2e.yml` с `analysis` и security e2e — только `config -q`.
+- Overlay `ha` и `observability` (job Prometheus на `:9095`) вживую не поднимались.
+- `scripts/start-dev.mjs` с локальным Stockfish и CI-workflow не запускались.
+- Integration-тесты `auth`/`chat`/`game` после добавления `ANALYSIS_DB_PASSWORD` в их env не
+  перегонялись (тот же `01-schemas.sh` проверен integration-тестом `analysis`).
+- Отчёт `failed` окончательный: повторного анализа после таймаута или старого события без ходов нет.
