@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +32,8 @@ const (
 	recoverBatch    = 50
 	queueDepth      = 256
 	waitPoll        = 400 * time.Millisecond
+
+	pendingPerUploader = 64
 )
 
 var (
@@ -52,6 +55,7 @@ type Sessions interface {
 	FinishSession(ctx context.Context, id, uploadID uuid.UUID) error
 	FailSession(ctx context.Context, id uuid.UUID, reason string) error
 	DeleteSession(ctx context.Context, id uuid.UUID) error
+	WithdrawSession(ctx context.Context, id uuid.UUID) (bool, error)
 
 	DeleteDraftUpload(ctx context.Context, uploadID uuid.UUID) error
 	CreateUpload(ctx context.Context, u domain.Upload) (domain.Upload, error)
@@ -81,6 +85,7 @@ type Config struct {
 	Sessions  Sessions
 	Objects   Objects
 	Processor Processor
+	Budget    *Budget
 	KeysOf    func(payload json.RawMessage) []string
 	Logger    *slog.Logger
 
@@ -88,6 +93,7 @@ type Config struct {
 	MaxVoiceBytes int64
 	PartSize      int64
 	Workers       int
+	PerUploader   int
 	TempDir       string
 }
 
@@ -95,17 +101,22 @@ type Manager struct {
 	sessions  Sessions
 	objects   Objects
 	processor Processor
+	budget    *Budget
 	keysOf    func(payload json.RawMessage) []string
 	log       *slog.Logger
 
 	maxBytes      int64
 	maxVoiceBytes int64
 	partSize      int64
-	workers       int
 	tempDir       string
 
 	queue chan uuid.UUID
 	newID func() uuid.UUID
+
+	slots   *media.Slots
+	mu      sync.Mutex
+	pending map[uuid.UUID]struct{}
+	waiting map[uuid.UUID]int
 }
 
 func New(cfg Config) (*Manager, error) {
@@ -116,6 +127,8 @@ func New(cfg Config) (*Manager, error) {
 		return nil, errors.New("uploads: an object store is required")
 	case cfg.Processor == nil:
 		return nil, errors.New("uploads: a media processor is required")
+	case cfg.Budget == nil:
+		return nil, errors.New("uploads: an upload budget is required")
 	case cfg.KeysOf == nil:
 		return nil, errors.New("uploads: an object key resolver is required")
 	case cfg.Logger == nil:
@@ -130,15 +143,18 @@ func New(cfg Config) (*Manager, error) {
 		sessions:      cfg.Sessions,
 		objects:       cfg.Objects,
 		processor:     cfg.Processor,
+		budget:        cfg.Budget,
 		keysOf:        cfg.KeysOf,
 		log:           cfg.Logger,
 		maxBytes:      cfg.MaxBytes,
 		maxVoiceBytes: cfg.MaxVoiceBytes,
 		partSize:      cfg.PartSize,
-		workers:       max(cfg.Workers, 1),
 		tempDir:       cfg.TempDir,
 		queue:         make(chan uuid.UUID, queueDepth),
 		newID:         uuid.New,
+		slots:         media.NewSlots(max(cfg.Workers, 1), cfg.PerUploader),
+		pending:       map[uuid.UUID]struct{}{},
+		waiting:       map[uuid.UUID]int{},
 	}, nil
 }
 
@@ -182,9 +198,14 @@ func (m *Manager) Start(
 			return ready, err
 		}
 	}
+	chargedAt, err := m.budget.Charge(ctx, uploader, size)
+	if err != nil {
+		return domain.UploadSession{}, err
+	}
 	key := "staging/" + id.String()
 	multipart, err := m.objects.StartMultipart(ctx, key)
 	if err != nil {
+		m.refund(ctx, uploader, chargedAt, size)
 		return domain.UploadSession{}, err
 	}
 
@@ -192,8 +213,15 @@ func (m *Manager) Start(
 	stored, err := m.sessions.CreateSession(ctx, session)
 	if err != nil {
 		_ = m.objects.AbortMultipart(context.WithoutCancel(ctx), key, multipart)
+		m.refund(ctx, uploader, chargedAt, size)
 	}
 	return stored, err
+}
+
+func (m *Manager) refund(ctx context.Context, uploader uuid.UUID, chargedAt time.Time, size int64) {
+	if err := m.budget.Refund(context.WithoutCancel(ctx), uploader, chargedAt, size); err != nil {
+		m.log.WarnContext(ctx, "could not give back an unused upload budget", "user_id", uploader, "bytes", size, "error", err)
+	}
 }
 
 func (m *Manager) owned(ctx context.Context, uploader, id uuid.UUID) (domain.UploadSession, error) {
@@ -342,6 +370,15 @@ func (m *Manager) Delete(ctx context.Context, uploader, id uuid.UUID) error {
 		if err := m.objects.AbortMultipart(ctx, s.StagingKey, s.MultipartID); err != nil {
 			return err
 		}
+		withdrawn, err := m.sessions.WithdrawSession(ctx, s.ID)
+		if err != nil {
+			return err
+		}
+		if !withdrawn {
+			return m.Delete(ctx, uploader, id)
+		}
+		m.refund(ctx, uploader, s.CreatedAt, s.SizeBytes)
+		return nil
 	case domain.UploadFailed:
 		_ = m.objects.AbortMultipart(ctx, s.StagingKey, s.MultipartID)
 		m.removeStaging(ctx, s)
@@ -383,18 +420,16 @@ func (m *Manager) enqueue(id uuid.UUID) {
 }
 
 func (m *Manager) Run(ctx context.Context) {
-	for range m.workers {
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case id := <-m.queue:
-					m.process(ctx, id)
-				}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case id := <-m.queue:
+				m.schedule(ctx, id)
 			}
-		}()
-	}
+		}
+	}()
 
 	ticker := time.NewTicker(recoverInterval)
 	defer ticker.Stop()
@@ -412,6 +447,49 @@ func (m *Manager) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+func (m *Manager) schedule(ctx context.Context, id uuid.UUID) {
+	s, err := m.sessions.SessionByID(ctx, id)
+	if err != nil {
+		if !errors.Is(err, domain.ErrSessionNotFound) && ctx.Err() == nil {
+			m.log.ErrorContext(ctx, "could not look up a queued upload", "upload_session_id", id, "error", err)
+		}
+		return
+	}
+	if s.Status != domain.UploadProcessing || !m.hold(s) {
+		return
+	}
+
+	go func() {
+		defer m.unhold(s)
+		release, err := m.slots.Acquire(ctx, s.UploaderID.String())
+		if err != nil {
+			return
+		}
+		defer release()
+		m.process(ctx, s.ID)
+	}()
+}
+
+func (m *Manager) hold(s domain.UploadSession) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, queued := m.pending[s.ID]; queued || m.waiting[s.UploaderID] >= pendingPerUploader {
+		return false
+	}
+	m.pending[s.ID] = struct{}{}
+	m.waiting[s.UploaderID]++
+	return true
+}
+
+func (m *Manager) unhold(s domain.UploadSession) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.pending, s.ID)
+	if m.waiting[s.UploaderID]--; m.waiting[s.UploaderID] <= 0 {
+		delete(m.waiting, s.UploaderID)
 	}
 }
 

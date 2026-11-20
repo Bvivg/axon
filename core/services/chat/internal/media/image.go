@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -9,6 +10,8 @@ import (
 	"image/jpeg"
 	"image/png"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/disintegration/imaging"
 	_ "golang.org/x/image/webp"
@@ -74,6 +77,29 @@ func (l ImageLimits) checkAnimation(s gifShape) error {
 		return fmt.Errorf("%w: more than %d decoded pixels", ErrAnimationTooLarge, l.MaxAnimationPixels)
 	}
 	return nil
+}
+
+type Images struct {
+	limits ImageLimits
+	slots  *Slots
+}
+
+func NewImages(limits ImageLimits, slots *Slots) *Images {
+	return &Images{limits: limits.withDefaults(), slots: slots}
+}
+
+func (i *Images) ProcessFile(ctx context.Context, path string) (Image, error) {
+	release, err := i.slots.Acquire(ctx, OwnerOf(ctx))
+	if err != nil {
+		return Image{}, err
+	}
+	defer release()
+
+	raw, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return Image{}, fmt.Errorf("media: read image: %w", err)
+	}
+	return ProcessImage(raw, i.limits)
 }
 
 type Image struct {

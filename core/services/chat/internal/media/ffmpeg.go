@@ -33,6 +33,7 @@ type ToolsConfig struct {
 	FFprobe string
 
 	Workers        int
+	PerUser        int
 	Timeout        time.Duration
 	MaxVideoPixels int64
 }
@@ -42,7 +43,7 @@ type Tools struct {
 	ffprobe        string
 	timeout        time.Duration
 	maxVideoPixels int64
-	slots          chan struct{}
+	slots          *Slots
 }
 
 func NewTools(cfg ToolsConfig) *Tools {
@@ -63,7 +64,7 @@ func NewTools(cfg ToolsConfig) *Tools {
 		ffprobe:        cfg.FFprobe,
 		timeout:        timeout,
 		maxVideoPixels: maxVideoPixels,
-		slots:          make(chan struct{}, workers),
+		slots:          NewSlots(workers, cfg.PerUser),
 	}
 }
 
@@ -283,12 +284,11 @@ func (t *Tools) TranscodeVoice(ctx context.Context, in, out string) error {
 }
 
 func (t *Tools) run(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	select {
-	case t.slots <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	release, err := t.slots.Acquire(ctx, OwnerOf(ctx))
+	if err != nil {
+		return nil, err
 	}
-	defer func() { <-t.slots }()
+	defer release()
 
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()

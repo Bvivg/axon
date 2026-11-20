@@ -255,6 +255,8 @@ func (h *UploadSessionsHandler) write(w http.ResponseWriter, status int, v uploa
 func (h *UploadSessionsHandler) fail(ctx context.Context, w http.ResponseWriter, err error) {
 	var tooLarge *http.MaxBytesError
 	switch {
+	case errors.Is(err, domain.ErrUploadQuota):
+		refuseOverQuota(w)
 	case errors.Is(err, domain.ErrSessionNotFound):
 		http.Error(w, "no such upload", http.StatusNotFound)
 	case errors.Is(err, domain.ErrSessionState),
