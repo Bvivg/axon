@@ -28,24 +28,21 @@ func (b Board) PawnMoves(seat int) []Cell {
 
 func (b Board) overlaps(w Wall) bool {
 	r, c := w.Anchor.Row(), w.Anchor.Col()
-	if b.walls[w] || b.walls[Wall{w.Anchor, flip(w.Dir)}] {
+	if b.wall(r, c, Horizontal) || b.wall(r, c, Vertical) {
 		return true
 	}
 	if w.Dir == Horizontal {
-		return (c > 0 && b.walls[Wall{At(r, c-1), Horizontal}]) || (c < Size-2 && b.walls[Wall{At(r, c+1), Horizontal}])
+		return (c > 0 && b.wall(r, c-1, Horizontal)) || (c < anchors-1 && b.wall(r, c+1, Horizontal))
 	}
-	return (r > 0 && b.walls[Wall{At(r-1, c), Vertical}]) || (r < Size-2 && b.walls[Wall{At(r+1, c), Vertical}])
+	return (r > 0 && b.wall(r-1, c, Vertical)) || (r < anchors-1 && b.wall(r+1, c, Vertical))
 }
 
-func flip(d Orientation) Orientation {
-	if d == Horizontal {
-		return Vertical
-	}
-	return Horizontal
+func (b Board) placeable(seat int, w Wall) bool {
+	return b.Left[seat] > 0 && w.Anchor.Row() < anchors && w.Anchor.Col() < anchors && !b.overlaps(w)
 }
 
 func (b Board) CanPlace(seat int, w Wall) bool {
-	if b.Left[seat] == 0 || w.Anchor.Row() >= Size-1 || w.Anchor.Col() >= Size-1 || b.overlaps(w) {
+	if !b.placeable(seat, w) {
 		return false
 	}
 	next := b.with(w)
@@ -60,13 +57,23 @@ func (b Board) LegalMoves(seat int) []Move {
 	if b.Left[seat] == 0 {
 		return out
 	}
-	for r := 0; r < Size-1; r++ {
-		for c := 0; c < Size-1; c++ {
-			for _, d := range []Orientation{Horizontal, Vertical} {
+	white, okWhite := cuts(b, b.Pawns[0], GoalRow(0))
+	black, okBlack := cuts(b, b.Pawns[1], GoalRow(1))
+	if !okWhite || !okBlack {
+		return out
+	}
+	critical := [2]uint64{white[0] | black[0], white[1] | black[1]}
+	for r := 0; r < anchors; r++ {
+		for c := 0; c < anchors; c++ {
+			for _, d := range [2]Orientation{Horizontal, Vertical} {
 				w := Wall{At(r, c), d}
-				if b.CanPlace(seat, w) {
-					out = append(out, Move{Wall: &w})
+				if !b.placeable(seat, w) {
+					continue
 				}
+				if critical[orientation(d)]&bit(r, c) != 0 && !b.CanPlace(seat, w) {
+					continue
+				}
+				out = append(out, Move{Wall: &w})
 			}
 		}
 	}

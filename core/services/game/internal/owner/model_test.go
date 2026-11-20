@@ -21,21 +21,52 @@ import (
 type model struct {
 	mu       sync.Mutex
 	log      *journal.Memory
+	rules    session.Rules
 	epochs   map[int32]int64
+	holders  map[int32]string
+	leases   map[int32]time.Time
 	offsets  map[int32]owner.Projection
 	sessions map[uuid.UUID]session.Session
 	moves    map[uuid.UUID]map[int]session.MoveRecord
 }
 
-func newModel(log *journal.Memory) *model {
-	return &model{log: log, epochs: map[int32]int64{}, offsets: map[int32]owner.Projection{}, sessions: map[uuid.UUID]session.Session{}, moves: map[uuid.UUID]map[int]session.MoveRecord{}}
+func newModel(log *journal.Memory, rules session.Rules) *model {
+	return &model{log: log, rules: rules, epochs: map[int32]int64{}, holders: map[int32]string{}, leases: map[int32]time.Time{}, offsets: map[int32]owner.Projection{}, sessions: map[uuid.UUID]session.Session{}, moves: map[uuid.UUID]map[int]session.MoveRecord{}}
 }
 
-func (m *model) Claim(_ context.Context, partition int32, _, _ string) (int64, error) {
+func (m *model) Claim(_ context.Context, partition int32, holder, _ string, ttl time.Duration) (owner.Lease, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var wait time.Duration
+	if m.holders[partition] != holder {
+		wait = max(0, time.Until(m.leases[partition]))
+	}
 	m.epochs[partition]++
-	return m.epochs[partition], nil
+	m.holders[partition] = holder
+	m.leases[partition] = time.Now().Add(wait + ttl)
+	return owner.Lease{Generation: m.epochs[partition], Wait: wait}, nil
+}
+
+func (m *model) Renew(_ context.Context, holder string, held map[int32]int64, ttl time.Duration) ([]int32, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var renewed []int32
+	for partition, generation := range held {
+		if m.holders[partition] == holder && m.epochs[partition] == generation {
+			m.leases[partition] = time.Now().Add(ttl)
+			renewed = append(renewed, partition)
+		}
+	}
+	return renewed, nil
+}
+
+func (m *model) Release(_ context.Context, holder string, partition int32, generation int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.holders[partition] == holder && m.epochs[partition] == generation {
+		m.leases[partition] = time.Now()
+	}
+	return nil
 }
 
 func (m *model) Projected(_ context.Context, partition int32) (owner.Projection, error) {
@@ -97,7 +128,7 @@ func (m *model) project(t *testing.T) {
 		fence.Seed(partition, at.Generation)
 		err := m.log.Read(ctx, partition, at.Offset, end, func(entry journal.Entry) error {
 			if fence.Admit(entry) {
-				m.apply(*entry.Event)
+				return m.apply(*entry.Event)
 			}
 			return nil
 		})
@@ -109,25 +140,35 @@ func (m *model) project(t *testing.T) {
 	}
 }
 
-func (m *model) apply(event journal.Event) {
-	game, change := event.Session, event.Change
+func (m *model) apply(event journal.Event) error {
+	id := event.Session.ID
+	var base *session.Session
+	if current, ok := m.sessions[id]; ok {
+		base = &current
+	}
+	folded, err := journal.Fold(m.rules, base, event)
+	if err != nil || !folded.Applied {
+		return err
+	}
+	game, change := folded.Session, folded.Change
 	if change.Fact == session.FactCancelled {
-		delete(m.sessions, game.ID)
-		delete(m.moves, game.ID)
-		return
+		delete(m.sessions, id)
+		delete(m.moves, id)
+		return nil
 	}
-	if current, ok := m.sessions[game.ID]; !ok || current.Revision < game.Revision {
-		m.sessions[game.ID] = game
-	}
-	if m.moves[game.ID] == nil {
-		m.moves[game.ID] = map[int]session.MoveRecord{}
+	m.sessions[id] = game
+	if m.moves[id] == nil {
+		m.moves[id] = map[int]session.MoveRecord{}
 	}
 	switch change.Fact {
 	case session.FactMoved:
-		m.moves[game.ID][change.Move.Ply] = *change.Move
+		move := *change.Move
+		move.StateBefore = engine.State{}
+		m.moves[id][move.Ply] = move
 	case session.FactUndone:
-		delete(m.moves[game.ID], change.UndonePly)
+		delete(m.moves[id], change.UndonePly)
 	}
+	return nil
 }
 
 type recorder struct {
@@ -169,12 +210,18 @@ func newCluster(t *testing.T, partitions int32) *cluster {
 		}
 	}
 	log := journal.NewMemory(partitions)
-	return &cluster{log: log, model: newModel(log), rules: session.NewRules(games), now: time.Now}
+	rules := session.NewRules(games)
+	return &cluster{log: log, model: newModel(log, rules), rules: rules, now: time.Now}
 }
 
 func (c *cluster) node(t *testing.T, id string, listener owner.Listener, partitions ...int32) *owner.Owner {
 	t.Helper()
-	node := owner.New(owner.Config{ID: id, Address: id + ":8080", Log: c.log, Model: c.model, Rules: c.rules, Listener: listener, Now: func() time.Time { return c.now() }})
+	return c.leased(t, id, listener, 0, partitions...)
+}
+
+func (c *cluster) leased(t *testing.T, id string, listener owner.Listener, lease time.Duration, partitions ...int32) *owner.Owner {
+	t.Helper()
+	node := owner.New(owner.Config{ID: id, Address: id + ":8080", Log: c.log, Model: c.model, Rules: c.rules, Listener: listener, Lease: lease, Now: func() time.Time { return c.now() }})
 	for _, p := range partitions {
 		if err := node.Assign(context.Background(), p); err != nil {
 			t.Fatal(err)

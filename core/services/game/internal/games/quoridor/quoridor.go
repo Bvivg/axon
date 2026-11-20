@@ -41,7 +41,7 @@ func NewMove(player engine.PlayerID, ply int, move string) engine.Move {
 }
 
 func encode(b Board, moves []string) data {
-	walls := make([]string, 0, len(b.walls))
+	walls := []string{}
 	for _, w := range b.Walls() {
 		walls = append(walls, w.String())
 	}
@@ -73,7 +73,7 @@ func decode(state engine.State) (data, Board, error) {
 		if err != nil || m.Wall == nil {
 			return data{}, Board{}, fmt.Errorf("%w: wall %q", engine.ErrStateMalformed, raw)
 		}
-		b.walls[*m.Wall] = true
+		b = b.with(*m.Wall)
 	}
 	return d, b, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 )
 
@@ -19,10 +20,19 @@ type Claim struct {
 	At         time.Time
 }
 
+type Outcome struct {
+	Status    engine.Status
+	Turn      int
+	Winner    int
+	Remaining []int64
+}
+
 type Event struct {
 	Session    session.Session
 	Change     session.Change
 	Generation int64
+	Partial    bool
+	Outcome    *Outcome
 }
 
 type Entry struct {

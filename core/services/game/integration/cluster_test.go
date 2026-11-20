@@ -79,7 +79,7 @@ func TestOwnershipFailoverKeepsEveryAcceptedMove(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := session.NewStore(pool, games)
-	model := projection.New(store)
+	model := projection.New(store, session.NewRules(games))
 	rules := session.NewRules(games)
 	cfg := journal.KafkaConfig{Brokers: brokers, Topic: "game.session-events.it", LeaseTopic: "game.partition-leases.it", Partitions: partitions, ReplicationFactor: 1}
 

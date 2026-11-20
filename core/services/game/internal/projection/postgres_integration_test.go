@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -62,7 +63,7 @@ func setup(t *testing.T) *env {
 		}
 	}
 	store := session.NewStore(pool, games)
-	return &env{ctx: ctx, pool: pool, store: store, model: projection.New(store), log: journal.NewMemory(partitions), rules: session.NewRules(games)}
+	return &env{ctx: ctx, pool: pool, store: store, model: projection.New(store, session.NewRules(games)), log: journal.NewMemory(partitions), rules: session.NewRules(games)}
 }
 
 func migrate(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
@@ -79,6 +80,7 @@ func migrate(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		{"000003_ratings_matchmaking", `SELECT to_regclass('game.ratings') IS NOT NULL`},
 		{"000004_draw_offers", `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='game' AND table_name='sessions' AND column_name='agreed_draw')`},
 		{"000005_event_log", `SELECT to_regclass('game.owners') IS NOT NULL`},
+		{"000006_owner_lease", `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='game' AND table_name='owners' AND column_name='lease_until')`},
 	}
 	for _, check := range checks {
 		var applied bool
@@ -114,18 +116,18 @@ func (e *env) node(t *testing.T, id string) *owner.Owner {
 
 func (e *env) project(t *testing.T) {
 	t.Helper()
+	batches := map[int32][]journal.Entry{}
 	for p := range int32(partitions) {
 		end, _ := e.log.End(e.ctx, p)
-		var entries []journal.Entry
 		if err := e.log.Read(e.ctx, p, 0, end, func(entry journal.Entry) error {
-			entries = append(entries, entry)
+			batches[p] = append(batches[p], entry)
 			return nil
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.model.Apply(e.ctx, p, entries); err != nil {
-			t.Fatal(err)
-		}
+	}
+	if _, err := e.model.Apply(e.ctx, batches); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -407,4 +409,49 @@ func TestProjectorFencesZombieOwner(t *testing.T) {
 	if err != nil || projected.Generation != 2 {
 		t.Fatal("claim generation", projected, err)
 	}
+}
+
+func TestProjectionReplaysCompactMovesFromAnyOffset(t *testing.T) {
+	e := setup(t)
+	node := e.node(t, "a")
+	game := e.match(t, node, chess.Key, uuid.New(), uuid.New())
+	players := []uuid.UUID{game.Creator, *game.Opponent}
+	opening := []string{"e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6", "e1g1", "f8e7"}
+	var err error
+	for ply, move := range opening[:4] {
+		if game, err = node.Move(e.ctx, game.ID, players[ply%2], ply, chess.Key, uci(move), &game.Revision); err != nil {
+			t.Fatal(move, err)
+		}
+	}
+	e.project(t)
+	for ply, move := range opening[4:] {
+		if game, err = node.Move(e.ctx, game.ID, players[(ply+4)%2], ply+4, chess.Key, uci(move), &game.Revision); err != nil {
+			t.Fatal(move, err)
+		}
+	}
+	e.project(t)
+	check := func(stage string) {
+		t.Helper()
+		projected, err := e.model.Load(e.ctx, game.ID)
+		var want, got any
+		_ = json.Unmarshal(game.State.Data, &want)
+		_ = json.Unmarshal(projected.State.Data, &got)
+		if err != nil || projected.Revision != game.Revision || !reflect.DeepEqual(want, got) {
+			t.Fatal(stage, "projected state differs", projected.Revision, game.Revision, err)
+		}
+		var moves, snapshots int
+		if err := e.pool.QueryRow(e.ctx, `SELECT count(*), count(state_before) FROM game.moves WHERE session_id=$1`, game.ID).Scan(&moves, &snapshots); err != nil {
+			t.Fatal(err)
+		}
+		if moves != len(opening) || snapshots != 0 {
+			t.Fatal(stage, "moves", moves, "snapshots", snapshots)
+		}
+	}
+	check("incremental")
+	if _, err := e.pool.Exec(e.ctx, `UPDATE game.projector_offsets SET next_offset=0`); err != nil {
+		t.Fatal(err)
+	}
+	e.model.Forget()
+	e.project(t)
+	check("replayed from zero")
 }

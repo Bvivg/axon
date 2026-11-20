@@ -158,6 +158,9 @@ func (p *Projector) session(ctx context.Context) error {
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
 		kgo.FetchMaxWait(100*time.Millisecond),
+		kgo.OnPartitionsAssigned(func(context.Context, *kgo.Client, map[string][]int32) { p.model.Forget() }),
+		kgo.OnPartitionsRevoked(func(context.Context, *kgo.Client, map[string][]int32) { p.model.Forget() }),
+		kgo.OnPartitionsLost(func(context.Context, *kgo.Client, map[string][]int32) { p.model.Forget() }),
 		kgo.AdjustFetchOffsetsFn(func(ctx context.Context, offsets map[string]map[int32]kgo.Offset) (map[string]map[int32]kgo.Offset, error) {
 			for partition := range offsets[p.cfg.Topic] {
 				projected, err := p.model.Projected(ctx, partition)
@@ -194,8 +197,9 @@ func (p *Projector) session(ctx context.Context) error {
 			}
 			batches[record.Partition] = append(batches[record.Partition], entry)
 		})
-		for partition, entries := range batches {
-			if _, err := p.model.Apply(ctx, partition, entries); err != nil {
+		if len(batches) > 0 {
+			if _, err := p.model.Apply(ctx, batches); err != nil {
+				p.model.Forget()
 				client.AllowRebalance()
 				return err
 			}

@@ -20,6 +20,8 @@ var (
 	ErrFull        = errors.New("game session is full")
 	ErrRated       = errors.New("rated games cannot be undone")
 	ErrNoDrawOffer = errors.New("there is no draw offer to answer")
+
+	ErrNotReplayable = errors.New("only recorded moves can be replayed")
 )
 
 const (

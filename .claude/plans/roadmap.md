@@ -270,7 +270,7 @@ integration-тестами (Kafka через testcontainers). Это созна�
 План и порядок фаз 1→4→3→2→5→6→7 — `platform-architecture-upgrade.md`.
 
 - Фаза 1 — game как stateful event-sourced сервис (журнал Kafka, владельцы партиций, проектор в Postgres): `platform-phase-1-game-event-sourcing.md`. ✅ влита (PR #13)
-- Фаза 1b — производительность event-sourced game (события без полных снимков, group commit в Kafka, пакетный проектор, fencing по lease). ⏳
+- Фаза 1b — производительность event-sourced game (события без полных снимков, group commit в Kafka, пакетный проектор, fencing по lease, Quoridor без map): `platform-phase-1b-game-performance.md`. ✅ вдвое меньше CPU game на ход, p99 335 → 19 мс, проектор не отстаёт
 
 ---
 
