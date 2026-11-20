@@ -19,8 +19,11 @@ async function player(browser: Browser, origin: string, name: string) {
 
 async function play(page: Page, move: string) {
   await expect(status(page)).toContainText("Your move");
-  if (move.length === 3) await page.locator(`[data-wall=${move}]`).first().click();
-  else await page.locator(`[data-cell=${move}]`).click();
+  await expect(status(page)).not.toContainText("Connecting");
+  const target = move.length === 3 ? page.locator(`[data-wall=${move}]`).first() : page.locator(`[data-cell=${move}]`);
+  await expect(target).toBeEnabled();
+  await target.click();
+  await expect(status(page)).not.toContainText("Your move");
 }
 
 test("two players race across the board around walls", async ({ browser, baseURL }) => {
