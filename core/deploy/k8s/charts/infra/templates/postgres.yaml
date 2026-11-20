@@ -10,6 +10,7 @@ spec:
   imageName: {{ $v.postgres.image }}
   enableSuperuserAccess: true
   primaryUpdateStrategy: unsupervised
+  livenessProbeTimeout: 60
   bootstrap:
     initdb:
       database: {{ $v.global.postgres.database }}
