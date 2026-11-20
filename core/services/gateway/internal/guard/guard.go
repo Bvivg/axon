@@ -7,8 +7,10 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 
@@ -41,8 +43,11 @@ type Interceptor struct {
 	search    *ratelimit.Limiter
 	standard  *ratelimit.Limiter
 	sensitive *ratelimit.Limiter
+	network   *ratelimit.Limiter
 	log       *slog.Logger
 }
+
+const DeviceHeader = "X-Axon-Device"
 
 var _ connect.Interceptor = (*Interceptor)(nil)
 
@@ -52,6 +57,7 @@ type Config struct {
 	Search    *ratelimit.Limiter
 	Standard  *ratelimit.Limiter
 	Sensitive *ratelimit.Limiter
+	Network   *ratelimit.Limiter
 
 	Logger *slog.Logger
 }
@@ -71,6 +77,7 @@ func New(cfg Config) (*Interceptor, error) {
 		search:    cfg.Search,
 		standard:  cfg.Standard,
 		sensitive: cfg.Sensitive,
+		network:   cfg.Network,
 		log:       cfg.Logger,
 	}, nil
 }
@@ -121,7 +128,11 @@ func (i *Interceptor) apply(ctx context.Context, procedure string, headers http.
 		limiter = i.search
 	}
 
-	if allowed, retryAfter := limiter.AllowWithRetry(subject); !allowed {
+	allowed, retryAfter := limiter.AllowWithRetry(subject)
+	if allowed && i.network != nil && rule.Tier == policy.TierSensitive && strings.HasPrefix(subject, "ip:") {
+		allowed, retryAfter = i.network.AllowWithRetry("ip:" + ClientIPFromContext(ctx))
+	}
+	if !allowed {
 		i.log.WarnContext(ctx, "rate limit exceeded",
 			"procedure", procedure,
 			"tier", rule.Tier,
@@ -144,7 +155,7 @@ func (i *Interceptor) authenticate(ctx context.Context, rule policy.Rule, header
 				errors.New("no access token"))
 		}
 
-		return ctx, "ip:" + ClientIPFromContext(ctx), nil
+		return ctx, anonymous(ctx, headers), nil
 
 	case err != nil:
 
@@ -158,10 +169,18 @@ func (i *Interceptor) authenticate(ctx context.Context, rule policy.Rule, header
 			return ctx, "", translateTokenError(err)
 		}
 
-		return ctx, "ip:" + ClientIPFromContext(ctx), nil
+		return ctx, anonymous(ctx, headers), nil
 	}
 
 	return authn.WithClaims(ctx, claims), "user:" + claims.UserID.String(), nil
+}
+
+func anonymous(ctx context.Context, headers http.Header) string {
+	subject := "ip:" + ClientIPFromContext(ctx)
+	if device, err := uuid.Parse(headers.Get(DeviceHeader)); err == nil && device != uuid.Nil {
+		subject += ":device:" + device.String()
+	}
+	return subject
 }
 
 func translateTokenError(err error) error {

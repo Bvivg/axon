@@ -1,6 +1,7 @@
 import { createConnectTransport } from "@connectrpc/connect-web";
 import type { Interceptor } from "@connectrpc/connect";
 
+import { deviceHeader } from "@/lib/connect/device";
 import { retryRateLimit } from "@/lib/connect/rate-limit";
 
 const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:18080";
@@ -13,7 +14,7 @@ export function newTransport(interceptors: Interceptor[] = []) {
   return createConnectTransport({
     baseUrl: apiBaseUrl,
     fetch: withCredentials,
-    interceptors: [...interceptors, retryRateLimit],
+    interceptors: [deviceHeader, ...interceptors, retryRateLimit],
   });
 }
 

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus"
+	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
@@ -43,6 +45,8 @@ var version = "dev"
 const sensitiveBurst = 5
 
 const uploadsBurst = 30
+
+const networkFactor = 10
 
 func main() {
 
@@ -108,17 +112,26 @@ func run() error {
 		return err
 	}
 
-	search := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.SearchPerMinute})
-	standard := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.StandardPerMinute})
-	sensitive := ratelimit.New(ratelimit.Config{
-		PerMinute: cfg.RateLimit.SensitivePerMinute,
-		Burst:     sensitiveBurst,
-	})
-	uploads := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadsPerMinute, Burst: uploadsBurst})
-	uploadParts := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadPartsPerMinute})
+	var limits ratelimit.Store
+	limitFailures := prometheus.NewCounter(prometheus.CounterOpts{Name: "gateway_rate_limit_store_errors_total", Help: "Rate limit checks that fell back to the local limiter."})
+	if cfg.RateLimit.RedisAddr != "" {
+		limitsClient := goredis.NewClient(&goredis.Options{Addr: cfg.RateLimit.RedisAddr, Password: cfg.RateLimit.RedisPassword, DialTimeout: time.Second, ReadTimeout: 200 * time.Millisecond, WriteTimeout: 200 * time.Millisecond})
+		defer func() { _ = limitsClient.Close() }()
+		limits = ratelimit.NewRedis(limitsClient)
+	}
+	limiter := func(name string, perMinute, burst int) *ratelimit.Limiter {
+		return ratelimit.New(ratelimit.Config{Name: name, PerMinute: perMinute, Burst: burst, Store: limits, Failures: limitFailures})
+	}
+	search := limiter("search", cfg.RateLimit.SearchPerMinute, 0)
+	standard := limiter("standard", cfg.RateLimit.StandardPerMinute, 0)
+	sensitive := limiter("sensitive", cfg.RateLimit.SensitivePerMinute, sensitiveBurst)
+	network := limiter("network", cfg.RateLimit.SensitivePerMinute*networkFactor, sensitiveBurst*networkFactor)
+	uploads := limiter("uploads", cfg.RateLimit.UploadsPerMinute, uploadsBurst)
+	uploadParts := limiter("upload-parts", cfg.RateLimit.UploadPartsPerMinute, 0)
 	go search.Start(ctx)
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
+	go network.Start(ctx)
 	go uploads.Start(ctx)
 	go uploadParts.Start(ctx)
 
@@ -127,6 +140,7 @@ func run() error {
 		Search:    search,
 		Standard:  standard,
 		Sensitive: sensitive,
+		Network:   network,
 		Logger:    log,
 	})
 	if err != nil {
@@ -134,6 +148,7 @@ func run() error {
 	}
 
 	metrics := middleware.NewMetrics(cfg.Service)
+	metrics.Registry().MustRegister(limitFailures)
 
 	upstream := &http.Client{
 		Timeout: cfg.UpstreamTimeout,

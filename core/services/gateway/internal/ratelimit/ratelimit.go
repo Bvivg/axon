@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 )
 
@@ -16,6 +17,11 @@ const sweepInterval = time.Minute
 type Limiter struct {
 	limit rate.Limit
 	burst int
+
+	name     string
+	store    Store
+	timeout  time.Duration
+	failures prometheus.Counter
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
@@ -34,6 +40,14 @@ type Config struct {
 	Burst int
 
 	Now func() time.Time
+
+	Name string
+
+	Store Store
+
+	Timeout time.Duration
+
+	Failures prometheus.Counter
 }
 
 func New(cfg Config) *Limiter {
@@ -54,11 +68,19 @@ func New(cfg Config) *Limiter {
 		limit = rate.Limit(float64(cfg.PerMinute) / 60.0)
 	}
 
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 50 * time.Millisecond
+	}
 	return &Limiter{
-		limit:   limit,
-		burst:   burst,
-		buckets: make(map[string]*bucket),
-		now:     now,
+		limit:    limit,
+		burst:    burst,
+		name:     cfg.Name,
+		store:    cfg.Store,
+		timeout:  timeout,
+		failures: cfg.Failures,
+		buckets:  make(map[string]*bucket),
+		now:      now,
 	}
 }
 
@@ -70,6 +92,9 @@ func (l *Limiter) Allow(key string) bool {
 func (l *Limiter) AllowWithRetry(key string) (bool, time.Duration) {
 	if l.limit == rate.Inf {
 		return true, 0
+	}
+	if allowed, retry, ok := l.remote(key); ok {
+		return allowed, retry
 	}
 
 	l.mu.Lock()
