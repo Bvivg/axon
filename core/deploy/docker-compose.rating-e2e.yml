@@ -1,7 +1,6 @@
 services:
   rating-e2e:
     image: golang:1.27.4-alpine
-    profiles: ["e2e"]
     working_dir: /src/core/services/rating
     environment:
       RATING_E2E_GATEWAY_URL: http://gateway:8080
