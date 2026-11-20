@@ -16,6 +16,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
 )
 
 const maxRatingLookups = 50
@@ -148,31 +149,87 @@ func (h *Handler) RunMatchmaking(ctx context.Context, log *slog.Logger) {
 	}
 }
 
-func (h *Handler) startMatch(ctx context.Context, item session.Pairing) error {
-	if h.owner.Serves(item.ID) {
-		_, err := h.owner.Start(ctx, item.ID, item.Game, item.Creator, item.Opponent, true)
-		return err
+func (h *Handler) onOwnerOf(id uuid.UUID, local func() error, remote func(gamev1connect.GameOwnerServiceClient) error) error {
+	if h.owner.Serves(id) {
+		return local()
 	}
-	address, ok := h.routes.Address(h.owner.PartitionOf(item.ID))
+	address, ok := h.routes.Address(h.owner.PartitionOf(id))
 	if !ok || address == h.self {
 		return owner.ErrNotOwner
 	}
-	_, err := h.peers.owner(address).StartMatch(ctx, connect.NewRequest(&gamev1.StartMatchRequest{
-		SessionId: item.ID.String(), Game: string(item.Game), CreatorId: item.Creator.String(), OpponentId: item.Opponent.String(),
-	}))
-	return err
+	return remote(h.peers.owner(address))
 }
 
-func (h *Handler) StartMatch(ctx context.Context, req *connect.Request[gamev1.StartMatchRequest]) (*connect.Response[gamev1.StartMatchResponse], error) {
+func (h *Handler) startMatch(ctx context.Context, item session.Pairing) error {
+	return h.onOwnerOf(item.ID, func() error {
+		_, err := h.owner.Start(ctx, item.ID, item.Game, item.Creator, item.Opponent, true)
+		return err
+	}, func(peer gamev1connect.GameOwnerServiceClient) error {
+		_, err := peer.StartMatch(ctx, connect.NewRequest(&gamev1.StartMatchRequest{
+			SessionId: item.ID.String(), Game: string(item.Game), CreatorId: item.Creator.String(), OpponentId: item.Opponent.String(),
+		}))
+		return err
+	})
+}
+
+type pairing struct {
+	session, creator, opponent uuid.UUID
+	tournament                 *uuid.UUID
+	game                       engine.Key
+}
+
+func parsePairing(req *gamev1.StartMatchRequest) (pairing, error) {
+	invalid := connect.NewError(connect.CodeInvalidArgument, errors.New("invalid match"))
+	if req == nil {
+		return pairing{}, invalid
+	}
 	var ids [3]uuid.UUID
-	for i, raw := range []string{req.Msg.SessionId, req.Msg.CreatorId, req.Msg.OpponentId} {
+	for i, raw := range []string{req.SessionId, req.CreatorId, req.OpponentId} {
 		id, err := uuid.Parse(raw)
 		if err != nil || id == uuid.Nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid match"))
+			return pairing{}, invalid
 		}
 		ids[i] = id
 	}
-	_, err := h.owner.Start(ctx, ids[0], engine.Key(req.Msg.Game), ids[1], ids[2], true)
+	out := pairing{session: ids[0], creator: ids[1], opponent: ids[2], game: engine.Key(req.Game)}
+	if req.TournamentId != nil {
+		tournament, err := uuid.Parse(req.GetTournamentId())
+		if err != nil || tournament == uuid.Nil {
+			return pairing{}, invalid
+		}
+		out.tournament = &tournament
+	}
+	return out, nil
+}
+
+func (h *Handler) startPairing(ctx context.Context, p pairing) error {
+	if p.tournament != nil {
+		_, err := h.owner.StartTournament(ctx, p.session, p.game, *p.tournament, p.creator, p.opponent)
+		return err
+	}
+	_, err := h.owner.Start(ctx, p.session, p.game, p.creator, p.opponent, true)
+	return err
+}
+
+func ownerError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, owner.ErrNotOwner):
+		return errMoved
+	case errors.Is(err, engine.ErrUnknownGame):
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("unknown game"))
+	default:
+		return connect.NewError(connect.CodeInternal, errors.New("could not update the game"))
+	}
+}
+
+func (h *Handler) StartMatch(ctx context.Context, req *connect.Request[gamev1.StartMatchRequest]) (*connect.Response[gamev1.StartMatchResponse], error) {
+	p, err := parsePairing(req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	err = h.startPairing(ctx, p)
 	switch {
 	case errors.Is(err, owner.ErrNotOwner):
 		return nil, errMoved

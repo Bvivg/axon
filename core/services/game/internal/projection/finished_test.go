@@ -22,6 +22,7 @@ import (
 func TestFinishedEvent(t *testing.T) {
 	creator, opponent := uuid.MustParse("1d6f2f43-9b35-4a6f-8f43-2a1c9d0e7b11"), uuid.MustParse("2e7a3b54-ac46-4b70-9054-3b2dae1f8c22")
 	id := uuid.MustParse("0b8a1c56-2f3a-4a11-9b7e-4f0d7a1e9c01")
+	tournament := uuid.MustParse("5c1e7d2a-3b4f-4e6a-9d8c-7b6a5f4e3d21")
 	at := time.Date(2026, 11, 20, 10, 30, 0, 0, time.FixedZone("UTC+3", 3*3600))
 	state := func(status engine.Status, winner int) engine.State {
 		return engine.State{Game: "chess", Status: status, Winner: winner, Turn: engine.NoSeat}
@@ -48,6 +49,12 @@ func TestFinishedEvent(t *testing.T) {
 			want: &eventsv1.GameFinished{Outcome: eventsv1.GameFinished_OUTCOME_DRAW, WinnerSeat: -1, Rated: true},
 		},
 		{
+			name: "tournament game with plies",
+			game: session.Session{ID: id, Game: "chess", Creator: creator, Opponent: &opponent, Rated: true, Tournament: &tournament, Resigned: true,
+				State: engine.State{Game: "chess", Status: engine.StatusWin, Winner: 1, Turn: engine.NoSeat, Ply: 1}},
+			want: &eventsv1.GameFinished{Outcome: eventsv1.GameFinished_OUTCOME_WIN, WinnerSeat: 1, Rated: true, TournamentId: proto.String(tournament.String())},
+		},
+		{
 			name:    "still in progress",
 			game:    session.Session{ID: id, Game: "chess", Creator: creator, Opponent: &opponent, Rated: true, State: state(engine.StatusInProgress, engine.NoSeat)},
 			missing: true,
@@ -70,6 +77,7 @@ func TestFinishedEvent(t *testing.T) {
 			want := proto.Clone(tt.want).(*eventsv1.GameFinished)
 			want.EventId, want.SessionId, want.Game = projection.FinishedEventID(id).String(), id.String(), "chess"
 			want.Players, want.FinishedAt = []string{creator.String(), opponent.String()}, timestamppb.New(at.UTC())
+			want.Plies = proto.Uint32(uint32(tt.game.State.Ply))
 			if event.ID != projection.FinishedEventID(id) || event.Topic != "game.finished.v1" || event.AggregateID != "chess" {
 				t.Fatalf("envelope = %+v", event)
 			}
