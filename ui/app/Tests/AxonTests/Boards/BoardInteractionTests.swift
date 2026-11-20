@@ -14,7 +14,12 @@ struct BoardInteractionTests {
     private let side: CGFloat = 402
 
     private func host(_ view: some View) -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: side, height: side), styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: side, height: side),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: view.frame(width: side, height: side))
         window.orderFront(nil)

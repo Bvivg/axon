@@ -104,7 +104,14 @@ struct BoardSnapshotTests {
         for side in Self.sides {
             for scheme in Self.schemes {
                 _ = try Self.write(
-                    ChessBoardView(board: Self.checkedChess(interactive: true), perspective: 1, interactive: true, selection: ChessSquare("f7"), promotion: nil, onMove: { _ in }),
+                    ChessBoardView(
+                        board: Self.checkedChess(interactive: true),
+                        perspective: 1,
+                        interactive: true,
+                        selection: ChessSquare("f7"),
+                        promotion: nil,
+                        onMove: { _ in }
+                    ),
                     name: "chess-check",
                     size: CGSize(width: side, height: side),
                     scheme: scheme
@@ -142,7 +149,13 @@ struct BoardSnapshotTests {
         for side in Self.sides {
             for scheme in Self.schemes {
                 _ = try Self.write(
-                    QuoridorBoardView(board: Self.midGameQuoridor(), perspective: 0, interactive: true, placement: WallPlacementState(pending: pending), onMove: { _ in }),
+                    QuoridorBoardView(
+                        board: Self.midGameQuoridor(),
+                        perspective: 0,
+                        interactive: true,
+                        placement: WallPlacementState(pending: pending),
+                        onMove: { _ in }
+                    ),
                     name: "quoridor-violet",
                     size: CGSize(width: side, height: side),
                     scheme: scheme

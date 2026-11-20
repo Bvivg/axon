@@ -240,7 +240,8 @@ enum ChessTapOutcome: Sendable, Equatable {
         if let selected, legal.targets(from: selected).contains(square) {
             let candidates = legal.candidates(from: selected, to: square)
             if candidates.count > 1 {
-                return .promote(ChessPromotionRequest(from: selected, to: square, choices: legal.promotionChoices(from: selected, to: square)))
+                let choices = legal.promotionChoices(from: selected, to: square)
+                return .promote(ChessPromotionRequest(from: selected, to: square, choices: choices))
             }
             if let only = candidates.first {
                 return .move(only.notation)

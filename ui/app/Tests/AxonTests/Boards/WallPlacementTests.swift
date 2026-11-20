@@ -58,7 +58,8 @@ struct WallPlacementTests {
     }
 
     @Test func touchPreviewsThenConfirms() throws {
-        let slot = try #require(WallSlot.all(perspective: QuoridorPerspective(perspective: 0)).first { $0.wall.notation == "e3h" && $0.isPrimary })
+        let slots = WallSlot.all(perspective: QuoridorPerspective(perspective: 0))
+        let slot = try #require(slots.first { $0.wall.notation == "e3h" && $0.isPrimary })
         var state = WallPlacementState()
         #expect(state.tap(slot) == nil)
         #expect(state.preview == slot.wall)

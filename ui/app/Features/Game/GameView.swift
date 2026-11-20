@@ -30,7 +30,7 @@ struct GameView: View {
                 } panel: {
                     StatusPanel(model: model, confirmsResign: $confirmsResign, onReplay: onReplay)
                     if !model.moves.isEmpty {
-                        MoveListView(moves: model.moves, highlightedPly: model.moves.count - 1)
+                        MoveListView(moves: model.moves, highlightedPly: model.moves.count, layout: MoveListLayout(session.kind))
                     }
                     SessionIDRow(id: session.id, waiting: session.status == .waiting)
                 }

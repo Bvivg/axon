@@ -52,7 +52,7 @@ final class ReplayViewModel {
 
     var highlightedPly: Int? {
         guard let frame, frame.ply > 0 else { return nil }
-        return Int(frame.ply) - 1
+        return Int(frame.ply)
     }
 
     func load() async {

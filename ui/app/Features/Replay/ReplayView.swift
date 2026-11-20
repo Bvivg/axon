@@ -32,7 +32,7 @@ struct ReplayView: View {
                     }
                     ReplayControls(model: model)
                     if !model.moves.isEmpty {
-                        MoveListView(moves: model.moves, highlightedPly: model.highlightedPly)
+                        MoveListView(moves: model.moves, highlightedPly: model.highlightedPly, layout: MoveListLayout(model.kind))
                     }
                 }
             } else if let error = model.error {

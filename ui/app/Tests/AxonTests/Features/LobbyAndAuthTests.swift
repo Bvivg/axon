@@ -151,10 +151,10 @@ struct SettingsViewModelTests {
         model.address = "localhost"
         #expect(await model.save() == false)
         #expect(model.error == "Use an http:// or https:// address.")
-        model.address = "http://192.168.1.5:18080"
+        model.address = "https://192.168.1.5:3443"
         #expect(model.changesAccount)
         #expect(await model.save())
-        #expect(applied == [try GatewayAddress(parsing: "http://192.168.1.5:18080")])
+        #expect(applied == [try GatewayAddress(parsing: "https://192.168.1.5:3443")])
     }
 }
 
@@ -182,7 +182,7 @@ struct ReplayViewModelTests {
         #expect(model.index == 0)
         model.next()
         #expect(model.positionText == "Move 1 of 5")
-        #expect(model.highlightedPly == 0)
+        #expect(model.highlightedPly == 1)
         model.index = 99
         #expect(model.index == 5)
     }
@@ -261,11 +261,11 @@ struct AppModelTests {
         world.auth.restored = GameFixtures.user()
         let (model, counter) = app(world)
         await model.start()
-        try await model.updateGateway(GatewayAddress(parsing: "http://10.0.0.2:18080"))
+        try await model.updateGateway(GatewayAddress(parsing: "https://10.0.0.2:3443"))
         #expect(counter.value == 2)
         #expect(world.auth.logoutCount == 1)
         #expect(model.phase == .signedOut)
-        #expect(model.settings.address.host == "http://10.0.0.2:18080")
+        #expect(model.settings.address.host == "https://10.0.0.2:3443")
     }
 }
 

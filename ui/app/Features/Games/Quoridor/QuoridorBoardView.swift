@@ -54,7 +54,7 @@ struct QuoridorBoardView: View {
             ForEach(0..<Quoridor.size, id: \.self) { row in
                 ForEach(0..<Quoridor.size, id: \.self) { col in
                     if let cell = orientation.cell(displayRow: row, displayCol: col) {
-                        cellButton(cell, row: row, col: col, model: model, layout: layout, palette: palette)
+                        cellButton(cell, at: QuoridorDisplayPosition(row: row, col: col), model: model, layout: layout, palette: palette)
                     }
                 }
             }
@@ -82,7 +82,15 @@ struct QuoridorBoardView: View {
         .accessibilityLabel("Quoridor board")
     }
 
-    private func cellButton(_ cell: QuoridorCell, row: Int, col: Int, model: QuoridorBoardModel, layout: QuoridorBoardLayout, palette: BoardPalette) -> some View {
+    private func cellButton(
+        _ cell: QuoridorCell,
+        at position: QuoridorDisplayPosition,
+        model: QuoridorBoardModel,
+        layout: QuoridorBoardLayout,
+        palette: BoardPalette
+    ) -> some View {
+        let row = position.row
+        let col = position.col
         let rect = layout.cellRect(displayRow: row, displayCol: col)
         let face = QuoridorCellFace(
             cell: cell,
@@ -211,7 +219,7 @@ struct QuoridorBoardStack: Layout {
         }
     }
 
-    private func metrics(for proposal: ProposedViewSize, subviews: Subviews) -> (side: CGFloat, bars: [CGFloat], height: CGFloat) {
+    private func metrics(for proposal: ProposedViewSize, subviews: Subviews) -> QuoridorStackMetrics {
         let width = Self.finite(proposal.width)
         let bars = subviews.enumerated().map { index, subview in
             index == 1 ? 0 : subview.sizeThatFits(ProposedViewSize(width: width ?? Self.fallbackSide, height: nil)).height
@@ -224,7 +232,7 @@ struct QuoridorBoardStack: Layout {
         case let (nil, height?): height
         case (nil, nil): Self.fallbackSide
         }
-        return (max(0, side), bars, max(0, side) + chrome)
+        return QuoridorStackMetrics(side: max(0, side), bars: bars, height: max(0, side) + chrome)
     }
 
     private static let fallbackSide: CGFloat = 360
@@ -232,4 +240,15 @@ struct QuoridorBoardStack: Layout {
     private static func finite(_ value: CGFloat?) -> CGFloat? {
         value.flatMap { $0.isFinite ? $0 : nil }
     }
+}
+
+struct QuoridorDisplayPosition {
+    let row: Int
+    let col: Int
+}
+
+struct QuoridorStackMetrics {
+    let side: CGFloat
+    let bars: [CGFloat]
+    let height: CGFloat
 }

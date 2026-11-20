@@ -40,79 +40,103 @@ enum ChessGlyph {
 
     static func elements(_ kind: ChessPieceKind) -> [Element] {
         switch kind {
-        case .pawn:
-            [
-                .body(circle(50, 31, 12)),
-                .body(Path { path in
-                    path.move(to: CGPoint(x: 38, y: 79))
-                    path.addLine(to: CGPoint(x: 42, y: 54))
-                    path.addQuadCurve(to: CGPoint(x: 58, y: 54), control: CGPoint(x: 50, y: 47))
-                    path.addLine(to: CGPoint(x: 62, y: 79))
-                    path.closeSubpath()
-                }),
-                base,
-            ]
-        case .rook:
-            [
-                .body(polygon([(28, 19), (38, 19), (38, 27), (44, 27), (44, 19), (56, 19), (56, 27), (62, 27), (62, 19), (72, 19), (72, 40), (28, 40)])),
-                .body(polygon([(34, 40), (66, 40), (68, 79), (32, 79)])),
-                base,
-            ]
-        case .bishop:
-            [
-                .body(circle(50, 13, 5)),
-                .body(Path { path in
-                    path.move(to: CGPoint(x: 50, y: 19))
-                    path.addCurve(to: CGPoint(x: 58, y: 62), control1: CGPoint(x: 66, y: 31), control2: CGPoint(x: 66, y: 52))
-                    path.addLine(to: CGPoint(x: 62, y: 79))
-                    path.addLine(to: CGPoint(x: 38, y: 79))
-                    path.addLine(to: CGPoint(x: 42, y: 62))
-                    path.addCurve(to: CGPoint(x: 50, y: 19), control1: CGPoint(x: 34, y: 52), control2: CGPoint(x: 34, y: 31))
-                    path.closeSubpath()
-                }),
-                .detailLine(Path { path in
-                    path.move(to: CGPoint(x: 55, y: 32))
-                    path.addLine(to: CGPoint(x: 46, y: 45))
-                }),
-                base,
-            ]
-        case .knight:
-            [
-                .body(Path { path in
-                    path.move(to: CGPoint(x: 36, y: 79))
-                    path.addLine(to: CGPoint(x: 40, y: 58))
-                    path.addCurve(to: CGPoint(x: 29, y: 40), control1: CGPoint(x: 30, y: 54), control2: CGPoint(x: 25, y: 46))
-                    path.addLine(to: CGPoint(x: 46, y: 25))
-                    path.addLine(to: CGPoint(x: 46, y: 15))
-                    path.addLine(to: CGPoint(x: 54, y: 23))
-                    path.addCurve(to: CGPoint(x: 72, y: 56), control1: CGPoint(x: 67, y: 25), control2: CGPoint(x: 75, y: 39))
-                    path.addLine(to: CGPoint(x: 68, y: 79))
-                    path.closeSubpath()
-                }),
-                .detailDot(circle(52, 36, 3.5)),
-                base,
-            ]
-        case .queen:
-            [
-                .body(circle(24, 29, 5)),
-                .body(circle(50, 20, 5)),
-                .body(circle(76, 29, 5)),
-                .body(polygon([(31, 79), (24, 35), (38, 53), (50, 26), (62, 53), (76, 35), (69, 79)])),
-                base,
-            ]
-        case .king:
-            [
-                .body(polygon([(47, 11), (53, 11), (53, 19), (60, 19), (60, 25), (53, 25), (53, 34), (47, 34), (47, 25), (40, 25), (40, 19), (47, 19)])),
-                .body(Path { path in
-                    path.move(to: CGPoint(x: 32, y: 79))
-                    path.addLine(to: CGPoint(x: 28, y: 47))
-                    path.addQuadCurve(to: CGPoint(x: 72, y: 47), control: CGPoint(x: 50, y: 37))
-                    path.addLine(to: CGPoint(x: 68, y: 79))
-                    path.closeSubpath()
-                }),
-                base,
-            ]
+        case .pawn: pawn
+        case .rook: rook
+        case .bishop: bishop
+        case .knight: knight
+        case .queen: queen
+        case .king: king
         }
+    }
+
+    private static var pawn: [Element] {
+        [
+            .body(circle(50, 31, 12)),
+            .body(Path { path in
+                path.move(to: CGPoint(x: 38, y: 79))
+                path.addLine(to: CGPoint(x: 42, y: 54))
+                path.addQuadCurve(to: CGPoint(x: 58, y: 54), control: CGPoint(x: 50, y: 47))
+                path.addLine(to: CGPoint(x: 62, y: 79))
+                path.closeSubpath()
+            }),
+            base,
+        ]
+    }
+
+    private static var rook: [Element] {
+        [
+            .body(polygon([
+                (28, 19), (38, 19), (38, 27), (44, 27), (44, 19), (56, 19),
+                (56, 27), (62, 27), (62, 19), (72, 19), (72, 40), (28, 40),
+            ])),
+            .body(polygon([(34, 40), (66, 40), (68, 79), (32, 79)])),
+            base,
+        ]
+    }
+
+    private static var bishop: [Element] {
+        [
+            .body(circle(50, 13, 5)),
+            .body(Path { path in
+                path.move(to: CGPoint(x: 50, y: 19))
+                path.addCurve(to: CGPoint(x: 58, y: 62), control1: CGPoint(x: 66, y: 31), control2: CGPoint(x: 66, y: 52))
+                path.addLine(to: CGPoint(x: 62, y: 79))
+                path.addLine(to: CGPoint(x: 38, y: 79))
+                path.addLine(to: CGPoint(x: 42, y: 62))
+                path.addCurve(to: CGPoint(x: 50, y: 19), control1: CGPoint(x: 34, y: 52), control2: CGPoint(x: 34, y: 31))
+                path.closeSubpath()
+            }),
+            .detailLine(Path { path in
+                path.move(to: CGPoint(x: 55, y: 32))
+                path.addLine(to: CGPoint(x: 46, y: 45))
+            }),
+            base,
+        ]
+    }
+
+    private static var knight: [Element] {
+        [
+            .body(Path { path in
+                path.move(to: CGPoint(x: 36, y: 79))
+                path.addLine(to: CGPoint(x: 40, y: 58))
+                path.addCurve(to: CGPoint(x: 29, y: 40), control1: CGPoint(x: 30, y: 54), control2: CGPoint(x: 25, y: 46))
+                path.addLine(to: CGPoint(x: 46, y: 25))
+                path.addLine(to: CGPoint(x: 46, y: 15))
+                path.addLine(to: CGPoint(x: 54, y: 23))
+                path.addCurve(to: CGPoint(x: 72, y: 56), control1: CGPoint(x: 67, y: 25), control2: CGPoint(x: 75, y: 39))
+                path.addLine(to: CGPoint(x: 68, y: 79))
+                path.closeSubpath()
+            }),
+            .detailDot(circle(52, 36, 3.5)),
+            base,
+        ]
+    }
+
+    private static var queen: [Element] {
+        [
+            .body(circle(24, 29, 5)),
+            .body(circle(50, 20, 5)),
+            .body(circle(76, 29, 5)),
+            .body(polygon([(31, 79), (24, 35), (38, 53), (50, 26), (62, 53), (76, 35), (69, 79)])),
+            base,
+        ]
+    }
+
+    private static var king: [Element] {
+        [
+            .body(polygon([
+                (47, 11), (53, 11), (53, 19), (60, 19), (60, 25), (53, 25),
+                (53, 34), (47, 34), (47, 25), (40, 25), (40, 19), (47, 19),
+            ])),
+            .body(Path { path in
+                path.move(to: CGPoint(x: 32, y: 79))
+                path.addLine(to: CGPoint(x: 28, y: 47))
+                path.addQuadCurve(to: CGPoint(x: 72, y: 47), control: CGPoint(x: 50, y: 37))
+                path.addLine(to: CGPoint(x: 68, y: 79))
+                path.closeSubpath()
+            }),
+            base,
+        ]
     }
 
     private static let base = Element.body(Path(roundedRect: CGRect(x: 22, y: 79, width: 56, height: 11), cornerRadius: 4))
