@@ -49,6 +49,8 @@ type Store interface {
 
 	SearchUsers(ctx context.Context, query string, excludeUserID uuid.UUID, limit int, after *domain.UserSearchCursor) ([]domain.UserSearchResult, error)
 	UsersByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.User, error)
+
+	RecordSecurityEvent(ctx context.Context, e domain.SecurityEvent) error
 }
 
 type PresenceChecker interface {
@@ -70,6 +72,8 @@ type Config struct {
 	Presence PresenceChecker
 
 	Revocation RevocationPublisher
+
+	AuditFailures Counter
 
 	Now func() time.Time
 }
@@ -100,6 +104,8 @@ type Service struct {
 	presence   PresenceChecker
 	revocation RevocationPublisher
 
+	auditFailures Counter
+
 	dummyHash string
 }
 
@@ -127,6 +133,11 @@ func New(store Store, hasher *password.Hasher, issuer *jwt.Issuer, log *slog.Log
 		now = time.Now
 	}
 
+	var auditFailures Counter = discardCounter{}
+	if cfg.AuditFailures != nil {
+		auditFailures = cfg.AuditFailures
+	}
+
 	dummyHash, err := hasher.Hash("this password matches no account")
 	if err != nil {
 		return nil, err
@@ -143,7 +154,10 @@ func New(store Store, hasher *password.Hasher, issuer *jwt.Issuer, log *slog.Log
 		avatar:     cfg.Avatar,
 		presence:   cfg.Presence,
 		revocation: cfg.Revocation,
-		dummyHash:  dummyHash,
+
+		auditFailures: auditFailures,
+
+		dummyHash: dummyHash,
 	}, nil
 }
 
