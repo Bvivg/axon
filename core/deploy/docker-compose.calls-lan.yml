@@ -90,6 +90,8 @@ services:
     user: "0:0"
     command: ["-c", "/secrets/turnserver.conf"]
     volumes:
+      - type: tmpfs
+        target: /var/lib/coturn
       - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
     networks: [media]
     ports:

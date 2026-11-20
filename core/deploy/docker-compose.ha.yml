@@ -33,6 +33,8 @@ services:
     ports:
       - "127.0.0.1:${KAFKA_2_HOST_PORT:-59093}:9092"
     volumes:
+      - type: tmpfs
+        target: /etc/kafka/secrets
       - kafka-ha-2:/var/lib/kafka/data
     networks: [data]
     healthcheck:
@@ -52,6 +54,8 @@ services:
     ports:
       - "127.0.0.1:${KAFKA_3_HOST_PORT:-59094}:9092"
     volumes:
+      - type: tmpfs
+        target: /etc/kafka/secrets
       - kafka-ha-3:/var/lib/kafka/data
     networks: [data]
     healthcheck:
