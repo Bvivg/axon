@@ -254,6 +254,13 @@ tidy: ## Tidy every module in the workspace
 .PHONY: check
 check: fmt-check vet test ## Everything CI runs that needs no Docker
 
+COMPOSE_RATING_E2E := docker compose -p axon-rating-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.rating-e2e.yml --env-file core/deploy/.env --env-file core/deploy/rating-e2e.env
+
+.PHONY: test-rating-e2e
+test-rating-e2e: jwt-key ## Rated quick matches through gateway, CDC and rating, a Connect outage and a rebuild (one-off stack)
+	@trap '$(COMPOSE_RATING_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	core/deploy/rating-e2e.sh $(COMPOSE_RATING_E2E)
+
 COMPOSE_WEB_E2E := docker compose -f core/deploy/docker-compose.web-e2e.yml
 
 .PHONY: test-web-e2e
