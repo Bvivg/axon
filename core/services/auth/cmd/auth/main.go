@@ -228,7 +228,7 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 		Logger:           log,
 		FakeEnabled:      cfg.OAuth.FakeEnabled,
 		FakeAuthorizeURL: cfg.OAuth.FakeAuthorizeURL,
-		Production:       cfg.Environment.IsProduction(),
+		Environment:      cfg.Environment,
 	})
 	if err != nil {
 		return nil, err

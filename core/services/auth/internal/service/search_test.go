@@ -33,7 +33,7 @@ func TestSearchUsersFindsAnExactDisplayNameMatch(t *testing.T) {
 	target := h.register(t, "eve@example.com", validPassword)
 
 	first, last := "Eve", "Online"
-	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, domain.ProfilePatch{
+	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, uuid.Nil, domain.ProfilePatch{
 		FirstName: &first, LastName: &last,
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -141,7 +141,7 @@ func (h *harness) registerNamed(t *testing.T, email, first, last string) service
 	t.Helper()
 
 	res := h.register(t, email, validPassword)
-	if _, err := h.svc.UpdateProfile(context.Background(), res.User.ID, domain.ProfilePatch{
+	if _, err := h.svc.UpdateProfile(context.Background(), res.User.ID, uuid.Nil, domain.ProfilePatch{
 		FirstName: &first, LastName: &last,
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -168,7 +168,7 @@ func TestSearchUsersFindsAPartialNicknameMatch(t *testing.T) {
 	caller := h.register(t, "ada@example.com", validPassword)
 	target := h.register(t, "u1@example.com", validPassword)
 
-	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, domain.ProfilePatch{
+	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, uuid.Nil, domain.ProfilePatch{
 		Nickname: ptr("countess"),
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)

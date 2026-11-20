@@ -66,6 +66,8 @@ func securityAction(a domain.SecurityAction) eventsv1.SecurityAction {
 		return eventsv1.SecurityAction_SECURITY_ACTION_ROLE_ASSIGNED
 	case domain.SecurityRoleRevoked:
 		return eventsv1.SecurityAction_SECURITY_ACTION_ROLE_REVOKED
+	case domain.SecurityEmailChanged:
+		return eventsv1.SecurityAction_SECURITY_ACTION_EMAIL_CHANGED
 	default:
 		return eventsv1.SecurityAction_SECURITY_ACTION_UNSPECIFIED
 	}

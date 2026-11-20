@@ -198,7 +198,12 @@ func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.Pro
 	if s.usernameTakenLocked(in.Username, id) {
 		return domain.User{}, domain.ErrUsernameTaken
 	}
+	if owner, taken := s.usersByMail[in.Email]; taken && owner != id {
+		return domain.User{}, domain.ErrEmailTaken
+	}
 
+	delete(s.usersByMail, u.Email)
+	s.usersByMail[in.Email] = id
 	u.Email = in.Email
 	u.EmailVerified = in.EmailVerified
 	u.FirstName = in.FirstName
@@ -210,6 +215,36 @@ func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.Pro
 	s.users[id] = u
 
 	return u, nil
+}
+
+func (s *fakeStore) UpdateProfileRevokingOtherSessions(
+	ctx context.Context, id uuid.UUID, in domain.ProfileUpdate, keepFamilyID uuid.UUID, at time.Time,
+) (domain.User, []uuid.UUID, error) {
+	if err := s.fail("UpdateProfileRevokingOtherSessions"); err != nil {
+		return domain.User{}, nil, err
+	}
+
+	updated, err := s.UpdateProfile(ctx, id, in)
+	if err != nil {
+		return domain.User{}, nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seen := make(map[uuid.UUID]bool)
+	var families []uuid.UUID
+	for tokenID, t := range s.tokens {
+		if t.UserID == id && t.FamilyID != keepFamilyID && !t.Revoked() {
+			t.RevokedAt = at
+			s.tokens[tokenID] = t
+			if !seen[t.FamilyID] {
+				seen[t.FamilyID] = true
+				families = append(families, t.FamilyID)
+			}
+		}
+	}
+	return updated, families, nil
 }
 
 func (s *fakeStore) UpdateLastSeen(_ context.Context, id uuid.UUID, at time.Time) error {

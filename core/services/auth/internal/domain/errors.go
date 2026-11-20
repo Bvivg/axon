@@ -29,6 +29,10 @@ var (
 
 	ErrOauthReturnToNotAllowed = errors.New("auth: return_to is not an allowed destination")
 
+	ErrOauthEmailNotAllowed = errors.New("auth: the test provider only vouches for its reserved domain")
+
+	ErrOauthAccountExists = errors.New("auth: an account with this email exists and cannot be linked")
+
 	ErrSessionNotFound = errors.New("auth: session not found")
 
 	ErrRoleNotFound = errors.New("auth: role not found")

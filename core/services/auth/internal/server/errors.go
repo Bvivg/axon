@@ -72,6 +72,14 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 		return connect.NewError(connect.CodeAlreadyExists,
 			errors.New("this provider account is already linked to another user"))
 
+	case errors.Is(err, domain.ErrOauthEmailNotAllowed):
+		return connect.NewError(connect.CodeInvalidArgument,
+			errors.New("the test provider only accepts @fake.axon.test addresses"))
+
+	case errors.Is(err, domain.ErrOauthAccountExists):
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("an account with this email already exists; sign in with your password instead"))
+
 	case errors.Is(err, domain.ErrOauthReturnToNotAllowed):
 		return connect.NewError(connect.CodeInvalidArgument,
 			errors.New("return_to is not an allowed destination"))

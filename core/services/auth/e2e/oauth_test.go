@@ -145,7 +145,7 @@ func TestOAuthSignInCreatesAnAccount(t *testing.T) {
 	c := newCaller(t)
 
 	subject := "e2e-" + uuid.NewString()
-	address := subject + "@axon.test"
+	address := subject + "@fake.axon.test"
 
 	result, err := c.signInWith(t, fakeIdentity(subject, address))
 	if err != nil {
@@ -172,7 +172,7 @@ func TestTheClientsNameReachesTheAccountItCreates(t *testing.T) {
 	c := newCaller(t)
 
 	subject := "e2e-" + uuid.NewString()
-	address := subject + "@axon.test"
+	address := subject + "@fake.axon.test"
 	const name = "Ada Lovelace"
 
 	result, err := c.signInAs(t, fakeIdentity(subject, address), name)
@@ -196,7 +196,7 @@ func TestReturningOAuthUserGetsTheSameAccount(t *testing.T) {
 	c := newCaller(t)
 
 	subject := "e2e-" + uuid.NewString()
-	address := subject + "@axon.test"
+	address := subject + "@fake.axon.test"
 
 	first, err := c.signInWith(t, fakeIdentity(subject, address))
 	if err != nil {
@@ -217,25 +217,36 @@ func TestReturningOAuthUserGetsTheSameAccount(t *testing.T) {
 	}
 }
 
-func TestOAuthLinksToAnExistingPasswordAccount(t *testing.T) {
+func TestTheFakeProviderCannotSignInAsAnyoneOutsideItsDomain(t *testing.T) {
 	c := newCaller(t)
 
-	acct := c.register(t)
+	victim := c.register(t)
 
-	result, err := c.signInWith(t, fakeIdentity("e2e-"+uuid.NewString(), acct.email))
+	_, err := c.signInWith(t, fakeIdentity("e2e-attacker-"+uuid.NewString(), victim.email))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want invalid_argument (error: %v)", connect.CodeOf(err), err)
+	}
+
+	if _, err := c.login(victim.email, testPassword); err != nil {
+		t.Errorf("the targeted account was disturbed: %v", err)
+	}
+}
+
+func TestTheFakeProviderNeverTakesOverAnExistingAccount(t *testing.T) {
+	c := newCaller(t)
+
+	acct, err := c.registerAs("e2e-" + uuid.NewString() + "@fake.axon.test")
 	if err != nil {
-		t.Fatalf("sign in over an existing account: %v", err)
+		t.Fatalf("register: %v", err)
 	}
 
-	if result.GetCreated() {
-		t.Error("linking to an existing account was reported as a creation")
-	}
-	if result.GetUser().GetId() != acct.userID {
-		t.Errorf("a second account was created for %s", acct.email)
+	_, err = c.signInWith(t, fakeIdentity("e2e-attacker-"+uuid.NewString(), acct.email))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("code = %v, want failed_precondition (error: %v)", connect.CodeOf(err), err)
 	}
 
 	if _, err := c.login(acct.email, testPassword); err != nil {
-		t.Errorf("the password stopped working after linking a provider: %v", err)
+		t.Errorf("the targeted account was disturbed: %v", err)
 	}
 }
 
@@ -267,7 +278,7 @@ func TestOAuthStateCannotBeReplayed(t *testing.T) {
 	}
 
 	code, _ := consent(t, rewriteForRunner(t, started.GetAuthorizationUrl()),
-		fakeIdentity("e2e-"+uuid.NewString(), "replay-"+uuid.NewString()+"@axon.test"))
+		fakeIdentity("e2e-"+uuid.NewString(), "replay-"+uuid.NewString()+"@fake.axon.test"))
 
 	if _, err := c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_FAKE, code, started.GetState(), ""); err != nil {
 		t.Fatalf("the first completion failed: %v", err)
@@ -288,7 +299,7 @@ func TestOAuthStateIsBoundToItsProvider(t *testing.T) {
 	}
 
 	code, _ := consent(t, rewriteForRunner(t, started.GetAuthorizationUrl()),
-		fakeIdentity("e2e-"+uuid.NewString(), "crossed-"+uuid.NewString()+"@axon.test"))
+		fakeIdentity("e2e-"+uuid.NewString(), "crossed-"+uuid.NewString()+"@fake.axon.test"))
 
 	if _, err = c.completeOAuth(authv1.OauthProvider_OAUTH_PROVIDER_GOOGLE, code, started.GetState(), ""); err == nil {
 		t.Fatal("a state issued for one provider completed a flow at another")

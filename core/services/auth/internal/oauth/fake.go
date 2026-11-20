@@ -14,6 +14,8 @@ import (
 
 const FakeAuthorizePath = "/oauth/fake/authorize"
 
+const FakeEmailDomain = "fake.axon.test"
+
 type fakeProvider struct {
 	authorizeURL string
 	redirectURL  string
@@ -44,6 +46,16 @@ func (p *fakeProvider) Exchange(_ context.Context, code, _ string) (domain.Provi
 	if err := validateProfile(profile); err != nil {
 		return domain.ProviderProfile{}, fmt.Errorf("oauth: fake: %w", err)
 	}
+
+	email, err := domain.ValidateEmail(profile.Email)
+	if err != nil {
+		return domain.ProviderProfile{}, fmt.Errorf("oauth: fake: %w", domain.ErrOauthEmailNotAllowed)
+	}
+	local, host, ok := strings.Cut(email, "@")
+	if !ok || local == "" || host != FakeEmailDomain {
+		return domain.ProviderProfile{}, fmt.Errorf("oauth: fake: %w", domain.ErrOauthEmailNotAllowed)
+	}
+	profile.Email = email
 	return profile, nil
 }
 
@@ -69,7 +81,7 @@ func FakeAuthorizeHandler() http.Handler {
 			subject = "fake-" + strings.TrimSpace(query.Get("state"))
 		}
 		if email == "" {
-			email = subject + "@fake.axon.test"
+			email = subject + "@" + FakeEmailDomain
 		}
 
 		verified := query.Get("email_verified") != "false"
