@@ -27,6 +27,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
@@ -170,10 +171,15 @@ func serve(ctx context.Context, cfg settings, pool *postgres.Pool, cache *redis.
 	api.Handle(ratingv1connect.NewRatingServiceHandler(server.New(board, ratings, log), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
+	identity, err := mtls.LoadEnv()
+	if err != nil {
+		return err
+	}
 	public := graceful.Serve(&http.Server{
 		Addr:              cfg.base.HTTPAddr,
 		Handler:           middleware.Chain(middleware.Correlation, middleware.Recovery(log))(api),
 		ReadHeaderTimeout: 5 * time.Second,
+		Protocols:         mtls.ServerProtocols(identity),
 	})
 	admin := http.NewServeMux()
 	checks.Register(admin)
@@ -185,8 +191,8 @@ func serve(ctx context.Context, cfg settings, pool *postgres.Pool, cache *redis.
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	errs := make(chan error, 2)
-	go listen(ctx, public, "public", log, errs)
-	go listen(ctx, adminSrv, "admin", log, errs)
+	go listen(ctx, public, "public", identity, log, errs)
+	go listen(ctx, adminSrv, "admin", nil, log, errs)
 	select {
 	case err := <-errs:
 		return err
@@ -196,9 +202,9 @@ func serve(ctx context.Context, cfg settings, pool *postgres.Pool, cache *redis.
 	return graceful.Stop(public, adminSrv)
 }
 
-func listen(ctx context.Context, srv *http.Server, name string, log *slog.Logger, errs chan<- error) {
-	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+func listen(ctx context.Context, srv *http.Server, name string, identity *mtls.Identity, log *slog.Logger, errs chan<- error) {
+	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr, "mtls", identity != nil)
+	if err := mtls.ListenAndServe(srv, identity); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
 }

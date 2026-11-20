@@ -35,7 +35,7 @@ func env(t *testing.T, key, fallback string) string {
 func targets(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	for _, item := range strings.Split(env(t, "MTLS_TARGETS", "auth=auth:8081,chat=chat:8082,game=game:8083"), ",") {
+	for _, item := range strings.Split(env(t, "MTLS_TARGETS", "auth=auth:8081,chat=chat:8082,game=game:8083,rating=rating:8084"), ",") {
 		name, address, _ := strings.Cut(item, "=")
 		out[name] = address
 	}
@@ -81,6 +81,8 @@ func procedure(name string) string {
 		return "/axon.auth.v1.AuthService/GetMe"
 	case "chat":
 		return "/axon.chat.v1.ChatService/ListRooms"
+	case "rating":
+		return "/axon.rating.v1.RatingService/GetLeaderboard"
 	default:
 		return "/axon.game.v1.GameService/ListSessions"
 	}
@@ -170,7 +172,6 @@ func TestCertificatesAreRenewedWithoutRestarts(t *testing.T) {
 		t.Skip("MTLS_WATCH_RENEWAL is not set")
 	}
 	address := targets(t)["auth"]
-	dir := env(t, "MTLS_INTRUDER_DIR", "/certs/intruder")
 	serial := func() string {
 		conn, err := tls.Dial("tcp", address, &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots(t), ServerName: "auth"})
 		if err != nil {
@@ -179,7 +180,6 @@ func TestCertificatesAreRenewedWithoutRestarts(t *testing.T) {
 		defer func() { _ = conn.Close() }()
 		return conn.ConnectionState().PeerCertificates[0].SerialNumber.String()
 	}
-	_ = dir
 	first := serial()
 	deadline := time.Now().Add(3 * time.Minute)
 	for time.Now().Before(deadline) {

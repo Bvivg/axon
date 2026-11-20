@@ -36,7 +36,7 @@ services:
       STEP_CA_URL: https://step-ca:9000
       STEP_PROVISIONER: axon
       STEP_CA_PASSWORD: ${STEP_CA_PASSWORD:-axon-step-ca}
-      MTLS_IDENTITIES: ${MTLS_IDENTITIES:-gateway auth chat game}
+      MTLS_IDENTITIES: ${MTLS_IDENTITIES:-gateway auth chat game rating}
       MTLS_CERT_LIFETIME: ${MTLS_CERT_LIFETIME:-1h}
       MTLS_RENEW_BEFORE: ${MTLS_RENEW_BEFORE:-20m}
       MTLS_RENEW_CHECK: ${MTLS_RENEW_CHECK:-60}
@@ -48,6 +48,7 @@ services:
       - certs-auth:/certs/auth
       - certs-chat:/certs/chat
       - certs-game:/certs/game
+      - certs-rating:/certs/rating
     networks: [app]
     depends_on:
       step-ca:
@@ -88,6 +89,14 @@ services:
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9093/readyz"]
 
+  rating:
+    environment:
+      <<: *mtls
+      MTLS_ALLOWED_CLIENTS: gateway
+    volumes:
+      - certs-rating:/etc/axon/tls:ro
+    depends_on: *certs-ready
+
   gateway:
     environment:
       <<: *mtls
@@ -105,3 +114,4 @@ volumes:
   certs-auth:
   certs-chat:
   certs-game:
+  certs-rating:
