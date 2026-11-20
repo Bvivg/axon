@@ -13,17 +13,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/journal"
 	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/session"
+	"github.com/bvivg/axon/core/shared/pkg/outbox"
 )
 
 const OwnerChannel = "game_owner_changed"
 
 type Postgres struct {
 	pool  *pgxpool.Pool
-	store *session.Store
 	rules session.Rules
 
 	mu    sync.Mutex
@@ -33,7 +32,7 @@ type Postgres struct {
 const cacheLimit = 50_000
 
 func New(store *session.Store, rules session.Rules) *Postgres {
-	return &Postgres{pool: store.Pool(), store: store, rules: rules, cache: map[uuid.UUID]session.Session{}}
+	return &Postgres{pool: store.Pool(), rules: rules, cache: map[uuid.UUID]session.Session{}}
 }
 
 func (m *Postgres) Forget() {
@@ -192,7 +191,7 @@ type pending struct {
 	write     bool
 	cancelled bool
 	notify    bool
-	settle    bool
+	finished  *time.Time
 	moves     map[int]played
 	undone    map[int]bool
 }
@@ -328,12 +327,14 @@ func (b *batch) fold(ctx context.Context, partition int32, event journal.Event) 
 	if err != nil {
 		return err
 	}
-	folded, err := journal.Fold(b.model.rules, item.base(), event)
+	base := item.base()
+	folded, err := journal.Fold(b.model.rules, base, event)
 	if errors.Is(err, journal.ErrGap) && !item.write {
 		if item, err = b.item(ctx, id, partition, true); err != nil {
 			return err
 		}
-		folded, err = journal.Fold(b.model.rules, item.base(), event)
+		base = item.base()
+		folded, err = journal.Fold(b.model.rules, base, event)
 	}
 	if err != nil {
 		return err
@@ -361,9 +362,9 @@ func (b *batch) fold(ctx context.Context, partition int32, event journal.Event) 
 	default:
 		item.notify = true
 	}
-	game := item.game
-	if game.Rated && game.Opponent != nil && game.State.Status != engine.StatusInProgress {
-		item.settle, item.notify = true, true
+	if finished(item.game) && (base == nil || !finished(*base)) {
+		at := item.game.UpdatedAt
+		item.finished, item.notify = &at, true
 	}
 	return nil
 }
@@ -452,13 +453,18 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 			return nil, err
 		}
 	}
+	var events []outbox.Event
 	for _, id := range b.order {
 		item := b.items[id]
-		if item.settle {
-			if err := b.model.store.Settle(ctx, b.tx, item.game); err != nil {
-				return nil, fmt.Errorf("settle rating: %w", err)
-			}
+		if item.finished == nil || item.cancelled {
+			continue
 		}
+		if event, ok := FinishedEvent(item.game, *item.finished); ok {
+			events = append(events, event)
+		}
+	}
+	if err := outbox.Write(ctx, b.tx, OutboxTable, events...); err != nil {
+		return nil, fmt.Errorf("publish finished games: %w", err)
 	}
 	if len(notified) > 0 {
 		ids := make([]string, len(notified))

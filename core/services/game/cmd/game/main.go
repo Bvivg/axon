@@ -71,6 +71,7 @@ func run() error {
 		MinInSync:         loader.IntDefault("GAME_JOURNAL_MIN_INSYNC", 1),
 		Linger:            loader.DurationDefault("GAME_JOURNAL_LINGER", time.Millisecond),
 	}
+	outboxRetention := loader.DurationDefault("GAME_OUTBOX_RETENTION", 24*time.Hour)
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
@@ -134,6 +135,7 @@ func run() error {
 	go handler.Watch(ctx, log)
 	go handler.RunMatchmaking(ctx, log)
 	go func() { _ = cluster.NewProjector(kafka, model, log, observed).Run(ctx) }()
+	go model.PruneOutbox(ctx, time.Hour, outboxRetention, log)
 	go reportActive(ctx, own, observed)
 	ownership := make(chan struct{})
 	go func() {
