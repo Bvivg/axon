@@ -22,7 +22,7 @@ x-replication-env: &replication-env
 
 services:
   postgres:
-    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf", "-c", "max_slot_wal_keep_size=1GB"]
+    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10", "-c", "max_slot_wal_keep_size=1GB"]
     volumes:
       - ./postgres/replication/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
 
@@ -183,6 +183,15 @@ services:
       pgbouncer:
         condition: service_healthy
       postgres-replica:
+        condition: service_healthy
+
+  connect:
+    environment:
+      BOOTSTRAP_SERVERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
+    depends_on:
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
 
   gateway:
