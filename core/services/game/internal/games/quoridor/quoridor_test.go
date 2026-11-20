@@ -3,6 +3,7 @@ package quoridor
 import (
 	"encoding/json"
 	"errors"
+	"math/rand/v2"
 	"reflect"
 	"testing"
 
@@ -299,5 +300,78 @@ func TestValidMovesFollowLegality(t *testing.T) {
 	}
 	if g.ValidMoves(s, "black") != nil {
 		t.Error("black has moves on white's turn")
+	}
+}
+
+func naiveLegal(b Board, seat int) []string {
+	out := names(b.PawnMoves(seat))
+	for r := 0; r < Size-1; r++ {
+		for c := 0; c < Size-1; c++ {
+			for _, d := range []Orientation{Horizontal, Vertical} {
+				w := Wall{At(r, c), d}
+				if b.Left[seat] == 0 || b.overlaps(w) {
+					continue
+				}
+				next := b.with(w)
+				if HasPath(next, next.Pawns[0], GoalRow(0)) && HasPath(next, next.Pawns[1], GoalRow(1)) {
+					out = append(out, w.String())
+				}
+			}
+		}
+	}
+	return out
+}
+
+func moveNames(moves []Move) []string {
+	out := []string{}
+	for _, m := range moves {
+		out = append(out, m.String())
+	}
+	return out
+}
+
+func TestLegalMovesMatchExhaustiveSearchOnRandomGames(t *testing.T) {
+	rng := rand.New(rand.NewPCG(7, 11))
+	positions := 0
+	for range 300 {
+		b := NewBoard()
+		seat := 0
+		for ply := 0; ply < 120; ply++ {
+			got := moveNames(b.LegalMoves(seat))
+			want := naiveLegal(b, seat)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("ply %d seat %d walls %v: got %v, want %v", ply, seat, b.Walls(), got, want)
+			}
+			positions++
+			legal := b.LegalMoves(seat)
+			var m Move
+			if rng.IntN(3) == 0 || b.Left[seat] == 0 {
+				pawns := b.PawnMoves(seat)
+				m = Move{To: pawns[rng.IntN(len(pawns))]}
+			} else {
+				m = legal[rng.IntN(len(legal))]
+			}
+			b = b.Play(seat, m)
+			if b.Pawns[seat].Row() == GoalRow(seat) {
+				break
+			}
+			seat = 1 - seat
+		}
+	}
+	if positions < 10_000 {
+		t.Fatal("too few positions", positions)
+	}
+}
+
+func BenchmarkLegalMoves(b *testing.B) {
+	board := NewBoard()
+	board.Pawns = [2]Cell{At(3, 4), At(5, 3)}
+	for _, raw := range []string{"c3h", "e3h", "d5v", "f6h", "b7v", "g2v"} {
+		m, _ := ParseMove(raw)
+		board = board.with(*m.Wall)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = board.LegalMoves(0)
 	}
 }
