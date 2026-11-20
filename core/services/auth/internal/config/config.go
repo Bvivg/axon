@@ -87,6 +87,7 @@ func Load() (Config, error) {
 		OAuth:       loadOAuth(l),
 		Avatar:      loadAvatar(l),
 	}
+	refuseDefaultAvatarSecret(l, cfg.Base, cfg.Avatar)
 
 	if cfg.Postgres.SearchPath == "" {
 		cfg.Postgres.SearchPath = ServiceName
@@ -242,12 +243,16 @@ func applePrivateKey(l *config.Loader) string {
 func loadAvatar(l *config.Loader) AvatarConfig {
 	return AvatarConfig{
 		Endpoint:  l.StringDefault("AVATARS_ENDPOINT", "minio:9000"),
-		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
-		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),
+		AccessKey: l.StringDefault("AVATARS_ACCESS_KEY", l.StringDefault("MINIO_ROOT_USER", "axon")),
+		SecretKey: l.SecretDefault("AVATARS_SECRET_KEY", l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal()).Reveal(),
 		Bucket:    l.StringDefault("AVATARS_BUCKET", "avatars"),
 		UseSSL:    l.Bool("AVATARS_USE_SSL", false),
 		PublicURL: l.StringDefault("AVATARS_PUBLIC_URL", "http://localhost:59000"),
 	}
+}
+
+func refuseDefaultAvatarSecret(l *config.Loader, base config.Base, avatar AvatarConfig) {
+	base.RefuseDefaultSecret(l, "AVATARS_SECRET_KEY", avatar.SecretKey)
 }
 
 func loadPasswordParams(l *config.Loader) password.Params {
