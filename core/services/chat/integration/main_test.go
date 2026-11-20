@@ -84,6 +84,7 @@ func run(m *testing.M) (int, error) {
 			"CHAT_DB_PASSWORD":    chatPassword,
 			"GAME_DB_PASSWORD":    "game",
 			"CALLING_DB_PASSWORD": "calling",
+			"RATING_DB_PASSWORD":  "rating",
 		}),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
