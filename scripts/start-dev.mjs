@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -116,7 +116,11 @@ async function main() {
       env[keyName] = Buffer.from(generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }).privateKey).toString("base64");
       writeFileSync(envFile, `\n${keyName}=${env[keyName]}\n`, { flag: "a", mode: 0o600 });
     }
-    secrets = Object.entries(env).filter(([key, value]) => /PASSWORD|SECRET|PRIVATE_KEY|INTERNAL_KEY/.test(key) && value.length >= 8).map(([, value]) => value);
+    if (!env.JWT_KEY_ENCRYPTION_KEY) {
+      env.JWT_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+      writeFileSync(envFile, `\nJWT_KEY_ENCRYPTION_KEY=${env.JWT_KEY_ENCRYPTION_KEY}\n`, { flag: "a", mode: 0o600 });
+    }
+    secrets = Object.entries(env).filter(([key, value]) => /PASSWORD|SECRET|PRIVATE_KEY|INTERNAL_KEY|ENCRYPTION_KEY/.test(key) && value.length >= 8).map(([, value]) => value);
 
     if (env.AXON_DEV_INFRA !== "external") {
       const listing = spawnSync("docker", ["compose", "ls", "--all", "--format", "json"], { encoding: "utf8" });

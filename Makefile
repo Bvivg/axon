@@ -51,7 +51,14 @@ logs: ## Follow stack logs
 ENV_FILE := core/deploy/.env
 
 .PHONY: jwt-key
-jwt-key: env ## Generate a development RS256 signing key into core/deploy/.env
+jwt-key: env ## Generate a development RS256 signing key and the key-encryption key into core/deploy/.env
+	@if ! grep -qE '^JWT_KEY_ENCRYPTION_KEY=.+' $(ENV_FILE); then \
+		tmp=$$(mktemp); \
+		grep -v '^JWT_KEY_ENCRYPTION_KEY=' $(ENV_FILE) > "$$tmp"; \
+		echo "JWT_KEY_ENCRYPTION_KEY=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')" >> "$$tmp"; \
+		mv "$$tmp" $(ENV_FILE); \
+		echo "wrote JWT_KEY_ENCRYPTION_KEY to $(ENV_FILE) (git-ignored)"; \
+	fi
 	@if grep -qE '^JWT_PRIVATE_KEY_DEV_1=.+' $(ENV_FILE); then \
 		echo "JWT_PRIVATE_KEY_DEV_1 is already set in $(ENV_FILE); delete the line to regenerate"; \
 		exit 0; \

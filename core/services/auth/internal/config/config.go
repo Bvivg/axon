@@ -61,7 +61,17 @@ type JWTConfig struct {
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 
-	Keys *jwt.KeySet
+	Keys    *jwt.KeySet
+	Retired []jwt.PrivateKey
+
+	Rotation Rotation
+}
+
+type Rotation struct {
+	Interval      time.Duration
+	Lead          time.Duration
+	Check         time.Duration
+	EncryptionKey []byte
 }
 
 func Load() (Config, error) {
@@ -96,6 +106,8 @@ func loadJWT(l *config.Loader) JWTConfig {
 		RefreshTTL: l.DurationDefault("JWT_REFRESH_TOKEN_TTL", 720*time.Hour),
 	}
 
+	cfg.Rotation = loadRotation(l)
+
 	activeID := l.String("JWT_ACTIVE_KEY_ID")
 	if activeID == "" {
 
@@ -121,7 +133,35 @@ func loadJWT(l *config.Loader) JWTConfig {
 	}
 
 	cfg.Keys = keys
+	cfg.Retired = retired
 	return cfg
+}
+
+func loadRotation(l *config.Loader) Rotation {
+	out := Rotation{
+		Interval: l.DurationDefault("JWT_ROTATION_INTERVAL", 0),
+		Lead:     l.DurationDefault("JWT_ROTATION_LEAD", 10*time.Minute),
+		Check:    l.DurationDefault("JWT_ROTATION_CHECK", 30*time.Second),
+	}
+	if out.Interval <= 0 {
+		out.Interval = 0
+		return out
+	}
+	if out.Lead < 0 || out.Check <= 0 {
+		l.Fail("JWT_ROTATION_LEAD", fmt.Errorf("lead must not be negative and check must be positive"))
+		return out
+	}
+	raw := l.Secret("JWT_KEY_ENCRYPTION_KEY")
+	if raw.IsZero() {
+		return out
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw.Reveal()))
+	if err != nil || len(key) != 32 {
+		l.Fail("JWT_KEY_ENCRYPTION_KEY", fmt.Errorf("want 32 bytes in base64"))
+		return out
+	}
+	out.EncryptionKey = key
+	return out
 }
 
 func loadKey(l *config.Loader, id string) (jwt.PrivateKey, bool) {

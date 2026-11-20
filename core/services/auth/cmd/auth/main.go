@@ -28,6 +28,7 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
+	"github.com/bvivg/axon/core/services/auth/internal/keyring"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
@@ -100,8 +101,20 @@ func run() error {
 		return err
 	}
 
+	ring := jwt.NewRing(cfg.JWT.Keys)
+	if cfg.JWT.Rotation.Interval > 0 {
+		rotator, err := signingKeys(cfg, pool, ring, log)
+		if err != nil {
+			return err
+		}
+		if err := rotator.Sync(ctx); err != nil {
+			return fmt.Errorf("signing keys: %w", err)
+		}
+		go rotator.Run(ctx)
+	}
+
 	issuer, err := jwt.NewIssuer(jwt.IssuerConfig{
-		Keys:     cfg.JWT.Keys,
+		Keys:     ring,
 		Issuer:   cfg.JWT.Issuer,
 		Audience: cfg.JWT.Audience,
 		TTL:      cfg.JWT.AccessTTL,
@@ -111,7 +124,7 @@ func run() error {
 	}
 
 	verifier, err := authn.NewVerifier(authn.Config{
-		Keys:     cfg.JWT.Keys,
+		Keys:     ring,
 		Issuer:   cfg.JWT.Issuer,
 		Audience: cfg.JWT.Audience,
 	})
@@ -172,7 +185,7 @@ func run() error {
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(cfg, checks, metrics, log),
+		Handler:           adminHandler(ring, checks, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -260,7 +273,7 @@ func unencryptedHTTP2() *http.Protocols {
 }
 
 func adminHandler(
-	cfg config.Config,
+	keys jwt.Keys,
 	checks *health.Handler,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
@@ -270,26 +283,46 @@ func adminHandler(
 	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
-	mux.Handle("GET /.well-known/jwks.json", jwksHandler(cfg.JWT.Keys, log))
+	mux.Handle("GET /.well-known/jwks.json", jwksHandler(keys, log))
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }
 
-func jwksHandler(keys *jwt.KeySet, log *slog.Logger) http.Handler {
-	document, err := keys.JWKS()
-	if err != nil {
-
-		log.Error("could not render the JWKS document", "error", err)
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+func jwksHandler(keys jwt.Keys, log *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		document, err := keys.JWKS()
+		if err != nil {
+			log.ErrorContext(r.Context(), "could not render the JWKS document", "error", err)
 			http.Error(w, "jwks unavailable", http.StatusInternalServerError)
-		})
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/jwk-set+json")
-
-		w.Header().Set("Cache-Control", "public, max-age=300")
+		w.Header().Set("Cache-Control", "public, max-age=60")
 		_, _ = w.Write(document)
+	})
+}
+
+func signingKeys(cfg config.Config, pool *postgres.Pool, ring *jwt.Ring, log *slog.Logger) (*keyring.Rotator, error) {
+	if len(cfg.JWT.Rotation.EncryptionKey) == 0 {
+		return nil, errors.New("JWT_KEY_ENCRYPTION_KEY is required when JWT_ROTATION_INTERVAL is set")
+	}
+	sealer, err := keyring.NewSealer(cfg.JWT.Rotation.EncryptionKey)
+	if err != nil {
+		return nil, err
+	}
+	return keyring.New(keyring.Config{
+		Store:  keyring.NewPostgres(pool.Pool),
+		Sealer: sealer,
+		Ring:   ring,
+		Policy: keyring.Policy{
+			Interval: cfg.JWT.Rotation.Interval,
+			Lead:     cfg.JWT.Rotation.Lead,
+			Retain:   cfg.JWT.AccessTTL + time.Minute,
+		},
+		Bootstrap: cfg.JWT.Keys.Active(),
+		Extra:     cfg.JWT.Retired,
+		Check:     cfg.JWT.Rotation.Check,
+		Log:       log.With("component", "keyring"),
 	})
 }
 
