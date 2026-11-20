@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
 COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
-GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/...
+GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/...
 
 -include core/deploy/.env
 
@@ -218,7 +218,7 @@ web-check: web-lint web-typecheck web-test web-build ## Everything CI runs for t
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace
-	@for module in shared services/auth services/chat services/gateway services/game; do \
+	@for module in shared services/auth services/chat services/gateway services/game services/rating; do \
 		echo "tidy $$module"; \
 		(cd core/$$module && GOWORK=off go mod tidy) || exit 1; \
 	done
