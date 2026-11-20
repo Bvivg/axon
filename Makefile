@@ -199,6 +199,16 @@ test-e2e-game: jwt-key ## Spectator and replay e2e through the gateway on the ba
 	@trap '$(COMPOSE_GAME_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
 	$(COMPOSE_GAME_E2E) --profile e2e run --rm --build game-e2e
 
+COMPOSE_ANALYSIS_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55932 REDIS_HOST_PORT=56879 KAFKA_HOST_PORT=59592 MINIO_HOST_PORT=59500 \
+	MINIO_CONSOLE_HOST_PORT=59501 GATEWAY_HOST_PORT=18580 WEB_HOST_PORT=3503 AUTH_HOST_PORT=18581 AUTH_METRICS_HOST_PORT=19591 \
+	CHAT_HOST_PORT=18582 CHAT_METRICS_HOST_PORT=19592 GATEWAY_METRICS_HOST_PORT=19590 CONNECT_HOST_PORT=58383 REGISTRY_HOST_PORT=58381 \
+	docker compose -p axon-analysis-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.analysis-e2e.yml
+
+.PHONY: test-e2e-analysis
+test-e2e-analysis: jwt-key ## Scholar's mate through the gateway, CDC and Stockfish analysis (one-off stack)
+	@trap '$(COMPOSE_ANALYSIS_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_ANALYSIS_E2E) run --rm --build analysis-e2e
+
 .PHONY: e2e-key
 e2e-key:
 	@touch $(E2E_ENV_FILE); \
