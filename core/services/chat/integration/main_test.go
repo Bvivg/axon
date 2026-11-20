@@ -239,7 +239,7 @@ func applyMigrations(dsn string) error {
 func newRepo(t *testing.T) *repository.Repository {
 	t.Helper()
 
-	if _, err := pool.Exec(t.Context(), `TRUNCATE rooms, room_members, messages CASCADE`); err != nil {
+	if _, err := pool.Exec(t.Context(), `TRUNCATE rooms, room_members, messages, outbox CASCADE`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 

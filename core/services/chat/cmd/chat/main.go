@@ -23,6 +23,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
+	"github.com/bvivg/axon/core/shared/pkg/outbox"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
@@ -99,6 +100,7 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	go outbox.Sweeper{DB: pool, Table: repository.OutboxTable, Logger: log}.Run(ctx)
 
 	keys, err := authn.NewCache(authn.JWKSConfig{
 		URL:             cfg.JWT.JWKSURL,

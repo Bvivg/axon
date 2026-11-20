@@ -69,7 +69,7 @@ func cell(i int) json.RawMessage {
 
 func TestOwnershipFailoverKeepsEveryAcceptedMove(t *testing.T) {
 	ctx := context.Background()
-	for _, table := range []string{"match_queue", "rating_changes", "moves", "sessions", "ratings", "owners", "projector_offsets"} {
+	for _, table := range []string{"outbox", "match_queue", "rating_changes", "moves", "sessions", "ratings", "owners", "projector_offsets"} {
 		if _, err := pool.Exec(ctx, `DELETE FROM game.`+table); err != nil {
 			t.Fatal(err)
 		}
@@ -168,16 +168,16 @@ func TestOwnershipFailoverKeepsEveryAcceptedMove(t *testing.T) {
 	}
 
 	settled := func() bool {
-		var finished, changes int
+		var finished, events int
 		if err := pool.QueryRow(ctx, `SELECT count(*) FROM game.sessions WHERE state->>'status' = 'win'`).Scan(&finished); err != nil {
 			t.Fatal(err)
 		}
-		if err := pool.QueryRow(ctx, `SELECT count(*) FROM game.rating_changes`).Scan(&changes); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM game.outbox WHERE aggregatetype = $1`, projection.FinishedTopic).Scan(&events); err != nil {
 			t.Fatal(err)
 		}
-		return finished == len(matches) && changes == 2*len(matches)
+		return finished == len(matches) && events == len(matches)
 	}
-	eventually(t, "the projector to settle every game", settled)
+	eventually(t, "the projector to publish every finished game", settled)
 	for _, m := range matches {
 		stored, err := model.Load(ctx, m.game.ID)
 		if err != nil || stored.Revision != m.game.Revision {
@@ -205,10 +205,6 @@ func TestOwnershipFailoverKeepsEveryAcceptedMove(t *testing.T) {
 		}
 		return now == total
 	})
-	var played int
-	if err := pool.QueryRow(ctx, `SELECT coalesce(max(games), 0) FROM game.ratings`).Scan(&played); err != nil || played != 1 {
-		t.Fatal("a replayed projection settled a game twice", played, err)
-	}
 	if !settled() {
 		t.Fatal("replay changed the read model")
 	}
