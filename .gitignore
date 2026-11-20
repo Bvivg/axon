@@ -38,6 +38,8 @@ pnpm-debug.log*
 # Generated protobuf output (regenerated via `make proto`)
 /core/shared/gen/
 /ui/web/src/gen/
+/ui/app/Gen/
+/ui/app/Axon.xcodeproj/
 
 # Swift / Xcode
 .build/
