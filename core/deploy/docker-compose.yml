@@ -16,6 +16,7 @@ services:
       GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
       CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
       RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10", "-c", "max_slot_wal_keep_size=1GB"]
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
@@ -136,6 +137,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
+      cdc-setup:
+        condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
     healthcheck:
@@ -213,6 +218,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      chat-migrate:
+        condition: service_completed_successfully
+      cdc-setup:
+        condition: service_completed_successfully
 
       auth:
         condition: service_healthy
@@ -252,6 +261,8 @@ services:
     networks: [app, data]
     depends_on:
       game-migrate:
+        condition: service_completed_successfully
+      cdc-setup:
         condition: service_completed_successfully
       auth:
         condition: service_healthy
@@ -319,6 +330,8 @@ services:
     depends_on:
       rating-migrate:
         condition: service_completed_successfully
+      cdc-setup:
+        condition: service_completed_successfully
       kafka:
         condition: service_healthy
       redis:
@@ -342,6 +355,151 @@ services:
     depends_on:
       postgres-schemas:
         condition: service_completed_successfully
+
+  auth-migrate:
+    image: migrate/migrate:v4.20.1
+    volumes:
+      - ../services/auth/migrations:/migrations:ro
+    entrypoint: ["sh", "-ec"]
+    command: ['exec migrate -path=/migrations -database "$$AUTH_POSTGRES_DSN" up']
+    environment:
+      AUTH_POSTGRES_DSN: ${AUTH_POSTGRES_DSN:-postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth}
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  chat-migrate:
+    image: migrate/migrate:v4.20.1
+    volumes:
+      - ../services/chat/migrations:/migrations:ro
+    entrypoint: ["sh", "-ec"]
+    command: ['exec migrate -path=/migrations -database "$$CHAT_POSTGRES_DSN" up']
+    environment:
+      CHAT_POSTGRES_DSN: ${CHAT_POSTGRES_DSN:-postgres://chat_service:chat@postgres:5432/axon?sslmode=disable&search_path=chat}
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cdc-setup:
+    image: postgres:17-alpine
+    restart: "no"
+    entrypoint: ["sh", "/cdc/setup.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-axon}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-axon}
+      PGDATABASE: ${POSTGRES_DB:-axon}
+      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD:-debezium}
+      CDC_PUBLICATION: axon_outbox
+    volumes:
+      - ./cdc:/cdc:ro
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
+      chat-migrate:
+        condition: service_completed_successfully
+      game-migrate:
+        condition: service_completed_successfully
+      rating-migrate:
+        condition: service_completed_successfully
+
+  connect:
+    image: quay.io/debezium/connect:3.7.0.Final
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: axon-cdc
+      CONFIG_STORAGE_TOPIC: _axon-cdc-configs
+      OFFSET_STORAGE_TOPIC: _axon-cdc-offsets
+      STATUS_STORAGE_TOPIC: _axon-cdc-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: -1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: -1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: -1
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      OFFSET_FLUSH_INTERVAL_MS: 5000
+      SHUTDOWN_TIMEOUT: 20000
+      ADVERTISED_HOST_NAME: connect
+      HEAP_OPTS: "-Xms256m -Xmx512m"
+      CDC_DATABASE_HOST: postgres
+      CDC_DATABASE_PORT: 5432
+      CDC_DATABASE_NAME: ${POSTGRES_DB:-axon}
+      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD:-debezium}
+    ports:
+      - "127.0.0.1:${CONNECT_HOST_PORT:-58083}:8083"
+    volumes:
+      - type: tmpfs
+        target: /kafka/config
+      - type: tmpfs
+        target: /kafka/data
+      - type: tmpfs
+        target: /kafka/logs
+    networks: [data]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8083/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  cdc-connector:
+    image: curlimages/curl:8.23.0
+    restart: "no"
+    entrypoint: ["sh", "/cdc/register-connector.sh"]
+    environment:
+      CONNECT_URL: http://connect:8083
+      CDC_CONNECTOR: axon-outbox
+    volumes:
+      - ./cdc:/cdc:ro
+    networks: [data]
+    depends_on:
+      connect:
+        condition: service_healthy
+      cdc-setup:
+        condition: service_completed_successfully
+
+  registry:
+    image: quay.io/apicurio/apicurio-registry:3.3.4
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS_APPEND: "-Xms64m -Xmx256m"
+    ports:
+      - "127.0.0.1:${REGISTRY_HOST_PORT:-58081}:8080"
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9000/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  schema-register:
+    image: curlimages/curl:8.23.0
+    restart: "no"
+    entrypoint: ["sh", "/cdc/register-schema.sh"]
+    environment:
+      REGISTRY_URL: http://registry:8080
+      SCHEMA_GROUP: default
+      SCHEMA_ARTIFACT: axon.events.v1
+      SCHEMA_FILE: /proto/events.proto
+    volumes:
+      - ./cdc:/cdc:ro
+      - ../shared/proto/axon/events/v1/events.proto:/proto/events.proto:ro
+    networks: [data]
+    depends_on:
+      registry:
+        condition: service_healthy
 
   gateway:
     build:

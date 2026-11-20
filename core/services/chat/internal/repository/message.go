@@ -91,7 +91,10 @@ func (r *Repository) AppendMessage(ctx context.Context, m domain.Message) (domai
 		}
 		stored.Revealed = revealed
 
-		return tx.advanceReadSeq(ctx, m.RoomID, m.AuthorID, stored.Seq)
+		if err := tx.advanceReadSeq(ctx, m.RoomID, m.AuthorID, stored.Seq); err != nil {
+			return err
+		}
+		return tx.recordEvent(ctx, MessageSentEvent(uuid.New(), stored))
 	})
 	if err != nil {
 		return domain.Message{}, false, err

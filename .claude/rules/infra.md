@@ -23,7 +23,8 @@
 
 ## Postgres
 - Одна база, schema-level изоляция: `auth`, `chat`, `game`, `calling`, `rating` — каждый сервис пишет только в свою схему, никаких cross-schema JOIN из кода сервиса.
-- Миграции — по сервису, в `services/<name>/migrations/`, применяются независимо.
+- Миграции — по сервису, в `services/<name>/migrations/`, применяются независимо. На Docker-стенд их накатывают одноразовые джобы `<service>-migrate`, сервис стартует только после своей.
+- Postgres работает с `wal_level=logical`. Роль `debezium` и публикацию `axon_outbox` (только `INSERT`) создаёт идемпотентный джоб `cdc-setup` после всех `*-migrate`: новая таблица `<schema>.outbox` попадает в публикацию на следующем `up`, если её migrate-джоб добавлен в `depends_on` у `cdc-setup`.
 
 ## Redis
 - Только кэш/presence/session state — не источник истины. Любые данные в Redis должны быть восстановимы из Postgres/Kafka при потере кэша.
@@ -31,6 +32,7 @@
 ## Kafka
 - Событийный контракт — `<domain>.<event>` (`game.started`, `game.finished`, `chat.message`, `call.ended`).
 - Consumer-группы — по сервису-потребителю, не шарить одну группу между разными сервисами.
+- Сервисы не пишут доменные события в Kafka сами: строка в `<schema>.outbox` в той же транзакции, дальше Debezium (`connect`, Outbox Event Router) кладёт `payload` как есть в топик `aggregatetype`, ключ — `aggregateid`, заголовки `event_type`/`event_id`. Схемы событий — `axon.events.v1` в Apicurio (`registry`). `connect`, `registry` и их джобы (`cdc-connector`, `schema-register`) — только в сети `data`.
 
 ## LiveKit
 - SFU — отдельный контейнер/под, медиапоток идёт напрямую клиент ↔ LiveKit, никогда не проксируется через gateway.
