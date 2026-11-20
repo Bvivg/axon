@@ -1,0 +1,32 @@
+services:
+  rating-e2e:
+    image: golang:1.27.4-alpine
+    profiles: ["e2e"]
+    working_dir: /src/core/services/rating
+    environment:
+      RATING_E2E_GATEWAY_URL: http://gateway:8080
+      RATING_E2E_API_URL: http://rating:8084
+      RATING_E2E_POSTGRES_DSN: postgres://${POSTGRES_USER:-axon}:${POSTGRES_PASSWORD:-axon}@postgres:5432/${POSTGRES_DB:-axon}?sslmode=disable
+      RATING_E2E_KAFKA_BROKERS: kafka:29092
+      RATING_E2E_REDIS_ADDR: redis:6379
+      RATING_E2E_REDIS_PASSWORD: ${REDIS_PASSWORD:-axon}
+      RATING_E2E_OUTAGE_GAMES: ${RATING_E2E_OUTAGE_GAMES:-}
+      GOWORK: "off"
+      GOFLAGS: -mod=mod
+    volumes:
+      - ../..:/src
+      - rating-e2e-go-mod:/go/pkg/mod
+      - rating-e2e-go-build:/root/.cache/go-build
+    command: ["go", "test", "-tags", "e2e", "-count=1", "-v", "-timeout", "20m", "-run", "${RATING_E2E_RUN:-TestRatedQuickMatchTravelsTheOutboxChain}", "./e2e/..."]
+    networks: [edge, app, data]
+    depends_on:
+      gateway:
+        condition: service_healthy
+      rating:
+        condition: service_healthy
+      game:
+        condition: service_healthy
+
+volumes:
+  rating-e2e-go-mod:
+  rating-e2e-go-build:
