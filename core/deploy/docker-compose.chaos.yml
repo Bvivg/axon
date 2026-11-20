@@ -1,0 +1,46 @@
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    restart: unless-stopped
+    command: ["-host", "0.0.0.0", "-config", "/config/toxiproxy.json"]
+    ports:
+      - "127.0.0.1:${TOXIPROXY_HOST_PORT:-18474}:8474"
+    volumes:
+      - ./chaos/toxiproxy.json:/config/toxiproxy.json:ro
+    networks:
+      data:
+        aliases: [postgres, redis]
+      chaos-upstream:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    networks: !override
+      chaos-upstream:
+        aliases: [postgres-real]
+
+  redis:
+    networks: !override
+      chaos-upstream:
+        aliases: [redis-real]
+
+  auth:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  chat:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  game-migrate:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+networks:
+  chaos-upstream:
