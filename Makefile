@@ -209,6 +209,16 @@ test-e2e-analysis: jwt-key ## Scholar's mate through the gateway, CDC and Stockf
 	@trap '$(COMPOSE_ANALYSIS_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
 	$(COMPOSE_ANALYSIS_E2E) run --rm --build analysis-e2e
 
+COMPOSE_TOURNAMENT_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=56132 REDIS_HOST_PORT=57079 KAFKA_HOST_PORT=59792 MINIO_HOST_PORT=59700 \
+	MINIO_CONSOLE_HOST_PORT=59701 GATEWAY_HOST_PORT=18780 WEB_HOST_PORT=3703 AUTH_HOST_PORT=18781 AUTH_METRICS_HOST_PORT=19791 \
+	CHAT_HOST_PORT=18782 CHAT_METRICS_HOST_PORT=19792 GATEWAY_METRICS_HOST_PORT=19790 CONNECT_HOST_PORT=58583 REGISTRY_HOST_PORT=58581 \
+	docker compose -p axon-tournament-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.tournament-e2e.yml
+
+.PHONY: test-e2e-tournament
+test-e2e-tournament: jwt-key ## Eight-player tic-tac-toe bracket with a no-show through the gateway, CDC and the tournament saga (one-off stack)
+	@trap '$(COMPOSE_TOURNAMENT_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_TOURNAMENT_E2E) run --rm --build tournament-e2e
+
 .PHONY: e2e-key
 e2e-key:
 	@touch $(E2E_ENV_FILE); \
