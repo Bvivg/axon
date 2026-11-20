@@ -147,6 +147,7 @@ func Load() (Config, error) {
 	if cfg.Postgres.SearchPath == "" {
 		cfg.Postgres.SearchPath = ServiceName
 	}
+	cfg.RefuseDefaultSecret(l, "ATTACHMENTS_SECRET_KEY", cfg.Attachments.SecretKey)
 
 	if err := l.Err(); err != nil {
 		return Config{}, err
@@ -157,8 +158,8 @@ func Load() (Config, error) {
 func loadAttachments(l *config.Loader) AttachmentConfig {
 	return AttachmentConfig{
 		Endpoint:  l.StringDefault("ATTACHMENTS_ENDPOINT", "minio:9000"),
-		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
-		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),
+		AccessKey: l.StringDefault("ATTACHMENTS_ACCESS_KEY", l.StringDefault("MINIO_ROOT_USER", "axon")),
+		SecretKey: l.SecretDefault("ATTACHMENTS_SECRET_KEY", l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal()).Reveal(),
 		Bucket:    l.StringDefault("ATTACHMENTS_BUCKET", "chat-attachments"),
 		UseSSL:    l.Bool("ATTACHMENTS_USE_SSL", false),
 		PublicURL: l.StringDefault("ATTACHMENTS_PUBLIC_URL", "http://localhost:59000"),
