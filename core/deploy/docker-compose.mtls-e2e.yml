@@ -8,6 +8,41 @@ services:
     volumes:
       - certs-intruder:/certs/intruder
 
+  auth:
+    environment:
+      JWT_ROTATION_INTERVAL: 45s
+      JWT_ROTATION_LEAD: 15s
+      JWT_ROTATION_CHECK: 5s
+      JWT_ACCESS_TOKEN_TTL: 5m
+      MTLS_RELOAD_INTERVAL: 5s
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/readyz"]
+
+  chat:
+    environment:
+      JWKS_REFRESH_INTERVAL: 10s
+      MTLS_RELOAD_INTERVAL: 5s
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/readyz"]
+
+  game:
+    environment:
+      JWKS_REFRESH_INTERVAL: 10s
+      MTLS_RELOAD_INTERVAL: 5s
+
+  rating:
+    environment:
+      MTLS_RELOAD_INTERVAL: 5s
+
+  gateway:
+    environment:
+      JWKS_REFRESH_INTERVAL: 10s
+      MTLS_RELOAD_INTERVAL: 5s
+      RATE_LIMIT_PER_MINUTE: 100000
+      RATE_LIMIT_AUTH_PER_MINUTE: 3000
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9090/readyz"]
+
   security-e2e:
     image: golang:1.27.4-alpine
     profiles: ["e2e"]
