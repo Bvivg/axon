@@ -1,0 +1,5 @@
+apiVersion: v2
+name: apps
+description: Root app of apps for the Axon kind cluster, operators first, then the axon environment and pull request previews
+type: application
+version: 0.1.0

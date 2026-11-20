@@ -1,0 +1,144 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: e2e
+  labels:
+    app.kubernetes.io/part-of: axon-toolbox
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: e2e
+        app.kubernetes.io/part-of: axon-toolbox
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      initContainers:
+        - name: envoy
+          image: envoyproxy/envoy:v1.34.1
+          imagePullPolicy: IfNotPresent
+          restartPolicy: Always
+          args: ["-c", "/etc/envoy/envoy.yaml", "--log-level", "warn"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: envoy
+              mountPath: /etc/envoy
+              readOnly: true
+            - name: toolbox-tls
+              mountPath: /tls
+              readOnly: true
+      containers:
+        - name: e2e
+          image: axon/toolbox:local
+          imagePullPolicy: Never
+          command: ["bash", "/opt/axon/toolbox/e2e.sh"]
+          env:
+            - name: HOME
+              value: "/tmp"
+            - name: TMPDIR
+              value: "/tmp"
+            - name: GATEWAY_URL
+              value: "http://gateway:8080"
+            - name: GATEWAY_ADMIN_URL
+              value: "http://gateway:9090"
+            - name: GATEWAY_SOCKET_URL
+              value: "ws://gateway:8080/ws/chat"
+            - name: OAUTH_FAKE_AUTHORIZE_URL
+              value: "http://127.0.0.1:18081/oauth/fake/authorize"
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pg-auth
+                  key: password
+            - name: POSTGRES_DSN
+              value: "postgres://auth_service:$(AUTH_DB_PASSWORD)@axon-pg-rw:5432/axon?sslmode=require&search_path=auth"
+            - name: MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: password
+            - name: AVATARS_BUCKET
+              value: "avatars"
+            - name: PG_SUPERUSER
+              valueFrom:
+                secretKeyRef:
+                  name: axon-pg-superuser
+                  key: username
+            - name: PG_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: axon-pg-superuser
+                  key: password
+            - name: RATING_E2E_GATEWAY_URL
+              value: "http://gateway:8080"
+            - name: RATING_E2E_API_URL
+              value: "http://127.0.0.1:18084"
+            - name: RATING_E2E_POSTGRES_DSN
+              value: "postgres://$(PG_SUPERUSER):$(PG_SUPERUSER_PASSWORD)@axon-pg-rw:5432/axon?sslmode=require"
+            - name: RATING_E2E_KAFKA_BROKERS
+              value: "axon-kafka-kafka-bootstrap:9092"
+            - name: RATING_E2E_REDIS_ADDR
+              value: "app-redis-master:6379"
+            - name: RATING_E2E_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-app
+                  key: password
+            - name: MTLS_INTRUDER_DIR
+              value: "/certs/intruder"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: intruder-tls
+              mountPath: /certs/intruder
+              readOnly: true
+      volumes:
+        - name: envoy
+          configMap:
+            name: toolbox-envoy
+        - name: toolbox-tls
+          secret:
+            secretName: toolbox-mtls
+            defaultMode: 0444
+        - name: tmp
+          emptyDir: {}
+        - name: intruder-tls
+          secret:
+            secretName: intruder-mtls
+            defaultMode: 0444

@@ -337,3 +337,32 @@ test-e2e-app: jwt-key app-project ## XCUITest on the iPhone simulator against a 
 .PHONY: app-e2e-down
 app-e2e-down: ## Tear down the app e2e stack that KEEP=1 left running
 	$(COMPOSE_APP_E2E) down -v --remove-orphans
+
+KIND_CLUSTER ?= axon
+K8S_DIR      := core/deploy/k8s
+
+.PHONY: kind-up
+kind-up: ## Create the kind cluster, load the images, install Argo CD and wait until every application is Synced and Healthy
+	@if [ ! -d core/shared/gen/go ]; then $(MAKE) proto; fi
+	KIND_CLUSTER=$(KIND_CLUSTER) $(K8S_DIR)/kind/up.sh
+
+.PHONY: kind-down
+kind-down: ## Delete the kind cluster
+	kind delete cluster --name $(KIND_CLUSTER)
+
+.PHONY: kind-load
+kind-load: ## Rebuild the images and load them into the kind cluster (IMAGES="game web" for a subset)
+	@if [ ! -d core/shared/gen/go ]; then $(MAKE) proto; fi
+	KIND_CLUSTER=$(KIND_CLUSTER) $(K8S_DIR)/kind/images.sh
+
+.PHONY: kind-e2e
+kind-e2e: ## Run the auth, chat, rating and mTLS e2e suites inside the cluster against its gateway
+	KIND_CLUSTER=$(KIND_CLUSTER) $(K8S_DIR)/kind/run-job.sh e2e $(K8S_DIR)/jobs/e2e.yaml e2e
+
+.PHONY: kind-chaos
+kind-chaos: ## Load game in the cluster under the Chaos Mesh workflow and check no acknowledged move was lost (CHAOS=0 for load only)
+	KIND_CLUSTER=$(KIND_CLUSTER) $(K8S_DIR)/kind/chaos.sh
+
+.PHONY: k8s-validate
+k8s-validate: ## helm lint every chart and kubeconform the rendered manifests for kind and preview
+	$(K8S_DIR)/ci/validate.sh

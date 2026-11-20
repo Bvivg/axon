@@ -129,6 +129,36 @@ jobs:
         if: steps.contracts.outputs.present == 'true'
         run: buf generate
 
+  k8s:
+    name: Helm charts and manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install kubeconform and PyYAML
+        run: |
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          python -m pip install --quiet pyyaml==6.0.3
+
+      - name: helm lint and kubeconform
+        env:
+          PYTHON: python
+        run: make k8s-validate
+
   deploy-config:
     name: Compose files
     runs-on: ubuntu-latest

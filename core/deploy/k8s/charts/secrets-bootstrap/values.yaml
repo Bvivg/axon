@@ -1,0 +1,8 @@
+global: {}
+image: axon/toolbox
+roles:
+  - auth
+  - chat
+  - game
+  - calling
+  - rating

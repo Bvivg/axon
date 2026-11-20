@@ -1,0 +1,210 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: toolbox-mtls
+  labels:
+    app.kubernetes.io/part-of: axon-toolbox
+spec:
+  secretName: toolbox-mtls
+  commonName: gateway
+  dnsNames:
+    - gateway
+  duration: 1h
+  renewBefore: 20m
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - digital signature
+    - client auth
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: axon-internal
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: intruder-mtls
+  labels:
+    app.kubernetes.io/part-of: axon-toolbox
+spec:
+  secretName: intruder-mtls
+  commonName: intruder
+  dnsNames:
+    - intruder
+  duration: 1h
+  renewBefore: 20m
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages:
+    - digital signature
+    - client auth
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: axon-internal
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: toolbox-envoy
+  labels:
+    app.kubernetes.io/part-of: axon-toolbox
+data:
+  envoy.yaml: |
+    static_resources:
+      listeners:
+        - name: auth
+          address:
+            socket_address:
+              address: 127.0.0.1
+              port_value: 18081
+          filter_chains:
+            - filters:
+                - name: envoy.filters.network.tcp_proxy
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                    stat_prefix: auth
+                    cluster: auth
+        - name: game
+          address:
+            socket_address:
+              address: 127.0.0.1
+              port_value: 18083
+          filter_chains:
+            - filters:
+                - name: envoy.filters.network.tcp_proxy
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                    stat_prefix: game
+                    cluster: game
+        - name: rating
+          address:
+            socket_address:
+              address: 127.0.0.1
+              port_value: 18084
+          filter_chains:
+            - filters:
+                - name: envoy.filters.network.tcp_proxy
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                    stat_prefix: rating
+                    cluster: rating
+      clusters:
+        - name: auth
+          type: STRICT_DNS
+          connect_timeout: 5s
+          circuit_breakers:
+            thresholds:
+              - max_connections: 20000
+                max_pending_requests: 20000
+                max_requests: 20000
+          load_assignment:
+            cluster_name: auth
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: auth
+                          port_value: 8081
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+              sni: auth
+              common_tls_context:
+                tls_params:
+                  tls_minimum_protocol_version: TLSv1_3
+                  tls_maximum_protocol_version: TLSv1_3
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /tls/tls.crt
+                    private_key:
+                      filename: /tls/tls.key
+                validation_context:
+                  trusted_ca:
+                    filename: /tls/ca.crt
+                  match_typed_subject_alt_names:
+                    - san_type: DNS
+                      matcher:
+                        exact: auth
+        - name: game
+          type: STRICT_DNS
+          connect_timeout: 5s
+          circuit_breakers:
+            thresholds:
+              - max_connections: 20000
+                max_pending_requests: 20000
+                max_requests: 20000
+          load_assignment:
+            cluster_name: game
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: game
+                          port_value: 8083
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+              sni: game
+              common_tls_context:
+                tls_params:
+                  tls_minimum_protocol_version: TLSv1_3
+                  tls_maximum_protocol_version: TLSv1_3
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /tls/tls.crt
+                    private_key:
+                      filename: /tls/tls.key
+                validation_context:
+                  trusted_ca:
+                    filename: /tls/ca.crt
+                  match_typed_subject_alt_names:
+                    - san_type: DNS
+                      matcher:
+                        exact: game
+        - name: rating
+          type: STRICT_DNS
+          connect_timeout: 5s
+          circuit_breakers:
+            thresholds:
+              - max_connections: 20000
+                max_pending_requests: 20000
+                max_requests: 20000
+          load_assignment:
+            cluster_name: rating
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: rating
+                          port_value: 8084
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+              sni: rating
+              common_tls_context:
+                tls_params:
+                  tls_minimum_protocol_version: TLSv1_3
+                  tls_maximum_protocol_version: TLSv1_3
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /tls/tls.crt
+                    private_key:
+                      filename: /tls/tls.key
+                validation_context:
+                  trusted_ca:
+                    filename: /tls/ca.crt
+                  match_typed_subject_alt_names:
+                    - san_type: DNS
+                      matcher:
+                        exact: rating
