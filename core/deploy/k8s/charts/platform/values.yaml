@@ -1,0 +1,4 @@
+ca:
+  name: axon-internal-ca
+  duration: 8760h
+issuer: axon-internal

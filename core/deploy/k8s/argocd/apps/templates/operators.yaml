@@ -1,0 +1,121 @@
+{{- $c := .Values.charts -}}
+{{ include "apps.application" (dict "name" "cert-manager" "namespace" "cert-manager" "wave" -4 "chart" $c.certManager "values" (fromYaml `
+crds:
+  enabled: true
+  keep: true
+resources:
+  requests: {cpu: 10m, memory: 48Mi}
+  limits: {memory: 192Mi}
+webhook:
+  resources:
+    requests: {cpu: 10m, memory: 24Mi}
+    limits: {memory: 96Mi}
+cainjector:
+  resources:
+    requests: {cpu: 10m, memory: 48Mi}
+    limits: {memory: 192Mi}
+`)) }}
+---
+{{ include "apps.application" (dict "name" "cloudnative-pg" "namespace" "cnpg-system" "wave" -3 "chart" $c.cnpg "values" (fromYaml `
+crds:
+  create: true
+resources:
+  requests: {cpu: 20m, memory: 64Mi}
+  limits: {memory: 256Mi}
+`)) }}
+---
+{{ include "apps.application" (dict "name" "strimzi" "namespace" "strimzi" "wave" -3 "chart" $c.strimzi "values" (fromYaml `
+watchAnyNamespace: true
+resources:
+  requests: {cpu: 50m, memory: 256Mi}
+  limits: {memory: 512Mi}
+`)) }}
+---
+{{ include "apps.application" (dict "name" "redis-operator" "namespace" "redis-operator" "wave" -3 "chart" $c.redisOperator "values" (fromYaml `
+redisOperator:
+  imagePullPolicy: IfNotPresent
+  webhook: false
+resources:
+  requests: {cpu: 10m, memory: 32Mi}
+  limits: {memory: 128Mi}
+`)) }}
+---
+{{ include "apps.application" (dict "name" "prometheus" "namespace" "monitoring" "wave" -3 "chart" $c.prometheus "values" (fromYaml `
+fullnameOverride: prometheus
+crds:
+  enabled: true
+defaultRules:
+  create: false
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false
+kubernetesServiceMonitors:
+  enabled: false
+kubeStateMetrics:
+  enabled: false
+nodeExporter:
+  enabled: false
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+    limits: {memory: 256Mi}
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    scrapeInterval: 15s
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: {cpu: 50m, memory: 256Mi}
+      limits: {memory: 768Mi}
+`)) }}
+---
+{{ include "apps.application" (dict "name" "prometheus-adapter" "namespace" "monitoring" "wave" -2 "chart" $c.prometheusAdapter "values" (fromYaml `
+prometheus:
+  url: http://prometheus-operated.monitoring.svc
+  port: 9090
+metricsRelistInterval: 30s
+resources:
+  requests: {cpu: 10m, memory: 48Mi}
+  limits: {memory: 192Mi}
+rules:
+  default: false
+  custom:
+    - seriesQuery: 'game_partitions_owned{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: {resource: namespace}
+          pod: {resource: pod}
+      name:
+        matches: "^game_partitions_owned$"
+        as: game_active_sessions
+      metricsQuery: 'sum(game_active_sessions{<<.LabelMatchers>>}) by (<<.GroupBy>>) or sum(0 * <<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+`)) }}
+---
+{{ include "apps.application" (dict "name" "chaos-mesh" "namespace" "chaos-mesh" "wave" -2 "chart" $c.chaosMesh "values" (fromYaml `
+controllerManager:
+  replicaCount: 1
+  chaosdSecurityMode: false
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+    limits: {memory: 256Mi}
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+  resources:
+    requests: {cpu: 10m, memory: 48Mi}
+    limits: {memory: 192Mi}
+dashboard:
+  create: false
+dnsServer:
+  create: false
+webhook:
+  certManager:
+    enabled: true
+`)) }}

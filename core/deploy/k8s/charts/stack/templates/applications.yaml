@@ -1,0 +1,40 @@
+{{- range .Values.components }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ $.Values.env }}-{{ .name }}
+  labels:
+    app.kubernetes.io/part-of: axon
+    axon.io/environment: {{ $.Values.env }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .wave | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ $.Values.project }}
+  source:
+    repoURL: {{ $.Values.repoURL }}
+    targetRevision: {{ $.Values.revision }}
+    path: {{ $.Values.chartsPath }}/{{ .chart }}
+    helm:
+      releaseName: {{ .name }}
+      valueFiles:
+        - ../../{{ $.Values.valueFile }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $.Values.env }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
+    retry:
+      limit: 30
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m
+{{- end }}

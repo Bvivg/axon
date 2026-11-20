@@ -1,0 +1,1 @@
+../../../../cdc/register-schema.sh

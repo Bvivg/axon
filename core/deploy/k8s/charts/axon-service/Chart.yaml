@@ -1,0 +1,5 @@
+apiVersion: v2
+name: axon-service
+description: Shared Deployment, Service, PDB, HPA, ServiceMonitor, Certificate and migration hook for Axon services
+type: library
+version: 0.1.0

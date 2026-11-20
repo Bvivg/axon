@@ -1,0 +1,70 @@
+global: {}
+name: gateway
+image: axon/gateway
+replicas: 1
+ports:
+  http: 8080
+  admin: 9090
+probes:
+  port: admin
+  livePath: /healthz
+  readyPath: /readyz
+database: {}
+migrations:
+  enabled: false
+mtls:
+  enabled: true
+  allowedClients: ""
+  duration: 1h
+  renewBefore: 20m
+  env:
+    AUTH_SERVICE_URL: https://auth:8081
+    CHAT_SERVICE_URL: https://chat:8082
+    GAME_SERVICE_URL: https://game:8083
+    JWKS_URL: https://auth:8081/.well-known/jwks.json
+  plainEnv:
+    AUTH_SERVICE_URL: http://auth:8081
+    CHAT_SERVICE_URL: http://chat:8082
+    GAME_SERVICE_URL: http://game:8083
+    JWKS_URL: http://auth:9091/.well-known/jwks.json
+service:
+  type: ClusterIP
+  nodePorts: {}
+hpa:
+  enabled: false
+pdb:
+  minAvailable: 1
+serviceMonitor:
+  enabled: true
+terminationGracePeriodSeconds: 30
+securityContext:
+  runAsUser: 65532
+writablePaths:
+  - /tmp
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+rateLimit:
+  perMinute: 120
+  authPerMinute: 10
+trustedProxies: 0
+extraCorsOrigins: []
+fieldEnv: []
+secretEnv:
+  RATE_LIMIT_REDIS_PASSWORD:
+    secret: redis-edge
+    key: password
+env:
+  HTTP_ADDR: ":8080"
+  METRICS_ADDR: ":9090"
+  SHUTDOWN_DRAIN: 5s
+  RATE_LIMIT_REDIS_ADDR: "{{ .Values.global.redis.edge }}"
+  RATE_LIMIT_PER_MINUTE: "{{ .Values.rateLimit.perMinute }}"
+  RATE_LIMIT_AUTH_PER_MINUTE: "{{ .Values.rateLimit.authPerMinute }}"
+  CORS_ALLOWED_ORIGINS: "{{ .Values.global.publicWebURL }}{{ range .Values.extraCorsOrigins }},{{ . }}{{ end }}"
+  TRUSTED_PROXIES: "{{ .Values.trustedProxies }}"
+  JWT_ISSUER: https://auth.axon.local
+  JWT_AUDIENCE: axon
