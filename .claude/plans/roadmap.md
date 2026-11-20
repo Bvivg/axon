@@ -272,6 +272,7 @@ integration-тестами (Kafka через testcontainers). Это созна�
 - Фаза 1 — game как stateful event-sourced сервис (журнал Kafka, владельцы партиций, проектор в Postgres): `platform-phase-1-game-event-sourcing.md`. ✅ влита (PR #13)
 - Фаза 1b — производительность event-sourced game (события без полных снимков, group commit в Kafka, пакетный проектор, fencing по lease, Quoridor без map): `platform-phase-1b-game-performance.md`. ✅ вдвое меньше CPU game на ход, p99 335 → 19 мс, проектор не отстаёт
 - Фаза 4 — observability полного цикла (OTel-трейсы браузер → gateway → game → Kafka → проектор, метрики домена с exemplars, логи с trace_id в Loki, профили в Pyroscope, SLO burn-rate алерты, overlay `docker-compose.observability.yml`): `platform-phase-4-observability.md`. ✅
+- Фаза 3 — горизонтальное масштабирование и устойчивость (GCRA rate limit в Redis, Envoy и по 2 реплики gateway/auth/chat/game, fan-out чата на Redis Streams, ретраи/таймауты/circuit breaker, graceful shutdown, реплика Postgres + PgBouncer, партиционирование `game.moves`, Toxiproxy chaos): `platform-phase-3-scale-resilience.md`. ✅ хаос-сценарий под нагрузкой 4000 партий — 0 потерянных ходов
 
 ---
 

@@ -20,6 +20,9 @@ func TestDatabasesFallBackToPrimaryWhenUnset(t *testing.T) {
 	if dbs.primary.DSN.Reveal() != primaryDSN || dbs.replica != nil || dbs.listen != nil {
 		t.Fatalf("unexpected databases: replica=%v listen=%v", dbs.replica != nil, dbs.listen != nil)
 	}
+	if dbs.leases.DSN.Reveal() != primaryDSN || dbs.leases.MaxConns != 4 || dbs.leases.MinConns != 1 {
+		t.Fatal("lease pool must be a small pool on the primary", dbs.leases.MaxConns, dbs.leases.MinConns)
+	}
 	fallback, err := pgx.ParseConfig(primaryDSN)
 	if err != nil {
 		t.Fatal(err)
@@ -37,10 +40,15 @@ func TestDatabasesUseReplicaAndDirectListener(t *testing.T) {
 		"POSTGRES_CONNECT_TIMEOUT": "2s",
 		"GAME_READ_DATABASE_URL":   "postgres://game_service:game@postgres-replica:5432/axon?sslmode=disable",
 		"GAME_LISTEN_DATABASE_URL": "postgres://game_service:game@postgres:5432/axon?sslmode=disable",
+		"GAME_LEASE_DATABASE_URL":  "postgres://game_service:game@postgres:5432/axon?sslmode=disable",
+		"GAME_LEASE_MAX_CONNS":     "2",
 	})
 	dbs := loadDatabases(loader)
 	if err := loader.Err(); err != nil {
 		t.Fatal(err)
+	}
+	if dbs.leases.DSN.Reveal() != "postgres://game_service:game@postgres:5432/axon?sslmode=disable" || dbs.leases.MaxConns != 2 || dbs.leases.ConnectTimeout != 2*time.Second {
+		t.Fatal("lease pool settings", dbs.leases.MaxConns, dbs.leases.ConnectTimeout)
 	}
 	if dbs.replica == nil || dbs.replica.DSN.Reveal() != "postgres://game_service:game@postgres-replica:5432/axon?sslmode=disable" {
 		t.Fatal("replica DSN not loaded")

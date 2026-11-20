@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +30,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/health"
+	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
@@ -119,7 +119,7 @@ func run() error {
 	metrics := middleware.NewMetrics(cfg.Service)
 	observed := gamemetrics.New(metrics.Registry())
 	rules := session.NewRules(games)
-	model := projection.New(store, rules)
+	model := projection.New(store, rules, projection.LeasesOn(db.leases.Pool))
 	log = log.With("instance", instance)
 	journalLog, err := journal.NewKafka(ctx, kafka)
 	if err != nil {
@@ -160,11 +160,11 @@ func run() error {
 	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
-	srv := &http.Server{
+	graceful := lifecycle.New(drain, cfg.ShutdownTimeout, checks, log)
+	srv := graceful.Serve(&http.Server{
 		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux),
 		ReadHeaderTimeout: 5 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
-	}
+	})
 	done := make(chan error, 1)
 	go func() { done <- srv.ListenAndServe() }()
 	select {
@@ -174,13 +174,8 @@ func run() error {
 		}
 		return nil
 	case <-ctx.Done():
-		checks.Drain()
-		log.Info("draining before shutdown", "drain", drain)
-		time.Sleep(drain)
-		shutdown, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer cancel()
 		<-ownership
-		return srv.Shutdown(shutdown)
+		return graceful.Stop(srv)
 	}
 }
 
