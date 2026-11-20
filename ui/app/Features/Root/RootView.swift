@@ -28,8 +28,10 @@ struct RootView: View {
                     switch route {
                     case .game(let id):
                         GameView(sessionID: id, services: app.services, user: user, onReplay: { app.path.append(.replay(id)) })
+                            .id(id)
                     case .replay(let id):
                         ReplayView(sessionID: id, services: app.services)
+                            .id(id)
                     }
                 }
                 .id(user.id)

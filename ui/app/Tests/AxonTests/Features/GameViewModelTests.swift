@@ -188,6 +188,18 @@ struct GameViewModelTests {
         #expect(channel.resyncs == 1)
     }
 
+    @Test func loadsEachOpponentNameOnce() async {
+        let harness17 = await started(GameFixtures.session(revision: 1))
+        let model = harness17.model
+        let channel = harness17.channel
+        channel.emit(.session(GameFixtures.session(revision: 2)))
+        channel.emit(.session(GameFixtures.session(revision: 3)))
+        channel.emit(.session(GameFixtures.session(revision: 4)))
+        #expect(await eventually { model.session?.revision == 4 && model.name(seat: 1) == "grace" })
+        let requested = harness17.world.auth.profileRequests.flatMap { $0 }.filter { $0 == GameFixtures.rival }
+        #expect(requested.count == 1)
+    }
+
     @Test func missingGamesShowAnError() async {
         let world = FakeWorld()
         let model = GameViewModel(sessionID: GameFixtures.sessionID, me: GameFixtures.me, services: world.services)

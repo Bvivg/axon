@@ -12,6 +12,7 @@ final class FakeAuth: AuthAPI, @unchecked Sendable {
     var loginResult: Result<User, APIError> = .failure(APIError(.unauthenticated))
     var registerResult: Result<User, APIError> = .failure(APIError(.alreadyExists))
     var profileMap: [String: PublicProfile] = [:]
+    var profileRequests: [[String]] = []
     var logoutCount = 0
     var lastRegistration: Registration?
     let signedOut: AsyncStream<Void>
@@ -35,7 +36,8 @@ final class FakeAuth: AuthAPI, @unchecked Sendable {
     func logout() async { logoutCount += 1 }
 
     func profiles(ids: [String]) async throws(APIError) -> [String: PublicProfile] {
-        profileMap.filter { ids.contains($0.key) }
+        profileRequests.append(ids)
+        return profileMap.filter { ids.contains($0.key) }
     }
 }
 

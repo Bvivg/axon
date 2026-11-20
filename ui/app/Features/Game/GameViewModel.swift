@@ -24,6 +24,7 @@ final class GameViewModel {
     @ObservationIgnored private var listener: Task<Void, Never>?
     @ObservationIgnored private var watchdog: Task<Void, Never>?
     @ObservationIgnored private var pendingRevision: UInt32?
+    @ObservationIgnored private var requestedNames: Set<String> = []
 
     init(
         sessionID: String,
@@ -251,14 +252,16 @@ final class GameViewModel {
         if let pendingRevision, next.revisionValue > pendingRevision {
             clearPending()
         }
-        if let id = next.playerIds.first(where: { $0 != me && names[$0] == nil }) {
+        if let id = next.playerIds.first(where: { $0 != me && names[$0] == nil && !requestedNames.contains($0) }) {
+            requestedNames.insert(id)
             Task { await self.loadName(id) }
         }
     }
 
     private func loadNames() async {
         guard let session else { return }
-        let ids = session.playerIds.filter { $0 != me && names[$0] == nil }
+        let ids = session.playerIds.filter { $0 != me && names[$0] == nil && !requestedNames.contains($0) }
+        requestedNames.formUnion(ids)
         guard !ids.isEmpty, let profiles = try? await services.auth.profiles(ids: ids) else { return }
         for (id, profile) in profiles {
             names[id] = LobbyViewModel.displayName(profile)
@@ -266,22 +269,11 @@ final class GameViewModel {
     }
 
     private func loadName(_ id: String) async {
-        guard let profiles = try? await services.auth.profiles(ids: [id]), let profile = profiles[id] else { return }
-        names[id] = LobbyViewModel.displayName(profile)
-    }
-
-    static func message(for error: SessionError) -> String {
-        sessionErrorMessages[error] ?? "Could not play that move."
-    }
-
-    static func message(for error: APIError) -> String {
-        switch error.code {
-        case .notFound: "This game does not exist or is private."
-        case .failedPrecondition: error.message.isEmpty ? "That is not possible right now." : error.message
-        case .unavailable: "The server is unreachable."
-        case .unauthenticated: "Your session expired. Sign in again."
-        default: error.message.isEmpty ? "Something went wrong." : error.message
+        guard let profiles = try? await services.auth.profiles(ids: [id]), let profile = profiles[id] else {
+            requestedNames.remove(id)
+            return
         }
+        names[id] = LobbyViewModel.displayName(profile)
     }
 }
 
@@ -340,6 +332,22 @@ extension GameViewModel {
             if session.hasRevision { $0.revision = session.revision }
         }
         await send(command)
+    }
+}
+
+extension GameViewModel {
+    static func message(for error: SessionError) -> String {
+        sessionErrorMessages[error] ?? "Could not play that move."
+    }
+
+    static func message(for error: APIError) -> String {
+        switch error.code {
+        case .notFound: "This game does not exist or is private."
+        case .failedPrecondition: error.message.isEmpty ? "That is not possible right now." : error.message
+        case .unavailable: "The server is unreachable."
+        case .unauthenticated: "Your session expired. Sign in again."
+        default: error.message.isEmpty ? "Something went wrong." : error.message
+        }
     }
 }
 
