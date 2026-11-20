@@ -13,6 +13,7 @@ services:
       GAME_DB_PASSWORD: game
       CALLING_DB_PASSWORD: calling
       RATING_DB_PASSWORD: rating
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
     volumes:
       - web-e2e-postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -194,6 +195,121 @@ services:
       postgres:
         condition: service_healthy
 
+  rating-migrate:
+    image: migrate/migrate:v4.20.1
+    volumes:
+      - ../services/rating/migrations:/migrations:ro
+    command: ["-path=/migrations", "-database=postgres://rating_service:rating@postgres:5432/axon?sslmode=disable&search_path=rating", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cdc-setup:
+    image: postgres:17-alpine
+    restart: "no"
+    entrypoint: ["sh", "/cdc/setup.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: axon
+      PGPASSWORD: axon
+      PGDATABASE: axon
+      DEBEZIUM_DB_PASSWORD: debezium
+      CDC_PUBLICATION: axon_outbox
+    volumes:
+      - ./cdc:/cdc:ro
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+    depends_on:
+      migrate-auth:
+        condition: service_completed_successfully
+      migrate-chat:
+        condition: service_completed_successfully
+      game-migrate:
+        condition: service_completed_successfully
+      rating-migrate:
+        condition: service_completed_successfully
+
+  connect:
+    image: quay.io/debezium/connect:3.7.0.Final
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: axon-cdc
+      CONFIG_STORAGE_TOPIC: _axon-cdc-configs
+      OFFSET_STORAGE_TOPIC: _axon-cdc-offsets
+      STATUS_STORAGE_TOPIC: _axon-cdc-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: -1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: -1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: -1
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      OFFSET_FLUSH_INTERVAL_MS: 5000
+      ADVERTISED_HOST_NAME: connect
+      HEAP_OPTS: "-Xms256m -Xmx512m"
+      CDC_DATABASE_HOST: postgres
+      CDC_DATABASE_PORT: 5432
+      CDC_DATABASE_NAME: axon
+      DEBEZIUM_DB_PASSWORD: debezium
+    volumes:
+      - type: tmpfs
+        target: /kafka/config
+      - type: tmpfs
+        target: /kafka/data
+      - type: tmpfs
+        target: /kafka/logs
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8083/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+  cdc-connector:
+    image: curlimages/curl:8.23.0
+    restart: "no"
+    entrypoint: ["sh", "/cdc/register-connector.sh"]
+    environment:
+      CONNECT_URL: http://connect:8083
+      CDC_CONNECTOR: axon-outbox
+    volumes:
+      - ./cdc:/cdc:ro
+    depends_on:
+      connect:
+        condition: service_healthy
+      cdc-setup:
+        condition: service_completed_successfully
+
+  rating:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: runtime
+      args:
+        SERVICE: rating
+    environment:
+      APP_ENV: test
+      POSTGRES_DSN: postgres://rating_service:rating@postgres:5432/axon?sslmode=disable&search_path=rating
+      HTTP_ADDR: ":8084"
+      METRICS_ADDR: ":9094"
+      KAFKA_BROKERS: kafka:29092
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: axon
+    depends_on:
+      rating-migrate:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9094/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   kafka:
     image: confluentinc/confluent-local:7.5.0
     environment:
@@ -335,6 +451,10 @@ services:
       - ../../docs/design:/docs/design:ro
     depends_on:
       web:
+        condition: service_healthy
+      cdc-connector:
+        condition: service_completed_successfully
+      rating:
         condition: service_healthy
 
 volumes:
