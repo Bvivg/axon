@@ -28,18 +28,19 @@ import (
 const Protocol = "axon.game.v1"
 
 type Config struct {
-	Store     *session.Store
-	Owner     *owner.Owner
-	Routes    *route.Table
-	Self      string
-	Verifier  *authn.Verifier
-	Client    *http.Client
-	Sockets   *http.Client
-	Secure    bool
-	TestHooks bool
-	Metrics   *metrics.Game
-	Watchers  int
-	History   HistoryLimits
+	Store        *session.Store
+	Owner        *owner.Owner
+	Routes       *route.Table
+	Self         string
+	Verifier     *authn.Verifier
+	Client       *http.Client
+	Sockets      *http.Client
+	Secure       bool
+	TestHooks    bool
+	Metrics      *metrics.Game
+	Watchers     int
+	History      HistoryLimits
+	MatchSockets int
 }
 
 type HistoryLimits struct {
@@ -68,6 +69,7 @@ type Handler struct {
 	historyPlies int
 	historyBytes int
 	histories    *historyCache
+	searches     *matchFeeds
 }
 
 func New(cfg Config) *Handler {
@@ -79,7 +81,7 @@ func New(cfg Config) *Handler {
 	if cfg.Secure {
 		scheme = "https"
 	}
-	return &Handler{
+	h := &Handler{
 		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks, metrics: cfg.Metrics,
 		peers:    newPeers(client, scheme),
 		sockets:  cfg.Sockets,
@@ -92,6 +94,8 @@ func New(cfg Config) *Handler {
 		historyBytes: cfg.History.Bytes,
 		histories:    newHistoryCache(cfg.History.Entries),
 	}
+	h.searches = newMatchFeeds(cfg.MatchSockets, matchPollInterval, h.pollMatch, h.watchMatches)
+	return h
 }
 
 func (h *Handler) Changed(id uuid.UUID) { h.updates.notify(id) }

@@ -95,6 +95,7 @@ func run() error {
 		Bytes:   loader.IntDefault("GAME_HISTORY_MAX_BYTES", server.DefaultHistoryBytes),
 		Entries: loader.IntDefault("GAME_HISTORY_CACHE_ENTRIES", server.DefaultHistoryEntries),
 	}
+	matchSockets := loader.IntDefault("GAME_MATCH_SOCKETS_PER_USER", server.DefaultMatchSockets)
 	if err := loader.Err(); err != nil {
 		return err
 	}
@@ -153,7 +154,7 @@ func run() error {
 		sockets = &http.Client{Transport: identity.Transport(mtls.ServerName("game"), mtls.HTTP1Only())}
 	}
 	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed, Watchers: spectatorLimit,
-		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil, History: history})
+		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil, History: history, MatchSockets: matchSockets})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
 	go routes.Run(ctx, db.listen, projection.OwnerChannel, log)
