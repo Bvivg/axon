@@ -2,6 +2,7 @@ package attachment
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,9 @@ const (
 type Result struct {
 	Kind    domain.MessageKind
 	Payload json.RawMessage
+	Keys    []string
+	SHA256  []byte
+	Size    int64
 }
 
 type Pipeline struct {
@@ -79,6 +83,7 @@ func (p *Pipeline) image(ctx context.Context, userID uuid.UUID, path string, siz
 		return Result{}, err
 	}
 
+	sum := sha256.Sum256(img.Data)
 	return resultOf(domain.MessageKindImage, domain.ImagePayload{
 		URL:          p.urls.URL(mainKey),
 		ThumbnailURL: p.urls.URL(thumbKey),
@@ -86,7 +91,7 @@ func (p *Pipeline) image(ctx context.Context, userID uuid.UUID, path string, siz
 		Height:       img.Height,
 		SizeBytes:    int64(len(img.Data)),
 		Mime:         img.Mime,
-	})
+	}, sum[:], int64(len(img.Data)), mainKey, thumbKey)
 }
 
 func (p *Pipeline) video(ctx context.Context, userID uuid.UUID, path string) (Result, error) {
@@ -102,7 +107,12 @@ func (p *Pipeline) video(ctx context.Context, userID uuid.UUID, path string) (Re
 	poster := path + ".jpg"
 	defer removeAll(out, poster)
 
-	if err := p.tools.TranscodeVideo(ctx, path, out); err != nil {
+	if probe.Remuxable() {
+		err = p.tools.RemuxVideo(ctx, path, out)
+	} else {
+		err = p.tools.TranscodeVideo(ctx, path, out)
+	}
+	if err != nil {
 		return Result{}, err
 	}
 
@@ -138,6 +148,10 @@ func (p *Pipeline) video(ctx context.Context, userID uuid.UUID, path string) (Re
 		return Result{}, err
 	}
 
+	sum, err := hashFile(out)
+	if err != nil {
+		return Result{}, err
+	}
 	return resultOf(domain.MessageKindVideo, domain.VideoPayload{
 		URL:        p.urls.URL(videoKey),
 		PosterURL:  p.urls.URL(posterKey),
@@ -146,7 +160,7 @@ func (p *Pipeline) video(ctx context.Context, userID uuid.UUID, path string) (Re
 		DurationMS: encoded.Duration.Milliseconds(),
 		SizeBytes:  info.Size(),
 		Mime:       "video/mp4",
-	})
+	}, sum, info.Size(), videoKey, posterKey)
 }
 
 func (p *Pipeline) Voice(ctx context.Context, userID uuid.UUID, path string, size int64) (Result, error) {
@@ -190,12 +204,16 @@ func (p *Pipeline) Voice(ctx context.Context, userID uuid.UUID, path string, siz
 		return Result{}, err
 	}
 
+	sum, err := hashFile(out)
+	if err != nil {
+		return Result{}, err
+	}
 	return resultOf(domain.MessageKindVoice, domain.VoicePayload{
 		DurationMS: max(encoded.Duration.Milliseconds(), 1),
 		URL:        p.urls.URL(key),
 		Mime:       "audio/mp4",
 		SizeBytes:  info.Size(),
-	})
+	}, sum, info.Size(), key)
 }
 
 func (p *Pipeline) File(ctx context.Context, userID uuid.UUID, path, filename string, size int64) (Result, error) {
@@ -205,30 +223,61 @@ func (p *Pipeline) File(ctx context.Context, userID uuid.UUID, path, filename st
 	}
 	contentType := media.Sniff(head)
 
+	stored, encoding, err := compressIfWorthIt(path)
+	if err != nil {
+		return Result{}, err
+	}
+	if stored != path {
+		defer removeAll(stored)
+	}
+
 	key := NewObjectKey(userID, filename)
 	if err := p.store.Put(ctx, Object{
 		Key:         key,
 		ContentType: contentType,
 		Disposition: mime.FormatMediaType("attachment", map[string]string{"filename": filename}),
-		Path:        path,
+		Encoding:    encoding,
+		Path:        stored,
 	}); err != nil {
 		return Result{}, err
 	}
 
+	sum, err := hashFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+	stat, err := os.Stat(stored)
+	if err != nil {
+		return Result{}, fmt.Errorf("attachment: stat stored file: %w", err)
+	}
 	return resultOf(domain.MessageKindAttachment, domain.AttachmentPayload{
 		URL:       p.urls.URL(key),
 		Filename:  filename,
 		Mime:      contentType,
 		SizeBytes: size,
-	})
+	}, sum, stat.Size(), key)
 }
 
-func resultOf(kind domain.MessageKind, payload any) (Result, error) {
+func resultOf(kind domain.MessageKind, payload any, sum []byte, size int64, keys ...string) (Result, error) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return Result{}, fmt.Errorf("attachment: marshal %s payload: %w", kind, err)
 	}
-	return Result{Kind: kind, Payload: raw}, nil
+	return Result{Kind: kind, Payload: raw, Keys: keys, SHA256: sum, Size: size}, nil
+}
+
+func hashFile(path string) ([]byte, error) {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return nil, fmt.Errorf("attachment: open for hashing: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return nil, fmt.Errorf("attachment: hash: %w", err)
+	}
+	return h.Sum(nil), nil
 }
 
 func readHead(path string) ([]byte, error) {

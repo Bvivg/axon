@@ -17,6 +17,7 @@ import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { MemberRole, type Member } from "@/gen/axon/chat/v1/chat_pb";
 import { membersLabel } from "@/lib/chat/content";
 import { describe } from "@/lib/errors";
+import { profileName } from "@/lib/format";
 import { useAddGroupMembers, useRemoveGroupMember, useRenameGroup, useRoom } from "@/lib/query/chat";
 import { usePublicProfiles } from "@/lib/query/people";
 
@@ -44,7 +45,7 @@ export function GroupInfoDialog({
   const [removing, setRemoving] = useState<Member | null>(null);
 
   const nameOf = (member: Member) =>
-    profiles.data?.get(member.userId)?.displayName || member.displayName || member.userId.slice(0, 8);
+    profileName(profiles.data?.get(member.userId)) || member.displayName || member.userId.slice(0, 8);
 
   const sorted = [...members].sort((a, b) => {
     if (a.role !== b.role) return a.role === MemberRole.OWNER ? -1 : b.role === MemberRole.OWNER ? 1 : 0;

@@ -12,10 +12,16 @@ const ServiceName = "gateway"
 
 type Config struct {
 	config.Base
+	LiveKitURL       string
+	CallsInternalKey config.Secret
 
 	AuthServiceURL string
 
 	ChatServiceURL string
+
+	GameServiceURL string
+
+	GameSocketURL string
 
 	ChatSocketURL string
 
@@ -58,11 +64,15 @@ func socketURL(base, path string) string {
 }
 
 type RateLimitConfig struct {
+	SearchPerMinute int
+
 	StandardPerMinute int
 
 	SensitivePerMinute int
 
 	UploadsPerMinute int
+
+	UploadPartsPerMinute int
 
 	TrustedProxies int
 }
@@ -77,9 +87,12 @@ func Load() (Config, error) {
 	l := config.NewLoader()
 
 	cfg := Config{
+		LiveKitURL:          l.StringDefault("LIVEKIT_SIGNAL_URL", ""),
+		CallsInternalKey:    l.SecretDefault("CALLS_INTERNAL_KEY", ""),
 		Base:                config.LoadBase(l, ServiceName),
 		AuthServiceURL:      l.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
 		ChatServiceURL:      l.StringDefault("CHAT_SERVICE_URL", "http://chat:8082"),
+		GameServiceURL:      l.StringDefault("GAME_SERVICE_URL", "http://game:8083"),
 		JWKSURL:             l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		JWKSRefreshInterval: l.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
 		UpstreamTimeout:     l.DurationDefault("UPSTREAM_TIMEOUT", 10*time.Second),
@@ -88,10 +101,13 @@ func Load() (Config, error) {
 			AllowedOrigins: l.StringSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
 		},
 		RateLimit: RateLimitConfig{
+			SearchPerMinute:    l.IntDefault("RATE_LIMIT_SEARCH_PER_MINUTE", 60),
 			StandardPerMinute:  l.IntDefault("RATE_LIMIT_PER_MINUTE", 120),
 			SensitivePerMinute: l.IntDefault("RATE_LIMIT_AUTH_PER_MINUTE", 10),
 			UploadsPerMinute:   l.IntDefault("RATE_LIMIT_UPLOADS_PER_MINUTE", 60),
-			TrustedProxies:     l.IntDefault("TRUSTED_PROXIES", 0),
+
+			UploadPartsPerMinute: l.IntDefault("RATE_LIMIT_UPLOAD_PARTS_PER_MINUTE", 600),
+			TrustedProxies:       l.IntDefault("TRUSTED_PROXIES", 0),
 		},
 	}
 
@@ -109,6 +125,7 @@ func Load() (Config, error) {
 	}
 
 	cfg.ChatSocketURL = socketURL(cfg.ChatServiceURL, chatSocketPath)
+	cfg.GameSocketURL = socketURL(cfg.GameServiceURL, "/ws")
 	cfg.PresenceSocketURL = socketURL(cfg.ChatServiceURL, presenceSocketPath)
 
 	if err := cfg.validate(); err != nil {
@@ -126,7 +143,7 @@ func (c Config) validate() error {
 	}
 
 	if c.Environment.IsProduction() {
-		if c.RateLimit.StandardPerMinute <= 0 || c.RateLimit.SensitivePerMinute <= 0 {
+		if c.RateLimit.SearchPerMinute <= 0 || c.RateLimit.StandardPerMinute <= 0 || c.RateLimit.SensitivePerMinute <= 0 {
 			return errors.New("config: rate limits must be positive in production")
 		}
 	}

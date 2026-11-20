@@ -2,9 +2,11 @@
 
 import { Code } from "@connectrpc/connect";
 import { Eye, EyeOff } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import { UsernameInput } from "@/components/auth/username-input";
 import { Alert, FieldError } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input, InputGroup, InputGroupInput } from "@/components/ui/input";
@@ -12,8 +14,9 @@ import { Field, Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/status";
 import { currentNext } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
+import { HistoryMode, navigateTo } from "@/lib/chat/address";
 import { authClient } from "@/lib/connect/clients";
-import { describe, isCode } from "@/lib/errors";
+import { retryAfterMessage, describe, isCode, isUsernameError } from "@/lib/errors";
 
 export enum Mode {
   Login = "login",
@@ -23,6 +26,7 @@ export enum Mode {
 enum Problem {
   Credentials = "credentials",
   EmailTaken = "email-taken",
+  Username = "username",
   RateLimited = "rate-limited",
   Other = "other",
 }
@@ -36,30 +40,42 @@ function toFailure(err: unknown): Failure {
   if (isCode(err, Code.Unauthenticated)) {
     return { problem: Problem.Credentials, message: "Email or password is incorrect." };
   }
+  if (isUsernameError(err)) {
+    return { problem: Problem.Username, message: describe(err) };
+  }
   if (isCode(err, Code.AlreadyExists)) {
     return { problem: Problem.EmailTaken, message: "That email is already registered." };
   }
   if (isCode(err, Code.ResourceExhausted)) {
-    return { problem: Problem.RateLimited, message: "Sign-in is paused for a minute. Try again shortly." };
+    return { problem: Problem.RateLimited, message: retryAfterMessage(err) };
   }
   return { problem: Problem.Other, message: describe(err) };
 }
 
 export function CredentialsForm({ mode }: { mode: Mode }) {
   const router = useRouter();
-  const { signedIn } = useSession();
+  const { beginSignIn, signedIn } = useSession();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [reveal, setReveal] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [pending, setPending] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  const failureSummary = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!failure) return;
+    const invalid = form.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+    (invalid ?? failureSummary.current)?.focus();
+  }, [failure]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setFailure(null);
+    beginSignIn();
 
     try {
       const result =
@@ -68,6 +84,7 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
           : await authClient.register({
               email,
               password,
+              username: username.trim(),
               displayName: displayName.trim() || undefined,
             });
 
@@ -76,7 +93,7 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
       }
 
       signedIn(result.user, result.tokens);
-      router.replace(currentNext());
+      navigateTo(router, currentNext(), HistoryMode.Replace);
     } catch (err) {
       setFailure(toFailure(err));
       setPending(false);
@@ -85,22 +102,25 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
 
   const credentialsWrong = failure?.problem === Problem.Credentials;
   const emailTaken = failure?.problem === Problem.EmailTaken;
+  const usernameWrong = failure?.problem === Problem.Username;
 
   return (
-    <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
+    <form ref={form} className="flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
       {failure?.problem === Problem.RateLimited ? (
-        <Alert variant="warning">
+        <Alert ref={failureSummary} tabIndex={-1} variant="warning">
           <span className="font-medium">Too many attempts.</span> {failure.message}
         </Alert>
       ) : null}
-      {failure?.problem === Problem.Other ? <Alert>{failure.message}</Alert> : null}
+      {failure?.problem === Problem.Other ? <Alert ref={failureSummary} tabIndex={-1}>{failure.message}</Alert> : null}
 
       <Field>
         <Label htmlFor="email">Email</Label>
         <Input
           id="email"
+          className="h-10 rounded-[10px]"
           type="email"
-          autoComplete="email"
+          placeholder="name@example.com"
+          autoComplete={mode === Mode.Login ? "username" : "email"}
           required
           value={email}
           aria-invalid={emailTaken || undefined}
@@ -112,26 +132,44 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
       </Field>
 
       {mode === Mode.Register ? (
-        <Field>
-          <Label htmlFor="displayName">
-            Display name <span className="font-normal text-muted-foreground">· optional</span>
-          </Label>
-          <Input
-            id="displayName"
-            type="text"
-            autoComplete="nickname"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            disabled={pending}
-          />
-        </Field>
+        <>
+          <Field>
+            <Label htmlFor="username">Username</Label>
+            <UsernameInput
+              id="username"
+              required
+              value={username}
+              invalid={usernameWrong}
+              aria-describedby={usernameWrong ? "username-error" : undefined}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={pending}
+            />
+            {usernameWrong ? <FieldError id="username-error">{failure.message}</FieldError> : null}
+          </Field>
+
+          <Field>
+            <Label htmlFor="displayName">
+              Display name <span className="font-normal text-muted-foreground">· optional</span>
+            </Label>
+            <Input
+              id="displayName"
+              className="h-10 rounded-[10px]"
+              type="text"
+              autoComplete="nickname"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              disabled={pending}
+            />
+          </Field>
+        </>
       ) : null}
 
       <Field>
         <Label htmlFor="password">Password</Label>
-        <InputGroup invalid={credentialsWrong} className="pr-1 md:pr-0.5">
+        <InputGroup invalid={credentialsWrong} className="h-10 rounded-[10px] pr-1 md:pr-0.5">
           <InputGroupInput
             id="password"
+            placeholder="Enter your password"
             type={reveal ? "text" : "password"}
             autoComplete={mode === Mode.Login ? "current-password" : "new-password"}
             required
@@ -143,7 +181,8 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
           />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
+            className="size-11"
             aria-pressed={reveal}
             aria-label={reveal ? "Hide password" : "Show password"}
             onClick={() => setReveal((shown) => !shown)}
@@ -154,7 +193,8 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
         {credentialsWrong ? <FieldError id="password-error">{failure.message}</FieldError> : null}
       </Field>
 
-      <Button type="submit" size="lg" className="mt-2 w-full" disabled={pending} aria-busy={pending}>
+      {mode === Mode.Login ? <Link href="/forgot-password" className="self-end rounded-sm py-1 text-sm font-medium text-signal underline underline-offset-4">Forgot password?</Link> : null}
+      <Button type="submit" size="lg" className="mt-1 min-h-11 w-full" disabled={pending} aria-busy={pending}>
         {pending ? <Spinner /> : null}
         {mode === Mode.Login ? (pending ? "Signing in" : "Sign in") : pending ? "Creating account" : "Create account"}
       </Button>

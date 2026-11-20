@@ -1,103 +1,21 @@
 "use client";
 
-import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
+import { Tabs as BaseTabs } from "@base-ui/react/tabs";
 
 import { cn } from "@/lib/utils";
 
-interface TabsContextValue {
-  value: string;
-  setValue: (value: string) => void;
+export const Tabs = BaseTabs.Root;
+export const TabsContent = BaseTabs.Panel;
+
+export function TabsList({ className, ...props }: Omit<BaseTabs.List.Props, "className"> & { className?: string }) {
+  return <BaseTabs.List className={cn("inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5", className)} {...props} />;
 }
 
-const TabsContext = createContext<TabsContextValue | null>(null);
-
-function useTabsContext(component: string): TabsContextValue {
-  const ctx = useContext(TabsContext);
-  if (!ctx) {
-    throw new Error(`${component} must be used inside <Tabs>`);
-  }
-  return ctx;
-}
-
-export function Tabs({
-  defaultValue,
-  className,
-  children,
-}: {
-  defaultValue: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  const [value, setValue] = useState(defaultValue);
-
+export function TabsTrigger({ className, ...props }: Omit<BaseTabs.Tab.Props, "className"> & { className?: string }) {
   return (
-    <TabsContext value={{ value, setValue }}>
-      <div className={className}>{children}</div>
-    </TabsContext>
-  );
-}
-
-export function TabsList({ className, ...props }: ComponentProps<"div">) {
-  return (
-    <div
-      role="tablist"
-      className={cn(
-        "inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5",
-        className,
-      )}
+    <BaseTabs.Tab
+      className={cn("min-h-8 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground aria-selected:bg-card aria-selected:text-foreground aria-selected:shadow-raised pointer-coarse:min-h-11", className)}
       {...props}
     />
-  );
-}
-
-export function TabsTrigger({
-  value,
-  className,
-  children,
-}: {
-  value: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  const ctx = useTabsContext("TabsTrigger");
-  const active = ctx.value === value;
-
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={() => ctx.setValue(value)}
-      className={cn(
-        "h-[26px] rounded-md px-2.5 text-xs font-medium transition-colors duration-[120ms] ease-signal",
-        active
-          ? "bg-card text-foreground shadow-raised"
-          : "text-muted-foreground hover:text-foreground",
-        className,
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function TabsContent({
-  value,
-  className,
-  children,
-}: {
-  value: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  const ctx = useTabsContext("TabsContent");
-  if (ctx.value !== value) {
-    return null;
-  }
-
-  return (
-    <div role="tabpanel" className={className}>
-      {children}
-    </div>
   );
 }

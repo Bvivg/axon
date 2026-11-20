@@ -104,3 +104,24 @@ func TestGetUsersPublicProfilesReturnsOnlyKnownIDs(t *testing.T) {
 		t.Fatalf("found = %v, want exactly %s", found, known.userID)
 	}
 }
+
+func TestSearchUsersFindsTheOtherAccountByANameFragment(t *testing.T) {
+	c := newCaller(t)
+	caller := c.register(t)
+	target := c.register(t)
+
+	first, last := "Fragment", "Target-"+uuid.NewString()
+	if _, err := c.updateProfile(target.tokens.GetAccessToken(), &authv1.UpdateProfileRequest{
+		FirstName: &first, LastName: &last,
+	}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+
+	found, err := c.searchUsers(caller.tokens.GetAccessToken(), last[3:20])
+	if err != nil {
+		t.Fatalf("SearchUsers: %v", err)
+	}
+	if len(found) != 1 || found[0].GetId() != target.userID {
+		t.Fatalf("found = %v, want exactly %s", found, target.userID)
+	}
+}

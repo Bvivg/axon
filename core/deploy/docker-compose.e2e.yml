@@ -33,7 +33,7 @@ services:
       retries: 20
 
   migrate-auth:
-    image: migrate/migrate:v4.18.1
+    image: migrate/migrate:v4.20.1
     restart: "no"
     volumes:
       - ../services/auth/migrations:/migrations:ro
@@ -67,7 +67,7 @@ services:
         mc mb --ignore-existing local/avatars &&
         mc anonymous set download local/avatars &&
         mc mb --ignore-existing local/chat-attachments &&
-        mc anonymous set download local/chat-attachments
+        mc anonymous set none local/chat-attachments
     depends_on:
       minio:
         condition: service_healthy
@@ -121,7 +121,7 @@ services:
       start_period: 5s
 
   migrate-chat:
-    image: migrate/migrate:v4.18.1
+    image: migrate/migrate:v4.20.1
     restart: "no"
     volumes:
       - ../services/chat/migrations:/migrations:ro
@@ -161,6 +161,9 @@ services:
       ATTACHMENTS_PUBLIC_URL: "http://minio:9000"
       MINIO_ROOT_USER: axon
       MINIO_ROOT_PASSWORD: axon12345
+
+      CHAT_VAPID_PUBLIC_KEY: ${CHAT_VAPID_PUBLIC_KEY:-}
+      CHAT_VAPID_PRIVATE_KEY: ${CHAT_VAPID_PRIVATE_KEY:-}
 
     depends_on:
       migrate-chat:
@@ -213,7 +216,7 @@ services:
       start_period: 5s
 
   e2e:
-    image: golang:1.26-alpine
+    image: golang:1.27.4-alpine
     working_dir: /src/core/services/auth
     environment:
       GATEWAY_URL: http://gateway:8080
@@ -243,7 +246,7 @@ services:
         condition: service_completed_successfully
 
   e2e-chat:
-    image: golang:1.26-alpine
+    image: golang:1.27.4-alpine
     working_dir: /src/core/services/chat
     environment:
       GATEWAY_URL: http://gateway:8080

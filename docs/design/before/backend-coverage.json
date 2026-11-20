@@ -1,0 +1,389 @@
+{
+  "shared": {
+    "covered": 684,
+    "statements": 1001,
+    "coverage": 68.33,
+    "packages": {
+      "github.com/bvivg/axon/core/shared/pkg/internalrpc": {
+        "covered": 0,
+        "statements": 1,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/shared/pkg/config": {
+        "covered": 92,
+        "statements": 106,
+        "coverage": 86.79
+      },
+      "github.com/bvivg/axon/core/shared/pkg/correlation": {
+        "covered": 10,
+        "statements": 10,
+        "coverage": 100.0
+      },
+      "github.com/bvivg/axon/core/shared/pkg/logger": {
+        "covered": 25,
+        "statements": 29,
+        "coverage": 86.21
+      },
+      "github.com/bvivg/axon/core/shared/pkg/kafka": {
+        "covered": 71,
+        "statements": 141,
+        "coverage": 50.35
+      },
+      "github.com/bvivg/axon/core/shared/pkg/health": {
+        "covered": 51,
+        "statements": 60,
+        "coverage": 85.0
+      },
+      "github.com/bvivg/axon/core/shared/pkg/authn": {
+        "covered": 156,
+        "statements": 186,
+        "coverage": 83.87
+      },
+      "github.com/bvivg/axon/core/shared/pkg/postgres": {
+        "covered": 2,
+        "statements": 38,
+        "coverage": 5.26
+      },
+      "github.com/bvivg/axon/core/shared/pkg/middleware": {
+        "covered": 96,
+        "statements": 131,
+        "coverage": 73.28
+      },
+      "github.com/bvivg/axon/core/shared/pkg/redis": {
+        "covered": 0,
+        "statements": 20,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/shared/pkg/revocation": {
+        "covered": 0,
+        "statements": 30,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/shared/pkg/safehttp": {
+        "covered": 33,
+        "statements": 43,
+        "coverage": 76.74
+      },
+      "github.com/bvivg/axon/core/shared/pkg/presence": {
+        "covered": 23,
+        "statements": 71,
+        "coverage": 32.39
+      },
+      "github.com/bvivg/axon/core/shared/pkg/ws": {
+        "covered": 125,
+        "statements": 135,
+        "coverage": 92.59
+      }
+    },
+    "selected_files": {}
+  },
+  "auth": {
+    "covered": 853,
+    "statements": 1825,
+    "coverage": 46.74,
+    "packages": {
+      "github.com/bvivg/axon/core/services/auth/cmd/auth": {
+        "covered": 0,
+        "statements": 112,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/server": {
+        "covered": 0,
+        "statements": 266,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/config": {
+        "covered": 0,
+        "statements": 59,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/repository": {
+        "covered": 0,
+        "statements": 351,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/domain": {
+        "covered": 71,
+        "statements": 78,
+        "coverage": 91.03
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/password": {
+        "covered": 53,
+        "statements": 57,
+        "coverage": 92.98
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/jwt": {
+        "covered": 66,
+        "statements": 74,
+        "coverage": 89.19
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/oauth": {
+        "covered": 284,
+        "statements": 316,
+        "coverage": 89.87
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/token": {
+        "covered": 10,
+        "statements": 11,
+        "coverage": 90.91
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/avatar": {
+        "covered": 27,
+        "statements": 60,
+        "coverage": 45.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/service": {
+        "covered": 342,
+        "statements": 441,
+        "coverage": 77.55
+      }
+    },
+    "selected_files": {
+      "github.com/bvivg/axon/core/services/auth/internal/server/avatar.go": {
+        "covered": 0,
+        "statements": 21,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/repository/rbac.go": {
+        "covered": 0,
+        "statements": 58,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/avatar/avatar.go": {
+        "covered": 9,
+        "statements": 30,
+        "coverage": 30.0
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/service/avatar.go": {
+        "covered": 4,
+        "statements": 17,
+        "coverage": 23.53
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/service/rbac.go": {
+        "covered": 31,
+        "statements": 33,
+        "coverage": 93.94
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/service/refresh.go": {
+        "covered": 56,
+        "statements": 68,
+        "coverage": 82.35
+      },
+      "github.com/bvivg/axon/core/services/auth/internal/service/session.go": {
+        "covered": 32,
+        "statements": 41,
+        "coverage": 78.05
+      }
+    }
+  },
+  "chat": {
+    "covered": 1747,
+    "statements": 6253,
+    "coverage": 27.94,
+    "packages": {
+      "github.com/bvivg/axon/core/services/chat/internal/config": {
+        "covered": 0,
+        "statements": 8,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/identity": {
+        "covered": 0,
+        "statements": 79,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/chat/cmd/chat": {
+        "covered": 0,
+        "statements": 193,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/domain": {
+        "covered": 48,
+        "statements": 200,
+        "coverage": 24.0
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/events": {
+        "covered": 13,
+        "statements": 19,
+        "coverage": 68.42
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/attachment": {
+        "covered": 79,
+        "statements": 360,
+        "coverage": 21.94
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/calls": {
+        "covered": 473,
+        "statements": 1171,
+        "coverage": 40.39
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/pubsub": {
+        "covered": 35,
+        "statements": 278,
+        "coverage": 12.59
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/notify": {
+        "covered": 63,
+        "statements": 145,
+        "coverage": 43.45
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/repository": {
+        "covered": 10,
+        "statements": 1475,
+        "coverage": 0.68
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/service": {
+        "covered": 428,
+        "statements": 537,
+        "coverage": 79.7
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/uploads": {
+        "covered": 141,
+        "statements": 231,
+        "coverage": 61.04
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/server": {
+        "covered": 6,
+        "statements": 847,
+        "coverage": 0.71
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/presence": {
+        "covered": 62,
+        "statements": 81,
+        "coverage": 76.54
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/media": {
+        "covered": 123,
+        "statements": 151,
+        "coverage": 81.46
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/ws": {
+        "covered": 266,
+        "statements": 478,
+        "coverage": 55.65
+      }
+    },
+    "selected_files": {
+      "github.com/bvivg/axon/core/services/chat/internal/calls/groups_service.go": {
+        "covered": 0,
+        "statements": 30,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/calls/invitations.go": {
+        "covered": 0,
+        "statements": 9,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/chat/internal/repository/session.go": {
+        "covered": 0,
+        "statements": 171,
+        "coverage": 0.0
+      }
+    }
+  },
+  "gateway": {
+    "covered": 223,
+    "statements": 728,
+    "coverage": 30.63,
+    "packages": {
+      "github.com/bvivg/axon/core/services/gateway/cmd/gateway": {
+        "covered": 0,
+        "statements": 135,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/avatarproxy": {
+        "covered": 0,
+        "statements": 41,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/cors": {
+        "covered": 27,
+        "statements": 29,
+        "coverage": 93.1
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/attachmentproxy": {
+        "covered": 0,
+        "statements": 106,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/policy": {
+        "covered": 7,
+        "statements": 7,
+        "coverage": 100.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/mediaproxy": {
+        "covered": 0,
+        "statements": 28,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/config": {
+        "covered": 0,
+        "statements": 24,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/livekitproxy": {
+        "covered": 0,
+        "statements": 55,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/cookie": {
+        "covered": 37,
+        "statements": 40,
+        "coverage": 92.5
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/guard": {
+        "covered": 45,
+        "statements": 55,
+        "coverage": 81.82
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/proxy": {
+        "covered": 0,
+        "statements": 84,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/ratelimit": {
+        "covered": 53,
+        "statements": 60,
+        "coverage": 88.33
+      },
+      "github.com/bvivg/axon/core/services/gateway/internal/wsproxy": {
+        "covered": 54,
+        "statements": 64,
+        "coverage": 84.38
+      }
+    },
+    "selected_files": {}
+  },
+  "game": {
+    "covered": 175,
+    "statements": 620,
+    "coverage": 28.23,
+    "packages": {
+      "github.com/bvivg/axon/core/services/game/cmd/game": {
+        "covered": 0,
+        "statements": 52,
+        "coverage": 0.0
+      },
+      "github.com/bvivg/axon/core/services/game/internal/games/tictactoe": {
+        "covered": 56,
+        "statements": 64,
+        "coverage": 87.5
+      },
+      "github.com/bvivg/axon/core/services/game/internal/engine": {
+        "covered": 79,
+        "statements": 79,
+        "coverage": 100.0
+      },
+      "github.com/bvivg/axon/core/services/game/internal/server": {
+        "covered": 22,
+        "statements": 226,
+        "coverage": 9.73
+      },
+      "github.com/bvivg/axon/core/services/game/internal/session": {
+        "covered": 18,
+        "statements": 199,
+        "coverage": 9.05
+      }
+    },
+    "selected_files": {}
+  }
+}

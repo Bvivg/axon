@@ -122,3 +122,45 @@ func NewChatClient(
 ) chatv1connect.ChatServiceClient {
 	return chatv1connect.NewChatServiceClient(httpClient, baseURL, opts...)
 }
+
+func (c *Chat) ListMessageReaders(
+	ctx context.Context,
+	req *connect.Request[chatv1.ListMessageReadersRequest],
+) (*connect.Response[chatv1.ListMessageReadersResponse], error) {
+	return c.client.ListMessageReaders(ctx, forward(ctx, req))
+}
+
+func (c *Chat) ForwardMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.ForwardMessagesRequest],
+) (*connect.Response[chatv1.ForwardMessagesResponse], error) {
+	return c.client.ForwardMessages(ctx, forward(ctx, req))
+}
+
+func (c *Chat) GetPushKey(
+	ctx context.Context,
+	req *connect.Request[chatv1.GetPushKeyRequest],
+) (*connect.Response[chatv1.GetPushKeyResponse], error) {
+	return c.client.GetPushKey(ctx, forward(ctx, req))
+}
+
+func (c *Chat) SubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.SubscribePushRequest],
+) (*connect.Response[chatv1.SubscribePushResponse], error) {
+	return c.client.SubscribePush(ctx, forward(ctx, req))
+}
+
+func (c *Chat) UnsubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.UnsubscribePushRequest],
+) (*connect.Response[chatv1.UnsubscribePushResponse], error) {
+	return c.client.UnsubscribePush(ctx, forward(ctx, req))
+}
+
+func (c *Chat) SearchMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.SearchMessagesRequest],
+) (*connect.Response[chatv1.SearchMessagesResponse], error) {
+	return c.client.SearchMessages(ctx, forward(ctx, req))
+}

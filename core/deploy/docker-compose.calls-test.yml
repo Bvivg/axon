@@ -1,0 +1,19 @@
+name: axon-calls-test
+services:
+  go:
+    build:
+      context: ../..
+      dockerfile: core/deploy/Dockerfile.calls-test
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+      TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock
+    volumes:
+      - ../..:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: ["go", "test", "-race", "./internal/..."]
+volumes:
+  go-mod-cache:
+  go-build-cache:

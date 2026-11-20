@@ -1,0 +1,95 @@
+services:
+  calls-dns:
+    profiles: ["dns"]
+    image: coredns/coredns:1.13.1
+    restart: unless-stopped
+    command: ["-conf", "/Corefile"]
+    volumes:
+      - ./calls-dns.Corefile:/Corefile:ro
+      - ../../.local/evidence/calls/LAN/.secrets/server.crt:/tls/server.crt:ro
+      - ../../.local/evidence/calls/LAN/.secrets/server.key:/tls/server.key:ro
+    ports:
+      - "127.0.0.1:1053:53/udp"
+      - "127.0.0.1:1053:53/tcp"
+      - "100.66.60.10:1053:53/udp"
+      - "100.66.60.10:1053:53/tcp"
+      - "100.66.60.10:8443:8443/tcp"
+  calls-check:
+    profiles: ["tools"]
+    image: axon-calls-spike-playwright:local
+    init: true
+    shm_size: 512mb
+    extra_hosts:
+      - "axon.test:192.168.2.1"
+    entrypoint: ["bash", "/calls-spike-run.sh"]
+    environment:
+      NODE_EXTRA_CA_CERTS: /evidence/.secrets/ca.crt
+      CALLS_PLAYWRIGHT_CONFIG: playwright.calls-lan.config.ts
+    volumes:
+      - ../../ui/web/e2e:/app/e2e:ro
+      - ../../ui/web/playwright.config.ts:/app/playwright.config.ts:ro
+      - ../../ui/web/playwright.calls-spike.config.ts:/app/playwright.calls-spike.config.ts:ro
+      - ../../ui/web/playwright.calls-lan.config.ts:/app/playwright.calls-lan.config.ts:ro
+      - ./calls-spike-run.sh:/calls-spike-run.sh:ro
+      - ../../.local/evidence/calls/LAN:/evidence
+  migrate:
+    env_file:
+      - .env
+  auth:
+    environment:
+      AVATARS_PUBLIC_URL: https://axon.test/storage
+      OAUTH_FAKE_AUTHORIZE_URL: /oauth/fake/authorize
+      OAUTH_REDIRECT_BASE_URL: /auth/callback
+      OAUTH_ALLOWED_RETURN_ORIGINS: http://localhost:3003,http://127.0.0.1:3003,https://axon.test,https://axon.test:3443,https://${AXON_LAN_IP:-192.168.2.1},https://${AXON_LAN_ALT_IP:-10.80.10.122},https://${AXON_LAN_IP:-192.168.2.1}:3443,https://${AXON_LAN_ALT_IP:-10.80.10.122}:3443
+  chat:
+    env_file:
+      - ../../.local/evidence/calls/LAN/.secrets/lan.env
+    environment:
+      CALLS_ENABLED: "true"
+  gateway:
+    environment:
+      CORS_ALLOWED_ORIGINS: https://axon.test,https://axon.test:3443,https://${AXON_LAN_IP:-192.168.2.1},https://${AXON_LAN_ALT_IP:-10.80.10.122},https://${AXON_LAN_IP:-192.168.2.1}:3443,https://${AXON_LAN_ALT_IP:-10.80.10.122}:3443,http://localhost:3003,http://127.0.0.1:3003
+      REFRESH_COOKIE_SECURE: "true"
+  web:
+    ports: !reset []
+    build:
+      target: runtime
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api
+    volumes: !reset []
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: /api
+      ALLOWED_DEV_ORIGINS: ${AXON_LAN_IP:-192.168.2.1},${AXON_LAN_ALT_IP:-10.80.10.122}
+      CALLS_E2E_PROBE: "0"
+  calls-https:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ["node", "/proxy.mjs"]
+    environment:
+      LAN_HOSTS: ${AXON_LAN_IP:-192.168.2.1},${AXON_LAN_ALT_IP:-10.80.10.122},localhost,127.0.0.1
+    volumes:
+      - ./calls-lan-proxy.mjs:/proxy.mjs:ro
+      - ./calls-ios-dns.mobileconfig:/axon-dns.mobileconfig:ro
+      - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
+    ports:
+      - "443:3443"
+      - "3443:3443"
+      - "3444:3444"
+      - "127.0.0.1:3003:3003"
+    depends_on:
+      gateway:
+        condition: service_healthy
+      web:
+        condition: service_started
+  coturn:
+    image: coturn/coturn:4.18.0-r0-alpine
+    restart: unless-stopped
+    user: "0:0"
+    command: ["-c", "/secrets/turnserver.conf"]
+    volumes:
+      - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/tcp"
+      - "49160-49220:49160-49220/udp"

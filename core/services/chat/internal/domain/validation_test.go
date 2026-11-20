@@ -192,3 +192,39 @@ func TestPageDirection(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSearchQuery(t *testing.T) {
+	long := strings.Repeat("ё", domain.MaxSearchQueryLength)
+
+	for name, tc := range map[string]struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		"two letters":         {in: "hi", want: "hi"},
+		"trimmed":             {in: "  ok \n", want: "ok"},
+		"two cyrillic":        {in: "да", want: "да"},
+		"one letter":          {in: "a", wantErr: true},
+		"one after trim":      {in: " a ", wantErr: true},
+		"empty":               {in: "", wantErr: true},
+		"at the limit":        {in: long, want: long},
+		"over the limit":      {in: long + "ё", wantErr: true},
+		"invalid UTF-8 bytes": {in: "hi\xff", wantErr: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := domain.ValidateSearchQuery(tc.in)
+			if tc.wantErr {
+				if _, ok := domain.AsValidationError(err); !ok {
+					t.Fatalf("ValidateSearchQuery(%q) = %q, %v, want a validation error", tc.in, got, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateSearchQuery(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("ValidateSearchQuery(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}

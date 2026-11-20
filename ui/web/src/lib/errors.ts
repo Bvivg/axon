@@ -1,5 +1,7 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 
+const usernameTaken = "username is taken";
+
 export function describe(err: unknown): string {
   const connectErr = ConnectError.from(err);
 
@@ -8,10 +10,12 @@ export function describe(err: unknown): string {
       return "Incorrect email or password.";
 
     case Code.AlreadyExists:
-      return "That email is already registered.";
+      return connectErr.rawMessage === usernameTaken
+        ? "That username is taken."
+        : "That email is already registered.";
 
     case Code.ResourceExhausted:
-      return "Too many attempts. Wait a minute and try again.";
+      return `Too many attempts. ${retryAfterMessage(connectErr)}`;
 
     case Code.NotFound:
       return "Not found.";
@@ -40,9 +44,29 @@ export function isCode(err: unknown, code: Code): boolean {
   return ConnectError.from(err).code === code;
 }
 
+export function isUsernameError(err: unknown): boolean {
+  const connectErr = ConnectError.from(err);
+  switch (connectErr.code) {
+    case Code.AlreadyExists:
+      return connectErr.rawMessage === usernameTaken;
+    case Code.InvalidArgument:
+      return connectErr.rawMessage.startsWith("username");
+    default:
+      return false;
+  }
+}
+
 function capitalise(text: string): string {
   if (!text) {
     return "Something went wrong. Try again.";
   }
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export function retryAfterMessage(err: unknown): string {
+  const raw = ConnectError.from(err).metadata.get("Retry-After");
+  const seconds = raw === null ? NaN : Number(raw);
+  return Number.isFinite(seconds) && seconds > 0
+    ? `Try again in ${Math.ceil(seconds)} ${Math.ceil(seconds) === 1 ? "second" : "seconds"}.`
+    : "Try again shortly.";
 }

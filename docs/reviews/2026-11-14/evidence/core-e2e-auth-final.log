@@ -1,0 +1,128 @@
+Selected output from core-e2e-auth-final.log
+
+=== RUN   TestBrowserNeverReceivesTheRefreshTokenInTheBody
+--- PASS: TestBrowserNeverReceivesTheRefreshTokenInTheBody (0.07s)
+=== RUN   TestBrowserRefreshesWithTheCookieAlone
+--- PASS: TestBrowserRefreshesWithTheCookieAlone (0.07s)
+=== RUN   TestBrowserLogoutClearsTheCookieAndTheChain
+--- PASS: TestBrowserLogoutClearsTheCookieAndTheChain (0.06s)
+=== RUN   TestBrowserOAuthSignInUsesTheCookie
+--- PASS: TestBrowserOAuthSignInUsesTheCookie (0.01s)
+=== RUN   TestNonBrowserClientsStillReceiveTheTokenInTheBody
+--- PASS: TestNonBrowserClientsStillReceiveTheTokenInTheBody (0.06s)
+=== RUN   TestABrowsersBodyTokenIsIgnored
+--- PASS: TestABrowsersBodyTokenIsIgnored (0.07s)
+=== RUN   TestTheAccessTokenIsStillABearerHeader
+--- PASS: TestTheAccessTokenIsStillABearerHeader (0.07s)
+=== RUN   TestPreflightFromTheAllowedOrigin
+--- PASS: TestPreflightFromTheAllowedOrigin (0.00s)
+=== RUN   TestPreflightFromAnyOtherOrigin
+--- PASS: TestPreflightFromAnyOtherOrigin (0.00s)
+=== RUN   TestAdminSurfaceIsNotPublic
+=== RUN   TestAdminSurfaceIsNotPublic//healthz
+=== RUN   TestAdminSurfaceIsNotPublic//readyz
+=== RUN   TestAdminSurfaceIsNotPublic//metrics
+--- PASS: TestAdminSurfaceIsNotPublic (0.00s)
+    --- PASS: TestAdminSurfaceIsNotPublic//healthz (0.00s)
+    --- PASS: TestAdminSurfaceIsNotPublic//readyz (0.00s)
+    --- PASS: TestAdminSurfaceIsNotPublic//metrics (0.00s)
+=== RUN   TestOAuthSignInCreatesAnAccount
+--- PASS: TestOAuthSignInCreatesAnAccount (0.00s)
+=== RUN   TestTheClientsNameReachesTheAccountItCreates
+--- PASS: TestTheClientsNameReachesTheAccountItCreates (0.00s)
+=== RUN   TestReturningOAuthUserGetsTheSameAccount
+--- PASS: TestReturningOAuthUserGetsTheSameAccount (0.00s)
+=== RUN   TestOAuthLinksToAnExistingPasswordAccount
+--- PASS: TestOAuthLinksToAnExistingPasswordAccount (0.14s)
+=== RUN   TestAnUnverifiedAddressCannotClaimAnAccount
+--- PASS: TestAnUnverifiedAddressCannotClaimAnAccount (0.13s)
+=== RUN   TestOAuthStateCannotBeReplayed
+--- PASS: TestOAuthStateCannotBeReplayed (0.01s)
+=== RUN   TestOAuthStateIsBoundToItsProvider
+--- PASS: TestOAuthStateIsBoundToItsProvider (0.00s)
+=== RUN   TestUnconfiguredProvidersAreRefused
+--- PASS: TestUnconfiguredProvidersAreRefused (0.00s)
+=== RUN   TestReturnToOutsideTheAllowListIsRefused
+--- PASS: TestReturnToOutsideTheAllowListIsRefused (0.00s)
+=== RUN   TestRegisterThenLoginThenGetMe
+--- PASS: TestRegisterThenLoginThenGetMe (0.13s)
+=== RUN   TestEmailIsCaseInsensitive
+--- PASS: TestEmailIsCaseInsensitive (0.13s)
+=== RUN   TestDuplicateRegistrationIsRejected
+--- PASS: TestDuplicateRegistrationIsRejected (0.22s)
+=== RUN   TestFailedLoginDoesNotRevealWhetherTheAccountExists
+--- PASS: TestFailedLoginDoesNotRevealWhetherTheAccountExists (0.38s)
+=== RUN   TestRefreshRotatesTheToken
+--- PASS: TestRefreshRotatesTheToken (0.12s)
+=== RUN   TestReplayingASpentRefreshTokenRevokesTheWholeChain
+--- PASS: TestReplayingASpentRefreshTokenRevokesTheWholeChain (0.12s)
+=== RUN   TestLogoutInvalidatesTheRefreshToken
+--- PASS: TestLogoutInvalidatesTheRefreshToken (0.06s)
+=== RUN   TestLogoutIsIdempotent
+--- PASS: TestLogoutIsIdempotent (0.09s)
+=== RUN   TestProtectedProcedureRejectsBadTokens
+=== RUN   TestProtectedProcedureRejectsBadTokens/no_token
+=== RUN   TestProtectedProcedureRejectsBadTokens/not_a_token
+=== RUN   TestProtectedProcedureRejectsBadTokens/empty_bearer
+=== RUN   TestProtectedProcedureRejectsBadTokens/tampered
+--- PASS: TestProtectedProcedureRejectsBadTokens (0.06s)
+    --- PASS: TestProtectedProcedureRejectsBadTokens/no_token (0.00s)
+    --- PASS: TestProtectedProcedureRejectsBadTokens/not_a_token (0.00s)
+    --- PASS: TestProtectedProcedureRejectsBadTokens/empty_bearer (0.00s)
+    --- PASS: TestProtectedProcedureRejectsBadTokens/tampered (0.00s)
+=== RUN   TestSignInIsRateLimited
+--- PASS: TestSignInIsRateLimited (0.32s)
+=== RUN   TestThrottlingIsPerCaller
+--- PASS: TestThrottlingIsPerCaller (0.45s)
+=== RUN   TestPresenceSocketMarksTheSessionOnline
+--- PASS: TestPresenceSocketMarksTheSessionOnline (0.06s)
+=== RUN   TestPresenceSocketClearsOnDisconnect
+--- PASS: TestPresenceSocketClearsOnDisconnect (0.08s)
+=== RUN   TestPresenceIsScopedToItsOwnSession
+--- PASS: TestPresenceIsScopedToItsOwnSession (0.14s)
+=== RUN   TestUpdateProfileChangesTakeEffectImmediately
+--- PASS: TestUpdateProfileChangesTakeEffectImmediately (0.08s)
+=== RUN   TestUpdateProfileEmailChangeResetsVerification
+--- PASS: TestUpdateProfileEmailChangeResetsVerification (0.06s)
+=== RUN   TestListSessionsShowsEveryActiveSignIn
+--- PASS: TestListSessionsShowsEveryActiveSignIn (0.13s)
+=== RUN   TestRevokeSessionEndsOnlyThatDevice
+--- PASS: TestRevokeSessionEndsOnlyThatDevice (0.13s)
+=== RUN   TestRevokeSessionCannotTargetAnotherUser
+--- PASS: TestRevokeSessionCannotTargetAnotherUser (0.16s)
+=== RUN   TestAvatarUploadIsResizedAndPublic
+--- PASS: TestAvatarUploadIsResizedAndPublic (0.08s)
+=== RUN   TestOAuthSignInRejectsPrivateProviderAvatar
+--- PASS: TestOAuthSignInRejectsPrivateProviderAvatar (0.01s)
+=== RUN   TestRegisterGrantsTheDefaultUserRole
+--- PASS: TestRegisterGrantsTheDefaultUserRole (0.06s)
+=== RUN   TestListRolesRequiresAnAdmin
+--- PASS: TestListRolesRequiresAnAdmin (0.06s)
+=== RUN   TestAdminCanListAssignAndRevokeRoles
+--- PASS: TestAdminCanListAssignAndRevokeRoles (0.15s)
+=== RUN   TestGetUserByEmailRequiresAnAdmin
+--- PASS: TestGetUserByEmailRequiresAnAdmin (0.13s)
+=== RUN   TestAdminCanLookUpAUserByEmail
+--- PASS: TestAdminCanLookUpAUserByEmail (0.14s)
+=== RUN   TestAssignRoleCannotBeCalledByANonAdmin
+--- PASS: TestAssignRoleCannotBeCalledByANonAdmin (0.13s)
+=== RUN   TestSearchUsersFindsTheOtherAccountByExactEmail
+--- PASS: TestSearchUsersFindsTheOtherAccountByExactEmail (0.13s)
+=== RUN   TestSearchUsersByGarbageFindsNothing
+--- PASS: TestSearchUsersByGarbageFindsNothing (0.07s)
+=== RUN   TestSearchUsersExcludesTheCallerByEmailAndName
+--- PASS: TestSearchUsersExcludesTheCallerByEmailAndName (0.08s)
+=== RUN   TestGetUsersPublicProfilesReturnsOnlyKnownIDs
+--- PASS: TestGetUsersPublicProfilesReturnsOnlyKnownIDs (0.13s)
+=== RUN   TestSearchUsersFindsTheOtherAccountByANameFragment
+--- PASS: TestSearchUsersFindsTheOtherAccountByANameFragment (0.13s)
+=== RUN   TestRegisterWithAChosenUsername
+--- PASS: TestRegisterWithAChosenUsername (0.13s)
+=== RUN   TestRegisterWithoutAUsernameGetsOne
+--- PASS: TestRegisterWithoutAUsernameGetsOne (0.06s)
+=== RUN   TestAUsernameFindsItsPerson
+--- PASS: TestAUsernameFindsItsPerson (0.13s)
+=== RUN   TestAUsernameCanBeChangedButNotTaken
+--- PASS: TestAUsernameCanBeChangedButNotTaken (0.14s)
+PASS
+ok  	github.com/bvivg/axon/core/services/auth/e2e	5.391s

@@ -21,6 +21,9 @@ func toProtoUser(u domain.User, avatarURLs avatar.URLBuilder) *authv1.User {
 		CreatedAt:     timestamppb.New(u.CreatedAt),
 	}
 
+	if u.Username != "" {
+		out.Username = &u.Username
+	}
 	if u.DisplayName != "" {
 		out.DisplayName = &u.DisplayName
 	}
@@ -62,6 +65,9 @@ func toProtoPublicProfile(p domain.PublicProfile, avatarURLs avatar.URLBuilder) 
 		out.LastSeenAt = timestamppb.New(*u.LastSeenAt)
 	}
 
+	if u.Username != "" {
+		out.Username = &u.Username
+	}
 	if u.DisplayName != "" {
 		out.DisplayName = &u.DisplayName
 	}

@@ -21,12 +21,13 @@ const ServiceName = "auth"
 type Config struct {
 	config.Base
 
-	Postgres postgres.Config
-	Redis    redis.Config
-	JWT      JWTConfig
-	Password password.Params
-	OAuth    OAuthConfig
-	Avatar   AvatarConfig
+	Postgres    postgres.Config
+	Redis       redis.Config
+	JWT         JWTConfig
+	Password    password.Params
+	OAuth       OAuthConfig
+	Avatar      AvatarConfig
+	InternalKey config.Secret
 }
 
 type AvatarConfig struct {
@@ -67,13 +68,14 @@ func Load() (Config, error) {
 	l := config.NewLoader()
 
 	cfg := Config{
-		Base:     config.LoadBase(l, ServiceName),
-		Postgres: postgres.LoadConfig(l),
-		Redis:    redis.LoadConfig(l),
-		JWT:      loadJWT(l),
-		Password: loadPasswordParams(l),
-		OAuth:    loadOAuth(l),
-		Avatar:   loadAvatar(l),
+		InternalKey: l.SecretDefault("CALLS_INTERNAL_KEY", ""),
+		Base:        config.LoadBase(l, ServiceName),
+		Postgres:    postgres.LoadConfig(l),
+		Redis:       redis.LoadConfig(l),
+		JWT:         loadJWT(l),
+		Password:    loadPasswordParams(l),
+		OAuth:       loadOAuth(l),
+		Avatar:      loadAvatar(l),
 	}
 
 	if cfg.Postgres.SearchPath == "" {

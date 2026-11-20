@@ -10,10 +10,10 @@ export default function RegisterPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
-      <ProviderButtons />
-      {enabledProviders().length > 0 ? <OrDivider /> : null}
+      <h1>Create your account</h1>
       <CredentialsForm mode={Mode.Register} />
+      {enabledProviders().length > 0 ? <OrDivider /> : null}
+      <ProviderButtons />
     </>
   );
 }

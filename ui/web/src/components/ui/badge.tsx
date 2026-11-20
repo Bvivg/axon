@@ -49,16 +49,3 @@ export function Badge({
     </span>
   );
 }
-
-export function CountBadge({ count, className }: { count: number; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-foreground px-[5px] font-mono text-2xs text-background tabular-nums",
-        className,
-      )}
-    >
-      {count > 99 ? "99+" : count}
-    </span>
-  );
-}

@@ -1,0 +1,2643 @@
+{
+  "date": "2026-11-18",
+  "baseUrl": "https://axon.test",
+  "tool": "axe-core 4.14.0",
+  "tags": [
+    "wcag2a",
+    "wcag2aa",
+    "wcag21aa",
+    "wcag22aa"
+  ],
+  "automatedRuns": [
+    {
+      "name": "chat",
+      "path": "/chat",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "light",
+      "h1": [
+        "Chats"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "contacts",
+      "path": "/contacts",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "light",
+      "h1": [
+        "Contacts"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".px-2"
+            ],
+            [
+              ".outline-none"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calls",
+      "path": "/calls",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "light",
+      "h1": [
+        "Calls",
+        "Calls"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "media",
+      "path": "/media",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "light",
+      "h1": [
+        "Media"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "profile",
+      "path": "/profile/my",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "light",
+      "h1": [
+        "Personal info"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "appearance",
+      "path": "/profile/appearance",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "light",
+      "h1": [
+        "Appearance"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "chat",
+      "path": "/chat",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "light",
+      "h1": [
+        "Chats"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "contacts",
+      "path": "/contacts",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "light",
+      "h1": [
+        "Contacts",
+        "Contacts"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".px-2"
+            ],
+            [
+              ".outline-none"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calls",
+      "path": "/calls",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "light",
+      "h1": [
+        "Calls",
+        "Calls"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "media",
+      "path": "/media",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "light",
+      "h1": [
+        "Media",
+        "Media"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "profile",
+      "path": "/profile/my",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "light",
+      "h1": [
+        "Profile",
+        "Personal info"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "appearance",
+      "path": "/profile/appearance",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "light",
+      "h1": [
+        "Profile",
+        "Appearance"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "chat",
+      "path": "/chat",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "light",
+      "h1": [
+        "Chats"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "contacts",
+      "path": "/contacts",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "light",
+      "h1": [
+        "Contacts",
+        "Contacts"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".px-2"
+            ],
+            [
+              ".outline-none"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calls",
+      "path": "/calls",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "light",
+      "h1": [
+        "Calls",
+        "Calls"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "media",
+      "path": "/media",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "light",
+      "h1": [
+        "Media",
+        "Media"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "path": "/profile/my",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "light",
+      "h1": [
+        "Profile",
+        "Personal info"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "appearance",
+      "path": "/profile/appearance",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "light",
+      "h1": [
+        "Profile",
+        "Appearance"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chat",
+      "path": "/chat",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "dark",
+      "h1": [
+        "Chats"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "contacts",
+      "path": "/contacts",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "dark",
+      "h1": [
+        "Contacts"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".px-2"
+            ],
+            [
+              ".outline-none"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calls",
+      "path": "/calls",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "dark",
+      "h1": [
+        "Calls",
+        "Calls"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "media",
+      "path": "/media",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "dark",
+      "h1": [
+        "Media"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "profile",
+      "path": "/profile/my",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "dark",
+      "h1": [
+        "Personal info"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "appearance",
+      "path": "/profile/appearance",
+      "scrollWidth": 390,
+      "width": 390,
+      "theme": "dark",
+      "h1": [
+        "Appearance"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "chat",
+      "path": "/chat",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "dark",
+      "h1": [
+        "Chats"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "contacts",
+      "path": "/contacts",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "dark",
+      "h1": [
+        "Contacts",
+        "Contacts"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".px-2"
+            ],
+            [
+              ".outline-none"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calls",
+      "path": "/calls",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "dark",
+      "h1": [
+        "Calls",
+        "Calls"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "media",
+      "path": "/media",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "dark",
+      "h1": [
+        "Media",
+        "Media"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "profile",
+      "path": "/profile/my",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "dark",
+      "h1": [
+        "Profile",
+        "Personal info"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "appearance",
+      "path": "/profile/appearance",
+      "scrollWidth": 768,
+      "width": 768,
+      "theme": "dark",
+      "h1": [
+        "Profile",
+        "Appearance"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "chat",
+      "path": "/chat",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "dark",
+      "h1": [
+        "Chats"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "contacts",
+      "path": "/contacts",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "dark",
+      "h1": [
+        "Contacts",
+        "Contacts"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".px-2"
+            ],
+            [
+              ".outline-none"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calls",
+      "path": "/calls",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "dark",
+      "h1": [
+        "Calls",
+        "Calls"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "media",
+      "path": "/media",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "dark",
+      "h1": [
+        "Media",
+        "Media"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "path": "/profile/my",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "dark",
+      "h1": [
+        "Profile",
+        "Personal info"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "appearance",
+      "path": "/profile/appearance",
+      "scrollWidth": 1440,
+      "width": 1440,
+      "theme": "dark",
+      "h1": [
+        "Profile",
+        "Appearance"
+      ],
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "theme": "light",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "theme": "light",
+      "width": 768,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "theme": "light",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "theme": "dark",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "theme": "dark",
+      "width": 768,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "theme": "dark",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "theme": "light",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "theme": "light",
+      "width": 768,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "theme": "light",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "theme": "dark",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "theme": "dark",
+      "width": 768,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "theme": "dark",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "forgot-password",
+      "path": "/forgot-password",
+      "theme": "light",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "forgot-password",
+      "path": "/forgot-password",
+      "theme": "light",
+      "width": 768,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "forgot-password",
+      "path": "/forgot-password",
+      "theme": "light",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "forgot-password",
+      "path": "/forgot-password",
+      "theme": "dark",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "forgot-password",
+      "path": "/forgot-password",
+      "theme": "dark",
+      "width": 768,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "forgot-password",
+      "path": "/forgot-password",
+      "theme": "dark",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".text-lg"
+            ],
+            [
+              ".auth-story-title"
+            ],
+            [
+              ".auth-story-title > span"
+            ],
+            [
+              ".mt-4"
+            ],
+            [
+              ".font-semibold"
+            ],
+            [
+              ".block"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "games",
+      "path": "/games",
+      "theme": "light",
+      "width": 390,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "main > .games-eyebrow"
+            ],
+            [
+              ".games-catalogue-title"
+            ],
+            [
+              "div:nth-child(1) > .games-eyebrow"
+            ],
+            [
+              "#games-welcome-title"
+            ],
+            [
+              "p"
+            ],
+            [
+              "div:nth-child(1) > a[href$=\"tic-tac-toe\"]"
+            ],
+            [
+              ".game-section-title"
+            ],
+            [
+              ".mt-3 > .game-directory-entry[aria-label=\"Tic-Tac-Toe lobby\"][href$=\"tic-tac-toe\"] > .min-w-0.flex-1 > strong"
+            ],
+            [
+              ".mt-3 > .game-directory-entry[aria-label=\"Tic-Tac-Toe lobby\"][href$=\"tic-tac-toe\"] > .min-w-0.flex-1 > span"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "games",
+      "path": "/games",
+      "theme": "light",
+      "width": 768,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "div:nth-child(1) > .games-eyebrow"
+            ],
+            [
+              "#games-welcome-title"
+            ],
+            [
+              "p"
+            ],
+            [
+              "div:nth-child(1) > a[href$=\"tic-tac-toe\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "games",
+      "path": "/games",
+      "theme": "light",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".workspace-context-heading"
+            ],
+            [
+              "div:nth-child(1) > .games-eyebrow"
+            ],
+            [
+              "#games-welcome-title"
+            ],
+            [
+              "p"
+            ],
+            [
+              "div:nth-child(1) > a[href$=\"tic-tac-toe\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "games",
+      "path": "/games",
+      "theme": "dark",
+      "width": 390,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "main > .games-eyebrow"
+            ],
+            [
+              ".games-catalogue-title"
+            ],
+            [
+              "div:nth-child(1) > .games-eyebrow"
+            ],
+            [
+              "#games-welcome-title"
+            ],
+            [
+              "p"
+            ],
+            [
+              "div:nth-child(1) > a[href$=\"tic-tac-toe\"]"
+            ],
+            [
+              ".game-section-title"
+            ],
+            [
+              ".mt-3 > .game-directory-entry[aria-label=\"Tic-Tac-Toe lobby\"][href$=\"tic-tac-toe\"] > .min-w-0.flex-1 > strong"
+            ],
+            [
+              ".mt-3 > .game-directory-entry[aria-label=\"Tic-Tac-Toe lobby\"][href$=\"tic-tac-toe\"] > .min-w-0.flex-1 > span"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "games",
+      "path": "/games",
+      "theme": "dark",
+      "width": 768,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "games",
+      "path": "/games",
+      "theme": "dark",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              "div:nth-child(1) > .games-eyebrow"
+            ],
+            [
+              "#games-welcome-title"
+            ],
+            [
+              "p"
+            ],
+            [
+              "div:nth-child(1) > a[href$=\"tic-tac-toe\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "path": "/profile/sessions",
+      "theme": "light",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "sessions",
+      "path": "/profile/sessions",
+      "theme": "light",
+      "width": 768,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "sessions",
+      "path": "/profile/sessions",
+      "theme": "light",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".workspace-context-heading"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "path": "/profile/sessions",
+      "theme": "dark",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "sessions",
+      "path": "/profile/sessions",
+      "theme": "dark",
+      "width": 768,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "sessions",
+      "path": "/profile/sessions",
+      "theme": "dark",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".workspace-context-heading"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "notifications",
+      "path": "/profile/notifications",
+      "theme": "light",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "notifications",
+      "path": "/profile/notifications",
+      "theme": "light",
+      "width": 768,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "notifications",
+      "path": "/profile/notifications",
+      "theme": "light",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".workspace-context-heading"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "notifications",
+      "path": "/profile/notifications",
+      "theme": "dark",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "notifications",
+      "path": "/profile/notifications",
+      "theme": "dark",
+      "width": 768,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "notifications",
+      "path": "/profile/notifications",
+      "theme": "dark",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".workspace-context-heading"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tic-tac-toe",
+      "path": "/games/tic-tac-toe",
+      "theme": "light",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "tic-tac-toe",
+      "path": "/games/tic-tac-toe",
+      "theme": "light",
+      "width": 768,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "tic-tac-toe",
+      "path": "/games/tic-tac-toe",
+      "theme": "light",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".workspace-context-heading"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tic-tac-toe",
+      "path": "/games/tic-tac-toe",
+      "theme": "dark",
+      "width": 390,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "tic-tac-toe",
+      "path": "/games/tic-tac-toe",
+      "theme": "dark",
+      "width": 768,
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "tic-tac-toe",
+      "path": "/games/tic-tac-toe",
+      "theme": "dark",
+      "width": 1440,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".workspace-context-heading"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "cells": [
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        }
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".bg-game-bg2"
+            ],
+            [
+              ".bg-game-primary"
+            ]
+          ]
+        }
+      ],
+      "name": "practice",
+      "path": "/games/tic-tac-toe/practice"
+    },
+    {
+      "theme": "light",
+      "width": 768,
+      "cells": [
+        {
+          "width": 121.328125,
+          "height": 121.328125,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        }
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".bg-game-bg2"
+            ],
+            [
+              ".bg-game-primary"
+            ]
+          ]
+        }
+      ],
+      "name": "practice",
+      "path": "/games/tic-tac-toe/practice"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "cells": [
+        {
+          "width": 121.328125,
+          "height": 121.328125,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(255, 255, 255)",
+          "border": "rgb(218, 222, 233)"
+        }
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".bg-game-bg2"
+            ],
+            [
+              ".bg-game-primary"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ],
+      "name": "practice",
+      "path": "/games/tic-tac-toe/practice"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "cells": [
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 114,
+          "height": 114,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        }
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".bg-game-bg2"
+            ],
+            [
+              ".bg-game-primary"
+            ]
+          ]
+        }
+      ],
+      "name": "practice",
+      "path": "/games/tic-tac-toe/practice"
+    },
+    {
+      "theme": "dark",
+      "width": 768,
+      "cells": [
+        {
+          "width": 121.328125,
+          "height": 121.328125,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        }
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".bg-game-bg2"
+            ],
+            [
+              ".bg-game-primary"
+            ]
+          ]
+        }
+      ],
+      "name": "practice",
+      "path": "/games/tic-tac-toe/practice"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "cells": [
+        {
+          "width": 121.328125,
+          "height": 121.328125,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.328125,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.328125,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        },
+        {
+          "width": 121.3359375,
+          "height": 121.3359375,
+          "bg": "rgb(25, 29, 41)",
+          "border": "rgb(48, 54, 70)"
+        }
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".bg-game-bg2"
+            ],
+            [
+              ".bg-game-primary"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ],
+      "name": "practice",
+      "path": "/games/tic-tac-toe/practice"
+    },
+    {
+      "theme": "light",
+      "bodyColor": "rgb(37, 40, 58)",
+      "violations": [],
+      "incomplete": [],
+      "name": "conversation",
+      "path": "/chat (conversation)",
+      "width": 390
+    },
+    {
+      "theme": "light",
+      "width": 768,
+      "scrollWidth": 768,
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [],
+      "name": "conversation",
+      "path": "/chat (conversation)"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".text-lg"
+            ]
+          ]
+        }
+      ],
+      "name": "conversation",
+      "path": "/chat (conversation)"
+    },
+    {
+      "theme": "dark",
+      "bodyColor": "rgb(240, 239, 246)",
+      "violations": [],
+      "incomplete": [],
+      "name": "conversation",
+      "path": "/chat (conversation)",
+      "width": 390
+    },
+    {
+      "theme": "dark",
+      "width": 768,
+      "scrollWidth": 768,
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [],
+      "name": "conversation",
+      "path": "/chat (conversation)"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "mainCount": 1,
+      "missingAlt": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              ".workspace-brand-copy > strong"
+            ],
+            [
+              "a[title=\"Games\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Calls\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Chats\"] > .workspace-nav-label"
+            ],
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ],
+            [
+              ".text-lg"
+            ]
+          ]
+        }
+      ],
+      "name": "conversation",
+      "path": "/chat (conversation)"
+    },
+    {
+      "name": "admin",
+      "path": "/admin",
+      "width": 390,
+      "scrollWidth": 390,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Admin"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "service-map",
+      "path": "/admin/service-map",
+      "width": 390,
+      "scrollWidth": 390,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Service map"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              "div[aria-label=\"Topology details\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gateway",
+      "path": "/admin/gateway",
+      "width": 390,
+      "scrollWidth": 390,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Gateway"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "admin",
+      "path": "/admin",
+      "width": 768,
+      "scrollWidth": 768,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Admin"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "service-map",
+      "path": "/admin/service-map",
+      "width": 768,
+      "scrollWidth": 768,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Service map"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".service-graph"
+            ],
+            [
+              "div[aria-label=\"Topology details\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gateway",
+      "path": "/admin/gateway",
+      "width": 768,
+      "scrollWidth": 768,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Gateway"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "admin",
+      "path": "/admin",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Admin"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "service-map",
+      "path": "/admin/service-map",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Service map"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".service-graph"
+            ],
+            [
+              "div[aria-label=\"Topology details\"]"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gateway",
+      "path": "/admin/gateway",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "theme": "light",
+      "h1": [
+        "Administration",
+        "Gateway"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "admin",
+      "path": "/admin",
+      "width": 390,
+      "scrollWidth": 390,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Admin"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "service-map",
+      "path": "/admin/service-map",
+      "width": 390,
+      "scrollWidth": 390,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Service map"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              "div[aria-label=\"Topology details\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gateway",
+      "path": "/admin/gateway",
+      "width": 390,
+      "scrollWidth": 390,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Gateway"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "admin",
+      "path": "/admin",
+      "width": 768,
+      "scrollWidth": 768,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Admin"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "service-map",
+      "path": "/admin/service-map",
+      "width": 768,
+      "scrollWidth": 768,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Service map"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".service-graph"
+            ],
+            [
+              "div[aria-label=\"Topology details\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gateway",
+      "path": "/admin/gateway",
+      "width": 768,
+      "scrollWidth": 768,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Gateway"
+      ],
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "name": "admin",
+      "path": "/admin",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Admin"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "service-map",
+      "path": "/admin/service-map",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Service map"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "targets": [
+            [
+              ".service-graph"
+            ],
+            [
+              "div[aria-label=\"Topology details\"]"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gateway",
+      "path": "/admin/gateway",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "theme": "dark",
+      "h1": [
+        "Administration",
+        "Gateway"
+      ],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "targets": [
+            [
+              "a[title=\"Profile\"] > .workspace-nav-label"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "manual": {
+    "skipLink": [
+      {
+        "theme": "light",
+        "width": 390,
+        "url": "/chat#app-content",
+        "focusTag": "A",
+        "focusId": "",
+        "text": "Skip to content"
+      },
+      {
+        "theme": "light",
+        "width": 768,
+        "url": "/chat#app-content",
+        "focusTag": "A",
+        "focusId": "",
+        "text": "Skip to content\nWU\nChats\n\nNo chats yet.\n\nChat not found."
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "url": "/chat#app-content",
+        "focusTag": "A",
+        "focusId": "",
+        "text": "Skip to content\nAXON\nGames\nCalls\nChats\nProfile\nWU\nWorkspace User\n@design_workspa_mwix5zddapic28\nChats\n\nNo chats yet.\n\nChat not found."
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "url": "/chat#app-content",
+        "focusTag": "A",
+        "focusId": "",
+        "text": "Skip to content"
+      },
+      {
+        "theme": "dark",
+        "width": 768,
+        "url": "/chat#app-content",
+        "focusTag": "A",
+        "focusId": "",
+        "text": "Skip to content\nWU\nChats\n\nLoading…\n\nChat not found."
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "url": "/chat#app-content",
+        "focusTag": "A",
+        "focusId": "",
+        "text": "Skip to content\nAXON\nGames\nCalls\nChats\nProfile\nWU\nWorkspace User\n@design_workspa_mwix5zddapic28\nChats\n\nNo chats yet.\n\nChat not found."
+      }
+    ],
+    "paletteFocusRestoredAfterClosing": true,
+    "messageMenuFocusRestored": true,
+    "gameArrowMovesFocus": true,
+    "themePreviewIdentical": "All four preview fragments had rgb(14,18,27) background in dark mode, including scheme=light.",
+    "register1440": {
+      "emailInput": 43,
+      "usernameInnerInput": 30,
+      "usernameOuterApproximately": 32,
+      "displayNameInput": 43,
+      "passwordInnerInput": 41,
+      "passwordOuterApproximately": 43
+    },
+    "snapshotsRetakenAfterLoading": [
+      "sessions",
+      "notifications",
+      "light/390/gateway"
+    ],
+    "gatewayTransientError": "Preserved separately as light/390/gateway-error.png"
+  },
+  "scope": "Automated violations0 for108 normal page/theme/width states. Incomplete checks require manual review; this is not a full WCAG conformance assessment."
+}

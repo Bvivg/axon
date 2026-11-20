@@ -53,6 +53,12 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrNotGroupOwner):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("only the group owner can do this"))
 
+	case errors.Is(err, domain.ErrNotMessageAuthor):
+		return connect.NewError(connect.CodePermissionDenied, errors.New("only the author can do this"))
+
+	case errors.Is(err, domain.ErrMessageDeleted):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the message was deleted"))
+
 	case errors.Is(err, domain.ErrUnknownUser):
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("one of the people does not exist"))
 

@@ -7,6 +7,8 @@ var (
 
 	ErrEmailTaken = errors.New("auth: email already registered")
 
+	ErrUsernameTaken = errors.New("auth: username already taken")
+
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 
 	ErrNoPassword = errors.New("auth: account has no password set")

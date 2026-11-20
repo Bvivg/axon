@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.27.4
 
-ARG AIR_VERSION=v1.67.3
+ARG AIR_VERSION=v1.67.4
 
 ARG RUNTIME_FLAVOR=static
 

@@ -1,0 +1,71 @@
+name: axon-calls-spike
+
+services:
+  init:
+    image: axon-calls-spike-playwright:local
+    build:
+      context: ../..
+      dockerfile: core/deploy/Dockerfile.calls-spike
+    entrypoint: ["node", "/app/e2e/calls-spike-init.mjs"]
+    volumes:
+      - ../../ui/web/e2e:/app/e2e:ro
+      - ../../.local/evidence/calls/R1-spike:/evidence
+    network_mode: none
+
+  web:
+    image: axon-web-e2e-web:latest
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    networks:
+      media:
+        ipv4_address: 172.30.251.10
+
+  coturn:
+    image: coturn/coturn:4.18.0-r0-alpine
+    user: "0:0"
+    command: ["-c", "/evidence/.secrets/turnserver.conf"]
+    volumes:
+      - ../../.local/evidence/calls/R1-spike:/evidence:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    networks:
+      media:
+        ipv4_address: 172.30.251.20
+        aliases:
+          - turn.calls.test
+
+  playwright:
+    image: axon-calls-spike-playwright:local
+    init: true
+    shm_size: 512mb
+    cap_add:
+      - NET_ADMIN
+    network_mode: service:web
+    tmpfs:
+      - /tmp:size=536870912
+    environment:
+      CI: "1"
+      WEB_BASE_URL: http://localhost:3000
+      CALLS_EVIDENCE_DIR: /evidence
+    volumes:
+      - ../../ui/web/e2e:/app/e2e:ro
+      - ../../ui/web/playwright.calls-spike.config.ts:/app/playwright.calls-spike.config.ts:ro
+      - ../../ui/web/playwright.config.ts:/app/playwright.config.ts:ro
+      - ../../core/deploy/calls-spike-run.sh:/calls-spike-run.sh:ro
+      - ../../.local/evidence/calls/R1-spike:/evidence
+    entrypoint: ["bash", "/calls-spike-run.sh"]
+    depends_on:
+      web:
+        condition: service_healthy
+      coturn:
+        condition: service_started
+
+networks:
+  media:
+    ipam:
+      config:
+        - subnet: 172.30.251.0/24

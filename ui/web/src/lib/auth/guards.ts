@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { useSession } from "@/lib/auth/session";
+import { HistoryMode, navigateTo } from "@/lib/chat/address";
 
 export const signInPath = "/login";
 
-export const homePath = "/";
+export const homePath = "/chat";
 
 export const nextParam = "next";
 
@@ -26,9 +27,9 @@ export function useRequireSession(): void {
       return;
     }
 
-    const here = window.location.pathname + window.location.search;
+    const here = window.location.pathname + window.location.search + window.location.hash;
     const resumable =
-      !heldASession.current && here !== "/" && !here.startsWith(signInPath);
+      !heldASession.current && here !== "/" && here !== homePath && !here.startsWith(signInPath);
 
     router.replace(
       resumable
@@ -63,7 +64,7 @@ export function useRedirectWhenSignedIn(): void {
     if (status !== "authenticated") {
       return;
     }
-    router.replace(currentNext());
+    navigateTo(router, currentNext(), HistoryMode.Replace);
   }, [status, router]);
 }
 
@@ -75,8 +76,12 @@ export function currentNext(): string {
 }
 
 export function safeNext(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+  if (!value || !value.startsWith("/")) {
     return homePath;
   }
-  return value;
+  const target = new URL(value, window.location.origin);
+  if (target.origin !== window.location.origin) {
+    return homePath;
+  }
+  return target.pathname + target.search + target.hash;
 }

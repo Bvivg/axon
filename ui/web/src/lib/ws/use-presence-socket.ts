@@ -45,7 +45,7 @@ export function usePresenceSocket(): void {
     };
   }, [token]);
 
-  const { readyState } = useWebSocket(token ? socketUrl : null, {
+  const { readyState, sendJsonMessage } = useWebSocket(token ? socketUrl : null, {
     protocols: token ? [presenceSubprotocol, bearerPrefix + token] : undefined,
     share: false,
     retryOnError: true,
@@ -63,6 +63,14 @@ export function usePresenceSocket(): void {
   useEffect(() => {
     reportRealtimeSocket(readyState === ReadyState.OPEN);
   }, [readyState]);
+
+  useEffect(() => {
+    if (readyState !== ReadyState.OPEN) return;
+    const report = () => sendJsonMessage({ type: "visibility", visible: document.visibilityState === "visible" });
+    report();
+    document.addEventListener("visibilitychange", report);
+    return () => document.removeEventListener("visibilitychange", report);
+  }, [readyState, sendJsonMessage]);
 
   useEffect(() => forgetRealtimeSocket, []);
 }

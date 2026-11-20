@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 
@@ -62,8 +63,13 @@ func New(cfg Config) *Limiter {
 }
 
 func (l *Limiter) Allow(key string) bool {
+	allowed, _ := l.AllowWithRetry(key)
+	return allowed
+}
+
+func (l *Limiter) AllowWithRetry(key string) (bool, time.Duration) {
 	if l.limit == rate.Inf {
-		return true
+		return true, 0
 	}
 
 	l.mu.Lock()
@@ -78,7 +84,11 @@ func (l *Limiter) Allow(key string) bool {
 	}
 	b.lastSeen = now
 
-	return b.limiter.AllowN(now, 1)
+	if b.limiter.AllowN(now, 1) {
+		return true, 0
+	}
+	seconds := (1 - b.limiter.TokensAt(now)) / float64(l.limit)
+	return false, time.Duration(math.Ceil(seconds * float64(time.Second)))
 }
 
 func (l *Limiter) Start(ctx context.Context) {

@@ -1,0 +1,98 @@
+[
+  {
+    "name": "/axon-calls-tailnet-dns-resolver-1",
+    "image": "coredns/coredns:1.13.1",
+    "image_id": "sha256:9b9128672209474da07c91439bf15ed704ae05ad918dd6454e5b6ae14e35fee6",
+    "state": "running"
+  },
+  {
+    "name": "/axon-calls-tailnet-dns-node-1",
+    "image": "tailscale/tailscale:stable",
+    "image_id": "sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4",
+    "state": "running"
+  },
+  {
+    "name": "/axon-calls-dns-1",
+    "image": "coredns/coredns:1.13.1",
+    "image_id": "sha256:9b9128672209474da07c91439bf15ed704ae05ad918dd6454e5b6ae14e35fee6",
+    "state": "running"
+  },
+  {
+    "name": "/axon-web-1",
+    "image": "axon-web:tictactoe-result-alignment",
+    "image_id": "sha256:048c78e5c3dc350d1228b3a47c695278c969f9f095eef1fb7547c425c5152ee6",
+    "state": "running"
+  },
+  {
+    "name": "/axon-gateway-1",
+    "image": "axon-gateway:network-game",
+    "image_id": "sha256:478a4f533e762bb8264e606792ba190d48bcafbb409b6a533538a8e7d254e5ea",
+    "state": "running"
+  },
+  {
+    "name": "/axon-game-1",
+    "image": "axon-game:network-game",
+    "image_id": "sha256:7d48b78eac832f9c3e29dea93c10e6e629c87704d6e0ae58dd81232d125df42f",
+    "state": "running"
+  },
+  {
+    "name": "/axon-chat-1",
+    "image": "axon-chat:project-review",
+    "image_id": "sha256:3e463ee271dfecf8789c6928a430b7a424b183032b067773c37d394fb8fde69e",
+    "state": "running"
+  },
+  {
+    "name": "/axon-auth-1",
+    "image": "axon-auth:project-review",
+    "image_id": "sha256:df2098bf49f6dc0bd708f530e489462c9358303d7db921853ee22a0184fc26fc",
+    "state": "running"
+  },
+  {
+    "name": "/axon-postgres-1",
+    "image": "postgres:17-alpine",
+    "image_id": "sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73",
+    "state": "running"
+  },
+  {
+    "name": "/axon-kafka-1",
+    "image": "confluentinc/confluent-local:7.5.0",
+    "image_id": "sha256:8e391de42cfcd3498e7317dcf159790f1f1cc3f3ffce900b30d7da23888687fd",
+    "state": "running"
+  },
+  {
+    "name": "/axon-redis-1",
+    "image": "redis:7-alpine",
+    "image_id": "sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf",
+    "state": "running"
+  },
+  {
+    "name": "/axon-minio-1",
+    "image": "pgsty/minio:RELEASE.2026-08-04T00-00-00Z",
+    "image_id": "sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372",
+    "state": "running"
+  },
+  {
+    "name": "/axon-calls-https-1",
+    "image": "node:22-alpine",
+    "image_id": "sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+    "state": "running"
+  },
+  {
+    "name": "/axon-livekit-1",
+    "image": "livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20",
+    "image_id": "sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20",
+    "state": "running"
+  },
+  {
+    "name": "/axon-coturn-1",
+    "image": "coturn/coturn:4.18.0-r0-alpine",
+    "image_id": "sha256:c29135c08565810d37053f384584392b7c24b69570fc81a721b878d6fe63e04e",
+    "state": "running"
+  },
+  {
+    "name": "/axon-minio-init-1",
+    "image": "pgsty/minio:RELEASE.2026-08-04T00-00-00Z",
+    "image_id": "sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372",
+    "state": "exited"
+  }
+]

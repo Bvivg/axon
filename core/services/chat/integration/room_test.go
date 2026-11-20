@@ -149,7 +149,7 @@ func TestRoomsForUserCarriesHowFarTheOthersHaveRead(t *testing.T) {
 	second := say(t, r, room.ID, owner, "two", "c-2")
 	third := say(t, r, room.ID, owner, "three", "c-3")
 
-	if err := r.MarkRead(t.Context(), room.ID, reader, second.Seq); err != nil {
+	if _, err := r.MarkRead(t.Context(), room.ID, reader, second.Seq); err != nil {
 		t.Fatalf("MarkRead: %v", err)
 	}
 

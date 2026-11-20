@@ -1,0 +1,23 @@
+Local HTTPS, cookie attributes only, November 15 2026
+
+Before fix: Register 200. Path=/; Max-Age=899; HttpOnly; Secure; SameSite=Lax. Domain absent.
+After fix: Register 200. Path=/api/media; Max-Age=899; HttpOnly; Secure; SameSite=Lax. Domain absent.
+After fix: Legacy Path=/ expired on registration and logout. Logout 200 also expired Path=/api/media.
+
+Playwright media-cookie.spec.ts: 1 passed.
+Credential supplied only as media cookie: protected RPC, chat/presence/game WS,
+avatar/attachment upload, multipart control and parts -> 401.
+GET and HEAD: allowed Origin or absent Origin -> 200; untrusted Origin -> 403.
+Legacy media URL -> 308, then canonical media URL -> 200.
+POST media -> 405.
+Conditional GET -> 304 while active. After logout conditional GET and HEAD -> 401.
+Playwright media.spec.ts: photo, video, file/voice/gallery -> 3 passed.
+
+Chromium SameSite fixture on two local sites:
+cross-site image: mode=no-cors cookie_present=false origin_present=false status=401.
+cross-site link: mode=navigate cookie_present=true origin_present=false status=200.
+
+Go tests: gateway and shared authn PASS.
+Chat integration: TestPrivateMediaRequiresVisibleMembership PASS.
+Vitest media-url.test.ts: 2 passed.
+Production Docker images for gateway and web built; live services healthy.

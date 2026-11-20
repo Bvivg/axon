@@ -15,9 +15,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MessageKind } from "@/gen/axon/chat/v1/chat_pb";
 import { ContentKind, contentOf } from "@/lib/chat/content";
+import { viewerSlidesOf } from "@/lib/chat/viewer";
 import { describe } from "@/lib/errors";
-import { formatDuration } from "@/lib/format";
+import { calendarMoment, formatDuration, fromISO } from "@/lib/format";
 import { useRoomMedia } from "@/lib/query/chat";
+import { cn } from "@/lib/utils";
 import type { WireMessage } from "@/lib/ws/protocol";
 
 enum Section {
@@ -53,31 +55,37 @@ export function RoomMedia({
           </DialogClose>
         </div>
         {open ? (
-          <Tabs defaultValue={Section.Media} className="flex min-h-0 flex-1 flex-col gap-3">
-            <TabsList className="self-start">
-              <TabsTrigger value={Section.Media}>Media</TabsTrigger>
-              <TabsTrigger value={Section.Files}>Files</TabsTrigger>
-              <TabsTrigger value={Section.Voice}>Voice</TabsTrigger>
-            </TabsList>
-            <TabsContent value={Section.Media} className="flex min-h-0 flex-1 flex-col">
-              <ScrollArea className="flex-1">
-                <MediaGrid roomID={roomID} />
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value={Section.Files} className="flex min-h-0 flex-1 flex-col">
-              <ScrollArea className="flex-1">
-                <MessageList roomID={roomID} kinds={fileKinds} names={names} selfID={selfID} />
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value={Section.Voice} className="flex min-h-0 flex-1 flex-col">
-              <ScrollArea className="flex-1">
-                <MessageList roomID={roomID} kinds={voiceKinds} names={names} selfID={selfID} />
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+          <RoomMediaLibrary roomID={roomID} names={names} selfID={selfID} />
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function RoomMediaLibrary({ roomID, names, selfID }: { roomID: string; names: Map<string, string>; selfID: string }) {
+  return (
+    <Tabs defaultValue={Section.Media} className="flex min-h-0 flex-1 flex-col gap-3">
+      <TabsList className="self-start">
+        <TabsTrigger value={Section.Media}>Media</TabsTrigger>
+        <TabsTrigger value={Section.Files}>Files</TabsTrigger>
+        <TabsTrigger value={Section.Voice}>Voice</TabsTrigger>
+      </TabsList>
+      <TabsContent value={Section.Media} className="flex min-h-0 flex-1 flex-col">
+        <ScrollArea className="flex-1">
+          <MediaGrid roomID={roomID} />
+        </ScrollArea>
+      </TabsContent>
+      <TabsContent value={Section.Files} className="flex min-h-0 flex-1 flex-col">
+        <ScrollArea className="flex-1">
+          <MessageList roomID={roomID} kinds={fileKinds} names={names} selfID={selfID} />
+        </ScrollArea>
+      </TabsContent>
+      <TabsContent value={Section.Voice} className="flex min-h-0 flex-1 flex-col">
+        <ScrollArea className="flex-1">
+          <MessageList roomID={roomID} kinds={voiceKinds} names={names} selfID={selfID} />
+        </ScrollArea>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -111,7 +119,8 @@ function LoadMore({ query }: { query: ReturnType<typeof useRoomMedia> }) {
 
 function MediaGrid({ roomID }: { roomID: string }) {
   const { query, messages } = useNewestFirst(roomID, mediaKinds);
-  const [viewing, setViewing] = useState<WireMessage | null>(null);
+  const slides = useMemo(() => viewerSlidesOf(messages), [messages]);
+  const [viewing, setViewing] = useState<number | null>(null);
 
   if (query.isError) {
     return <Alert>{describe(query.error)}</Alert>;
@@ -125,68 +134,38 @@ function MediaGrid({ roomID }: { roomID: string }) {
       </div>
     );
   }
-  if (messages.length === 0) {
+  if (slides.length === 0) {
     return <EmptyState icon={ImageIcon} title="No photos or videos yet" />;
   }
 
   return (
     <>
       <ul aria-label="Photos and videos" className="grid grid-cols-3 gap-1 sm:grid-cols-4">
-        {messages.map((message) => {
-          const content = contentOf(message);
-          if (content.kind === ContentKind.Image) {
-            return (
-              <li key={message.id}>
-                <button
-                  type="button"
-                  onClick={() => setViewing(message)}
-                  aria-label="Open photo"
-                  className="relative block aspect-square w-full overflow-hidden rounded-md bg-muted"
-                >
-                  <Image
-                    src={content.image.thumbnailUrl}
-                    alt=""
-                    fill
-                    unoptimized
-                    sizes="150px"
-                    className="object-cover"
-                  />
-                </button>
-              </li>
-            );
-          }
-          if (content.kind === ContentKind.Video) {
-            return (
-              <li key={message.id}>
-                <button
-                  type="button"
-                  onClick={() => setViewing(message)}
-                  aria-label="Play video"
-                  className="relative block aspect-square w-full overflow-hidden rounded-md bg-black"
-                >
-                  {content.video.posterUrl ? (
-                    <Image
-                      src={content.video.posterUrl}
-                      alt=""
-                      fill
-                      unoptimized
-                      sizes="150px"
-                      className="object-cover"
-                    />
-                  ) : null}
-                  <span className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/55 px-1 py-0.5 font-mono text-[10px] text-white">
-                    <Play aria-hidden className="size-2.5 fill-current" />
-                    {formatDuration(content.video.durationMs)}
-                  </span>
-                </button>
-              </li>
-            );
-          }
-          return null;
-        })}
+        {slides.map((slide, index) => (
+          <li key={slide.key}>
+            <button
+              type="button"
+              onClick={() => setViewing(index)}
+              aria-label={slide.kind === ContentKind.Image ? "Open photo" : "Play video"}
+              className={cn(
+                "relative block aspect-square w-full overflow-hidden rounded-md",
+                slide.kind === ContentKind.Image ? "bg-muted" : "bg-black",
+              )}
+            >
+              {slide.preview ? (
+                <Image src={slide.preview} alt="" fill unoptimized sizes="150px" className="object-cover" />
+              ) : null}
+              {slide.kind === ContentKind.Video ? (
+                <span className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/55 px-1 py-0.5 text-white">
+                  <Play aria-hidden className="size-2.5 fill-current" />
+                </span>
+              ) : null}
+            </button>
+          </li>
+        ))}
       </ul>
       <LoadMore query={query} />
-      <MediaViewer message={viewing} onClose={() => setViewing(null)} />
+      <MediaViewer slides={slides} index={viewing} onClose={() => setViewing(null)} />
     </>
   );
 }
@@ -238,8 +217,12 @@ function MessageList({
               </span>
               {content.kind === ContentKind.File ? (
                 <FileCard file={content.file} mine={false} />
+              ) : content.kind === ContentKind.Album ? (
+                content.items.map((item, index) => item.kind === ContentKind.File ? (
+                  <FileCard key={index} file={item.file} mine={false} />
+                ) : null)
               ) : content.kind === ContentKind.Voice ? (
-                <VoicePlayer voice={content.voice} mine={false} />
+                <VoicePlayer voice={content.voice} />
               ) : null}
             </li>
           );
@@ -251,9 +234,6 @@ function MessageList({
 }
 
 function formatDate(iso: string): string {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) {
-    return "";
-  }
-  return at.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const at = fromISO(iso);
+  return at ? calendarMoment(at) : "";
 }

@@ -1,0 +1,206 @@
+syntax = "proto3";
+
+package axon.game.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service GameService {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc JoinSession(JoinSessionRequest) returns (JoinSessionResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc FindMatch(FindMatchRequest) returns (FindMatchResponse);
+  rpc CancelMatch(CancelMatchRequest) returns (CancelMatchResponse);
+  rpc GetMatch(GetMatchRequest) returns (GetMatchResponse);
+  rpc GetRatings(GetRatingsRequest) returns (GetRatingsResponse);
+  rpc LeaveSession(LeaveSessionRequest) returns (LeaveSessionResponse);
+}
+
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED = 0;
+  SESSION_STATUS_WAITING = 1;
+  SESSION_STATUS_PLAYING = 2;
+  SESSION_STATUS_WON = 3;
+  SESSION_STATUS_DRAW = 4;
+}
+
+message Session {
+  string id = 1;
+  string game = 2;
+  repeated string player_ids = 3;
+  SessionStatus status = 4;
+  uint32 ply = 5;
+  optional string turn_user_id = 6;
+  optional string winner_user_id = 7;
+  TicTacToeBoard tic_tac_toe = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  optional uint32 revision = 10;
+  optional SessionClock clock = 11;
+  optional bool timed_out = 12;
+  optional bool rated = 13;
+  repeated RatingChange rating_changes = 14;
+  optional bool resigned = 15;
+}
+
+message RatingChange {
+  string user_id = 1;
+  uint32 before = 2;
+  uint32 after = 3;
+}
+
+message Rating {
+  string user_id = 1;
+  uint32 rating = 2;
+  uint32 games = 3;
+  uint32 wins = 4;
+  uint32 losses = 5;
+  uint32 draws = 6;
+}
+
+enum MatchStatus {
+  MATCH_STATUS_UNSPECIFIED = 0;
+  MATCH_STATUS_IDLE = 1;
+  MATCH_STATUS_SEARCHING = 2;
+  MATCH_STATUS_MATCHED = 3;
+}
+
+message MatchTicket {
+  string game = 1;
+  MatchStatus status = 2;
+  uint32 rating = 3;
+  google.protobuf.Timestamp joined_at = 4;
+  google.protobuf.Timestamp sampled_at = 5;
+  uint32 wait_ms = 6;
+  optional uint32 window = 7;
+  optional string session_id = 8;
+}
+
+message SessionClock {
+  optional uint32 x_remaining_ms = 1;
+  optional uint32 o_remaining_ms = 2;
+  google.protobuf.Timestamp sampled_at = 3;
+}
+
+enum Mark {
+  MARK_UNSPECIFIED = 0;
+  MARK_X = 1;
+  MARK_O = 2;
+}
+
+message TicTacToeBoard {
+  repeated Mark cells = 1;
+  repeated uint32 winning_cells = 2;
+}
+
+message CreateSessionRequest {
+  string game = 1;
+  string request_id = 2;
+}
+
+message CreateSessionResponse {
+  Session session = 1;
+}
+
+message JoinSessionRequest {
+  string session_id = 1;
+}
+
+message JoinSessionResponse {
+  Session session = 1;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+message GetSessionResponse {
+  Session session = 1;
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message FindMatchRequest {
+  string game = 1;
+  string request_id = 2;
+}
+
+message FindMatchResponse {
+  MatchTicket ticket = 1;
+}
+
+message CancelMatchRequest {
+  string game = 1;
+}
+
+message CancelMatchResponse {
+  MatchTicket ticket = 1;
+}
+
+message GetMatchRequest {
+  string game = 1;
+}
+
+message GetMatchResponse {
+  MatchTicket ticket = 1;
+}
+
+message LeaveSessionRequest {
+  string session_id = 1;
+}
+
+message LeaveSessionResponse {
+  optional Session session = 1;
+  bool cancelled = 2;
+}
+
+message GetRatingsRequest {
+  string game = 1;
+  repeated string user_ids = 2;
+}
+
+message GetRatingsResponse {
+  repeated Rating ratings = 1;
+}
+
+message SessionCommand {
+  oneof action {
+    string subscribe = 1;
+    TicTacToeMove move = 2;
+    UndoMove undo = 3;
+    string subscribe_match = 4;
+  }
+}
+
+message TicTacToeMove {
+  uint32 ply = 1;
+  uint32 cell = 2;
+  optional uint32 revision = 3;
+}
+
+message UndoMove {
+  optional uint32 revision = 1;
+}
+
+enum SessionError {
+  SESSION_ERROR_UNSPECIFIED = 0;
+  SESSION_ERROR_INVALID_COMMAND = 1;
+  SESSION_ERROR_NOT_FOUND = 2;
+  SESSION_ERROR_NOT_YOUR_TURN = 3;
+  SESSION_ERROR_STALE_MOVE = 4;
+  SESSION_ERROR_CELL_TAKEN = 5;
+  SESSION_ERROR_NOT_PLAYING = 6;
+  SESSION_ERROR_UNAVAILABLE = 7;
+  SESSION_ERROR_UNDO_DISABLED = 8;
+}
+
+message SessionEvent {
+  oneof update {
+    Session session = 1;
+    SessionError error = 2;
+    MatchTicket match = 3;
+  }
+}

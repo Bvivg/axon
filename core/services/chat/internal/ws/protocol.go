@@ -69,8 +69,9 @@ const (
 )
 
 type Inbound struct {
-	Type   string `json:"type"`
-	RoomID string `json:"room_id,omitempty"`
+	Type   string          `json:"type"`
+	Call   json.RawMessage `json:"call,omitempty"`
+	RoomID string          `json:"room_id,omitempty"`
 
 	ToUserID string `json:"to_user_id,omitempty"`
 
@@ -80,23 +81,28 @@ type Inbound struct {
 
 	Body string `json:"body,omitempty"`
 
-	Kind     string          `json:"kind,omitempty"`
-	Payload  json.RawMessage `json:"payload,omitempty"`
-	UploadID string          `json:"upload_id,omitempty"`
+	Kind      string          `json:"kind,omitempty"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+	UploadID  string          `json:"upload_id,omitempty"`
+	UploadIDs []string        `json:"upload_ids,omitempty"`
 
 	ReplyToID       string `json:"reply_to_id,omitempty"`
 	ForwardedFromID string `json:"forwarded_from_id,omitempty"`
 
 	MessageID string `json:"message_id,omitempty"`
+
+	MessageIDs []string `json:"message_ids,omitempty"`
 }
 
 type Outbound struct {
-	Type string `json:"type"`
+	Type string          `json:"type"`
+	Call json.RawMessage `json:"call,omitempty"`
 
 	Message *Message `json:"message,omitempty"`
 
 	RoomID string `json:"room_id,omitempty"`
 	Seq    int64  `json:"seq,omitempty"`
+	Behind bool   `json:"behind,omitempty"`
 
 	UserID string `json:"user_id,omitempty"`
 
@@ -196,8 +202,8 @@ func ackFrame(m domain.Message) Outbound {
 	return Outbound{Type: TypeAck, ClientID: m.ClientID, Seq: m.Seq, RoomID: m.RoomID.String()}
 }
 
-func subscribedFrame(roomID string, seq int64) Outbound {
-	return Outbound{Type: TypeSubscribed, RoomID: roomID, Seq: seq}
+func subscribedFrame(roomID string, seq int64, behind bool) Outbound {
+	return Outbound{Type: TypeSubscribed, RoomID: roomID, Seq: seq, Behind: behind}
 }
 
 func readFrame(roomID, userID string, seq int64) Outbound {

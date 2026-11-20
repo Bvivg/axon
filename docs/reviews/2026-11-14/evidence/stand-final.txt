@@ -1,0 +1,15 @@
+Original stand-final.txt — service state only
+
+axon-auth-1 running (healthy)
+axon-calls-dns-1 running
+axon-calls-https-1 running
+axon-chat-1 running (healthy)
+axon-coturn-1 running
+axon-game-1 running (healthy)
+axon-gateway-1 running (healthy)
+axon-kafka-1 running (healthy)
+axon-livekit-1 running
+axon-minio-1 running (healthy)
+axon-postgres-1 running (healthy)
+axon-redis-1 running (healthy)
+axon-web-1 running

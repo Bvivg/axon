@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -42,7 +43,10 @@ const (
 	avatarsBucket = "avatars"
 )
 
-var pool *postgres.Pool
+var (
+	pool    *postgres.Pool
+	authDSN string
+)
 
 var (
 	avatarPipeline  *avatar.Pipeline
@@ -100,7 +104,7 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("container port: %w", err)
 	}
 
-	authDSN := fmt.Sprintf("postgres://auth_service:%s@%s:%s/%s?sslmode=disable",
+	authDSN = fmt.Sprintf("postgres://auth_service:%s@%s:%s/%s?sslmode=disable",
 		authPassword, host, port.Port(), database)
 
 	if err := applyMigrations(authDSN); err != nil {
@@ -178,7 +182,7 @@ func startMinio(ctx context.Context) (*tcminio.MinioContainer, error) {
 	}
 
 	avatarPublicURL = "http://" + endpoint
-	avatarPipeline = avatar.NewPipeline(store, avatar.NewURLBuilder(avatarPublicURL, avatarsBucket))
+	avatarPipeline = avatar.NewPipeline(store, avatar.NewURLBuilder(avatarPublicURL, avatarsBucket), http.DefaultClient)
 	return minioContainer, nil
 }
 

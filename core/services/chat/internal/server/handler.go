@@ -37,6 +37,8 @@ type Handler struct {
 	signals  pubsub.SignalBus
 	users    pubsub.UserSignalBus
 	log      *slog.Logger
+
+	pushKey string
 }
 
 var _ chatv1connect.ChatServiceHandler = (*Handler)(nil)
@@ -50,6 +52,8 @@ type Config struct {
 	Signals  pubsub.SignalBus
 	Users    pubsub.UserSignalBus
 	Logger   *slog.Logger
+
+	PushPublicKey string
 }
 
 func New(cfg Config) (*Handler, error) {
@@ -81,6 +85,7 @@ func New(cfg Config) (*Handler, error) {
 		signals:  cfg.Signals,
 		users:    cfg.Users,
 		log:      cfg.Logger,
+		pushKey:  cfg.PushPublicKey,
 	}, nil
 }
 
@@ -221,8 +226,8 @@ func (h *Handler) MarkRead(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	seq := req.Msg.GetSeq()
-	if err := h.svc.MarkRead(ctx, roomID, claims.UserID, seq); err != nil {
+	seq, err := h.svc.MarkRead(ctx, roomID, claims.UserID, req.Msg.GetSeq())
+	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
@@ -236,6 +241,74 @@ func (h *Handler) MarkRead(
 	}
 
 	return connect.NewResponse(&chatv1.MarkReadResponse{}), nil
+}
+
+func (h *Handler) ListMessageReaders(
+	ctx context.Context,
+	req *connect.Request[chatv1.ListMessageReadersRequest],
+) (*connect.Response[chatv1.ListMessageReadersResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	messageID, err := parseID("message_id", req.Msg.GetMessageId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	readers, err := h.svc.ListMessageReaders(ctx, messageID, claims.UserID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	resp := &chatv1.ListMessageReadersResponse{Readers: make([]*chatv1.MessageReader, len(readers))}
+	for i, reader := range readers {
+		resp.Readers[i] = toProtoReader(reader)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *Handler) ForwardMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.ForwardMessagesRequest],
+) (*connect.Response[chatv1.ForwardMessagesResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	sent, err := h.svc.ForwardMessages(ctx, service.ForwardInput{
+		AuthorID:   claims.UserID,
+		MessageIDs: req.Msg.GetMessageIds(),
+		RoomIDs:    req.Msg.GetRoomIds(),
+		Comment:    req.Msg.GetComment(),
+		ClientID:   req.Msg.GetClientId(),
+		Parts:      forwardPartsOf(req.Msg.GetParts()),
+	})
+	h.publishSent(ctx, sent)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&chatv1.ForwardMessagesResponse{Sent: int32(len(sent))}), nil
+}
+
+func (h *Handler) publishSent(ctx context.Context, sent []service.Forwarded) {
+	ctx = context.WithoutCancel(ctx)
+
+	for _, item := range sent {
+		if item.Duplicate {
+			continue
+		}
+		if err := h.bus.Publish(ctx, item.Message); err != nil {
+			h.log.ErrorContext(ctx, "could not fan a forwarded message out",
+				"room_id", item.Message.RoomID, "message_id", item.Message.ID, "error", err)
+		}
+		for _, userID := range item.Message.Revealed {
+			h.signalUser(ctx, userID, pubsub.SignalRoomAdded, item.Message.RoomID)
+		}
+	}
 }
 
 func (h *Handler) GetDirectRoom(
@@ -476,10 +549,11 @@ func (h *Handler) ListMessages(
 	}
 
 	history, err := h.svc.ListMessages(ctx, roomID, claims.UserID, domain.Page{
-		Limit:     int(req.Msg.GetLimit()),
-		BeforeSeq: req.Msg.GetBeforeSeq(),
-		AfterSeq:  req.Msg.GetAfterSeq(),
-		Kinds:     fromProtoMessageKinds(req.Msg.GetKinds()),
+		Limit:               int(req.Msg.GetLimit()),
+		BeforeSeq:           req.Msg.GetBeforeSeq(),
+		AfterSeq:            req.Msg.GetAfterSeq(),
+		Kinds:               fromProtoMessageKinds(req.Msg.GetKinds()),
+		IncludeGroupedItems: req.Msg.GetIncludeGroupedItems(),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
@@ -496,6 +570,33 @@ func (h *Handler) ListMessages(
 	}), nil
 }
 
+func (h *Handler) SearchMessages(
+	ctx context.Context,
+	req *connect.Request[chatv1.SearchMessagesRequest],
+) (*connect.Response[chatv1.SearchMessagesResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	roomID, err := parseID("room_id", req.Msg.GetRoomId())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	found, err := h.svc.SearchMessages(ctx, roomID, claims.UserID, req.Msg.GetQuery())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	messages := make([]*chatv1.Message, 0, len(found))
+	for _, m := range found {
+		messages = append(messages, toProtoMessage(m))
+	}
+
+	return connect.NewResponse(&chatv1.SearchMessagesResponse{Messages: messages}), nil
+}
+
 func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {
 	raw, err := authn.BearerToken(headers)
 	if err != nil {
@@ -510,4 +611,62 @@ func parseID(field, raw string) (uuid.UUID, error) {
 		return uuid.Nil, &domain.ValidationError{Field: field, Reason: "is not a valid id"}
 	}
 	return id, nil
+}
+
+func forwardPartsOf(parts []*chatv1.ForwardPart) []service.ForwardPart {
+	out := make([]service.ForwardPart, len(parts))
+	for i, part := range parts {
+		positions := make([]int, len(part.GetPositions()))
+		for j, position := range part.GetPositions() {
+			positions[j] = int(position)
+		}
+		out[i] = service.ForwardPart{MessageID: part.GetMessageId(), Positions: positions}
+	}
+	return out
+}
+
+func (h *Handler) GetPushKey(
+	ctx context.Context,
+	req *connect.Request[chatv1.GetPushKeyRequest],
+) (*connect.Response[chatv1.GetPushKeyResponse], error) {
+	if _, err := h.authenticate(req.Header()); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	return connect.NewResponse(&chatv1.GetPushKeyResponse{PublicKey: h.pushKey}), nil
+}
+
+func (h *Handler) SubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.SubscribePushRequest],
+) (*connect.Response[chatv1.SubscribePushResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	if h.pushKey == "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("push notifications are not set up"))
+	}
+	if err := h.svc.SubscribePush(ctx, domain.PushSubscription{
+		Endpoint: req.Msg.GetEndpoint(),
+		UserID:   claims.UserID,
+		P256DH:   req.Msg.GetP256Dh(),
+		Auth:     req.Msg.GetAuth(),
+	}); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	return connect.NewResponse(&chatv1.SubscribePushResponse{}), nil
+}
+
+func (h *Handler) UnsubscribePush(
+	ctx context.Context,
+	req *connect.Request[chatv1.UnsubscribePushRequest],
+) (*connect.Response[chatv1.UnsubscribePushResponse], error) {
+	claims, err := h.authenticate(req.Header())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	if err := h.svc.UnsubscribePush(ctx, claims.UserID, req.Msg.GetEndpoint()); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+	return connect.NewResponse(&chatv1.UnsubscribePushResponse{}), nil
 }

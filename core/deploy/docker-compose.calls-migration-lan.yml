@@ -1,0 +1,5 @@
+services:
+  chat:
+    environment:
+      CALLS_MIGRATION_ENABLED: "true"
+      CALLS_MIGRATION_DISABLE_NEW: ${CALLS_MIGRATION_DISABLE_NEW:-false}

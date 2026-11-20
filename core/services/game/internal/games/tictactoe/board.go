@@ -1,5 +1,7 @@
 package tictactoe
 
+import "github.com/bvivg/axon/core/services/game/internal/engine"
+
 const Size = 3
 
 const emptyCell = -1
@@ -28,13 +30,24 @@ var winningLines = [8][3]int{
 	{0, 4, 8}, {2, 4, 6},
 }
 
-func (b board) wins(seat int) bool {
+func (b board) winningLine(seat int) []int {
 	for _, line := range winningLines {
 		if b.Cells[line[0]] == seat && b.Cells[line[1]] == seat && b.Cells[line[2]] == seat {
-			return true
+			return line[:]
 		}
 	}
-	return false
+	return nil
+}
+
+func Position(state engine.State) ([Size * Size]int, []int, error) {
+	var b board
+	if err := engine.DecodeState(state, &b); err != nil {
+		return b.Cells, nil, err
+	}
+	if state.Status == engine.StatusWin {
+		return b.Cells, b.winningLine(state.Winner), nil
+	}
+	return b.Cells, nil, nil
 }
 
 func (b board) full() bool {

@@ -39,6 +39,8 @@ const (
 	DefaultWriteTimeout = 10 * time.Second
 
 	DefaultReadLimit int64 = 32 * 1024
+
+	LargeMessageReadLimit int64 = 1024 * 1024
 )
 
 type Options struct {
@@ -49,6 +51,8 @@ type Options struct {
 	WriteTimeout time.Duration
 
 	ReadLimit int64
+
+	Compression bool
 
 	MessageType MessageType
 

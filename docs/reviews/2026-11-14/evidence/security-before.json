@@ -1,0 +1,11 @@
+{
+  "unauthenticated": 401,
+  "tamperedJWT": 401,
+  "foreignOrigin": 200,
+  "headers": {},
+  "upload": 200,
+  "anonymousAttachment": 200,
+  "nav1440": "Lobby\nG\nL\nChats\nG\nC\nCalls",
+  "nav390": "Lobby\nCalls\nChats\nProfile",
+  "nav768": "Lobby\nCalls\nChats\nProfile"
+}

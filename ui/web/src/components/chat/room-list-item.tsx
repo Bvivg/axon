@@ -1,120 +1,86 @@
 "use client";
 
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { Check, CheckCheck } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 
 import { Avatar } from "@/components/ui/avatar";
+import { ListBadge, ListItem } from "@/components/ui/list-item";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { MessageKind, RoomKind, type Message, type Room } from "@/gen/axon/chat/v1/chat_pb";
 import { useSession } from "@/lib/auth/session";
+import { chatHref, roomAddress } from "@/lib/chat/address";
 import { previewOf } from "@/lib/chat/content";
-import { toWireMessage, useLastMessage } from "@/lib/query/chat";
-import { cn } from "@/lib/utils";
+import { fromTimestamp, profileName, shortID, shortWhen } from "@/lib/format";
+import { toWireMessage } from "@/lib/query/chat";
 
 export function RoomListItem({
   room,
   peerProfile,
   typing = false,
+  active = false,
 }: {
   room: Room;
   peerProfile?: PublicProfile;
   typing?: boolean;
+  active?: boolean;
 }) {
-  const pathname = usePathname();
   const { user } = useSession();
 
   const isGroup = room.kind !== RoomKind.DIRECT;
-  const name = isGroup ? room.name : peerProfile?.displayName || shortID(room.peerUserId);
+  const name = isGroup ? room.name : profileName(peerProfile) || shortID(room.peerUserId);
   const avatarSrc = isGroup ? undefined : peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl;
 
-  const lastMessage = useLastMessage(room.id);
-  const mine = lastMessage.data?.authorId === user?.id && lastMessage.data?.kind !== MessageKind.SYSTEM;
-  const readByOthers =
-    mine && !!lastMessage.data && (room.othersReadSeq ?? BigInt(0)) >= lastMessage.data.seq;
+  const lastMessage = room.lastMessage;
+  const mine = lastMessage?.authorId === user?.id && lastMessage?.kind !== MessageKind.SYSTEM;
+  const readByOthers = mine && !!lastMessage && (room.othersReadSeq ?? BigInt(0)) >= lastMessage.seq;
 
   const unread = Number(room.unreadCount);
 
-  const active = pathname === `/chat/${room.id}`;
-
   return (
-    <Link
-      href={`/chat/${room.id}`}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "flex items-center gap-3 border-b border-border px-4 py-3 transition-colors",
-        active ? "bg-signal/5" : "hover:bg-muted",
-      )}
-    >
-      <span className="relative shrink-0">
-        <Avatar
-          src={avatarSrc}
-          alt=""
-          fallback={name.slice(0, 1).toUpperCase()}
-          className="size-12 text-base"
-          sizes="48px"
-        />
-        {!isGroup && peerProfile?.online ? (
-          <span
-            aria-label="Online"
-            className="absolute bottom-0 right-0 size-3.5 rounded-full border-2 border-background bg-green-500"
+    <ListItem
+      href={chatHref(roomAddress(room, peerProfile))}
+      scroll={false}
+      data-room-id={room.id}
+      active={active}
+      leading={
+        <>
+          <Avatar
+            src={avatarSrc}
+            alt=""
+            fallback={name.slice(0, 1).toUpperCase()}
+            className="size-8 rounded-[10px] text-[11px]"
+            sizes="32px"
           />
-        ) : null}
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium">{name}</span>
-          <time className="shrink-0 text-xs text-muted-foreground">
-            {formatWhen(lastMessage.data?.sentAt)}
-          </time>
-        </div>
-        <div className="flex items-center gap-1">
-          {typing ? (
-            <p className="min-w-0 flex-1 truncate text-sm text-signal">typing…</p>
-          ) : (
-            <>
-              {mine ? (
-                readByOthers ? (
-                  <CheckCheck aria-label="Read" className="size-3.5 shrink-0 text-signal" />
-                ) : (
-                  <Check aria-label="Sent" className="size-3.5 shrink-0 text-muted-foreground" />
-                )
-              ) : null}
-              <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                {previewFor(lastMessage.data)}
-              </p>
-            </>
-          )}
-          {unread > 0 ? (
-            <span className="ml-1 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold text-white">
-              {unread > 99 ? "99+" : unread}
-            </span>
+          {!isGroup && peerProfile?.online ? (
+            <span
+              aria-label="Online"
+              className="absolute bottom-0 right-0 size-3.5 rounded-full border-2 border-background bg-green-500"
+            />
           ) : null}
-        </div>
-      </div>
-    </Link>
+        </>
+      }
+      title={name}
+      meta={<time>{shortWhen(fromTimestamp(lastMessage?.sentAt))}</time>}
+      subtitle={
+        typing ? (
+          <span className="truncate text-signal">typing…</span>
+        ) : (
+          <>
+            {mine ? (
+              readByOthers ? (
+                <CheckCheck aria-label="Read" className="size-3.5 shrink-0 text-signal" />
+              ) : (
+                <Check aria-label="Sent" className="size-3.5 shrink-0" />
+              )
+            ) : null}
+            <span className="truncate">{previewFor(lastMessage)}</span>
+          </>
+        )
+      }
+      trailing={unread > 0 ? <ListBadge>{unread > 99 ? "99+" : unread}</ListBadge> : null}
+    />
   );
 }
 
 function previewFor(message: Message | null | undefined): string {
   return message ? previewOf(toWireMessage(message)) : "No messages yet";
-}
-
-function shortID(id?: string): string {
-  return id ? id.slice(0, 8) : "?";
-}
-
-function formatWhen(ts?: Timestamp): string {
-  if (!ts) return "";
-
-  const at = new Date(Number(ts.seconds) * 1000);
-  if (Number.isNaN(at.getTime())) return "";
-
-  const now = new Date();
-  if (at.toDateString() === now.toDateString()) {
-    return at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  }
-  return at.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" });
 }

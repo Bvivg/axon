@@ -24,8 +24,10 @@ web на Next.js), общающимися через единый API Gateway с
   - gRPC — между внутренними сервисами
   - Connect (buf.build) — на gateway, один handler отдаёт gRPC + gRPC-Web + JSON
   - `coder/websocket` — realtime транспорт (ходы в играх, сообщения чата)
-- **Calling**: LiveKit (SFU) — медиапоток идёт напрямую клиент ↔ LiveKit,
-  минуя gateway; `calling` сервис — тонкий оркестратор (токены, комнаты, вебхуки)
+- **Calling**: модуль Calls внутри Chat (ADR-1, решение владельца 2026-11-03), схема `chat`.
+  1:1 — native WebRTC + coturn; группы — self-hosted LiveKit только в отдельно разрешаемом Рубеже 2.
+  Отдельный `calling` сервис из прежнего roadmap/дерева не создаётся. Граница будущего выделения —
+  `axon.calls.v1` и интерфейсы Store/Signaling/MediaProvider; подробности в `.claude/plans/calls-hybrid.md`.
 - **Auth**: собственный password + refresh flow, плюс OAuth2 (Google, GitHub, Apple),
   RS256/JWKS JWT с локальной верификацией токена (без похода в auth на каждый запрос)
 
@@ -161,7 +163,7 @@ axon/
 
 ## Правила разработки
 
-**Важно: ничего не выполняется локально напрямую — только через Docker (`docker-compose`). Детали в `rules/infra.md`.**
+**Полный dev-запуск — `npm run start:dev` из корня: Next.js и все Go-сервисы работают локально на устройстве, инфраструктурные зависимости — в Docker. Перед передачей пользователю на ревью обязательно собрать и проверить результат в Docker Compose; ссылку для ревью давать только на Docker-стенд. Детали в `.claude/rules/infra.md` и `.claude/rules/testing.md`.**
 
 Детальные конвенции по каждой части стека — в `rules/`:
 - `rules/go-services.md` — структура пакетов, ошибки, тесты, игровой движок

@@ -75,12 +75,36 @@ type Probe struct {
 	HasVideo   bool
 	HasAudio   bool
 	StillImage bool
+
+	VideoCodec string
+	AudioCodec string
+	PixFmt     string
+	FrameRate  float64
+	BitRate    int64
+}
+
+const (
+	maxVideoShortSide = 1080
+	maxVideoFPS       = 30
+	maxRemuxBitRate   = 4_500_000
+)
+
+func (p Probe) Remuxable() bool {
+	long, short := max(p.Width, p.Height), min(p.Width, p.Height)
+	return strings.Contains(p.Format, "mp4") &&
+		p.VideoCodec == "h264" && p.PixFmt == "yuv420p" &&
+		(!p.HasAudio || p.AudioCodec == "aac") &&
+		long <= MaxVideoSide && short <= maxVideoShortSide &&
+		p.FrameRate > 0 && p.FrameRate <= maxVideoFPS+0.5 &&
+		p.BitRate > 0 && p.BitRate <= maxRemuxBitRate
 }
 
 type probeOutput struct {
 	Streams []struct {
 		CodecType   string `json:"codec_type"`
 		CodecName   string `json:"codec_name"`
+		PixFmt      string `json:"pix_fmt"`
+		FrameRate   string `json:"avg_frame_rate"`
 		Width       int    `json:"width"`
 		Height      int    `json:"height"`
 		Disposition struct {
@@ -90,6 +114,7 @@ type probeOutput struct {
 	Format struct {
 		FormatName string `json:"format_name"`
 		Duration   string `json:"duration"`
+		BitRate    string `json:"bit_rate"`
 	} `json:"format"`
 }
 
@@ -112,6 +137,9 @@ func (t *Tools) Probe(ctx context.Context, path, demuxers string) (Probe, error)
 	}
 
 	probe := Probe{Format: parsed.Format.FormatName}
+	if bitRate, err := strconv.ParseInt(parsed.Format.BitRate, 10, 64); err == nil {
+		probe.BitRate = bitRate
+	}
 	if seconds, err := strconv.ParseFloat(parsed.Format.Duration, 64); err == nil && !math.IsNaN(seconds) && seconds > 0 {
 		probe.Duration = time.Duration(seconds * float64(time.Second))
 	}
@@ -124,7 +152,12 @@ func (t *Tools) Probe(ctx context.Context, path, demuxers string) (Probe, error)
 			probe.HasVideo = true
 			probe.Width, probe.Height = s.Width, s.Height
 			probe.StillImage = isStillCodec(s.CodecName)
+			probe.VideoCodec, probe.PixFmt = s.CodecName, s.PixFmt
+			probe.FrameRate = parseRate(s.FrameRate)
 		case "audio":
+			if !probe.HasAudio {
+				probe.AudioCodec = s.CodecName
+			}
 			probe.HasAudio = true
 		}
 	}
@@ -144,7 +177,9 @@ func (t *Tools) TranscodeVideo(ctx context.Context, in, out string) error {
 		"-map", "0:v:0", "-map", "0:a:0?",
 		"-sn", "-dn",
 		"-vf", scale,
-		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+		"-fpsmax", strconv.Itoa(maxVideoFPS),
+		"-c:v", "libx264", "-preset", "medium", "-crf", "25",
+		"-maxrate", "4M", "-bufsize", "8M",
 		"-c:a", "aac", "-b:a", "128k", "-ac", "2",
 		"-threads", "2",
 		"-map_metadata", "-1", "-map_chapters", "-1",
@@ -156,6 +191,41 @@ func (t *Tools) TranscodeVideo(ctx context.Context, in, out string) error {
 		return fmt.Errorf("%w: transcode video: %w", ErrUnsupported, err)
 	}
 	return nil
+}
+
+func (t *Tools) RemuxVideo(ctx context.Context, in, out string) error {
+	_, err := t.run(ctx, t.ffmpeg,
+		"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+		"-protocol_whitelist", "file",
+		"-format_whitelist", VideoDemuxers,
+		"-i", "file:"+in,
+		"-map", "0:v:0", "-map", "0:a:0?",
+		"-sn", "-dn",
+		"-c", "copy",
+		"-map_metadata", "-1", "-map_chapters", "-1",
+		"-movflags", "+faststart",
+		"-f", "mp4", "file:"+out,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: remux video: %w", ErrUnsupported, err)
+	}
+	return nil
+}
+
+func parseRate(raw string) float64 {
+	num, den, found := strings.Cut(raw, "/")
+	n, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0
+	}
+	if !found {
+		return n
+	}
+	d, err := strconv.ParseFloat(den, 64)
+	if err != nil || d == 0 {
+		return 0
+	}
+	return n / d
 }
 
 func (t *Tools) Poster(ctx context.Context, in, out string, at time.Duration) error {

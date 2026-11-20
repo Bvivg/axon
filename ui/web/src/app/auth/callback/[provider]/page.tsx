@@ -13,6 +13,7 @@ import { authClient } from "@/lib/connect/clients";
 import { describe, errorCode } from "@/lib/errors";
 import { providerLabels, startOAuth, takePendingFlow, toProvider } from "@/lib/auth/oauth";
 import { useSession } from "@/lib/auth/session";
+import { HistoryMode, navigateTo } from "@/lib/chat/address";
 
 interface Failure {
   title: string;
@@ -23,7 +24,7 @@ export default function OAuthCallbackPage() {
   const params = useParams<{ provider: string }>();
   const search = useSearchParams();
   const router = useRouter();
-  const { signedIn } = useSession();
+  const { beginSignIn, signedIn } = useSession();
 
   const [failure, setFailure] = useState<Failure | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -73,6 +74,7 @@ export default function OAuthCallbackPage() {
       }
 
       try {
+        beginSignIn();
         const displayName = search.get("name") ?? undefined;
         const result = await authClient.completeOAuth({ provider: kind, code, state, displayName });
         if (!result.user) {
@@ -80,12 +82,12 @@ export default function OAuthCallbackPage() {
         }
 
         signedIn(result.user, result.tokens);
-        router.replace(pending.returnTo || "/profile");
+        navigateTo(router, pending.returnTo || "/profile", HistoryMode.Replace);
       } catch (err) {
         setFailure({ title: "Sign-in failed", detail: `[${errorCode(err)}] ${describe(err)}` });
       }
     })();
-  }, [slug, provider, search, router, signedIn]);
+  }, [slug, provider, search, router, beginSignIn, signedIn]);
 
   const retry = async () => {
     setRetrying(true);

@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -190,6 +191,9 @@ func (f *fakeRooms) ListMessages(
 			if m.Seq > page.AfterSeq {
 				after = append(after, m)
 			}
+		}
+		if page.Limit > 0 && len(after) > page.Limit {
+			return service.History{Messages: after[:page.Limit], HasMore: true}, nil
 		}
 		return service.History{Messages: after}, nil
 	}
@@ -608,8 +612,8 @@ func TestSubscribingWithAPositionCatchesUp(t *testing.T) {
 	bc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String(), Since: 1})
 
 	subscribed := bc.expect(ws.TypeSubscribed)
-	if subscribed.Seq != 3 {
-		t.Errorf("the room reports position %d, want 3", subscribed.Seq)
+	if subscribed.Seq != 3 || subscribed.Behind {
+		t.Errorf("the room reports position %d behind=%v, want 3 caught up", subscribed.Seq, subscribed.Behind)
 	}
 
 	for _, want := range []string{"two", "three"} {
@@ -624,6 +628,41 @@ func TestSubscribingWithAPositionCatchesUp(t *testing.T) {
 
 	if got := bc.expect(ws.TypeMessage); got.Message.Body != "four" {
 		t.Errorf("live delivery produced %q, want four", got.Message.Body)
+	}
+}
+
+func TestSubscribingTooFarBehindAsksForAFreshPageInsteadOfAPartialCatchUp(t *testing.T) {
+	h := newHarness(t)
+
+	roomID := uuid.New()
+	alice, bob := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+
+	ac := h.connect(t, alice)
+	ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+	ac.expect(ws.TypeSubscribed)
+
+	sent := domain.MaxPageSize + 2
+	for i := range sent {
+		ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: fmt.Sprintf("message %d", i+1)})
+		ac.expect(ws.TypeAck)
+		ac.expect(ws.TypeMessage)
+	}
+
+	bc := h.connect(t, bob)
+	bc.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String(), Since: 1})
+
+	subscribed := bc.expect(ws.TypeSubscribed)
+	if !subscribed.Behind || subscribed.Seq != int64(sent) {
+		t.Fatalf("subscribed behind=%v at %d, want behind at %d", subscribed.Behind, subscribed.Seq, sent)
+	}
+
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "live"})
+	ac.expect(ws.TypeAck)
+
+	if got := bc.expect(ws.TypeMessage); got.Message.Body != "live" {
+		t.Errorf("the first frame after falling behind is %q, want the live message", got.Message.Body)
 	}
 }
 
@@ -851,6 +890,13 @@ func TestAFirstDirectMessageAnnouncesTheNewRoomToBothPeople(t *testing.T) {
 		got := c.expect(ws.TypeRoomAdded)
 		if got.RoomID != ack.RoomID {
 			t.Errorf("%s was told about room %q, want %q", name, got.RoomID, ack.RoomID)
+		}
+		if c == bc {
+			if got.Message == nil || got.Message.Body != "hi bob" || got.Message.ClientID != "" || got.Message.AuthorID != alice.String() {
+				t.Errorf("bob got unexpected notification preview: %+v", got.Message)
+			}
+		} else if got.Message != nil {
+			t.Errorf("sender's other tab got a notification preview: %+v", got.Message)
 		}
 	}
 

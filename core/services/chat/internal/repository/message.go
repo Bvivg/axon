@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
+	"github.com/bvivg/axon/core/shared/pkg/postgres"
 )
 
 const messageColumns = `id, room_id, author_id, body, client_id, seq, sent_at, kind, payload, reply_to_id, forwarded_from_id,
@@ -72,6 +73,17 @@ func (r *Repository) AppendMessage(ctx context.Context, m domain.Message) (domai
 			stored, duplicate = existing, true
 			return nil
 		}
+
+		for position, uploadID := range m.AlbumUploads {
+			const link = `INSERT INTO message_uploads (message_id, position, upload_id) VALUES ($1, $2, $3)`
+			if _, err := tx.q.Exec(ctx, link, stored.ID, position, uploadID); err != nil {
+				if isForeignKeyViolation(err, "message_uploads_upload_id_fkey") {
+					return domain.ErrUploadNotFound
+				}
+				return fmt.Errorf("repository: link album upload: %w", err)
+			}
+		}
+		stored.AlbumUploads = m.AlbumUploads
 
 		revealed, err := tx.revealRoom(ctx, m.RoomID)
 		if err != nil {
@@ -180,38 +192,38 @@ func (r *Repository) ListMessages(
 	roomID, callerID uuid.UUID,
 	page domain.Page,
 ) ([]domain.Message, bool, error) {
-
-	limit := page.Limit + 1
+	const kindFilter = `
+		AND (cardinality($5::text[]) = 0 OR (m.deleted_at IS NULL AND (
+			m.kind = ANY($5::text[]) OR ($6 AND m.kind = 'album' AND EXISTS (
+				SELECT 1 FROM unnest($5::text[]) AS wanted(kind)
+				WHERE m.payload @> jsonb_build_object('items', jsonb_build_array(jsonb_build_object('kind', wanted.kind)))
+			))
+		)))`
 
 	kinds := make([]string, 0, len(page.Kinds))
 	for _, kind := range page.Kinds {
 		kinds = append(kinds, string(kind))
 	}
 
-	var (
-		query string
-		args  []any
-	)
+	var query string
+	cursor := page.AfterSeq
 
 	if page.Backward() {
 		query = messageWithReply + `
 			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
-			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND ($2 = 0 OR m.seq < $2)
-				AND (cardinality($5::text[]) = 0 OR (m.kind = ANY($5::text[]) AND m.deleted_at IS NULL))
+			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND ($2 = 0 OR m.seq < $2)` + kindFilter + `
 			ORDER BY m.seq DESC
 			LIMIT $3`
-		args = []any{roomID, page.BeforeSeq, limit, callerID, kinds}
+		cursor = page.BeforeSeq
 	} else {
 		query = messageWithReply + `
 			JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $4
-			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND m.seq > $2
-				AND (cardinality($5::text[]) = 0 OR (m.kind = ANY($5::text[]) AND m.deleted_at IS NULL))
+			WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq AND m.seq > $2` + kindFilter + `
 			ORDER BY m.seq ASC
 			LIMIT $3`
-		args = []any{roomID, page.AfterSeq, limit, callerID, kinds}
 	}
 
-	rows, err := r.q.Query(ctx, query, args...)
+	rows, err := r.q.Query(ctx, query, roomID, cursor, page.Limit+1, callerID, kinds, page.IncludeGroupedItems)
 	if err != nil {
 		return nil, false, fmt.Errorf("repository: list messages: %w", err)
 	}
@@ -239,6 +251,40 @@ func (r *Repository) ListMessages(
 	}
 
 	return messages, hasMore, nil
+}
+
+func (r *Repository) SearchMessages(
+	ctx context.Context,
+	roomID, callerID uuid.UUID,
+	query string,
+	limit int,
+) ([]domain.Message, error) {
+	const q = messageWithReply + `
+		JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $2
+		WHERE m.room_id = $1 AND m.seq > rm.cleared_through_seq
+			AND m.deleted_at IS NULL AND m.kind <> 'system' AND m.body ILIKE $3
+		ORDER BY m.seq DESC
+		LIMIT $4`
+
+	rows, err := r.q.Query(ctx, q, roomID, callerID, postgres.Containing(query), limit)
+	if err != nil {
+		return nil, fmt.Errorf("repository: search messages: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]domain.Message, 0)
+	for rows.Next() {
+		m, err := scanMessageWithReply(rows)
+		if err != nil {
+			return nil, fmt.Errorf("repository: scan message: %w", err)
+		}
+		messages = append(messages, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: search messages: %w", err)
+	}
+
+	return messages, nil
 }
 
 type scannable interface {
@@ -336,4 +382,62 @@ func reverse(messages []domain.Message) {
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
+}
+
+func (r *Repository) AlbumUploads(ctx context.Context, messageID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.q.Query(ctx, `SELECT upload_id FROM message_uploads WHERE message_id = $1 ORDER BY position`, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("repository: album uploads: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("repository: scan album upload: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: album uploads: %w", err)
+	}
+	return ids, nil
+}
+
+func (r *Repository) LastMessages(ctx context.Context, roomIDs []uuid.UUID, userID uuid.UUID) (map[uuid.UUID]domain.Message, error) {
+	last := make(map[uuid.UUID]domain.Message, len(roomIDs))
+	if len(roomIDs) == 0 {
+		return last, nil
+	}
+
+	const query = `
+		SELECT m.id, m.room_id, m.author_id, m.body, m.client_id, m.seq, m.sent_at, m.kind, m.payload, m.reply_to_id,
+		       m.forwarded_from_id, m.forward_origin_author_id, m.upload_id, m.edited_at, m.deleted_at
+		FROM room_members rm
+		CROSS JOIN LATERAL (
+		    SELECT * FROM messages m
+		    WHERE m.room_id = rm.room_id AND m.seq > rm.cleared_through_seq
+		    ORDER BY m.seq DESC
+		    LIMIT 1
+		) m
+		WHERE rm.user_id = $2 AND rm.room_id = ANY($1)`
+
+	rows, err := r.q.Query(ctx, query, roomIDs, userID)
+	if err != nil {
+		return nil, fmt.Errorf("repository: last messages: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, fmt.Errorf("repository: scan last message: %w", err)
+		}
+		last[m.RoomID] = m
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: last messages: %w", err)
+	}
+	return last, nil
 }

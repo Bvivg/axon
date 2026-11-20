@@ -2,7 +2,6 @@
 
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import {
-  Hash,
   IdCard,
   LogOut,
   MonitorSmartphone,
@@ -15,21 +14,14 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import { openComposer } from "@/components/chat/composer-store";
-import { useRoomDirectory, type RoomEntry } from "@/components/chat/use-room-directory";
-import { navItems } from "@/components/nav/items";
+import { showChatSidebar, SidebarMode } from "@/components/chat/sidebar-store";
+import { adminNavItems, chatNavItems, navItems } from "@/components/nav/items";
 import { setPaletteOpen, usePaletteOpen } from "@/components/nav/palette-store";
-import { Avatar } from "@/components/ui/avatar";
 import { Kbd, KbdCombo } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { LoadingDots, PresenceDot } from "@/components/ui/status";
-import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { useSession } from "@/lib/auth/session";
-import { fromTimestamp, initials, lastSeen } from "@/lib/format";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
+import { navigateTo } from "@/lib/chat/address";
 import { useModKey } from "@/lib/hooks/use-is-mac";
-import { useDirectRoomLookup } from "@/lib/query/chat";
-import { useSearchUsers } from "@/lib/query/people";
 import { Theme, toggleTheme, useResolvedTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -43,9 +35,6 @@ interface Command {
   keywords?: string;
   run: () => void;
 }
-
-const suggestedLimit = 3;
-const roomLimit = 6;
 
 export function CommandPalette() {
   const open = usePaletteOpen();
@@ -71,64 +60,25 @@ export function CommandPalette() {
 function PaletteBody() {
   const router = useRouter();
   const mod = useModKey();
-  const { user, signOut } = useSession();
-  const { entries } = useRoomDirectory();
+  const { signOut, user } = useSession();
+  const admin = user?.roles.includes("admin");
   const resolved = useResolvedTheme();
-  const lookup = useDirectRoomLookup();
 
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const needle = query.trim().toLowerCase();
-  const debounced = useDebouncedValue(needle, 250);
-  const people = useSearchUsers(debounced);
 
   const commands = useMemo<Command[]>(() => {
     const go = (href: string) => () => {
-      router.push(href);
+      navigateTo(router, href);
       setPaletteOpen(false);
     };
-
-    const roomCommand = (group: string) => (entry: RoomEntry): Command => ({
-      id: `room-${entry.room.id}`,
-      group,
-      label: entry.direct ? entry.label : `#${entry.label}`,
-      icon: entry.direct ? (
-        <PersonMark name={entry.label} src={entry.avatarSrc} online={!!entry.peer?.online} />
-      ) : (
-        <Hash aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.5} />
-      ),
-      hint: entry.unread > 0 ? `${entry.unread} unread` : undefined,
-      run: go(`/chat/${entry.room.id}`),
-    });
-
-    const personCommand = (profile: PublicProfile): Command => ({
-      id: `person-${profile.id}`,
-      group: "People",
-      label: profile.displayName || "No display name",
-      icon: (
-        <PersonMark
-          name={profile.displayName || "?"}
-          src={profile.avatarUrls?.small || profile.avatarUrl}
-          online={profile.online}
-        />
-      ),
-      hint: profile.online ? "online" : lastSeen(fromTimestamp(profile.lastSeenAt)),
-      run: () => {
-        lookup.mutate(profile.id, {
-          onSuccess: (room) => {
-            router.push(room ? `/chat/${room.id}` : `/chat/new/${profile.id}`);
-            setPaletteOpen(false);
-          },
-        });
-      },
-    });
-
     const icon = (Icon: LucideIcon) => (
       <Icon aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.5} />
     );
 
     const navigation: Command[] = [
-      ...navItems.map((item) => ({
+      ...[...navItems, ...chatNavItems, ...(admin ? adminNavItems : [])].map((item) => ({
         id: `go-${item.href}`,
         group: "Go to",
         label: item.label,
@@ -144,9 +94,13 @@ function PaletteBody() {
     const other = resolved === Theme.Dark ? Theme.Light : Theme.Dark;
     const compose = () => {
       setPaletteOpen(false);
-      openComposer();
+      showChatSidebar(router, SidebarMode.Compose);
     };
     const actions: Command[] = [
+      { id: "search-chats", group: "Actions", label: "Search chats and people", icon: icon(Search), keywords: "contacts messages", run: () => {
+        setPaletteOpen(false);
+        showChatSidebar(router, SidebarMode.Search);
+      } },
       { id: "new-chat", group: "Actions", label: "New chat", icon: icon(SquarePen), keywords: "message direct person contact", run: compose },
       {
         id: "toggle-theme",
@@ -156,7 +110,10 @@ function PaletteBody() {
         hint: `${resolved} → ${other}`,
         keys: [mod, "⇧", "L"],
         keywords: "dark light",
-        run: () => toggleTheme(),
+        run: () => {
+          toggleTheme();
+          setPaletteOpen(false);
+        },
       },
       { id: "sign-out", group: "Preferences", label: "Sign out", icon: icon(LogOut), keywords: "log out", run: () => {
         setPaletteOpen(false);
@@ -164,27 +121,13 @@ function PaletteBody() {
       } },
     ];
 
-    const matches = (command: Command) =>
-      !needle || `${command.label} ${command.keywords ?? ""}`.toLowerCase().includes(needle);
+    const matches = (command: Command) => {
+      const haystack = `${command.label} ${command.keywords ?? ""}`.toLowerCase();
+      return needle.split(/\s+/).every((word) => haystack.includes(word));
+    };
 
-    if (!needle) {
-      const suggested = entries
-        .filter((entry) => entry.unread > 0)
-        .slice(0, suggestedLimit)
-        .map(roomCommand("Suggested"));
-      return [...suggested, ...navigation, ...actions];
-    }
-
-    const rooms = entries
-      .filter((entry) => entry.label.toLowerCase().includes(needle.replace(/^#/, "")))
-      .slice(0, roomLimit)
-      .map(roomCommand("Chats"));
-    const found = (people.data ?? [])
-      .filter((profile) => profile.id !== user?.id)
-      .map(personCommand);
-
-    return [...rooms, ...found, ...navigation.filter(matches), ...actions.filter(matches)];
-  }, [entries, needle, people.data, user?.id, resolved, mod, router, signOut, lookup]);
+    return [...navigation, ...actions].filter(matches);
+  }, [admin, needle, resolved, mod, router, signOut]);
 
   const current = Math.min(active, Math.max(commands.length - 1, 0));
   const activeID = commands[current] ? `palette-${commands[current].id}` : undefined;
@@ -196,6 +139,7 @@ function PaletteBody() {
   }, [activeID]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || !commands.length) return;
     const last = commands.length - 1;
     switch (event.key) {
       case "ArrowDown":
@@ -222,7 +166,6 @@ function PaletteBody() {
   };
 
   const groups = groupBy(commands);
-  const searching = needle !== "" && (people.isFetching || debounced !== needle);
 
   return (
     <>
@@ -234,8 +177,8 @@ function PaletteBody() {
           aria-controls="palette-list"
           aria-autocomplete="list"
           aria-activedescendant={activeID}
-          aria-label="Search chats, people and commands"
-          placeholder="Type a command or search chats and people…"
+          aria-label="Search commands"
+          placeholder="Type a command…"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -244,10 +187,9 @@ function PaletteBody() {
           onKeyDown={onKeyDown}
           className="min-w-0 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground focus-visible:outline-none"
         />
-        {searching ? <LoadingDots className="text-muted-foreground" label="Searching" /> : null}
         <BaseDialog.Close
           aria-label="Close"
-          className="inline-flex h-[22px] items-center rounded-sm border border-border bg-muted px-1.5 font-mono text-2xs text-muted-foreground"
+          className="inline-flex h-7 min-w-7 items-center justify-center rounded-sm border border-border bg-muted px-1.5 font-mono text-2xs text-muted-foreground"
         >
           esc
         </BaseDialog.Close>
@@ -257,12 +199,12 @@ function PaletteBody() {
         <div id="palette-list" role="listbox" aria-label="Results" className="p-1.5">
           {commands.length === 0 ? (
             <p className="px-2.5 py-8 text-center text-sm text-muted-foreground">
-              {searching ? "Searching…" : `Nothing matches “${query.trim()}”`}
+              {`Nothing matches “${query.trim()}”`}
             </p>
           ) : (
             groups.map(([group, items]) => (
-              <div key={group} role="group" aria-labelledby={`palette-group-${group}`} className="flex flex-col gap-0.5">
-                <div id={`palette-group-${group}`} className="eyebrow px-2.5 pt-2.5 pb-1">
+              <div key={group} role="group" aria-label={group} className="flex flex-col gap-0.5">
+                <div aria-hidden className="eyebrow px-2.5 pt-2.5 pb-1">
                   {group}
                 </div>
                 {items.map((command) => {
@@ -316,14 +258,6 @@ function PaletteBody() {
         </span>
       </div>
     </>
-  );
-}
-
-function PersonMark({ name, src, online }: { name: string; src?: string; online: boolean }) {
-  return (
-    <Avatar src={src} alt="" fallback={initials(name)} sizes="16px" className="size-4 text-[8px]">
-      <PresenceDot online={online} className="size-[7px] ring-popover" />
-    </Avatar>
   );
 }
 

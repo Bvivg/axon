@@ -4,6 +4,7 @@ package integration
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -21,8 +22,9 @@ func TestRegistrationRollsBackOnADuplicateEmail(t *testing.T) {
 	first := createUser(t, repo)
 
 	_, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: first.Email,
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    first.Email,
 	}, hash)
 	if !errors.Is(err, domain.ErrEmailTaken) {
 		t.Fatalf("err = %v, want ErrEmailTaken", err)
@@ -42,7 +44,7 @@ func TestEmailUniquenessIsEnforcedByTheDatabase(t *testing.T) {
 
 	first := createUser(t, repo)
 
-	_, err := repo.CreateUser(ctx, domain.User{ID: uuid.New(), Email: first.Email})
+	_, err := repo.CreateUser(ctx, domain.User{ID: uuid.New(), Username: newUsername(), Email: first.Email})
 	if !errors.Is(err, domain.ErrEmailTaken) {
 		t.Fatalf("err = %v, want ErrEmailTaken", err)
 	}
@@ -59,8 +61,9 @@ func TestOauthRegistrationLinksTheAccountAtomically(t *testing.T) {
 	}
 
 	created, err := repo.CreateUserWithOauthAccount(ctx, domain.User{
-		ID:    uuid.New(),
-		Email: account.Email,
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    account.Email,
 	}, account)
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -131,8 +134,9 @@ func createUser(t *testing.T, repo *repository.Repository) domain.User {
 	t.Helper()
 
 	user, err := repo.CreateUserWithPassword(t.Context(), domain.User{
-		ID:    uuid.New(),
-		Email: "user-" + uuid.NewString() + "@axon.test",
+		ID:       uuid.New(),
+		Username: newUsername(),
+		Email:    "user-" + uuid.NewString() + "@axon.test",
 	}, "$argon2id$v=19$m=65536,t=3,p=2$c29tZXNhbHQ$aGFzaA")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
@@ -149,4 +153,8 @@ func countUsers(t *testing.T, email string) int {
 		t.Fatalf("count users: %v", err)
 	}
 	return n
+}
+
+func newUsername() string {
+	return "u_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:20]
 }

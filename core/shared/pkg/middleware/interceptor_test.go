@@ -250,7 +250,7 @@ func scrapeMetrics(t *testing.T, m *middleware.Metrics) string {
 	t.Helper()
 
 	rec := httptest.NewRecorder()
-	m.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	m.Handler().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("metrics handler status = %d, want 200", rec.Code)

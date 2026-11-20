@@ -32,8 +32,9 @@
 - Оркестрация `docker compose` целиком (`up`/`down`/`build` по всему стеку,
   миграции) — через Bash по `rules/infra.md`; `docker`-MCP управляет только
   уже существующими контейнерами, не compose-файлами.
-- Действия, которых у MCP нет вовсе (например `buf generate`, `go test`) —
-  как и раньше, через Bash/Docker.
+- Действия, которых у MCP нет вовсе (например `buf generate`, `go test`,
+  `npm run dev`) — через Bash локально при разработке; Docker-проверки перед
+  ревью — по `.claude/rules/infra.md` и `.claude/rules/testing.md`.
 
 ## Поддержка актуальности
 При добавлении или удалении MCP-сервера в `.mcp.json` — тем же изменением

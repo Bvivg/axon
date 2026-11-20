@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -286,25 +287,84 @@ func (s *fakeStore) HideRoom(_ context.Context, roomID, userID uuid.UUID) error 
 	return nil
 }
 
-func (s *fakeStore) MarkRead(_ context.Context, roomID, userID uuid.UUID, seq int64) error {
+func (s *fakeStore) MarkRead(_ context.Context, roomID, userID uuid.UUID, seq int64) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.failWith != nil {
-		return s.failWith
+		return 0, s.failWith
 	}
 
 	member, ok := s.members[roomID][userID]
 	if !ok {
-		return domain.ErrNotAMember
+		return 0, domain.ErrNotAMember
 	}
 
+	seq = min(seq, int64(len(s.messages[roomID])))
 	if seq > member.LastReadSeq {
 		member.LastReadSeq = seq
 		s.members[roomID][userID] = member
 	}
 
-	return nil
+	return member.LastReadSeq, nil
+}
+
+func (s *fakeStore) UnreadCount(_ context.Context, roomID, userID uuid.UUID) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	member := s.members[roomID][userID]
+	var unread int64
+	for _, m := range s.messages[roomID] {
+		if m.Seq > max(member.LastReadSeq, member.ClearedThroughSeq) {
+			unread++
+		}
+	}
+	return unread, nil
+}
+
+func (s *fakeStore) AlbumUploads(_ context.Context, messageID uuid.UUID) ([]uuid.UUID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, messages := range s.messages {
+		for _, m := range messages {
+			if m.ID == messageID {
+				return m.AlbumUploads, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (s *fakeStore) LastMessages(_ context.Context, roomIDs []uuid.UUID, _ uuid.UUID) (map[uuid.UUID]domain.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	last := map[uuid.UUID]domain.Message{}
+	for _, id := range roomIDs {
+		if messages := s.messages[id]; len(messages) > 0 {
+			last[id] = messages[len(messages)-1]
+		}
+	}
+	return last, nil
+}
+
+func (s *fakeStore) SavePushSubscription(context.Context, domain.PushSubscription) error { return nil }
+
+func (s *fakeStore) DeletePushSubscription(context.Context, uuid.UUID, string) error { return nil }
+
+func (s *fakeStore) Readers(_ context.Context, roomID, authorID uuid.UUID, seq int64) ([]domain.Reader, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	readers := []domain.Reader{}
+	for id, member := range s.members[roomID] {
+		if id != authorID && member.LastReadSeq >= seq {
+			readers = append(readers, domain.Reader{UserID: id})
+		}
+	}
+	return readers, nil
 }
 
 func (s *fakeStore) AppendMessage(_ context.Context, m domain.Message) (domain.Message, bool, error) {
@@ -582,4 +642,35 @@ func (s *fakeStore) changeMessage(id uuid.UUID, change func(*domain.Message)) (d
 		}
 	}
 	return domain.Message{}, domain.ErrMessageNotFound
+}
+
+func (s *fakeStore) SearchMessages(
+	_ context.Context,
+	roomID, callerID uuid.UUID,
+	query string,
+	limit int,
+) ([]domain.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+
+	clearedThrough := s.members[roomID][callerID].ClearedThroughSeq
+	needle := strings.ToLower(query)
+
+	var found []domain.Message
+	for _, m := range slices.Backward(s.messages[roomID]) {
+		if len(found) == limit {
+			break
+		}
+		if m.Seq <= clearedThrough || m.Deleted() || m.Kind == domain.MessageKindSystem {
+			continue
+		}
+		if strings.Contains(strings.ToLower(m.Body), needle) {
+			found = append(found, m)
+		}
+	}
+	return found, nil
 }

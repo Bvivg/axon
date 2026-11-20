@@ -24,6 +24,7 @@ func TestOauthAccountHasNoCredential(t *testing.T) {
 
 	created, err := repo.CreateUserWithOauthAccount(ctx, domain.User{
 		ID:            uuid.New(),
+		Username:      newUsername(),
 		Email:         account.Email,
 		EmailVerified: true,
 	}, account)
@@ -129,6 +130,7 @@ func TestCreatingAnAccountForATakenIdentityLeavesNothingBehind(t *testing.T) {
 
 	_, err := repo.CreateUserWithOauthAccount(ctx, domain.User{
 		ID:            uuid.New(),
+		Username:      newUsername(),
 		Email:         email,
 		EmailVerified: true,
 	}, domain.OauthAccount{
@@ -207,6 +209,7 @@ func TestConcurrentFirstSignInsProduceOneAccount(t *testing.T) {
 			<-start
 			_, err := repo.CreateUserWithOauthAccount(ctx, domain.User{
 				ID:            uuid.New(),
+				Username:      newUsername(),
 				Email:         email,
 				EmailVerified: true,
 			}, domain.OauthAccount{

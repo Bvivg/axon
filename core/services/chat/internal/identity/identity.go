@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,16 +11,37 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/internalrpc"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 
+	"github.com/bvivg/axon/core/services/chat/internal/calls"
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
+func (r *Resolver) ActiveFamily(ctx context.Context, token string, familyID uuid.UUID) error {
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+	req := connect.NewRequest(&authv1.ListSessionsRequest{IncludePresence: proto.Bool(false)})
+	req.Header().Set(authn.Header, "Bearer "+token)
+	response, err := r.client.ListSessions(ctx, req)
+	if err != nil {
+		return fmt.Errorf("identity: active sessions: %w", err)
+	}
+	for _, session := range response.Msg.GetSessions() {
+		if session.GetId() == familyID.String() {
+			return nil
+		}
+	}
+	return calls.ErrForbidden
+}
+
 type Resolver struct {
+	media   authv1connect.SessionControlServiceClient
 	client  authv1connect.AuthServiceClient
 	timeout time.Duration
 	log     *slog.Logger
@@ -51,12 +73,28 @@ func New(cfg Config) (*Resolver, error) {
 	}
 
 	return &Resolver{
+		media: authv1connect.NewSessionControlServiceClient(cfg.HTTPClient, cfg.BaseURL),
 		client: authv1connect.NewAuthServiceClient(cfg.HTTPClient, cfg.BaseURL,
 			connect.WithInterceptors(middleware.NewCorrelationInterceptor()),
 		),
 		timeout: timeout,
 		log:     cfg.Logger,
 	}, nil
+}
+
+func (r *Resolver) CheckMediaFamily(ctx context.Context, userID, familyID uuid.UUID, key string) error {
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+	req := connect.NewRequest(&authv1.CheckFamilyRequest{UserId: userID.String(), FamilyId: familyID.String()})
+	req.Header().Set(internalrpc.Header, key)
+	response, err := r.media.CheckFamily(ctx, req)
+	if err != nil {
+		return err
+	}
+	if !response.Msg.Active {
+		return calls.ErrForbidden
+	}
+	return nil
 }
 
 func (r *Resolver) UpdateLastSeen(ctx context.Context, accessToken string) {
@@ -92,7 +130,8 @@ func (r *Resolver) DisplayName(ctx context.Context, accessToken string) string {
 		return ""
 	}
 
-	return resp.Msg.GetUser().GetDisplayName()
+	user := resp.Msg.GetUser()
+	return cmp.Or(user.GetDisplayName(), user.GetUsername())
 }
 
 func (r *Resolver) Profiles(ctx context.Context, accessToken string, ids []uuid.UUID) (map[uuid.UUID]string, error) {
@@ -122,7 +161,7 @@ func (r *Resolver) Profiles(ctx context.Context, accessToken string, ids []uuid.
 		if err != nil {
 			continue
 		}
-		names[id] = user.GetDisplayName()
+		names[id] = cmp.Or(user.GetDisplayName(), user.GetUsername())
 	}
 	for _, id := range ids {
 		if _, ok := names[id]; !ok {
@@ -131,6 +170,14 @@ func (r *Resolver) Profiles(ctx context.Context, accessToken string, ids []uuid.
 	}
 
 	return names, nil
+}
+
+func (r *Resolver) CheckCallPeer(ctx context.Context, accessToken string, peer uuid.UUID) error {
+	_, err := r.Profiles(ctx, accessToken, []uuid.UUID{peer})
+	if errors.Is(err, domain.ErrUnknownUser) {
+		return calls.ErrNotFound
+	}
+	return err
 }
 
 func BearerFromHeader(h http.Header) string {

@@ -82,6 +82,9 @@ func (s *fakeStore) CreateUserWithPassword(_ context.Context, u domain.User, pas
 	if _, taken := s.usersByMail[u.Email]; taken {
 		return domain.User{}, domain.ErrEmailTaken
 	}
+	if s.usernameTakenLocked(u.Username, u.ID) {
+		return domain.User{}, domain.ErrUsernameTaken
+	}
 
 	now := time.Now().UTC()
 	u.CreatedAt, u.UpdatedAt = now, now
@@ -103,6 +106,9 @@ func (s *fakeStore) CreateUserWithOauthAccount(_ context.Context, u domain.User,
 	}
 	if _, taken := s.usersByMail[u.Email]; taken {
 		return domain.User{}, domain.ErrEmailTaken
+	}
+	if s.usernameTakenLocked(u.Username, u.ID) {
+		return domain.User{}, domain.ErrUsernameTaken
 	}
 
 	now := time.Now().UTC()
@@ -149,6 +155,31 @@ func (s *fakeStore) UserByID(_ context.Context, id uuid.UUID) (domain.User, erro
 	return u, nil
 }
 
+func (s *fakeStore) UserByUsername(_ context.Context, username string) (domain.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("UserByUsername"); err != nil {
+		return domain.User{}, err
+	}
+
+	for _, u := range s.users {
+		if u.Username == username {
+			return u, nil
+		}
+	}
+	return domain.User{}, domain.ErrUserNotFound
+}
+
+func (s *fakeStore) usernameTakenLocked(username string, owner uuid.UUID) bool {
+	for id, u := range s.users {
+		if id != owner && u.Username == username {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.ProfileUpdate) (domain.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -162,11 +193,16 @@ func (s *fakeStore) UpdateProfile(_ context.Context, id uuid.UUID, in domain.Pro
 		return domain.User{}, domain.ErrUserNotFound
 	}
 
+	if s.usernameTakenLocked(in.Username, id) {
+		return domain.User{}, domain.ErrUsernameTaken
+	}
+
 	u.Email = in.Email
 	u.EmailVerified = in.EmailVerified
 	u.FirstName = in.FirstName
 	u.LastName = in.LastName
 	u.Nickname = in.Nickname
+	u.Username = in.Username
 	u.DisplayName = in.DisplayName
 	u.UpdatedAt = time.Now().UTC()
 	s.users[id] = u
@@ -595,26 +631,55 @@ func (s *fakeStore) UserHasPermission(_ context.Context, userID uuid.UUID, names
 	return false, nil
 }
 
-func (s *fakeStore) SearchExact(_ context.Context, query string, excludeUserID uuid.UUID) ([]domain.User, error) {
+func (s *fakeStore) SearchUsers(_ context.Context, query string, excludeUserID uuid.UUID, limit int, after *domain.UserSearchCursor) ([]domain.UserSearchResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.fail("SearchExact"); err != nil {
+	if err := s.fail("SearchUsers"); err != nil {
 		return nil, err
 	}
 
 	lowered := strings.ToLower(query)
-
-	var out []domain.User
-	for _, u := range s.users {
-		if u.ID == excludeUserID {
-			continue
-		}
-		if strings.ToLower(u.Email) == lowered || strings.ToLower(u.DisplayName) == lowered {
-			out = append(out, u)
+	username := strings.TrimLeft(lowered, "@")
+	rank := func(u domain.User) int {
+		name, nickname := strings.ToLower(u.DisplayName), strings.ToLower(u.Nickname)
+		switch {
+		case query == "" || strings.ToLower(u.Email) == lowered || name == lowered || u.Username == username:
+			return 0
+		case strings.HasPrefix(name, lowered) || strings.HasPrefix(nickname, lowered) ||
+			(username != "" && strings.HasPrefix(u.Username, username)):
+			return 1
+		case strings.Contains(name, lowered) || strings.Contains(nickname, lowered) ||
+			(username != "" && strings.Contains(u.Username, username)):
+			return 2
+		default:
+			return -1
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID.String() < out[j].ID.String() })
+
+	compare := func(a, b domain.UserSearchCursor) int {
+		if a.Rank != b.Rank {
+			return a.Rank - b.Rank
+		}
+		if n := strings.Compare(a.Name, b.Name); n != 0 {
+			return n
+		}
+		if n := strings.Compare(a.Username, b.Username); n != 0 {
+			return n
+		}
+		return strings.Compare(a.ID.String(), b.ID.String())
+	}
+	var out []domain.UserSearchResult
+	for _, u := range s.users {
+		cursor := domain.UserSearchCursor{Rank: rank(u), Name: strings.ToLower(u.DisplayName), Username: u.Username, ID: u.ID}
+		if u.ID != excludeUserID && cursor.Rank >= 0 && (after == nil || compare(cursor, *after) > 0) {
+			out = append(out, domain.UserSearchResult{User: u, Cursor: cursor})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return compare(out[i].Cursor, out[j].Cursor) < 0 })
+	if len(out) > limit {
+		out = out[:limit]
+	}
 	return out, nil
 }
 

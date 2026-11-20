@@ -47,3 +47,7 @@ DerivedData/
 
 # Design handoff bundles, kept locally
 /design/
+/.local/
+/.playwright-mcp/
+/ui/web/test-results/
+/ui/web/public/calls-sw.js

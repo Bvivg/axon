@@ -18,9 +18,20 @@ type querier interface {
 }
 
 type Repository struct {
-	q querier
+	migration bool
+	sfu       bool
+	q         querier
 
 	pool *postgres.Pool
+}
+
+type Options struct {
+	SFU       bool
+	Migration bool
+}
+
+func NewWithOptions(pool *postgres.Pool, opts Options) *Repository {
+	return &Repository{q: pool, pool: pool, sfu: opts.SFU, migration: opts.Migration}
 }
 
 func New(pool *postgres.Pool) *Repository {
@@ -43,7 +54,7 @@ func (r *Repository) InTx(ctx context.Context, fn func(*Repository) error) error
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := fn(&Repository{q: tx}); err != nil {
+	if err := fn(&Repository{q: tx, sfu: r.sfu, migration: r.migration}); err != nil {
 		return err
 	}
 

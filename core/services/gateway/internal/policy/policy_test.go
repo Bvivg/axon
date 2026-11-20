@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/policy"
 )
@@ -91,9 +93,13 @@ func TestDirectMessagingProcedures(t *testing.T) {
 		wantPublic bool
 		wantTier   policy.Tier
 	}{
-		"search users": {authv1connect.AuthServiceSearchUsersProcedure, false, policy.TierSensitive},
+		"search users":    {authv1connect.AuthServiceSearchUsersProcedure, false, policy.TierSearch},
+		"search messages": {chatv1connect.ChatServiceSearchMessagesProcedure, false, policy.TierSearch},
 		"get users public profiles": {
 			authv1connect.AuthServiceGetUsersPublicProfilesProcedure, false, policy.TierStandard,
+		},
+		"get public profile by username": {
+			authv1connect.AuthServiceGetPublicProfileByUsernameProcedure, false, policy.TierStandard,
 		},
 		"update last seen": {authv1connect.AuthServiceUpdateLastSeenProcedure, false, policy.TierStandard},
 		"hide room":        {chatv1connect.ChatServiceHideRoomProcedure, false, policy.TierStandard},
@@ -103,6 +109,8 @@ func TestDirectMessagingProcedures(t *testing.T) {
 		"add members":      {chatv1connect.ChatServiceAddGroupMembersProcedure, false, policy.TierSensitive},
 		"remove member":    {chatv1connect.ChatServiceRemoveGroupMemberProcedure, false, policy.TierStandard},
 		"rename group":     {chatv1connect.ChatServiceRenameGroupProcedure, false, policy.TierStandard},
+		"message readers":  {chatv1connect.ChatServiceListMessageReadersProcedure, false, policy.TierStandard},
+		"forward messages": {chatv1connect.ChatServiceForwardMessagesProcedure, false, policy.TierSensitive},
 	}
 
 	for name, tt := range tests {
@@ -133,36 +141,77 @@ func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 
 func TestPolicyMatchesTheContract(t *testing.T) {
 	known := map[string]bool{
-		authv1connect.AuthServiceRegisterProcedure:       true,
-		authv1connect.AuthServiceLoginProcedure:          true,
-		authv1connect.AuthServiceRefreshTokenProcedure:   true,
-		authv1connect.AuthServiceLogoutProcedure:         true,
-		authv1connect.AuthServiceGetMeProcedure:          true,
-		authv1connect.AuthServiceStartOAuthProcedure:     true,
-		authv1connect.AuthServiceCompleteOAuthProcedure:  true,
-		authv1connect.AuthServiceGetUserByEmailProcedure: true,
-		authv1connect.AuthServiceListRolesProcedure:      true,
-		authv1connect.AuthServiceAssignRoleProcedure:     true,
-		authv1connect.AuthServiceRevokeRoleProcedure:     true,
+		gamev1connect.GameServiceCreateSessionProcedure:             true,
+		gamev1connect.GameServiceJoinSessionProcedure:               true,
+		gamev1connect.GameServiceGetSessionProcedure:                true,
+		gamev1connect.GameServiceListSessionsProcedure:              true,
+		gamev1connect.GameServiceFindMatchProcedure:                 true,
+		gamev1connect.GameServiceCancelMatchProcedure:               true,
+		gamev1connect.GameServiceGetMatchProcedure:                  true,
+		gamev1connect.GameServiceGetRatingsProcedure:                true,
+		gamev1connect.GameServiceLeaveSessionProcedure:              true,
+		callsv1connect.CallsServiceRegisterEndpointProcedure:        true,
+		callsv1connect.CallsServiceStartCallProcedure:               true,
+		callsv1connect.CallsServiceStartDirectCallProcedure:         true,
+		callsv1connect.CallsServiceAcceptCallProcedure:              true,
+		callsv1connect.CallsServiceDeclineCallProcedure:             true,
+		callsv1connect.CallsServiceCancelCallProcedure:              true,
+		callsv1connect.CallsServiceEndCallProcedure:                 true,
+		callsv1connect.CallsServiceReportConnectionProcedure:        true,
+		callsv1connect.CallsServiceAcknowledgeCleanupProcedure:      true,
+		callsv1connect.CallsServiceGetCallProcedure:                 true,
+		callsv1connect.CallsServiceGetActiveCallProcedure:           true,
+		callsv1connect.CallsServiceListCallsProcedure:               true,
+		callsv1connect.CallsServiceGetMediaCredentialsProcedure:     true,
+		callsv1connect.CallsServiceGetCallCapabilitiesProcedure:     true,
+		callsv1connect.CallsServiceStartGroupCallProcedure:          true,
+		callsv1connect.CallsServiceStartGroupCallFromCallProcedure:  true,
+		callsv1connect.CallsServiceInviteCallParticipantProcedure:   true,
+		callsv1connect.CallsServiceLeaveCallProcedure:               true,
+		callsv1connect.CallsServiceRemoveCallParticipantProcedure:   true,
+		callsv1connect.CallsServiceGetSfuCredentialsProcedure:       true,
+		callsv1connect.CallsServiceRequestCallMigrationProcedure:    true,
+		callsv1connect.CallsServiceReportCallMigrationProcedure:     true,
+		callsv1connect.CallsServiceGetMigrationCredentialsProcedure: true,
+		authv1connect.AuthServiceRegisterProcedure:                  true,
+		authv1connect.AuthServiceLoginProcedure:                     true,
+		authv1connect.AuthServiceRefreshTokenProcedure:              true,
+		authv1connect.AuthServiceLogoutProcedure:                    true,
+		authv1connect.AuthServiceGetMeProcedure:                     true,
+		authv1connect.AuthServiceStartOAuthProcedure:                true,
+		authv1connect.AuthServiceCompleteOAuthProcedure:             true,
+		authv1connect.AuthServiceGetUserByEmailProcedure:            true,
+		authv1connect.AuthServiceListRolesProcedure:                 true,
+		authv1connect.AuthServiceAssignRoleProcedure:                true,
+		authv1connect.AuthServiceRevokeRoleProcedure:                true,
 
-		authv1connect.AuthServiceSearchUsersProcedure:            true,
-		authv1connect.AuthServiceGetUsersPublicProfilesProcedure: true,
-		authv1connect.AuthServiceUpdateLastSeenProcedure:         true,
+		authv1connect.AuthServiceSearchUsersProcedure:                true,
+		authv1connect.AuthServiceGetUsersPublicProfilesProcedure:     true,
+		authv1connect.AuthServiceGetPublicProfileByUsernameProcedure: true,
+		authv1connect.AuthServiceUpdateLastSeenProcedure:             true,
 
-		chatv1connect.ChatServiceCreateRoomProcedure:    true,
-		chatv1connect.ChatServiceListRoomsProcedure:     true,
-		chatv1connect.ChatServiceGetRoomProcedure:       true,
-		chatv1connect.ChatServiceJoinRoomProcedure:      true,
-		chatv1connect.ChatServiceLeaveRoomProcedure:     true,
-		chatv1connect.ChatServiceListMessagesProcedure:  true,
-		chatv1connect.ChatServiceHideRoomProcedure:      true,
-		chatv1connect.ChatServiceGetDirectRoomProcedure: true,
-		chatv1connect.ChatServiceMarkReadProcedure:      true,
+		chatv1connect.ChatServiceCreateRoomProcedure:     true,
+		chatv1connect.ChatServiceListRoomsProcedure:      true,
+		chatv1connect.ChatServiceGetRoomProcedure:        true,
+		chatv1connect.ChatServiceJoinRoomProcedure:       true,
+		chatv1connect.ChatServiceLeaveRoomProcedure:      true,
+		chatv1connect.ChatServiceListMessagesProcedure:   true,
+		chatv1connect.ChatServiceHideRoomProcedure:       true,
+		chatv1connect.ChatServiceGetDirectRoomProcedure:  true,
+		chatv1connect.ChatServiceMarkReadProcedure:       true,
+		chatv1connect.ChatServiceSearchMessagesProcedure: true,
 
 		chatv1connect.ChatServiceCreateGroupProcedure:       true,
 		chatv1connect.ChatServiceAddGroupMembersProcedure:   true,
 		chatv1connect.ChatServiceRemoveGroupMemberProcedure: true,
 		chatv1connect.ChatServiceRenameGroupProcedure:       true,
+
+		chatv1connect.ChatServiceListMessageReadersProcedure: true,
+		chatv1connect.ChatServiceForwardMessagesProcedure:    true,
+
+		chatv1connect.ChatServiceGetPushKeyProcedure:      true,
+		chatv1connect.ChatServiceSubscribePushProcedure:   true,
+		chatv1connect.ChatServiceUnsubscribePushProcedure: true,
 	}
 
 	for _, procedure := range policy.Procedures() {

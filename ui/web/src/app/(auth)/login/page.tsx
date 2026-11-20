@@ -10,10 +10,10 @@ export default function LoginPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Sign in to Axon</h1>
-      <ProviderButtons />
-      {enabledProviders().length > 0 ? <OrDivider /> : null}
+      <h1>Sign in to Axon</h1>
       <CredentialsForm mode={Mode.Login} />
+      {enabledProviders().length > 0 ? <OrDivider /> : null}
+      <ProviderButtons />
     </>
   );
 }

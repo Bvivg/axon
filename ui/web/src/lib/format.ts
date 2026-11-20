@@ -1,5 +1,7 @@
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 
+const appLocale = "en-GB";
+
 export function initials(name: string): string {
   const words = name
     .replace(/[@#]/g, " ")
@@ -29,7 +31,15 @@ export function fromISO(iso: string): Date | null {
 }
 
 export function clockTime(at: Date): string {
-  return at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return at.toLocaleTimeString(appLocale, { hour: "2-digit", minute: "2-digit" });
+}
+
+export function calendarDate(at: Date): string {
+  return at.toLocaleDateString(appLocale, { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function calendarMoment(at: Date): string {
+  return at.toLocaleString(appLocale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export function isSameDay(a: Date, b: Date): boolean {
@@ -49,7 +59,7 @@ export function dayLabel(at: Date, now = new Date()): string {
   if (isSameDay(at, yesterdayOf(now))) {
     return "Yesterday";
   }
-  return at.toLocaleDateString(undefined, {
+  return at.toLocaleDateString(appLocale, {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -57,11 +67,14 @@ export function dayLabel(at: Date, now = new Date()): string {
   });
 }
 
-export function shortWhen(at: Date, now = new Date()): string {
+export function shortWhen(at: Date | null, now = new Date()): string {
+  if (!at) {
+    return "";
+  }
   if (isSameDay(at, now)) {
     return clockTime(at);
   }
-  return at.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" });
+  return at.toLocaleDateString(appLocale, { day: "2-digit", month: "2-digit" });
 }
 
 export function lastSeen(at: Date | null, now = new Date()): string {
@@ -75,7 +88,7 @@ export function lastSeen(at: Date | null, now = new Date()): string {
   if (isSameDay(at, yesterdayOf(now))) {
     return `last seen yesterday at ${time}`;
   }
-  const day = at.toLocaleDateString(undefined, {
+  const day = at.toLocaleDateString(appLocale, {
     day: "numeric",
     month: "short",
     year: at.getFullYear() === now.getFullYear() ? undefined : "numeric",
@@ -85,13 +98,22 @@ export function lastSeen(at: Date | null, now = new Date()): string {
 
 export function personName(user: {
   email: string;
+  username?: string;
   displayName?: string;
   nickname?: string;
   firstName?: string;
   lastName?: string;
 }): string {
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
-  return user.displayName || fullName || user.nickname || user.email;
+  return user.displayName || fullName || user.nickname || user.username || user.email;
+}
+
+export function profileName(profile?: { displayName?: string; username?: string }): string {
+  return profile?.displayName || profile?.username || "";
+}
+
+export function normalizeUsername(value: string): string {
+  return value.trim().replace(/^@/, "").toLowerCase();
 }
 
 export function shortID(id?: string): string {

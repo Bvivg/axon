@@ -11,6 +11,8 @@ type User struct {
 	Email         string
 	EmailVerified bool
 
+	Username string
+
 	DisplayName string
 	AvatarURL   string
 
@@ -38,6 +40,7 @@ type ProfilePatch struct {
 	FirstName *string
 	LastName  *string
 	Nickname  *string
+	Username  *string
 }
 
 type ProfileUpdate struct {
@@ -46,6 +49,7 @@ type ProfileUpdate struct {
 	FirstName     string
 	LastName      string
 	Nickname      string
+	Username      string
 	DisplayName   string
 }
 

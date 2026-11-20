@@ -349,7 +349,7 @@ func TestListRoomsReportsHowFarTheOthersHaveRead(t *testing.T) {
 		last = m
 	}
 
-	if err := h.svc.MarkRead(t.Context(), room.ID, reader, last.Seq-1); err != nil {
+	if _, err := h.svc.MarkRead(t.Context(), room.ID, reader, last.Seq-1); err != nil {
 		t.Fatalf("MarkRead: %v", err)
 	}
 

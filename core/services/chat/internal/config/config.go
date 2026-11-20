@@ -20,6 +20,37 @@ type Config struct {
 	Kafka       KafkaConfig
 	Attachments AttachmentConfig
 	Media       MediaConfig
+	Uploads     UploadsConfig
+	Push        PushConfig
+	Calls       CallsConfig
+}
+
+type CallsConfig struct {
+	MigrationEnabled    bool
+	DisableNewMigration bool
+	SFUEnabled          bool
+	DisableNewSFU       bool
+	PublicMediaURL      string
+	MediaProbe          bool
+	MediaAPIKey         string
+	MediaURL            string
+	MediaAPISecret      config.Secret
+	InternalKey         config.Secret
+	Enabled             bool
+	TURNURLs            []string
+	TURNSecret          config.Secret
+}
+
+type PushConfig struct {
+	PublicKey  string
+	PrivateKey string
+	Subject    string
+}
+
+type UploadsConfig struct {
+	MaxBytes  int64
+	PartBytes int64
+	Workers   int
 }
 
 type MediaConfig struct {
@@ -68,6 +99,7 @@ func Load() (Config, error) {
 		Base:     config.LoadBase(l, ServiceName),
 		Postgres: postgres.LoadConfig(l),
 		Redis:    redis.LoadConfig(l),
+		Calls:    CallsConfig{MigrationEnabled: l.Bool("CALLS_MIGRATION_ENABLED", false), DisableNewMigration: l.Bool("CALLS_MIGRATION_DISABLE_NEW", false), Enabled: l.Bool("CALLS_ENABLED", false), TURNURLs: l.StringSlice("CALLS_TURN_URLS", nil), TURNSecret: l.SecretDefault("CALLS_TURN_SECRET", ""), MediaProbe: l.Bool("CALLS_MEDIA_ADMISSION_PROBE", false), MediaAPIKey: l.StringDefault("LIVEKIT_API_KEY", ""), MediaAPISecret: l.SecretDefault("LIVEKIT_API_SECRET", ""), InternalKey: l.SecretDefault("CALLS_INTERNAL_KEY", ""), MediaURL: l.StringDefault("LIVEKIT_API_URL", ""), SFUEnabled: l.Bool("CALLS_SFU_ENABLED", false), DisableNewSFU: l.Bool("CALLS_SFU_DISABLE_NEW", false), PublicMediaURL: l.StringDefault("LIVEKIT_PUBLIC_URL", "/livekit")},
 		JWT: JWTConfig{
 			JWKSURL:             l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 			JWKSRefreshInterval: l.DurationDefault("JWKS_REFRESH_INTERVAL", 15*time.Minute),
@@ -86,7 +118,17 @@ func Load() (Config, error) {
 			FFmpeg:  l.StringDefault("FFMPEG_PATH", "ffmpeg"),
 			FFprobe: l.StringDefault("FFPROBE_PATH", "ffprobe"),
 			Workers: l.IntDefault("MEDIA_WORKERS", 2),
-			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 3*time.Minute),
+			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 15*time.Minute),
+		},
+		Push: PushConfig{
+			PublicKey:  l.StringDefault("CHAT_VAPID_PUBLIC_KEY", ""),
+			PrivateKey: l.SecretDefault("CHAT_VAPID_PRIVATE_KEY", "").Reveal(),
+			Subject:    l.StringDefault("CHAT_VAPID_SUBJECT", "mailto:push@axon.test"),
+		},
+		Uploads: UploadsConfig{
+			MaxBytes:  int64(l.IntDefault("CHAT_MAX_UPLOAD_MB", 200)) << 20,
+			PartBytes: int64(l.IntDefault("CHAT_UPLOAD_PART_MB", 10)) << 20,
+			Workers:   l.IntDefault("CHAT_UPLOAD_WORKERS", 1),
 		},
 	}
 

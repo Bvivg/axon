@@ -1,0 +1,37 @@
+{
+  "services": {
+    "auth": {
+      "files": 49,
+      "lines": 5640,
+      "nonblank": 4596
+    },
+    "chat": {
+      "files": 74,
+      "lines": 14843,
+      "nonblank": 13146
+    },
+    "gateway": {
+      "files": 20,
+      "lines": 2410,
+      "nonblank": 2000
+    },
+    "game": {
+      "files": 13,
+      "lines": 1396,
+      "nonblank": 1223
+    }
+  },
+  "chat_fraction": {
+    "lines": 0.6110996747498868,
+    "nonblank": 0.6270450751252087
+  },
+  "shared": {
+    "files": 33,
+    "lines": 3117,
+    "nonblank": 2493
+  },
+  "chat_fraction_including_shared": {
+    "lines": 0.5415967306429249,
+    "nonblank": 0.5604058316992071
+  }
+}

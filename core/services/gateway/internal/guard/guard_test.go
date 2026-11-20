@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -87,6 +89,13 @@ func (s *stubAuth) Login(
 	return connect.NewResponse(&authv1.LoginResponse{}), nil
 }
 
+func (s *stubAuth) SearchUsers(
+	_ context.Context,
+	_ *connect.Request[authv1.SearchUsersRequest],
+) (*connect.Response[authv1.SearchUsersResponse], error) {
+	return connect.NewResponse(&authv1.SearchUsersResponse{}), nil
+}
+
 func (s *stubAuth) GetMe(
 	ctx context.Context,
 	_ *connect.Request[authv1.GetMeRequest],
@@ -127,6 +136,7 @@ func newHarness(t *testing.T, l limits) *harness {
 
 	g, err := guard.New(guard.Config{
 		Verifier:  verifier,
+		Search:    ratelimit.New(ratelimit.Config{PerMinute: 60}),
 		Standard:  ratelimit.New(ratelimit.Config{PerMinute: l.standard, Burst: l.standard}),
 		Sensitive: ratelimit.New(ratelimit.Config{PerMinute: l.sensitive, Burst: l.sensitive}),
 		Logger:    logger.Discard(),
@@ -309,5 +319,45 @@ func TestNewValidatesItsDependencies(t *testing.T) {
 				t.Fatal("an invalid configuration was accepted")
 			}
 		})
+	}
+}
+
+func TestRateLimitIncludesRetryAfter(t *testing.T) {
+	h := newHarness(t, limits{sensitive: 1})
+	if err := h.login(""); err != nil {
+		t.Fatal(err)
+	}
+	err := h.login("")
+	var rpcErr *connect.Error
+	if !errors.As(err, &rpcErr) || rpcErr.Code() != connect.CodeResourceExhausted {
+		t.Fatalf("got %v", err)
+	}
+	seconds, parseErr := strconv.Atoi(rpcErr.Meta().Get("Retry-After"))
+	if parseErr != nil || seconds < 1 || seconds > 60 {
+		t.Fatalf("invalid retry delay: %v", rpcErr.Meta())
+	}
+}
+
+func TestSearchHasAnIndependentBudget(t *testing.T) {
+	h := newHarness(t, limits{sensitive: 1, standard: 1})
+	accessToken := token(t, nil)
+	if err := h.login(accessToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.getMe(accessToken); err != nil {
+		t.Fatal(err)
+	}
+	for range 6 {
+		req := connect.NewRequest(&authv1.SearchUsersRequest{Query: "alice"})
+		req.Header().Set(authn.Header, "Bearer "+accessToken)
+		_, err := h.client.SearchUsers(context.Background(), req)
+		if err != nil {
+			t.Fatalf("search consumed another tier's budget: %v", err)
+		}
+	}
+	req := connect.NewRequest(&authv1.SearchUsersRequest{Query: "alice"})
+	req.Header().Set(authn.Header, "Bearer "+accessToken)
+	if _, err := h.client.SearchUsers(context.Background(), req); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("search was not limited: %v", err)
 	}
 }

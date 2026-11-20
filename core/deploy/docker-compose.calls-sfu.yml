@@ -1,0 +1,12 @@
+services:
+  chat:
+    environment:
+      CALLS_MEDIA_ADMISSION_PROBE: "false"
+      CALLS_SFU_ENABLED: "true"
+      CALLS_SFU_DISABLE_NEW: "false"
+      LIVEKIT_PUBLIC_URL: /livekit
+  playwright:
+    environment:
+      CALLS_PLAYWRIGHT_CONFIG: playwright.calls-sfu.config.ts
+    volumes:
+      - ../../ui/web/playwright.calls-sfu.config.ts:/app/playwright.calls-sfu.config.ts:ro

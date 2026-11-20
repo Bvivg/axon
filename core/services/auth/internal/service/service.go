@@ -21,6 +21,7 @@ type Store interface {
 
 	UserByEmail(ctx context.Context, email string) (domain.User, error)
 	UserByID(ctx context.Context, id uuid.UUID) (domain.User, error)
+	UserByUsername(ctx context.Context, username string) (domain.User, error)
 	UpdateProfile(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate) (domain.User, error)
 	SetAvatar(ctx context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error)
 	UpdateLastSeen(ctx context.Context, id uuid.UUID, at time.Time) error
@@ -46,7 +47,7 @@ type Store interface {
 	RevokeRole(ctx context.Context, userID, roleID uuid.UUID) error
 	UserHasPermission(ctx context.Context, userID uuid.UUID, namespace, action string) (bool, error)
 
-	SearchExact(ctx context.Context, query string, excludeUserID uuid.UUID) ([]domain.User, error)
+	SearchUsers(ctx context.Context, query string, excludeUserID uuid.UUID, limit int, after *domain.UserSearchCursor) ([]domain.UserSearchResult, error)
 	UsersByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.User, error)
 }
 

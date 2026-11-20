@@ -1,0 +1,345 @@
+{
+  "checks": [
+    {
+      "path": "/",
+      "theme": "light",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "light",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "light",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "light",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "light",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "dark",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "dark",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "dark",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "dark",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "dark",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "theme": "dark",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "light",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "light",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "light",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "light",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "light",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "dark",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "dark",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "dark",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "dark",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "dark",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/chat",
+      "theme": "dark",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "light",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "light",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "light",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "light",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "light",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "dark",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "dark",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "dark",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "dark",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "dark",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/calls",
+      "theme": "dark",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "light",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "light",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "light",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "light",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "light",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "dark",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "dark",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "dark",
+      "width": 768,
+      "height": 1024,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "dark",
+      "width": 1024,
+      "height": 768,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "dark",
+      "width": 1440,
+      "height": 900,
+      "overflow": false
+    },
+    {
+      "path": "/profile",
+      "theme": "dark",
+      "width": 844,
+      "height": 390,
+      "overflow": false
+    }
+  ],
+  "keyboardTheme": true,
+  "search": true,
+  "themePersists": true,
+  "rawStorageStatus": 403,
+  "errorCount": 0
+}

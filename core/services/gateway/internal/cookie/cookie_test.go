@@ -12,6 +12,7 @@ import (
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/authn"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/cookie"
 )
@@ -246,6 +247,38 @@ func TestCookieAttributes(t *testing.T) {
 	}
 	if c.MaxAge != int((48 * time.Hour).Seconds()) {
 		t.Errorf("MaxAge = %d, want %d", c.MaxAge, int((48 * time.Hour).Seconds()))
+	}
+}
+
+func TestMediaCookieIsShortLivedAndClearedOnLogout(t *testing.T) {
+	h := newHarness(t, cookie.Config{Secure: true, MaxAge: 48 * time.Hour})
+	login, err := h.client.Login(t.Context(), browser(connect.NewRequest(&authv1.LoginRequest{}), ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	find := func(header http.Header, path string) *http.Cookie {
+		for _, c := range (&http.Response{Header: header}).Cookies() {
+			if c.Name == authn.MediaCookieName && c.Path == path {
+				return c
+			}
+		}
+		return nil
+	}
+	c := find(login.Header(), "/api/media")
+	if c == nil || c.Value != "access-token" || !c.HttpOnly || !c.Secure || c.Domain != "" || c.SameSite != http.SameSiteLaxMode || c.MaxAge != 900 {
+		t.Fatal("unexpected media cookie attributes")
+	}
+	if c := find(login.Header(), "/"); c == nil || c.Value != "" || c.MaxAge >= 0 {
+		t.Fatal("legacy media cookie not cleared on login")
+	}
+	logout, err := h.client.Logout(t.Context(), browser(connect.NewRequest(&authv1.LogoutRequest{}), issuedToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/media", "/"} {
+		if c := find(logout.Header(), path); c == nil || c.Value != "" || c.MaxAge >= 0 {
+			t.Fatalf("media cookie not cleared for %s", path)
+		}
 	}
 }
 

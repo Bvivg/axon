@@ -19,10 +19,15 @@ type AcceptOptions struct {
 
 func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, error) {
 	opts.applyDefaults()
+	compression := websocket.CompressionDisabled
+	if opts.Compression {
+		compression = websocket.CompressionNoContextTakeover
+	}
 
 	raw, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		Subprotocols:   opts.Subprotocols,
-		OriginPatterns: opts.OriginPatterns,
+		Subprotocols:    opts.Subprotocols,
+		OriginPatterns:  opts.OriginPatterns,
+		CompressionMode: compression,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("ws: accept: %w", err)

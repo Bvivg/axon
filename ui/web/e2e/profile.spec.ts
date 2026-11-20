@@ -75,12 +75,13 @@ test("the sessions tab shows the active device and lets it be ended from elsewhe
   const secondPage = await second.newPage();
   await open(secondPage, "/login");
   await submitCredentials(secondPage, "Sign in", email);
-  await secondPage.waitForURL(/\/$/);
+  await secondPage.waitForURL(/\/chat$/);
 
   await page.reload();
   await expect(page.getByRole("button", { name: "End session" })).toHaveCount(1);
 
   await page.getByRole("button", { name: "End session" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "End session" }).click();
   await expect(page.getByRole("button", { name: "End session" })).toHaveCount(0);
 
   await secondPage.reload();

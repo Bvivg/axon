@@ -1,0 +1,7 @@
+Selected output from govulncheck-before.log
+
+Vulnerability #1: GO-2026-6859
+  More info: https://pkg.go.dev/vuln/GO-2026-6859
+    Found in: net/http@go1.27.3
+    Fixed in: net/http@go1.27.4
+Your code is affected by 1 vulnerability from the Go standard library.

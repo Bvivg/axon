@@ -2,13 +2,27 @@ import { expect, type Page } from "@playwright/test";
 
 import { expectLobby } from "./support";
 
+export async function startCallFromChat(page: Page, mode: "Audio call" | "Video call") {
+  await page.getByRole("button", { name: "Start call", exact: true }).click();
+  await page.getByRole("menuitem", { name: mode, exact: true }).click();
+}
+
 export interface Contact {
   email: string;
+  username: string;
   name: string;
 }
 
+export function chatAt(address: string): RegExp {
+  return new RegExp(`/chat#${address}$`);
+}
+
 export async function goToChats(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Chats" }).click();
+  const nav = page.getByRole("navigation", { name: "Primary", exact: true });
+  const back = page.getByRole("link", { name: "Back to chats", exact: true });
+  await expect(nav.or(back).first()).toBeVisible();
+  if (await nav.isVisible()) await nav.getByRole("link", { name: "Chats", exact: true }).click();
+  else await back.click();
   await expectLobby(page);
 }
 
@@ -20,25 +34,27 @@ export async function startChat(page: Page, contact: Contact, first: string): Pr
   await goToChats(page);
   await page.getByRole("button", { name: "New chat" }).click();
 
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Search").fill(contact.email);
-  await dialog.getByRole("button", { name: contact.name }).click();
+  const composer = chatList(page).getByRole("region", { name: "New conversation" });
+  await composer.getByLabel("Search people").fill(contact.email);
+  await composer.getByRole("button", { name: contact.name }).click();
 
-  await expect(page).toHaveURL(/\/chat\/new\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(chatAt(contact.username));
   await expect(page.getByRole("heading", { name: contact.name })).toBeVisible();
 
   await say(page, first);
-  await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
   await expectSaid(page, "You", first);
+  await expect(page).toHaveURL(chatAt(contact.username));
 
-  return page.url().split("/").pop()!;
+  const room = chatList(page).locator(`a[href="/chat#${contact.username}"]`);
+  await expect(room).toHaveAttribute("data-room-id", /^[0-9a-f-]{36}$/);
+  return (await room.getAttribute("data-room-id"))!;
 }
 
 export async function openChatWith(page: Page, name: string): Promise<void> {
   await goToChats(page);
   await chatList(page).getByRole("link", { name: new RegExp(name) }).click();
 
-  await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/chat#.+$/);
   await expectReady(page);
 }
 

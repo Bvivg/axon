@@ -71,6 +71,52 @@ func key(sessionID string) string {
 	return keyPrefix + sessionID
 }
 
+const visibleKeyPrefix = "presence:visible:"
+
+func visibleKey(userID string) string {
+	return visibleKeyPrefix + userID
+}
+
+func (t *Tracker) TouchVisible(ctx context.Context, userID, connID string, ttl time.Duration) error {
+	now := t.now()
+	k := visibleKey(userID)
+	pipe := t.client.TxPipeline()
+	pipe.ZAdd(ctx, k, goredis.Z{Score: float64(now.Add(ttl).UnixMilli()), Member: connID})
+	pipe.ZRemRangeByScore(ctx, k, "-inf", "("+strconv.FormatInt(now.UnixMilli(), 10))
+	pipe.PExpire(ctx, k, ttl)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("presence: touch visible %s: %w", userID, err)
+	}
+	return nil
+}
+
+func (t *Tracker) ClearVisible(ctx context.Context, userID, connID string) error {
+	if err := t.client.ZRem(ctx, visibleKey(userID), connID).Err(); err != nil {
+		return fmt.Errorf("presence: clear visible %s: %w", userID, err)
+	}
+	return nil
+}
+
+func (t *Tracker) Visible(ctx context.Context, userIDs []string) (map[string]bool, error) {
+	visible := make(map[string]bool, len(userIDs))
+	if len(userIDs) == 0 {
+		return visible, nil
+	}
+	from := strconv.FormatInt(t.now().UnixMilli(), 10)
+	pipe := t.client.Pipeline()
+	cmds := make(map[string]*goredis.IntCmd, len(userIDs))
+	for _, id := range userIDs {
+		cmds[id] = pipe.ZCount(ctx, visibleKey(id), from, "+inf")
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("presence: check visible: %w", err)
+	}
+	for id, cmd := range cmds {
+		visible[id] = cmd.Val() > 0
+	}
+	return visible, nil
+}
+
 const changeChannelPrefix = "presence:changed:"
 
 func changeChannel(userID string) string {

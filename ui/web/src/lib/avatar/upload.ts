@@ -5,6 +5,8 @@ import { apiBaseUrl } from "@/lib/connect/transport";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { refreshSession } from "@/lib/auth/refresh";
 
+import { fetchWithRateLimitRetry } from "@/lib/rate-limit";
+
 interface AvatarUploadResponse {
   avatar_url: string;
   avatar_urls: {
@@ -22,7 +24,7 @@ export async function uploadAvatar(file: File): Promise<AvatarUploadResponse> {
   }
   token = getAccessToken();
 
-  const resp = await fetch(`${apiBaseUrl}/api/avatar`, {
+  const resp = await fetchWithRateLimitRetry(`${apiBaseUrl}/api/avatar`, {
     method: "POST",
     credentials: "include",
     headers: {

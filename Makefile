@@ -65,6 +65,28 @@ jwt-key: env ## Generate a development RS256 signing key into core/deploy/.env
 	mv "$$tmp" $(ENV_FILE); \
 	echo "wrote JWT_PRIVATE_KEY_DEV_1 to $(ENV_FILE) (git-ignored)"
 
+VAPID_KEYGEN = docker run --rm --entrypoint sh alpine/openssl -c ' \
+	openssl ecparam -name prime256v1 -genkey -noout -out /tmp/k.pem 2>/dev/null && \
+	b64url() { base64 | tr -d "\n=" | tr "/+" "_-"; } && \
+	pub=$$(openssl ec -in /tmp/k.pem -pubout -outform DER 2>/dev/null | tail -c 65 | b64url) && \
+	priv=$$(openssl ec -in /tmp/k.pem -outform DER 2>/dev/null | tail -c +8 | head -c 32 | b64url) && \
+	[ $${\#pub} -eq 87 ] && [ $${\#priv} -eq 43 ] && echo "$$pub $$priv"'
+
+.PHONY: vapid-key
+vapid-key: env ## Generate a Web Push (VAPID) key pair for chat into core/deploy/.env
+	@if grep -qE '^CHAT_VAPID_PRIVATE_KEY=.+' $(ENV_FILE); then \
+		echo "CHAT_VAPID_PRIVATE_KEY is already set in $(ENV_FILE); delete the line to regenerate"; \
+		exit 0; \
+	fi; \
+	echo "generating a P-256 key in a container..."; \
+	pair=$$($(VAPID_KEYGEN)); \
+	if [ -z "$$pair" ]; then echo "key generation failed"; exit 1; fi; \
+	tmp=$$(mktemp); \
+	grep -vE '^CHAT_VAPID_(PUBLIC|PRIVATE)_KEY=' $(ENV_FILE) > "$$tmp"; \
+	printf 'CHAT_VAPID_PUBLIC_KEY=%s\nCHAT_VAPID_PRIVATE_KEY=%s\n' "$${pair% *}" "$${pair#* }" >> "$$tmp"; \
+	mv "$$tmp" $(ENV_FILE); \
+	echo "wrote CHAT_VAPID_PUBLIC_KEY and CHAT_VAPID_PRIVATE_KEY to $(ENV_FILE) (git-ignored)"
+
 .PHONY: migrate-guard
 migrate-guard:
 	@if [ -z "$(MIGRATE_DSN)" ]; then \
@@ -73,8 +95,13 @@ migrate-guard:
 		exit 1; \
 	fi
 
+.PHONY: db-extensions
+db-extensions: ## Create the Postgres extensions on a database initialised before they were added
+	$(COMPOSE) up -d --wait postgres
+	$(COMPOSE) exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -f /docker-entrypoint-initdb.d/02-extensions.sql'
+
 .PHONY: migrate-up
-migrate-up: migrate-guard ## Apply pending migrations (make migrate-up S=auth)
+migrate-up: migrate-guard db-extensions ## Apply pending migrations (make migrate-up S=auth)
 	$(COMPOSE) run --rm migrate -path=/migrations -database "$(MIGRATE_DSN)" up
 
 .PHONY: migrate-down
@@ -146,12 +173,25 @@ test-e2e: e2e-key ## Run e2e against the full stack on the shipping images
 
 .PHONY: e2e-key
 e2e-key:
-	@if [ -s $(E2E_ENV_FILE) ] && grep -qE '^JWT_PRIVATE_KEY_DEV_1=.+' $(E2E_ENV_FILE); then exit 0; fi; \
-	echo "generating a throwaway e2e signing key..."; \
-	key=$$(docker run --rm alpine/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n'); \
-	if [ -z "$$key" ]; then echo "key generation failed"; exit 1; fi; \
-	printf 'JWT_PRIVATE_KEY_DEV_1=%s\n' "$$key" > $(E2E_ENV_FILE); \
-	echo "wrote $(E2E_ENV_FILE) (git-ignored)"
+	@touch $(E2E_ENV_FILE); \
+	if ! grep -qE '^JWT_PRIVATE_KEY_DEV_1=.+' $(E2E_ENV_FILE); then \
+		echo "generating a throwaway e2e signing key..."; \
+		key=$$(docker run --rm alpine/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n'); \
+		if [ -z "$$key" ]; then echo "key generation failed"; exit 1; fi; \
+		grep -v '^JWT_PRIVATE_KEY_DEV_1=' $(E2E_ENV_FILE) > $(E2E_ENV_FILE).tmp; \
+		printf 'JWT_PRIVATE_KEY_DEV_1=%s\n' "$$key" >> $(E2E_ENV_FILE).tmp; \
+		mv $(E2E_ENV_FILE).tmp $(E2E_ENV_FILE); \
+		echo "wrote a signing key to $(E2E_ENV_FILE) (git-ignored)"; \
+	fi; \
+	if ! grep -qE '^CHAT_VAPID_PRIVATE_KEY=.+' $(E2E_ENV_FILE); then \
+		echo "generating a throwaway e2e push key..."; \
+		pair=$$($(VAPID_KEYGEN)); \
+		if [ -z "$$pair" ]; then echo "key generation failed"; exit 1; fi; \
+		grep -vE '^CHAT_VAPID_(PUBLIC|PRIVATE)_KEY=' $(E2E_ENV_FILE) > $(E2E_ENV_FILE).tmp; \
+		printf 'CHAT_VAPID_PUBLIC_KEY=%s\nCHAT_VAPID_PRIVATE_KEY=%s\n' "$${pair% *}" "$${pair#* }" >> $(E2E_ENV_FILE).tmp; \
+		mv $(E2E_ENV_FILE).tmp $(E2E_ENV_FILE); \
+		echo "wrote a push key to $(E2E_ENV_FILE) (git-ignored)"; \
+	fi
 
 .PHONY: web-install
 web-install: ## Install the web client's dependencies (in a container)
@@ -169,8 +209,12 @@ web-typecheck: ## Type-check the web client
 web-build: ## Build the web client's production bundle
 	$(COMPOSE_TOOLS) run --rm node npm run build
 
+.PHONY: web-test
+web-test: ## Run the web client's unit tests (Vitest)
+	$(COMPOSE_TOOLS) run --rm node npm test
+
 .PHONY: web-check
-web-check: web-lint web-typecheck web-build ## Everything CI runs for the web client
+web-check: web-lint web-typecheck web-test web-build ## Everything CI runs for the web client
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace

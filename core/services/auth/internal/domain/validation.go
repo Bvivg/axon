@@ -57,8 +57,8 @@ func ValidateDisplayName(name string) (string, error) {
 
 func ValidateSearchQuery(query string) (string, error) {
 	trimmed := strings.TrimSpace(query)
-	if trimmed == "" {
-		return "", newValidationError("query", "is required")
+	if !utf8.ValidString(trimmed) || utf8.RuneCountInString(trimmed) > MaxEmailLength {
+		return "", newValidationError("query", "is invalid or too long")
 	}
 	return trimmed, nil
 }

@@ -11,6 +11,7 @@ export const profileKeys = {
 
 export interface ProfilePatch {
   email?: string;
+  username?: string;
   firstName?: string;
   lastName?: string;
   nickname?: string;

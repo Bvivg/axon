@@ -118,7 +118,7 @@ func run() error {
 		return err
 	}
 	avatarURLs := avatar.NewURLBuilder(cfg.Avatar.PublicURL, cfg.Avatar.Bucket)
-	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs)
+	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs, nil)
 
 	revocationPublisher, err := revocation.NewPublisher(cache)
 	if err != nil {
@@ -222,6 +222,9 @@ func publicHandler(cfg config.Config, handler *server.Handler, metrics *middlewa
 
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(handler, interceptors))
+	if len(cfg.InternalKey.Reveal()) >= 32 {
+		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}))
+	}
 	mux.HandleFunc("POST /internal/avatar", handler.UploadAvatar)
 
 	if cfg.OAuth.FakeEnabled {

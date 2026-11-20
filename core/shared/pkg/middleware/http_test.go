@@ -21,7 +21,7 @@ func TestCorrelationGeneratesID(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 
 	if seen == "" {
 		t.Fatal("handler context carries no correlation ID")
@@ -37,7 +37,7 @@ func TestCorrelationReusesInboundID(t *testing.T) {
 		seen = correlation.FromContext(r.Context())
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.Header.Set(correlation.Header, "inbound-id")
 
 	rec := httptest.NewRecorder()
@@ -60,7 +60,7 @@ func TestRecoveryReturns500AndLogsStack(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/rooms", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/rooms", nil))
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
@@ -89,7 +89,7 @@ func TestRecoveryPropagatesErrAbortHandler(t *testing.T) {
 		}
 	}()
 
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 }
 
 func TestRecoveryPassesThroughNormalRequests(t *testing.T) {
@@ -98,7 +98,7 @@ func TestRecoveryPassesThroughNormalRequests(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil))
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", rec.Code)
@@ -113,7 +113,7 @@ func TestRequestLoggerRecordsOutcome(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rooms/42", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/rooms/42", nil))
 
 	line := buf.String()
 	for _, want := range []string{`"status":418`, `"method":"GET"`, `"path":"/rooms/42"`, `"duration_ms"`} {
@@ -131,7 +131,7 @@ func TestRequestLoggerDefaultsTo200(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	}))
 
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 
 	if !strings.Contains(buf.String(), `"status":200`) {
 		t.Fatalf("log line does not report status 200: %s", buf.String())
@@ -146,7 +146,7 @@ func TestRequestLoggerLogsServerErrorsAtErrorLevel(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))
 
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 
 	if !strings.Contains(buf.String(), `"level":"ERROR"`) {
 		t.Fatalf("5xx not logged at error level: %s", buf.String())
@@ -174,7 +174,7 @@ func TestChainOrderAndCorrelationInLogs(t *testing.T) {
 		mark("second"),
 	)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.Header.Set(correlation.Header, "corr-99")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 

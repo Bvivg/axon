@@ -49,17 +49,21 @@ EXPOSE 3000
 
 CMD ["node", "server.js"]
 
-FROM mcr.microsoft.com/playwright:v1.62.1-noble AS e2e
+FROM node:${NODE_VERSION}-bookworm-slim AS e2e
 
 WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
-    CI=1
+    CI=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 COPY package.json package-lock.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
+
+RUN npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY playwright.config.ts ./
 COPY e2e ./e2e

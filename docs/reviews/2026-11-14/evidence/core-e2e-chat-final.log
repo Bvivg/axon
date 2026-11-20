@@ -1,0 +1,56 @@
+Selected output from core-e2e-chat-final.log
+
+=== RUN   TestPhotosSentTogetherArriveAsOneAlbumAndPartOfItCanBeForwarded
+--- PASS: TestPhotosSentTogetherArriveAsOneAlbumAndPartOfItCanBeForwarded (1.52s)
+=== RUN   TestAMessageReachesTheOtherPerson
+--- PASS: TestAMessageReachesTheOtherPerson (0.16s)
+=== RUN   TestWhatWasSaidOnTheSocketIsInTheHistory
+--- PASS: TestWhatWasSaidOnTheSocketIsInTheHistory (0.06s)
+=== RUN   TestAReconnectLosesNothing
+--- PASS: TestAReconnectLosesNothing (0.13s)
+=== RUN   TestAStrangerIsRefused
+--- PASS: TestAStrangerIsRefused (0.13s)
+=== RUN   TestASocketWithoutATokenIsRefused
+--- PASS: TestASocketWithoutATokenIsRefused (0.00s)
+=== RUN   TestAResendIsNotASecondMessage
+--- PASS: TestAResendIsNotASecondMessage (0.16s)
+=== RUN   TestAGroupIsBuiltAndRunByItsOwner
+--- PASS: TestAGroupIsBuiltAndRunByItsOwner (0.28s)
+=== RUN   TestEditsAndDeletesReachThePeerLive
+--- PASS: TestEditsAndDeletesReachThePeerLive (0.14s)
+=== RUN   TestAReplyAndAForwardCarryTheirContext
+--- PASS: TestAReplyAndAForwardCarryTheirContext (0.14s)
+=== RUN   TestAPhotoArrivesAsAnImageWithoutItsMetadata
+--- PASS: TestAPhotoArrivesAsAnImageWithoutItsMetadata (0.07s)
+=== RUN   TestAVideoIsReencodedAndLosesItsLocation
+--- PASS: TestAVideoIsReencodedAndLosesItsLocation (0.29s)
+=== RUN   TestAFileIsKeptByteForByte
+--- PASS: TestAFileIsKeptByteForByte (0.07s)
+=== RUN   TestAVoiceMessageBecomesAAC
+--- PASS: TestAVoiceMessageBecomesAAC (0.15s)
+=== RUN   TestWhatCannotBeSentIsRefused
+--- PASS: TestWhatCannotBeSentIsRefused (0.14s)
+=== RUN   TestADeviceSubscribesToPushWithTheServersKeyAndLeavesAgain
+--- PASS: TestADeviceSubscribesToPushWithTheServersKeyAndLeavesAgain (0.13s)
+=== RUN   TestSearchFindsMessagesOnlyForMembers
+--- PASS: TestSearchFindsMessagesOnlyForMembers (0.22s)
+=== RUN   TestForwardingABatchReachesEveryRoomInOrderAndShowsWhoRead
+--- PASS: TestForwardingABatchReachesEveryRoomInOrderAndShowsWhoRead (0.23s)
+=== RUN   TestDeletingSeveralOwnMessagesAtOnce
+--- PASS: TestDeletingSeveralOwnMessagesAtOnce (0.14s)
+=== RUN   TestAFirstDirectMessageAnnouncesTheRoomToThePeer
+--- PASS: TestAFirstDirectMessageAnnouncesTheRoomToThePeer (0.15s)
+=== RUN   TestTypingAndReadingReachThePeerLive
+--- PASS: TestTypingAndReadingReachThePeerLive (0.13s)
+=== RUN   TestPresenceIsPushedAndLastSeenIsRecorded
+--- PASS: TestPresenceIsPushedAndLastSeenIsRecorded (0.14s)
+=== RUN   TestABigFileGoesUpInPartsResumesAfterADropAndReachesThePeer
+--- PASS: TestABigFileGoesUpInPartsResumesAfterADropAndReachesThePeer (0.71s)
+=== RUN   TestATextDocumentIsStoredWithBrotli
+--- PASS: TestATextDocumentIsStoredWithBrotli (0.50s)
+=== RUN   TestTheSamePhotoTwiceIsStoredOnce
+--- PASS: TestTheSamePhotoTwiceIsStoredOnce (1.05s)
+=== RUN   TestAWithdrawnDraftIsGone
+--- PASS: TestAWithdrawnDraftIsGone (0.17s)
+PASS
+ok  	github.com/bvivg/axon/core/services/chat/e2e	7.035s

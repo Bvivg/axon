@@ -2,6 +2,7 @@
 
 import { timestampDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -18,11 +19,22 @@ export const chatKeys = {
   rooms: ["chat", "rooms"] as const,
   room: (id: string) => ["chat", "room", id] as const,
   history: (id: string) => ["chat", "history", id] as const,
-  lastMessages: ["chat", "last-message"] as const,
-  lastMessage: (id: string) => ["chat", "last-message", id] as const,
   media: (id: string) => ["chat", "media", id] as const,
   mediaOf: (id: string, kinds: MessageKind[]) => ["chat", "media", id, kinds.join(",")] as const,
+  readers: (messageID: string) => ["chat", "readers", messageID] as const,
+  pushKey: ["chat", "push-key"] as const,
+  search: (id: string, query: string) => ["chat", "search", id, query] as const,
+  direct: (peerID: string) => ["chat", "direct", peerID] as const,
 };
+
+export function usePushKey(enabled = true) {
+  return useQuery({
+    queryKey: chatKeys.pushKey,
+    queryFn: async () => (await chatClient.getPushKey({})).publicKey,
+    staleTime: Infinity,
+    enabled,
+  });
+}
 
 export function useRooms() {
   return useQuery({
@@ -43,6 +55,7 @@ export function useRoom(roomID: string) {
     },
     enabled: roomID !== "",
 
+    refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
 }
@@ -58,6 +71,7 @@ const kindNames: Partial<Record<MessageKind, string>> = {
   [MessageKind.ATTACHMENT]: "attachment",
   [MessageKind.IMAGE]: "image",
   [MessageKind.VIDEO]: "video",
+  [MessageKind.ALBUM]: "album",
   [MessageKind.SYSTEM]: "system",
 };
 
@@ -94,6 +108,21 @@ function payloadOf(m: Message): Record<string, unknown> | undefined {
         filename: m.payload.value.filename,
         mime: m.payload.value.mime,
         size_bytes: Number(m.payload.value.sizeBytes),
+      };
+    case "album":
+      return {
+        items: m.payload.value.items.map((item) => ({
+          kind: kindNames[item.kind] ?? "image",
+          url: item.url,
+          thumbnail_url: item.thumbnailUrl,
+          poster_url: item.posterUrl,
+          width: item.width,
+          height: item.height,
+          duration_ms: Number(item.durationMs),
+          size_bytes: Number(item.sizeBytes),
+          mime: item.mime,
+          filename: item.filename,
+        })),
       };
     case "system":
       return {
@@ -139,12 +168,15 @@ export function toWireMessage(m: Message): WireMessage {
   };
 }
 
+const historyPageSize = 100;
+
 export function useHistory(roomID: string) {
   return useInfiniteQuery({
     queryKey: chatKeys.history(roomID),
     queryFn: async ({ pageParam }): Promise<HistoryPage> => {
       const resp = await chatClient.listMessages({
         roomId: roomID,
+        limit: historyPageSize,
         beforeSeq: pageParam > 0 ? BigInt(pageParam) : undefined,
       });
       return {
@@ -204,13 +236,13 @@ export async function refreshNewestPage(queryClient: QueryClient, roomID: string
   const key = chatKeys.history(roomID);
   const loaded = queryClient.getQueryData<InfiniteData<HistoryPage, number>>(key);
   if (!loaded || loaded.pages.length <= 1) {
-    void queryClient.invalidateQueries({ queryKey: key });
+    await queryClient.invalidateQueries({ queryKey: key });
     return;
   }
 
   let newest: HistoryPage;
   try {
-    const resp = await chatClient.listMessages({ roomId: roomID });
+    const resp = await chatClient.listMessages({ roomId: roomID, limit: historyPageSize });
     newest = { messages: resp.messages.map(toWireMessage), hasMore: resp.hasMore };
   } catch {
     void queryClient.invalidateQueries({ queryKey: key, refetchType: "none" });
@@ -239,24 +271,51 @@ export function forgetHistory(queryClient: QueryClient, roomID: string) {
   void queryClient.invalidateQueries({ queryKey: chatKeys.history(roomID), refetchType: "none" });
 }
 
-export function useDirectRoomLookup() {
-  return useMutation({
-    mutationFn: async (peerID: string): Promise<Room | null> => {
-      const resp = await chatClient.getDirectRoom({ userId: peerID });
-      return resp.room ?? null;
+const jumpPageSize = 200;
+
+export async function loadHistoryThrough(queryClient: QueryClient, roomID: string, seq: number) {
+  const key = chatKeys.history(roomID);
+  await queryClient.cancelQueries({ queryKey: key });
+  for (;;) {
+    const last = queryClient.getQueryData<InfiniteData<HistoryPage, number>>(key)?.pages.at(-1);
+    const oldest = last?.messages[0]?.seq;
+    if (!last?.hasMore || oldest === undefined || oldest <= seq) return;
+
+    const resp = await chatClient.listMessages({ roomId: roomID, limit: jumpPageSize, beforeSeq: BigInt(oldest) });
+    const page: HistoryPage = { messages: resp.messages.map(toWireMessage), hasMore: resp.hasMore };
+    queryClient.setQueryData<InfiniteData<HistoryPage, number>>(key, (data) =>
+      data && data.pages.at(-1)?.messages[0]?.seq === oldest
+        ? { pages: [...data.pages, page], pageParams: [...data.pageParams, oldest] }
+        : data,
+    );
+  }
+}
+
+export const minSearchQueryLength = 2;
+
+export function useSearchMessages(roomID: string, query: string) {
+  const trimmed = query.trim();
+
+  return useQuery({
+    queryKey: chatKeys.search(roomID, trimmed),
+    queryFn: async ({ signal }): Promise<WireMessage[]> => {
+      const resp = await chatClient.searchMessages({ roomId: roomID, query: trimmed }, { signal });
+      return resp.messages.map(toWireMessage);
     },
+    enabled: roomID !== "" && [...trimmed].length >= minSearchQueryLength,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
   });
 }
 
-export function useLastMessage(roomID: string) {
+export function useDirectRoom(peerID: string) {
   return useQuery({
-    queryKey: chatKeys.lastMessage(roomID),
-    queryFn: async () => {
-      const resp = await chatClient.listMessages({ roomId: roomID, limit: 1 });
-      return resp.messages[0] ?? null;
+    queryKey: chatKeys.direct(peerID),
+    queryFn: async (): Promise<Room | null> => {
+      const resp = await chatClient.getDirectRoom({ userId: peerID });
+      return resp.room ?? null;
     },
-    enabled: roomID !== "",
-    staleTime: 30_000,
+    enabled: peerID !== "",
   });
 }
 
@@ -267,6 +326,7 @@ export function useRoomMedia(roomID: string, kinds: MessageKind[]) {
       const resp = await chatClient.listMessages({
         roomId: roomID,
         kinds,
+        includeGroupedItems: true,
         limit: 60,
         beforeSeq: pageParam > 0 ? BigInt(pageParam) : undefined,
       });
@@ -311,7 +371,6 @@ export function useHideRoom() {
     },
     onSuccess: (roomID) => {
       forgetHistory(queryClient, roomID);
-      void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(roomID) });
       void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
     },
   });
@@ -379,4 +438,39 @@ export function useRenameGroup() {
     (vars: { roomID: string; name: string }) => chatClient.renameGroup({ roomId: vars.roomID, name: vars.name }),
     (vars) => vars.roomID,
   );
+}
+
+export interface Reader {
+  userId: string;
+  readAt: Date | null;
+}
+
+export function useMessageReaders(messageID: string | null) {
+  return useQuery({
+    queryKey: chatKeys.readers(messageID ?? ""),
+    queryFn: async (): Promise<Reader[]> => {
+      const resp = await chatClient.listMessageReaders({ messageId: messageID ?? "" });
+      return resp.readers.map((reader) => ({
+        userId: reader.userId,
+        readAt: reader.readAt ? timestampDate(reader.readAt) : null,
+      }));
+    },
+    enabled: messageID !== null,
+    staleTime: 0,
+  });
+}
+
+export function useForwardMessages() {
+  return useMutation({
+    mutationFn: async (input: {
+      messageIds: string[];
+      parts: { messageId: string; positions: number[] }[];
+      roomIds: string[];
+      comment: string;
+      clientId: string;
+    }) => {
+      const resp = await chatClient.forwardMessages(input);
+      return resp.sent;
+    },
+  });
 }

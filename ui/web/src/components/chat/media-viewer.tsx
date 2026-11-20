@@ -1,82 +1,97 @@
 "use client";
 
-import { Dialog as BaseDialog } from "@base-ui/react/dialog";
-import { Download, X } from "lucide-react";
-import Image from "next/image";
-import type { MouseEvent } from "react";
+import dynamic from "next/dynamic";
+import { useMemo, type CSSProperties } from "react";
+import Lightbox, { stopNavigationEventsPropagation, type Slide } from "yet-another-react-lightbox";
+import Captions from "yet-another-react-lightbox/plugins/captions";
+import Counter from "yet-another-react-lightbox/plugins/counter";
+import Download from "yet-another-react-lightbox/plugins/download";
+import Zoom from "yet-another-react-lightbox/plugins/zoom";
+import "yet-another-react-lightbox/styles.css";
+import "yet-another-react-lightbox/plugins/captions.css";
+import "yet-another-react-lightbox/plugins/counter.css";
 
-import { ContentKind, contentOf } from "@/lib/chat/content";
-import type { WireMessage } from "@/lib/ws/protocol";
+import { ContentKind } from "@/lib/chat/content";
+import type { ViewerSlide } from "@/lib/chat/viewer";
 
-export function MediaViewer({ message, onClose }: { message: WireMessage | null; onClose: () => void }) {
-  const content = message ? contentOf(message) : null;
-  const caption = message?.body.trim() ?? "";
+const VideoPlayer = dynamic(() => import("@/components/chat/video-player").then((m) => m.VideoPlayer), {
+  ssr: false,
+});
 
-  const isImage = content?.kind === ContentKind.Image;
-  const isVideo = content?.kind === ContentKind.Video;
-  const original = isImage ? content.image.url : isVideo ? content.video.url : "";
+const maxZoom = 4;
+const widescreen = 16 / 9;
+const playerChrome = "48px";
 
-  const closeOnEmpty = (event: MouseEvent<HTMLElement>) => {
-    if (event.target === event.currentTarget) onClose();
+declare module "yet-another-react-lightbox" {
+  interface ChatVideoSlide extends GenericSlide {
+    type: "chat-video";
+    video: ViewerSlide;
+  }
+
+  interface SlideTypes {
+    "chat-video": ChatVideoSlide;
+  }
+}
+
+function videoFrame(slide: ViewerSlide, rect: { width: number; height: number }): CSSProperties {
+  const ratio = slide.width > 0 && slide.height > 0 ? slide.width / slide.height : widescreen;
+  return {
+    aspectRatio: String(ratio),
+    width: `min(${rect.width}px, calc((${rect.height}px - ${playerChrome}) * ${ratio}))`,
   };
+}
+
+export function MediaViewer({
+  slides,
+  index,
+  onClose,
+}: {
+  slides: ViewerSlide[];
+  index: number | null;
+  onClose: () => void;
+}) {
+  const items = useMemo<Slide[]>(
+    () =>
+      slides.map((slide): Slide => {
+        const common = { description: slide.caption || undefined, download: slide.url };
+        return slide.kind === ContentKind.Video
+          ? { type: "chat-video", video: slide, ...common }
+          : {
+              src: slide.url,
+              alt: slide.caption || "Photo",
+              width: slide.width || undefined,
+              height: slide.height || undefined,
+              ...common,
+            };
+      }),
+    [slides],
+  );
 
   return (
-    <BaseDialog.Root open={isImage || isVideo} onOpenChange={(open) => (open ? undefined : onClose())}>
-      <BaseDialog.Portal>
-        <BaseDialog.Backdrop className="fixed inset-0 z-50 bg-black/90 transition-opacity duration-200 ease-signal data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <BaseDialog.Popup
-          onClick={closeOnEmpty}
-          className="fixed inset-0 z-50 flex flex-col outline-none transition-opacity duration-200 ease-signal data-[ending-style]:opacity-0 data-[starting-style]:opacity-0"
-        >
-          <BaseDialog.Title className="sr-only">{isVideo ? "Video" : "Photo"}</BaseDialog.Title>
-          <div className="flex shrink-0 items-center justify-end gap-1 p-3" onClick={closeOnEmpty}>
-            <a
-              href={original}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open original"
-              className="flex size-9 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <Download aria-hidden className="size-5" />
-            </a>
-            <BaseDialog.Close
-              aria-label="Close"
-              className="flex size-9 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <X aria-hidden className="size-5" />
-            </BaseDialog.Close>
-          </div>
-
-          <div className="flex min-h-0 flex-1 items-center justify-center px-4 pb-4" onClick={closeOnEmpty}>
-            {isImage ? (
-              <Image
-                src={content.image.url}
-                alt={caption || "Photo"}
-                width={content.image.width || 1600}
-                height={content.image.height || 1200}
-                unoptimized
-                sizes="100vw"
-                className="h-auto max-h-full w-auto max-w-full object-contain"
+    <Lightbox
+      open={index !== null && index >= 0}
+      index={index ?? 0}
+      close={onClose}
+      slides={items}
+      plugins={[Captions, Counter, Download, Zoom]}
+      carousel={{ finite: true }}
+      zoom={{ maxZoomPixelRatio: maxZoom, scrollToZoom: true }}
+      captions={{ descriptionTextAlign: "center", descriptionMaxLines: 4 }}
+      controller={{ closeOnBackdropClick: true }}
+      render={{
+        slide: ({ slide, rect, offset }) =>
+          slide.type === "chat-video" ? (
+            <div {...stopNavigationEventsPropagation()}>
+              <VideoPlayer
+                key={slide.video.key}
+                src={slide.video.url}
+                poster={slide.video.preview}
+                active={offset === 0}
+                style={videoFrame(slide.video, rect)}
               />
-            ) : null}
-            {isVideo ? (
-              <video
-                src={content.video.url}
-                poster={content.video.posterUrl || undefined}
-                controls
-                autoPlay
-                playsInline
-                aria-label="Video"
-                className="max-h-full max-w-full"
-              />
-            ) : null}
-          </div>
-
-          {caption ? (
-            <p className="shrink-0 px-6 pb-6 text-center text-sm whitespace-pre-wrap text-white/90">{caption}</p>
-          ) : null}
-        </BaseDialog.Popup>
-      </BaseDialog.Portal>
-    </BaseDialog.Root>
+            </div>
+          ) : undefined,
+      }}
+    />
   );
 }

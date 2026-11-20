@@ -2,27 +2,36 @@ import { createClient } from "@connectrpc/connect";
 
 import { AuthService } from "@/gen/axon/auth/v1/auth_pb";
 import { bareTransport } from "@/lib/connect/transport";
-import { clearAccessToken, setAccessToken } from "@/lib/auth/tokens";
+import { clearAccessToken, setAccessToken, tokenRevision } from "@/lib/auth/tokens";
 
 const client = createClient(AuthService, bareTransport);
 
-let inFlight: Promise<boolean> | null = null;
+let inFlight: { promise: Promise<boolean>; controller: AbortController } | null = null;
 
 export function refreshSession(): Promise<boolean> {
-  inFlight ??= rotate().finally(() => {
-    inFlight = null;
+  if (inFlight) return inFlight.promise;
+  const controller = new AbortController();
+  const promise = rotate(controller.signal, tokenRevision()).finally(() => {
+    if (inFlight?.promise === promise) inFlight = null;
   });
-  return inFlight;
+  inFlight = { promise, controller };
+  return promise;
 }
 
-async function rotate(): Promise<boolean> {
+export function cancelSessionRefresh(): void {
+  inFlight?.controller.abort();
+  inFlight = null;
+}
+
+async function rotate(signal: AbortSignal, revision: number): Promise<boolean> {
   try {
-    const resp = await client.refreshToken({});
+    const resp = await client.refreshToken({}, { signal });
+    if (signal.aborted || tokenRevision() !== revision) return false;
     setAccessToken(resp.tokens);
     return true;
   } catch {
 
-    clearAccessToken();
+    if (!signal.aborted && tokenRevision() === revision) clearAccessToken();
     return false;
   }
 }

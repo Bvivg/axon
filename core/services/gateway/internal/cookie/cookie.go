@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
+	"github.com/bvivg/axon/core/shared/pkg/authn"
 )
 
 const Name = "axon_refresh"
@@ -93,6 +94,10 @@ func (i *Interceptor) store(h http.Header, tokens *authv1.TokenPair) {
 	}
 
 	setCookie(h, i.cookie(tokens.GetRefreshToken(), int(i.cfg.MaxAge.Seconds())))
+	if tokens.GetAccessToken() != "" {
+		setCookie(h, i.mediaCookie("/", "", -1))
+		setCookie(h, i.mediaCookie(authn.MediaPath, tokens.GetAccessToken(), int(tokens.GetExpiresIn())))
+	}
 
 	tokens.RefreshToken = ""
 }
@@ -100,6 +105,12 @@ func (i *Interceptor) store(h http.Header, tokens *authv1.TokenPair) {
 func (i *Interceptor) clear(h http.Header) {
 
 	setCookie(h, i.cookie("", -1))
+	setCookie(h, i.mediaCookie("/", "", -1))
+	setCookie(h, i.mediaCookie(authn.MediaPath, "", -1))
+}
+
+func (i *Interceptor) mediaCookie(path, value string, maxAge int) *http.Cookie {
+	return &http.Cookie{Name: authn.MediaCookieName, Value: value, Path: path, MaxAge: maxAge, HttpOnly: true, Secure: i.cfg.Secure, SameSite: http.SameSiteLaxMode}
 }
 
 func (i *Interceptor) cookie(value string, maxAge int) *http.Cookie {

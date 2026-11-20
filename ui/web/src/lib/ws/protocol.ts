@@ -9,11 +9,13 @@ export type Outgoing =
   | { type: "watch_presence"; to_user_id: string }
   | { type: "edit"; client_id: string; message_id: string; body: string }
   | { type: "delete"; message_id: string }
+  | { type: "delete"; message_ids: string[] }
   | ({
       type: "send";
       client_id: string;
       body: string;
       upload_id?: string;
+      upload_ids?: string[];
       reply_to_id?: string;
       forwarded_from_id?: string;
     } & ({ room_id: string } | { to_user_id: string }));
@@ -52,13 +54,13 @@ export interface WireMessage {
 
 export type Incoming =
   | { type: "message"; message: WireMessage }
-  | { type: "subscribed"; room_id: string; seq: number }
+  | { type: "subscribed"; room_id: string; seq: number; behind?: boolean }
   | { type: "ack"; room_id: string; client_id: string; seq: number }
   | { type: "read"; room_id: string; user_id: string; seq: number }
   | { type: "typing"; room_id: string; user_id: string }
   | { type: "presence"; user_id: string }
   | { type: "message_updated"; message: WireMessage }
-  | { type: "room_added"; room_id: string }
+  | { type: "room_added"; room_id: string; message?: WireMessage }
   | { type: "room_removed"; room_id: string }
   | { type: "error"; code: string; reason: string; client_id?: string };
 

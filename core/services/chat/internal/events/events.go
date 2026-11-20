@@ -87,3 +87,15 @@ func kindOrText(kind domain.MessageKind) domain.MessageKind {
 	}
 	return kind
 }
+
+type Listener interface {
+	MessageSent(ctx context.Context, m domain.Message)
+}
+
+type Fanout []Listener
+
+func (f Fanout) MessageSent(ctx context.Context, m domain.Message) {
+	for _, listener := range f {
+		listener.MessageSent(ctx, m)
+	}
+}

@@ -1,0 +1,72 @@
+[
+  {
+    "module": "shared",
+    "phase": "test",
+    "exit_code": 0,
+    "seconds": 17.4,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-shared-test.log"
+  },
+  {
+    "module": "shared",
+    "phase": "build",
+    "exit_code": 0,
+    "seconds": 1.8,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-shared-build.log"
+  },
+  {
+    "module": "auth",
+    "phase": "test",
+    "exit_code": 0,
+    "seconds": 7.0,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-auth-test.log"
+  },
+  {
+    "module": "auth",
+    "phase": "build",
+    "exit_code": 0,
+    "seconds": 2.4,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-auth-build.log"
+  },
+  {
+    "module": "chat",
+    "phase": "test",
+    "exit_code": 0,
+    "seconds": 16.5,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-chat-test.log"
+  },
+  {
+    "module": "chat",
+    "phase": "build",
+    "exit_code": 0,
+    "seconds": 5.1,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-chat-build.log"
+  },
+  {
+    "module": "gateway",
+    "phase": "test",
+    "exit_code": 0,
+    "seconds": 2.3,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-gateway-test.log"
+  },
+  {
+    "module": "gateway",
+    "phase": "build",
+    "exit_code": 0,
+    "seconds": 1.6,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-gateway-build.log"
+  },
+  {
+    "module": "game",
+    "phase": "test",
+    "exit_code": 0,
+    "seconds": 1.1,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-game-test.log"
+  },
+  {
+    "module": "game",
+    "phase": "build",
+    "exit_code": 0,
+    "seconds": 1.4,
+    "log": "/tmp/axon-quality-audit-2026-11-18/backend-game-build.log"
+  }
+]

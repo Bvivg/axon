@@ -73,6 +73,7 @@ func (h *Handler) Register(
 		Email:       msg.GetEmail(),
 		Password:    msg.GetPassword(),
 		DisplayName: msg.GetDisplayName(),
+		Username:    msg.Username,
 		Device:      deviceFrom(req.Header()),
 	})
 	if err != nil {
@@ -206,6 +207,7 @@ func (h *Handler) UpdateProfile(
 		FirstName: req.Msg.FirstName,
 		LastName:  req.Msg.LastName,
 		Nickname:  req.Msg.Nickname,
+		Username:  req.Msg.Username,
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
@@ -223,7 +225,7 @@ func (h *Handler) ListSessions(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	sessions, err := h.svc.ListSessions(ctx, claims.UserID, claims.FamilyID)
+	sessions, err := h.svc.ListSessionsWithPresence(ctx, claims.UserID, claims.FamilyID, req.Msg.IncludePresence == nil || req.Msg.GetIncludePresence())
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
@@ -283,7 +285,7 @@ func (h *Handler) SearchUsers(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	users, err := h.svc.SearchUsers(ctx, claims.UserID, req.Msg.GetQuery())
+	users, next, err := h.svc.SearchUsers(ctx, claims.UserID, req.Msg.GetQuery(), req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
@@ -293,7 +295,7 @@ func (h *Handler) SearchUsers(
 		out[i] = toProtoPublicProfile(u, h.avatarURLs)
 	}
 
-	return connect.NewResponse(&authv1.SearchUsersResponse{Users: out}), nil
+	return connect.NewResponse(&authv1.SearchUsersResponse{Users: out, NextPageToken: &next}), nil
 }
 
 func (h *Handler) GetUsersPublicProfiles(
@@ -324,6 +326,24 @@ func (h *Handler) GetUsersPublicProfiles(
 	}
 
 	return connect.NewResponse(&authv1.GetUsersPublicProfilesResponse{Users: out}), nil
+}
+
+func (h *Handler) GetPublicProfileByUsername(
+	ctx context.Context,
+	req *connect.Request[authv1.GetPublicProfileByUsernameRequest],
+) (*connect.Response[authv1.GetPublicProfileByUsernameResponse], error) {
+	if _, err := h.authenticate(req.Header()); err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	profile, err := h.svc.PublicProfileByUsername(ctx, req.Msg.GetUsername())
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.GetPublicProfileByUsernameResponse{
+		User: toProtoPublicProfile(profile, h.avatarURLs),
+	}), nil
 }
 
 func (h *Handler) UpdateLastSeen(

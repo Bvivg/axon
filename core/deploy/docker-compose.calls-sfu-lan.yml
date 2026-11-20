@@ -1,0 +1,31 @@
+services:
+  auth:
+    env_file:
+      - ../../.local/evidence/calls/LAN-SFU/.secrets/internal.env
+  chat:
+    env_file:
+      - ../../.local/evidence/calls/LAN-SFU/.secrets/internal.env
+      - ../../.local/evidence/calls/LAN-SFU/.secrets/media.env
+    environment:
+      CALLS_MEDIA_ADMISSION_PROBE: "false"
+      CALLS_SFU_ENABLED: "true"
+      CALLS_SFU_DISABLE_NEW: ${CALLS_SFU_DISABLE_NEW:-false}
+      LIVEKIT_API_URL: http://livekit:7880
+      LIVEKIT_PUBLIC_URL: /livekit
+  gateway:
+    env_file:
+      - ../../.local/evidence/calls/LAN-SFU/.secrets/internal.env
+    environment:
+      LIVEKIT_SIGNAL_URL: http://livekit:7880
+  livekit:
+    image: livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
+    restart: unless-stopped
+    command: ["--config", "/secrets/livekit.yaml"]
+    volumes:
+      - ../../.local/evidence/calls/LAN-SFU/.secrets/livekit.yaml:/secrets/livekit.yaml:ro
+    ports:
+      - "${AXON_LAN_IP:-192.168.2.1}:7881:7881/tcp"
+      - "${AXON_LAN_IP:-192.168.2.1}:7882:7882/udp"
+  calls-check:
+    volumes:
+      - ../../.local/evidence/calls/LAN-SFU/.secrets/media.env:/evidence-sfu/media.env:ro

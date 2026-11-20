@@ -1,0 +1,13 @@
+syntax = "proto3";
+package axon.auth.v1;
+
+service SessionControlService {
+  rpc CheckFamily(CheckFamilyRequest) returns (CheckFamilyResponse);
+}
+message CheckFamilyRequest {
+  string user_id = 1;
+  string family_id = 2;
+}
+message CheckFamilyResponse {
+  bool active = 1;
+}

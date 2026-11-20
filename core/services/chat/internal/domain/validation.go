@@ -2,15 +2,18 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+
+	"github.com/bvivg/axon/core/shared/pkg/safehttp"
 )
 
 const (
 	MaxRoomNameLength = 120
-	MaxMessageLength  = 4096
+	MaxMessageLength  = 65536
 
 	MaxClientIDLength = 64
 
@@ -18,6 +21,18 @@ const (
 	DefaultPageSize = 50
 
 	MaxGroupMembers = 100
+
+	MaxForwardMessages = 100
+	MaxForwardTargets  = 50
+
+	MaxDeleteMessages = 100
+
+	MinAlbumItems = 2
+	MaxAlbumItems = 10
+
+	MinSearchQueryLength = 2
+	MaxSearchQueryLength = 100
+	MaxSearchResults     = 50
 )
 
 func ValidateUserIDs(field string, raw []string, exclude uuid.UUID) ([]uuid.UUID, error) {
@@ -41,6 +56,32 @@ func ValidateUserIDs(field string, raw []string, exclude uuid.UUID) ([]uuid.UUID
 
 	if len(ids) >= MaxGroupMembers {
 		return nil, newValidationError(field, "has too many people")
+	}
+
+	return ids, nil
+}
+
+func ValidateIDList(field string, raw []string, limit int) ([]uuid.UUID, error) {
+	seen := make(map[uuid.UUID]struct{}, len(raw))
+	ids := make([]uuid.UUID, 0, len(raw))
+
+	for _, value := range raw {
+		id, err := uuid.Parse(strings.TrimSpace(value))
+		if err != nil {
+			return nil, newValidationError(field, "contains an invalid id")
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	switch {
+	case len(ids) == 0:
+		return nil, newValidationError(field, "is required")
+	case len(ids) > limit:
+		return nil, newValidationError(field, "has too many ids")
 	}
 
 	return ids, nil
@@ -71,6 +112,21 @@ func ValidateMessageBody(body string) (string, error) {
 		return "", newValidationError("body", "is too long")
 	case !utf8.ValidString(trimmed):
 		return "", newValidationError("body", "is not valid UTF-8")
+	}
+
+	return trimmed, nil
+}
+
+func ValidateSearchQuery(query string) (string, error) {
+	trimmed := strings.TrimSpace(query)
+
+	switch {
+	case !utf8.ValidString(trimmed):
+		return "", newValidationError("query", "is not valid UTF-8")
+	case utf8.RuneCountInString(trimmed) < MinSearchQueryLength:
+		return "", newValidationError("query", "is too short")
+	case utf8.RuneCountInString(trimmed) > MaxSearchQueryLength:
+		return "", newValidationError("query", "is too long")
 	}
 
 	return trimmed, nil
@@ -173,6 +229,33 @@ func ValidatePayload(kind MessageKind, raw json.RawMessage) (json.RawMessage, er
 		}
 		return json.Marshal(p)
 
+	case MessageKindAlbum:
+		var p AlbumPayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, newValidationError("payload", "is not a valid album payload")
+		}
+		if len(p.Items) < MinAlbumItems || len(p.Items) > MaxAlbumItems {
+			return nil, newValidationError("payload", "a group holds 2 to 10 attachments")
+		}
+		for _, item := range p.Items {
+			if strings.TrimSpace(item.URL) == "" || item.SizeBytes <= 0 {
+				return nil, newValidationError("payload", "a grouped attachment is missing url or size_bytes")
+			}
+			switch item.Kind {
+			case MessageKindImage, MessageKindVideo:
+				if item.Width <= 0 || item.Height <= 0 {
+					return nil, newValidationError("payload", "a photo or video is missing width or height")
+				}
+			case MessageKindAttachment:
+				if strings.TrimSpace(item.Filename) == "" || strings.TrimSpace(item.Mime) == "" {
+					return nil, newValidationError("payload", "a file is missing filename or mime")
+				}
+			default:
+				return nil, newValidationError("payload", "a group holds only photos, videos, and files")
+			}
+		}
+		return json.Marshal(p)
+
 	case MessageKindSystem:
 		var p SystemPayload
 		if err := json.Unmarshal(raw, &p); err != nil {
@@ -210,4 +293,61 @@ func ValidatePage(p Page) (Page, error) {
 	}
 
 	return p, nil
+}
+
+func AlbumItemOf(kind MessageKind, payload json.RawMessage) (AlbumItem, error) {
+	switch kind {
+	case MessageKindImage, MessageKindVideo, MessageKindAttachment:
+	default:
+		return AlbumItem{}, newValidationError("upload_ids", "a group holds only photos, videos, and files")
+	}
+	var item AlbumItem
+	if err := json.Unmarshal(payload, &item); err != nil {
+		return AlbumItem{}, newValidationError("upload_ids", "an upload has no usable payload")
+	}
+	item.Kind = kind
+	return item, nil
+}
+
+func (i AlbumItem) Single() (MessageKind, json.RawMessage, error) {
+	var payload any
+	switch i.Kind {
+	case MessageKindImage:
+		payload = ImagePayload{URL: i.URL, ThumbnailURL: i.ThumbnailURL, Width: i.Width, Height: i.Height, SizeBytes: i.SizeBytes, Mime: i.Mime}
+	case MessageKindVideo:
+		payload = VideoPayload{
+			URL: i.URL, PosterURL: i.PosterURL, Width: i.Width, Height: i.Height,
+			DurationMS: i.DurationMS, SizeBytes: i.SizeBytes, Mime: i.Mime,
+		}
+	case MessageKindAttachment:
+		payload = AttachmentPayload{URL: i.URL, Filename: i.Filename, SizeBytes: i.SizeBytes, Mime: i.Mime}
+	default:
+		return "", nil, newValidationError("payload", "a group holds only photos, videos, and files")
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("domain: album item payload: %w", err)
+	}
+	return i.Kind, raw, nil
+}
+
+const (
+	maxPushEndpoint = 2048
+	maxPushKey      = 256
+)
+
+func ValidatePushSubscription(s PushSubscription) (PushSubscription, error) {
+	s.Endpoint = strings.TrimSpace(s.Endpoint)
+	s.P256DH = strings.TrimSpace(s.P256DH)
+	s.Auth = strings.TrimSpace(s.Auth)
+
+	switch {
+	case safehttp.ValidateURL(s.Endpoint) != nil || len(s.Endpoint) > maxPushEndpoint:
+		return PushSubscription{}, newValidationError("endpoint", "must be an https URL")
+	case s.P256DH == "" || len(s.P256DH) > maxPushKey:
+		return PushSubscription{}, newValidationError("p256dh", "is missing or too long")
+	case s.Auth == "" || len(s.Auth) > maxPushKey:
+		return PushSubscription{}, newValidationError("auth", "is missing or too long")
+	}
+	return s, nil
 }

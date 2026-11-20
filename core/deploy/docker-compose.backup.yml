@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-axon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-axon}
+      POSTGRES_DB: ${POSTGRES_DB:-axon}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
+      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
+      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
+      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
+    command: ["server", "/data"]
+    volumes:
+      - minio-data:/data
+    healthcheck: &minio-health
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  snapshot:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    environment:
+      MINIO_ROOT_USER: axon-snapshot
+      MINIO_ROOT_PASSWORD: ${AXON_SNAPSHOT_PASSWORD:-unused-after-drill}
+      AXON_PEER_MINIO_URL: ${AXON_PEER_MINIO_URL:-}
+      AXON_PEER_MINIO_USER: ${AXON_PEER_MINIO_USER:-}
+      AXON_PEER_MINIO_PASSWORD: ${AXON_PEER_MINIO_PASSWORD:-}
+    command: ["server", "/data"]
+    volumes:
+      - snapshot-data:/data
+    healthcheck: *minio-health
+
+  archive:
+    image: postgres:17-alpine
+    entrypoint: ["tar"]
+    working_dir: /snapshot
+    read_only: true
+    network_mode: none
+    volumes:
+      - snapshot-data:/snapshot
+
+volumes:
+  postgres-data:
+  minio-data:
+  snapshot-data:

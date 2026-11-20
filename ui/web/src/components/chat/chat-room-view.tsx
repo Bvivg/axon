@@ -1,19 +1,26 @@
 "use client";
 
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Images, Info, LogOut, MoreVertical, Trash2, Upload } from "lucide-react";
+import { toast } from "sonner";
+import { ChevronLeft, Images, Info, Loader2, LogOut, MoreVertical, Search, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { ConfirmDialog } from "@/components/chat/confirm-dialog";
+import { CallButtons } from "@/components/calls/call-buttons";
+import { CallMiniBar } from "@/components/calls/call-mini-bar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { ForwardDialog } from "@/components/chat/forward-dialog";
 import { GroupInfoDialog } from "@/components/chat/group-info-dialog";
 import { MediaViewer } from "@/components/chat/media-viewer";
+import { MessageSearch } from "@/components/chat/message-search";
+import { ReadersDialog } from "@/components/chat/readers-dialog";
+import { SelectionBar } from "@/components/chat/selection-bar";
 import { ComposerMode, MessageComposer, type ComposerContext } from "@/components/chat/message-composer";
 import { RoomMedia } from "@/components/chat/room-media";
-import { Transcript, type MessageActions } from "@/components/chat/transcript";
+import { Transcript, type MessageActions, type TranscriptHandle } from "@/components/chat/transcript";
 import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -27,16 +34,51 @@ import { RoomKind } from "@/gen/axon/chat/v1/chat_pb";
 import { signInPath } from "@/lib/auth/guards";
 import { useSession } from "@/lib/auth/session";
 import { ContentKind, contentOf, membersLabel, previewOf, targetIDsOf, type NameOf } from "@/lib/chat/content";
+import { HistoryMode, openChat } from "@/lib/chat/address";
+import { copyImage } from "@/lib/chat/copy-image";
+import {
+  forwardRequest,
+  selectedCount,
+  selectedMessages,
+  selectionText,
+  toggleItem,
+  toggleMessage,
+  type ForwardRequest,
+  type MessageSelection,
+} from "@/lib/chat/selection";
+import { slideIndexOf, viewerSlidesOf } from "@/lib/chat/viewer";
 import { usePendingUploads } from "@/lib/chat/use-pending-uploads";
 import { describe } from "@/lib/errors";
-import { usePageVisible } from "@/lib/hooks/use-page-visible";
-import { chatKeys, useHideRoom, useHistory, useLeaveRoom, useMarkRead, useRoom } from "@/lib/query/chat";
+import { fromTimestamp, initials, lastSeen, profileName } from "@/lib/format";
+import { firstUnreadOf } from "@/lib/chat/series";
+import { useAttention } from "@/lib/hooks/use-attention";
+import {
+  chatKeys,
+  loadHistoryThrough,
+  refreshNewestPage,
+  useForwardMessages,
+  useHideRoom,
+  useHistory,
+  useLeaveRoom,
+  useMarkRead,
+  useRoom,
+} from "@/lib/query/chat";
 import { usePublicProfiles } from "@/lib/query/people";
+import { refreshSoon } from "@/lib/query/refresh";
 import { cn } from "@/lib/utils";
 import { useChatSocket, type ChatTarget } from "@/lib/ws/use-chat-socket";
-import type { WireMessage } from "@/lib/ws/protocol";
+import { newClientID, type WireMessage } from "@/lib/ws/protocol";
 
 const clockSkewMs = 5_000;
+const markReadDebounceMs = 250;
+const maxPagesToReveal = 20;
+const throttledRetryMs = 1_000;
+
+const nextFrames = (count: number) =>
+  new Promise<void>((resolve) => {
+    const step = (left: number) => (left <= 0 ? resolve() : requestAnimationFrame(() => step(left - 1)));
+    step(count);
+  });
 
 export function ChatRoomView({ target }: { target: ChatTarget }) {
   const router = useRouter();
@@ -88,9 +130,9 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   useEffect(() => {
     if (socket.newRoomId) {
       void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-      router.replace(`/chat/${socket.newRoomId}`);
+      if (peerID) void queryClient.invalidateQueries({ queryKey: chatKeys.direct(peerID) });
     }
-  }, [socket.newRoomId, router, queryClient]);
+  }, [socket.newRoomId, peerID, queryClient]);
 
   useEffect(() => {
     if (socket.revoked) {
@@ -99,8 +141,9 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   }, [socket.revoked, signOut, router]);
 
   const uploads = usePendingUploads();
-  const [viewing, setViewing] = useState<WireMessage | null>(null);
+  const [viewing, setViewing] = useState<{ messageID: string; item: number } | null>(null);
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
 
@@ -111,8 +154,8 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         byID.set(member.userId, member.displayName);
       }
     }
-    if (effectivePeerID && peerProfile?.displayName) {
-      byID.set(effectivePeerID, peerProfile.displayName);
+    if (effectivePeerID && profileName(peerProfile)) {
+      byID.set(effectivePeerID, profileName(peerProfile));
     }
     return byID;
   }, [room.data, effectivePeerID, peerProfile]);
@@ -137,8 +180,8 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const names = useMemo(() => {
     const byID = new Map(memberNames);
     for (const [id, profile] of strangerProfiles.data ?? []) {
-      if (profile.displayName && !byID.has(id)) {
-        byID.set(id, profile.displayName);
+      if (profileName(profile) && !byID.has(id)) {
+        byID.set(id, profileName(profile));
       }
     }
     return byID;
@@ -154,10 +197,19 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   );
 
   const [context, setContext] = useState<ComposerContext | null>(null);
-  const [forwarding, setForwarding] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [forwarding, setForwarding] = useState<ForwardRequest | null>(null);
+  const [deleting, setDeleting] = useState<string[] | null>(null);
+  const [readersOf, setReadersOf] = useState<string | null>(null);
+  const [selection, setSelection] = useState<MessageSelection | null>(null);
+  const [selectionRoom, setSelectionRoom] = useState(roomID);
+  if (selectionRoom !== roomID) {
+    setSelectionRoom(roomID);
+    setSelection(null);
+  }
+  const forwardMessages = useForwardMessages();
   const [confirmingExit, setConfirmingExit] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [details, setDetails] = useState(false);
 
   const nameOfRef = useRef(nameOf);
   useEffect(() => {
@@ -174,7 +226,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           preview: previewOf(message),
           body: message.body,
         }),
-      onForward: (message) => setForwarding(message.id),
+      onForward: (message) => setForwarding({ messageIds: [message.id], parts: [] }),
       onEdit: (message) =>
         setContext({
           mode: ComposerMode.Edit,
@@ -184,10 +236,53 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           body: message.body,
           bodyOptional: contentOf(message).kind !== ContentKind.Text,
         }),
-      onDelete: (message) => setDeleting(message.id),
+      onDelete: (message) => setDeleting([message.id]),
+      onSelect: (message) => setSelection(new Map([[message.id, null]])),
+      onReaders: (message) => setReadersOf(message.id),
+      onCopyImage: (message) => {
+        const content = contentOf(message);
+        if (content.kind !== ContentKind.Image) return;
+        copyImage(content.image.url).then(
+          () => toast.success("Image copied"),
+          (error: unknown) => toast.error(error instanceof Error ? error.message : "The image could not be copied."),
+        );
+      },
     }),
     [],
   );
+
+  const onToggleSelected = useCallback(
+    (messageID: string) => setSelection((current) => toggleMessage(current, messageID)),
+    [],
+  );
+  const onToggleItem = useCallback(
+    (messageID: string, item: number, total: number) =>
+      setSelection((current) => toggleItem(current, messageID, item, total)),
+    [],
+  );
+  const slides = useMemo(() => viewerSlidesOf(socket.messages), [socket.messages]);
+  const onOpenMedia = useCallback((message: WireMessage, item: number) => setViewing({ messageID: message.id, item }), []);
+  const selected = useMemo(() => selectedMessages(selection, socket.messages), [selection, socket.messages]);
+  const canDeleteSelected = selected.length > 0 && selected.every((message) => message.author_id === user?.id);
+
+  const dialogOpen = forwarding !== null || deleting !== null || readersOf !== null;
+  useEffect(() => {
+    if (selection === null || dialogOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) setSelection(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection, dialogOpen]);
+
+  const copySelected = () => {
+    const text = selectionText(selected, nameOf);
+    void navigator.clipboard?.writeText(text).then(
+      () => toast.success(selected.length === 1 ? "Message copied" : `${selected.length} messages copied`),
+      () => toast.error("The messages could not be copied."),
+    );
+    setSelection(null);
+  };
 
   const hide = useHideRoom();
   const leave = useLeaveRoom();
@@ -213,7 +308,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   useEffect(() => {
     if (socket.removed) {
       void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-      router.replace("/chat");
+      openChat(router, "", HistoryMode.Replace);
     }
   }, [socket.removed, queryClient, router]);
 
@@ -243,30 +338,107 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     if (!roomID || latestSeq <= 0) {
       return;
     }
-    void queryClient.invalidateQueries({ queryKey: chatKeys.lastMessage(roomID) });
-    void queryClient.invalidateQueries({ queryKey: chatKeys.rooms });
-    void queryClient.invalidateQueries({ queryKey: chatKeys.media(roomID) });
+    refreshSoon(queryClient, chatKeys.rooms);
+    refreshSoon(queryClient, chatKeys.media(roomID));
   }, [roomID, latestSeq, queryClient]);
 
-  const pageVisible = usePageVisible();
-  const [visibleSeq, setVisibleSeq] = useState(0);
+  const myReadSeq = Number(room.data?.members.find((member) => member.userId === user?.id)?.lastReadSeq ?? 0);
+  const [opened, setOpened] = useState<{ roomID: string; readSeq: number; unread: boolean } | null>(null);
+  if (roomID && room.data && room.isFetchedAfterMount && opened?.roomID !== roomID) {
+    setOpened({ roomID, readSeq: myReadSeq, unread: Number(room.data.room?.unreadCount ?? 0) > 0 });
+  }
+  const openedHere = opened && opened.roomID === roomID ? opened : null;
+
+  const [freshFor, setFreshFor] = useState<string | null>(null);
+  const historyFetchedHere = history.isFetchedAfterMount;
   useEffect(() => {
-    if (!roomID || visibleSeq <= 0 || !pageVisible) {
+    if (!roomID || !openedHere?.unread || freshFor === roomID || historyFetchedHere) return;
+    let cancelled = false;
+    void refreshNewestPage(queryClient, roomID).finally(() => {
+      if (!cancelled) setFreshFor(roomID);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomID, openedHere, freshFor, historyFetchedHere, queryClient]);
+  const historyReady =
+    flatHistory !== undefined && (!openedHere?.unread || historyFetchedHere || freshFor === roomID);
+  const firstUnreadSeq = useMemo(
+    () => (openedHere?.unread && user ? firstUnreadOf(socket.messages, openedHere.readSeq, user.id) : null),
+    [openedHere, socket.messages, user],
+  );
+
+  const attentive = useAttention();
+  const [visibleSeq, setVisibleSeq] = useState(0);
+  const markedSeq = useRef(0);
+  useEffect(() => {
+    markedSeq.current = 0;
+  }, [roomID]);
+  useEffect(() => {
+    if (!roomID || !attentive || visibleSeq <= Math.max(myReadSeq, markedSeq.current)) {
       return;
     }
     const timer = setTimeout(() => {
+      markedSeq.current = visibleSeq;
       markReadRef.current({ roomID, seq: visibleSeq });
-    }, 1500);
+    }, markReadDebounceMs);
     return () => clearTimeout(timer);
-  }, [roomID, visibleSeq, pageVisible]);
+  }, [roomID, visibleSeq, myReadSeq, attentive]);
 
   const fetchNextPageRef = useRef(history.fetchNextPage);
   useEffect(() => {
     fetchNextPageRef.current = history.fetchNextPage;
   });
+  const loadingThrough = useRef(false);
   const onLoadOlder = useCallback(() => {
+    if (loadingThrough.current) return;
     void fetchNextPageRef.current();
   }, []);
+
+  const transcript = useRef<TranscriptHandle>(null);
+  const [jumpTo, setJumpTo] = useState<{ id: string; seq?: number } | null>(null);
+  const onJumpTo = useCallback((id: string, seq?: number) => setJumpTo({ id, seq }), []);
+  useEffect(() => {
+    if (!jumpTo) return;
+    let cancelled = false;
+    void (async () => {
+      if (roomID && jumpTo.seq !== undefined && !transcript.current?.reveal(jumpTo.id)) {
+        loadingThrough.current = true;
+        for (let attempt = 0; attempt < maxPagesToReveal && !cancelled; attempt += 1) {
+          try {
+            await loadHistoryThrough(queryClient, roomID, jumpTo.seq);
+            break;
+          } catch (error) {
+            if (ConnectError.from(error).code !== Code.ResourceExhausted) break;
+            await new Promise((resolve) => setTimeout(resolve, throttledRetryMs));
+          }
+        }
+        loadingThrough.current = false;
+        await nextFrames(2);
+      }
+      let pages = 0;
+      for (let attempt = 0; pages < maxPagesToReveal && attempt < maxPagesToReveal * 2 && !cancelled; attempt += 1) {
+        if (transcript.current?.reveal(jumpTo.id)) break;
+        const result = await fetchNextPageRef.current();
+        if (cancelled) break;
+        if (result.isError) {
+          if (ConnectError.from(result.error).code !== Code.ResourceExhausted) break;
+          await new Promise((resolve) => setTimeout(resolve, throttledRetryMs));
+          continue;
+        }
+        pages += 1;
+        await nextFrames(2);
+        if (!result.hasNextPage) {
+          if (!cancelled) transcript.current?.reveal(jumpTo.id);
+          break;
+        }
+      }
+      if (!cancelled) setJumpTo(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jumpTo, roomID, queryClient]);
 
   if (!user) {
     return (
@@ -279,12 +451,12 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const isDirect = peerID !== undefined || roomKind === RoomKind.DIRECT;
   const isGroup = roomKind === RoomKind.GROUP;
   const title = isDirect
-    ? peerProfile?.displayName || (peerID ? "New chat" : "Direct message")
+    ? profileName(peerProfile) || (peerID ? "New chat" : "Direct message")
     : room.data?.room?.name || "Room";
 
   const exit = () => {
     if (!roomID) return;
-    const done = { onSuccess: () => router.replace("/chat") };
+    const done = { onSuccess: () => openChat(router, "", HistoryMode.Replace) };
     if (isDirect) {
       hide.mutate(roomID, done);
     } else {
@@ -306,7 +478,7 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     (isDirect
       ? peerProfile?.online
         ? "online"
-        : lastSeen(peerProfile?.lastSeenAt)
+        : lastSeen(fromTimestamp(peerProfile?.lastSeenAt))
       : socket.connected
         ? room.data?.room
           ? membersLabel(room.data.room.memberCount)
@@ -314,16 +486,17 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         : "Reconnecting…");
 
   const carriesFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
+  const canAttach = socket.connected && selection === null && context?.mode !== ComposerMode.Edit;
 
   const onDragEnter = (event: DragEvent) => {
-    if (!carriesFiles(event) || !socket.connected) return;
+    if (!carriesFiles(event) || !canAttach) return;
     event.preventDefault();
     dragDepth.current += 1;
     setDragging(true);
   };
 
   const onDragOver = (event: DragEvent) => {
-    if (!carriesFiles(event) || !socket.connected) return;
+    if (!carriesFiles(event) || !canAttach) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
   };
@@ -342,14 +515,14 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
     dragDepth.current = 0;
     setDragging(false);
     const files = [...event.dataTransfer.files];
-    if (files.length > 0 && socket.connected) {
+    if (files.length > 0 && canAttach) {
       uploads.add(files);
     }
   };
 
   return (
     <main
-      className="relative flex min-h-0 flex-1 flex-col px-4 py-4 md:px-6"
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -361,141 +534,243 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
           Drop to attach
         </div>
       ) : null}
-      <header className="flex shrink-0 items-center gap-3 border-b border-border pb-4">
-        <Link
-          href="/chat"
-          aria-label="Back to chats"
-          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "-ml-2 -mr-1 shrink-0 md:hidden")}
-        >
-          <ChevronLeft className="size-5" />
-        </Link>
-        {isDirect ? (
-          <Avatar
-            src={peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl}
-            alt=""
-            fallback={(title || "?").slice(0, 1).toUpperCase()}
-            className="size-10"
-            sizes="40px"
-          />
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-semibold">
-            {isGroup ? (
-              <button
-                type="button"
-                className="max-w-full truncate text-left hover:underline"
-                onClick={() => setInfoOpen(true)}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="chat-workspace-header">
+          {searching && roomID ? (
+            <MessageSearch
+              roomID={roomID}
+              nameOf={nameOf}
+              onClose={() => setSearching(false)}
+              onPick={(message) => {
+                setSearching(false);
+                onJumpTo(message.id, message.seq);
+              }}
+            />
+          ) : (
+            <>
+              <Link
+                href="/chat"
+                aria-label="Back to chats"
+                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "-ml-2 -mr-1 shrink-0 min-[651px]:hidden")}
               >
-                {title}
-              </button>
-            ) : (
-              title
-            )}
-          </h1>
-          {subtitle ? (
-            <p
-              className={cn(
-                "truncate text-xs",
-                typingLine || (isDirect && peerProfile?.online)
-                  ? "text-signal"
-                  : "text-muted-foreground",
-              )}
-            >
-              {subtitle}
-            </p>
+                <ChevronLeft className="size-5" />
+              </Link>
+              {isDirect || isGroup ? (
+                <Avatar
+                  src={peerProfile?.avatarUrls?.small || peerProfile?.avatarUrl}
+                  alt=""
+                  fallback={(title || "?").slice(0, 1).toUpperCase()}
+                  className="size-9 rounded-[11px]"
+                  sizes="36px"
+                />
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-[13px] font-semibold" title={title}>
+                  {isGroup ? (
+                    <button
+                      type="button"
+                      className="max-w-full truncate text-left hover:underline"
+                      onClick={() => setInfoOpen(true)}
+                    >
+                      {title}
+                    </button>
+                  ) : (
+                    title
+                  )}
+                </h1>
+                {subtitle ? (
+                  <p
+                    className={cn(
+                      "truncate text-xs",
+                      typingLine || (isDirect && peerProfile?.online)
+                        ? "text-signal"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {subtitle}
+                  </p>
+                ) : null}
+              </div>
+              {roomID && (isDirect || isGroup) ? <CallButtons target={{ roomId: roomID, group: isGroup }} /> : isDirect && effectivePeerID ? <CallButtons target={{ peerUserId: effectivePeerID }} /> : null}
+              {roomID ? (
+                <Button variant="ghost" size="icon" aria-label="Search messages" onClick={() => setSearching(true)}>
+                  <Search />
+                </Button>
+              ) : null}
+              {roomID ? (
+                <Button variant="ghost" size="icon" aria-label="Conversation information" aria-expanded={details} onClick={() => setDetails(!details)}>
+                  <Info />
+                </Button>
+              ) : null}
+              {roomID && roomKind !== undefined ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button variant="ghost" size="icon" aria-label="Chat actions">
+                        <MoreVertical />
+                      </Button>
+                    }
+                  />
+                  <DropdownMenuContent align="end" className="w-48">
+                    {isGroup ? (
+                      <DropdownMenuItem onClick={() => setInfoOpen(true)}>
+                        <Info />
+                        Group info
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem onClick={() => setMediaOpen(true)}><Images /> Media</DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setConfirmingExit(true)}
+                      className="text-destructive [&>svg]:text-destructive"
+                    >
+                      {isDirect ? <Trash2 /> : <LogOut />}
+                      {isDirect ? "Delete chat" : isGroup ? "Leave group" : "Leave room"}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </>
+          )}
+        </header>
+
+        {room.isError ? <Alert className="mt-3">{describe(room.error)}</Alert> : null}
+        {history.isError ? <Alert className="mt-3">{describe(history.error)}</Alert> : null}
+        {socket.error ? <Alert className="mt-3">{socket.error}</Alert> : null}
+
+        {roomID && (!openedHere || !historyReady) && !room.isError && !history.isError ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Loader2 aria-label="Loading messages" className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <Transcript
+            key={roomID ?? peerID}
+            ref={transcript}
+            messages={socket.messages}
+            outgoing={socket.outgoing}
+            connected={socket.connected}
+            onRetrySend={socket.retrySend}
+            onDismissSend={socket.dismissSend}
+            firstUnreadSeq={firstUnreadSeq}
+            onJumpTo={onJumpTo}
+            selfID={user.id}
+            nameOf={nameOf}
+            avatars={avatars}
+            readSeqs={readSeqs}
+            onVisibleSeqChange={setVisibleSeq}
+            onLoadOlder={onLoadOlder}
+            hasOlder={history.hasNextPage}
+            loadingOlder={history.isFetchingNextPage}
+            onOpenMedia={onOpenMedia}
+            actions={socket.connected ? actions : undefined}
+            showNames={!isDirect}
+            selection={selection}
+            onToggleSelected={onToggleSelected}
+            onToggleItem={onToggleItem}
+            onSelectMessages={socket.connected ? setSelection : undefined}
+          />
+        )}
+
+        <CallMiniBar placement="chat" />
+        <div className="relative shrink-0 px-[15px] pt-2.5 pb-[15px] max-[550px]:px-2.5" data-chat-composer>
+          <div role="status" aria-atomic="true">
+            {!socket.connected ? <p className="border-t border-warning/40 bg-warning/12 px-3 py-2 text-sm font-medium">Connecting to chat… You can keep typing.</p> : null}
+          </div>
+          <div inert={selection !== null}>
+            <MessageComposer
+              connected={socket.connected}
+              uploads={uploads}
+              context={context}
+              onSend={socket.send}
+              onEdit={socket.edit}
+              onCancelContext={() => setContext(null)}
+              onTyping={socket.notifyTyping}
+            />
+          </div>
+          {selection !== null ? (
+            <SelectionBar
+              count={selectedCount(selection, socket.messages)}
+              canDelete={canDeleteSelected}
+              onCopy={copySelected}
+              onForward={() => setForwarding(forwardRequest(selection, socket.messages))}
+              onDelete={() => setDeleting(selected.map((message) => message.id))}
+              onCancel={() => setSelection(null)}
+            />
           ) : null}
         </div>
-        {roomID ? (
-          <Button variant="ghost" size="icon" aria-label="Media" onClick={() => setMediaOpen(true)}>
-            <Images />
-          </Button>
-        ) : null}
-        {roomID && roomKind !== undefined ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon" aria-label="Chat actions">
-                  <MoreVertical />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-48">
-              {isGroup ? (
-                <DropdownMenuItem onClick={() => setInfoOpen(true)}>
-                  <Info />
-                  Group info
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem
-                onClick={() => setConfirmingExit(true)}
-                className="text-destructive [&>svg]:text-destructive"
-              >
-                {isDirect ? <Trash2 /> : <LogOut />}
-                {isDirect ? "Delete chat" : isGroup ? "Leave group" : "Leave room"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-      </header>
 
-      {room.isError ? <Alert className="mt-3">{describe(room.error)}</Alert> : null}
-      {history.isError ? <Alert className="mt-3">{describe(history.error)}</Alert> : null}
-      {socket.error ? <Alert className="mt-3">{socket.error}</Alert> : null}
-
-      <Transcript
-        messages={socket.messages}
-        selfID={user.id}
-        nameOf={nameOf}
-        avatars={avatars}
-        readSeqs={readSeqs}
-        onVisibleSeqChange={setVisibleSeq}
-        onLoadOlder={onLoadOlder}
-        hasOlder={history.hasNextPage}
-        loadingOlder={history.isFetchingNextPage}
-        onOpenMedia={setViewing}
-        actions={socket.connected ? actions : undefined}
-        showNames={!isDirect}
-      />
-
-      <MessageComposer
-        connected={socket.connected}
-        uploads={uploads}
-        context={context}
-        onSend={socket.send}
-        onEdit={socket.edit}
-        onCancelContext={() => setContext(null)}
-        onTyping={socket.notifyTyping}
-      />
+      </div>
+      {details && roomID ? (
+        <aside className="chat-workspace-details" aria-label="Conversation information">
+          <header className="flex items-center justify-between border-b border-border px-4 py-2">
+            <h2 className="text-sm font-semibold">Information</h2>
+            <Button variant="ghost" size="icon" aria-label="Close conversation information" onClick={() => setDetails(false)}><X /></Button>
+          </header>
+          <div className="flex flex-col items-center gap-2 border-b border-border p-5 text-center">
+            <Avatar src={peerProfile?.avatarUrls?.medium || peerProfile?.avatarUrl} fallback={initials(title)} alt="" className="size-16 rounded-[20px] text-xl" />
+            <strong className="max-w-full truncate text-base">{title}</strong>
+            {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
+          </div>
+          <div className="grid gap-2 px-3 py-4">
+            {isGroup ? <Button variant="ghost" className="justify-start" onClick={() => setInfoOpen(true)}><Info /> Group info</Button> : null}
+            <Button variant="ghost" className="justify-start" onClick={() => setMediaOpen(true)}><Images /> Shared media</Button>
+          </div>
+        </aside>
+      ) : null}
 
       <ForwardDialog
         open={forwarding !== null}
-        onOpenChange={(open) => !open && setForwarding(null)}
-        onPick={(targetRoomID) => {
-          const openTarget = () => {
-            if (targetRoomID !== roomID) {
-              router.push(`/chat/${targetRoomID}`);
-            }
-          };
-          if (forwarding && socket.forward(forwarding, targetRoomID, openTarget)) {
+        count={forwarding?.messageIds.length ?? 0}
+        pending={forwardMessages.isPending}
+        error={forwardMessages.error ? describe(forwardMessages.error) : null}
+        onOpenChange={(open) => {
+          if (!open) {
             setForwarding(null);
+            forwardMessages.reset();
           }
         }}
+        onForward={(roomIds, comment) => {
+          if (!forwarding || forwardMessages.isPending) return;
+          forwardMessages.mutate(
+            { ...forwarding, roomIds, comment, clientId: newClientID() },
+            {
+              onSuccess: () => {
+                setForwarding(null);
+                setSelection(null);
+                if (roomIds.length === 1 && roomIds[0] !== roomID) {
+                  openChat(router, roomIds[0]);
+                } else {
+                  toast.success(roomIds.length === 1 ? "Forwarded" : `Forwarded to ${roomIds.length} chats`);
+                }
+              },
+            },
+          );
+        }}
       />
-
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
-        title="Delete message?"
-        consequence="It disappears for everyone in this chat."
+        title={deleting && deleting.length > 1 ? `Delete ${deleting.length} messages?` : "Delete message?"}
+        consequence={
+          deleting && deleting.length > 1
+            ? "They disappear for everyone in this chat."
+            : "It disappears for everyone in this chat."
+        }
         action="Delete"
         onConfirm={() => {
-          if (deleting && socket.remove(deleting)) {
-            if (context?.messageId === deleting) setContext(null);
+          if (!deleting) return;
+          if (socket.remove(deleting.length === 1 ? deleting[0] : deleting)) {
+            if (context && deleting.includes(context.messageId)) setContext(null);
             setDeleting(null);
+            setSelection(null);
           }
         }}
       />
-
+      <ReadersDialog
+        messageID={readersOf}
+        direct={isDirect}
+        nameOf={nameOf}
+        onOpenChange={(open) => !open && setReadersOf(null)}
+      />
       <ConfirmDialog
         open={confirmingExit}
         onOpenChange={(open) => {
@@ -532,7 +807,11 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
         />
       ) : null}
 
-      <MediaViewer message={viewing} onClose={() => setViewing(null)} />
+      <MediaViewer
+        slides={slides}
+        index={viewing ? slideIndexOf(slides, viewing.messageID, viewing.item) : null}
+        onClose={() => setViewing(null)}
+      />
       {roomID ? (
         <RoomMedia
           roomID={roomID}
@@ -557,35 +836,4 @@ function describeTypists(names: string[]): string {
     default:
       return `${names.length} people are typing…`;
   }
-}
-
-function lastSeen(ts?: Timestamp): string {
-  if (!ts) {
-    return "";
-  }
-
-  const at = new Date(Number(ts.seconds) * 1000);
-  if (Number.isNaN(at.getTime())) {
-    return "";
-  }
-
-  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-
-  const today = new Date();
-  if (at.toDateString() === today.toDateString()) {
-    return `last seen at ${time}`;
-  }
-
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (at.toDateString() === yesterday.toDateString()) {
-    return `last seen yesterday at ${time}`;
-  }
-
-  const day = at.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: at.getFullYear() === today.getFullYear() ? undefined : "numeric",
-  });
-  return `last seen ${day} at ${time}`;
 }

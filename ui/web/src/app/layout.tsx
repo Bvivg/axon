@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 
 import { PresenceBeacon } from "@/components/presence/presence-beacon";
+import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/lib/auth/session";
 import { QueryProvider } from "@/lib/query/provider";
 
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SessionProvider>
             <PresenceBeacon />
             {children}
+            <Toaster />
           </SessionProvider>
         </QueryProvider>
       </body>

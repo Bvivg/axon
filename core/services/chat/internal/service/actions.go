@@ -100,3 +100,16 @@ func (s *Service) ownMessage(ctx context.Context, messageID, userID uuid.UUID) (
 
 	return target, nil
 }
+
+func (s *Service) ListMessageReaders(ctx context.Context, messageID, userID uuid.UUID) ([]domain.Reader, error) {
+	target, err := s.ownMessage(ctx, messageID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	readers, err := s.store.Readers(ctx, target.RoomID, target.AuthorID, target.Seq)
+	if err != nil {
+		return nil, fmt.Errorf("service: list readers: %w", err)
+	}
+	return readers, nil
+}

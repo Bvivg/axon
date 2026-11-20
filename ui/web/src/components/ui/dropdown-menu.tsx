@@ -48,7 +48,7 @@ export function DropdownMenuSeparator({ className, ...props }: ComponentProps<ty
 }
 
 const itemClass =
-  "flex h-[30px] cursor-default items-center gap-2.5 rounded-[5px] px-2 outline-none select-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
+  "flex min-h-9 cursor-default items-center gap-2.5 rounded-md px-2 py-1 outline-none select-none pointer-coarse:min-h-11 data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
 
 export function DropdownMenuItem({ className, ...props }: ComponentProps<typeof BaseMenu.Item>) {
   return <BaseMenu.Item className={cn(itemClass, className)} {...props} />;

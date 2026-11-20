@@ -32,6 +32,8 @@ type fakeTracker struct {
 	cleared  []string
 	touchedC chan struct{}
 	clearedC chan struct{}
+	visible  []string
+	hidden   []string
 }
 
 func newFakeTracker() *fakeTracker {
@@ -58,6 +60,20 @@ func (f *fakeTracker) Clear(_ context.Context, sessionID, _ string) error {
 }
 
 func (f *fakeTracker) PublishChanged(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeTracker) TouchVisible(_ context.Context, userID, _ string, _ time.Duration) error {
+	f.mu.Lock()
+	f.visible = append(f.visible, userID)
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *fakeTracker) ClearVisible(_ context.Context, userID, _ string) error {
+	f.mu.Lock()
+	f.hidden = append(f.hidden, userID)
+	f.mu.Unlock()
 	return nil
 }
 
@@ -323,4 +339,36 @@ func signToken(
 		t.Fatalf("sign token: %v", err)
 	}
 	return signed
+}
+
+func TestTheClientTellsWhenTheAppIsInView(t *testing.T) {
+	h := newHarness(t)
+
+	userID := uuid.New()
+	conn, err := h.dial(t, h.issue(t, userID, uuid.New(), time.Hour))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	h.tracker.waitTouched(t)
+
+	for _, frame := range []string{`{"type":"visibility","visible":true}`, `not json`, `{"type":"visibility","visible":false}`} {
+		if err := conn.Write(t.Context(), []byte(frame)); err != nil {
+			t.Fatalf("write %s: %v", frame, err)
+		}
+	}
+	if err := conn.Close(sharedws.StatusNormalClosure, "done"); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	h.tracker.waitCleared(t)
+
+	h.tracker.mu.Lock()
+	visible, hidden := append([]string(nil), h.tracker.visible...), append([]string(nil), h.tracker.hidden...)
+	h.tracker.mu.Unlock()
+
+	if len(visible) != 1 || visible[0] != userID.String() {
+		t.Errorf("visible = %v, want one report for %s", visible, userID)
+	}
+	if len(hidden) != 2 {
+		t.Errorf("hidden = %v, want the hide frame and the close", hidden)
+	}
 }

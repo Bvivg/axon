@@ -104,21 +104,25 @@ func TestCloseDeliversCodeAndTruncatedReason(t *testing.T) {
 }
 
 func TestReadLimitDisconnectsWithMessageTooBig(t *testing.T) {
-	srv := echoServer(t, ws.AcceptOptions{Options: ws.Options{ReadLimit: 16}})
+	for _, compression := range []bool{false, true} {
+		t.Run(map[bool]string{false: "plain", true: "compressed"}[compression], func(t *testing.T) {
+			srv := echoServer(t, ws.AcceptOptions{Options: ws.Options{ReadLimit: 16, Compression: compression}})
 
-	conn, err := ws.Dial(t.Context(), srv.URL, ws.DialOptions{})
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer func() { _ = conn.CloseNow() }()
+			conn, err := ws.Dial(t.Context(), srv.URL, ws.DialOptions{Options: ws.Options{Compression: compression}})
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer func() { _ = conn.CloseNow() }()
 
-	if err := conn.Write(t.Context(), []byte(strings.Repeat("x", 1024))); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+			if err := conn.Write(t.Context(), []byte(strings.Repeat("x", 1024))); err != nil {
+				t.Fatalf("write: %v", err)
+			}
 
-	_, err = conn.Read(t.Context())
-	if got := websocket.CloseStatus(err); got != ws.StatusMessageTooBig {
-		t.Fatalf("close status = %v (err %v), want %v", got, err, ws.StatusMessageTooBig)
+			_, err = conn.Read(t.Context())
+			if got := websocket.CloseStatus(err); got != ws.StatusMessageTooBig {
+				t.Fatalf("close status = %v (err %v), want %v", got, err, ws.StatusMessageTooBig)
+			}
+		})
 	}
 }
 
