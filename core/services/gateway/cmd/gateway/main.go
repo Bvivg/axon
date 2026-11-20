@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus"
+	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
@@ -19,8 +21,10 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
+	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/resilience"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 
@@ -43,6 +47,30 @@ var version = "dev"
 const sensitiveBurst = 5
 
 const uploadsBurst = 30
+
+const networkFactor = 10
+
+var retryableProcedures = []string{
+	gamev1connect.GameServiceGetSessionProcedure,
+	gamev1connect.GameServiceListSessionsProcedure,
+	gamev1connect.GameServiceGetMatchProcedure,
+	gamev1connect.GameServiceGetRatingsProcedure,
+	chatv1connect.ChatServiceListRoomsProcedure,
+	chatv1connect.ChatServiceGetRoomProcedure,
+	chatv1connect.ChatServiceListMessagesProcedure,
+	chatv1connect.ChatServiceSearchMessagesProcedure,
+	chatv1connect.ChatServiceListMessageReadersProcedure,
+	authv1connect.AuthServiceGetMeProcedure,
+	authv1connect.AuthServiceListSessionsProcedure,
+	authv1connect.AuthServiceListRolesProcedure,
+	authv1connect.AuthServiceSearchUsersProcedure,
+	authv1connect.AuthServiceGetUsersPublicProfilesProcedure,
+	authv1connect.AuthServiceGetPublicProfileByUsernameProcedure,
+	callsv1connect.CallsServiceGetCallProcedure,
+	callsv1connect.CallsServiceGetActiveCallProcedure,
+	callsv1connect.CallsServiceListCallsProcedure,
+	callsv1connect.CallsServiceGetCallCapabilitiesProcedure,
+}
 
 func main() {
 
@@ -108,17 +136,26 @@ func run() error {
 		return err
 	}
 
-	search := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.SearchPerMinute})
-	standard := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.StandardPerMinute})
-	sensitive := ratelimit.New(ratelimit.Config{
-		PerMinute: cfg.RateLimit.SensitivePerMinute,
-		Burst:     sensitiveBurst,
-	})
-	uploads := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadsPerMinute, Burst: uploadsBurst})
-	uploadParts := ratelimit.New(ratelimit.Config{PerMinute: cfg.RateLimit.UploadPartsPerMinute})
+	var limits ratelimit.Store
+	limitFailures := prometheus.NewCounter(prometheus.CounterOpts{Name: "gateway_rate_limit_store_errors_total", Help: "Rate limit checks that fell back to the local limiter."})
+	if cfg.RateLimit.RedisAddr != "" {
+		limitsClient := goredis.NewClient(&goredis.Options{Addr: cfg.RateLimit.RedisAddr, Password: cfg.RateLimit.RedisPassword, DialTimeout: time.Second, ReadTimeout: 200 * time.Millisecond, WriteTimeout: 200 * time.Millisecond})
+		defer func() { _ = limitsClient.Close() }()
+		limits = ratelimit.NewRedis(limitsClient)
+	}
+	limiter := func(name string, perMinute, burst int) *ratelimit.Limiter {
+		return ratelimit.New(ratelimit.Config{Name: name, PerMinute: perMinute, Burst: burst, Store: limits, Failures: limitFailures})
+	}
+	search := limiter("search", cfg.RateLimit.SearchPerMinute, 0)
+	standard := limiter("standard", cfg.RateLimit.StandardPerMinute, 0)
+	sensitive := limiter("sensitive", cfg.RateLimit.SensitivePerMinute, sensitiveBurst)
+	network := limiter("network", cfg.RateLimit.SensitivePerMinute*networkFactor, sensitiveBurst*networkFactor)
+	uploads := limiter("uploads", cfg.RateLimit.UploadsPerMinute, uploadsBurst)
+	uploadParts := limiter("upload-parts", cfg.RateLimit.UploadPartsPerMinute, 0)
 	go search.Start(ctx)
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
+	go network.Start(ctx)
 	go uploads.Start(ctx)
 	go uploadParts.Start(ctx)
 
@@ -127,6 +164,7 @@ func run() error {
 		Search:    search,
 		Standard:  standard,
 		Sensitive: sensitive,
+		Network:   network,
 		Logger:    log,
 	})
 	if err != nil {
@@ -134,6 +172,18 @@ func run() error {
 	}
 
 	metrics := middleware.NewMetrics(cfg.Service)
+	metrics.Registry().MustRegister(limitFailures)
+	breakerTransitions := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "gateway_circuit_transitions_total", Help: "Circuit breaker state changes per upstream procedure."}, []string{"procedure", "state"})
+	metrics.Registry().MustRegister(breakerTransitions)
+	guarded := func() *resilience.Interceptor {
+		return resilience.New(resilience.Options{
+			Retryable: resilience.Procedures(retryableProcedures...),
+			OnState: func(procedure string, state resilience.State) {
+				breakerTransitions.WithLabelValues(procedure, string(state)).Inc()
+				log.Warn("circuit breaker changed state", "procedure", procedure, "state", string(state))
+			},
+		})
+	}
 
 	upstream := &http.Client{
 		Timeout: cfg.UpstreamTimeout,
@@ -142,7 +192,7 @@ func run() error {
 	}
 
 	authClient := proxy.NewClient(upstream, cfg.AuthServiceURL,
-		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()),
+		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()),
 	)
 
 	authProxy, err := proxy.NewAuth(authClient)
@@ -151,7 +201,7 @@ func run() error {
 	}
 
 	chatClient := proxy.NewChatClient(upstream, cfg.ChatServiceURL,
-		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()),
+		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()),
 	)
 
 	chatSocket, err := wsproxy.New(wsproxy.Config{
@@ -166,7 +216,7 @@ func run() error {
 		return err
 	}
 
-	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()))
+	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
 	gameSocket, err := wsproxy.New(wsproxy.Config{
 		SocketOptions: ws.Options{ReadLimit: 4096},
 		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
@@ -191,7 +241,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	callsProxy, err := proxy.NewCalls(upstream, cfg.ChatServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()))
+	callsProxy, err := proxy.NewCalls(upstream, cfg.ChatServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
 	if err != nil {
 		return err
 	}
@@ -236,12 +286,14 @@ func run() error {
 		return err
 	}
 
-	publicSrv := &http.Server{
+	checks := health.New(log, []health.Checker{jwksChecker{keys}})
+	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
+	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
-	}
+	})
 	mediaDownload, err := mediaproxy.New(cfg.ChatServiceURL, verifier)
 	if err != nil {
 		return err
@@ -263,7 +315,7 @@ func run() error {
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(keys, metrics, log),
+		Handler:           adminHandler(checks, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -278,7 +330,7 @@ func run() error {
 		log.Info("shutdown signal received")
 	}
 
-	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
+	return graceful.Stop(publicSrv, adminSrv)
 }
 
 const (
@@ -356,10 +408,10 @@ func publicHandler(
 	)(mux)
 }
 
-func adminHandler(keys *authn.Cache, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func adminHandler(checks *health.Handler, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
-	health.New(log, []health.Checker{jwksChecker{keys}}).Register(mux)
+	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
 
@@ -406,23 +458,4 @@ func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger,
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
-}
-
-func shutdown(timeout time.Duration, log *slog.Logger, servers ...*http.Server) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	var errs []error
-	for _, srv := range servers {
-		if err := srv.Shutdown(ctx); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
-	}
-
-	log.Info("stopped cleanly")
-	return nil
 }

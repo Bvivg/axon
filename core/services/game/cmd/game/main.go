@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,10 +29,12 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/health"
+	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
-	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
+
+const movePartitionsAhead = 3
 
 func main() {
 	health.RunProbeIfRequested()
@@ -46,7 +47,7 @@ func main() {
 func run() error {
 	loader := config.NewLoader()
 	cfg := config.LoadBase(loader, "game")
-	db := postgres.LoadConfig(loader)
+	dbs := loadDatabases(loader)
 	log := cfg.Logger()
 	keyConfig := authn.JWKSConfig{
 		URL:             loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
@@ -71,6 +72,7 @@ func run() error {
 		Linger:            loader.DurationDefault("GAME_JOURNAL_LINGER", time.Millisecond),
 	}
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
+	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
 	if err := loader.Err(); err != nil {
 		return err
@@ -86,11 +88,11 @@ func run() error {
 		defer cancel()
 		_ = shutdownTracing(flush)
 	}()
-	pool, err := postgres.Connect(ctx, db, log)
+	db, err := dbs.connect(ctx, log)
 	if err != nil {
 		return err
 	}
-	defer pool.Close()
+	defer db.Close()
 	keys, err := authn.NewCache(keyConfig)
 	if err != nil {
 		return err
@@ -110,11 +112,11 @@ func run() error {
 			return err
 		}
 	}
-	store := session.NewStore(pool.Pool, games)
+	store := session.NewStore(db.primary.Pool, games, db.storeOptions()...)
 	metrics := middleware.NewMetrics(cfg.Service)
 	observed := gamemetrics.New(metrics.Registry())
 	rules := session.NewRules(games)
-	model := projection.New(store, rules)
+	model := projection.New(store, rules, projection.LeasesOn(db.leases.Pool))
 	log = log.With("instance", instance)
 	journalLog, err := journal.NewKafka(ctx, kafka)
 	if err != nil {
@@ -127,7 +129,8 @@ func run() error {
 		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(http.DefaultTransport)}})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
-	go routes.Run(ctx, pool.Pool, projection.OwnerChannel, log)
+	go routes.Run(ctx, db.listen, projection.OwnerChannel, log)
+	go model.MaintainMovePartitions(ctx, movePartitionsAhead, 24*time.Hour, log)
 	go handler.Watch(ctx, log)
 	go handler.RunMatchmaking(ctx, log)
 	go func() { _ = cluster.NewProjector(kafka, model, log, observed).Run(ctx) }()
@@ -148,14 +151,15 @@ func run() error {
 	if testHooks {
 		mux.HandleFunc("POST "+server.ClockHookPath, handler.AdjustClock)
 	}
-	health.New(log, []health.Checker{pool, journalLog}).Register(mux)
+	checks := health.New(log, []health.Checker{db.primary, journalLog})
+	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
-	srv := &http.Server{
+	graceful := lifecycle.New(drain, cfg.ShutdownTimeout, checks, log)
+	srv := graceful.Serve(&http.Server{
 		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux),
 		ReadHeaderTimeout: 5 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
-	}
+	})
 	done := make(chan error, 1)
 	go func() { done <- srv.ListenAndServe() }()
 	select {
@@ -165,10 +169,8 @@ func run() error {
 		}
 		return nil
 	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer cancel()
 		<-ownership
-		return srv.Shutdown(shutdown)
+		return graceful.Stop(srv)
 	}
 }
 

@@ -187,7 +187,8 @@ func (h *Handler) ListSessions(ctx context.Context, req *connect.Request[gamev1.
 	if err != nil {
 		return nil, err
 	}
-	items, err := h.store.List(ctx, user)
+	history := h.store.Replica()
+	items, err := history.List(ctx, user)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not load games"))
 	}
@@ -197,7 +198,7 @@ func (h *Handler) ListSessions(ctx context.Context, req *connect.Request[gamev1.
 			rated = append(rated, item.ID)
 		}
 	}
-	changes, err := h.store.Changes(ctx, rated)
+	changes, err := history.Changes(ctx, rated)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not load games"))
 	}

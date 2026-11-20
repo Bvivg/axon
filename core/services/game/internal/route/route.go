@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Loader func(ctx context.Context) (map[int32]string, error)
@@ -50,9 +49,9 @@ func (t *Table) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func (t *Table) Run(ctx context.Context, pool *pgxpool.Pool, channel string, log *slog.Logger) {
+func (t *Table) Run(ctx context.Context, config *pgx.ConnConfig, channel string, log *slog.Logger) {
 	for ctx.Err() == nil {
-		err := t.listen(ctx, pool, channel)
+		err := t.listen(ctx, config, channel)
 		if ctx.Err() != nil {
 			return
 		}
@@ -64,8 +63,8 @@ func (t *Table) Run(ctx context.Context, pool *pgxpool.Pool, channel string, log
 	}
 }
 
-func (t *Table) listen(ctx context.Context, pool *pgxpool.Pool, channel string) error {
-	conn, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig)
+func (t *Table) listen(ctx context.Context, config *pgx.ConnConfig, channel string) error {
+	conn, err := pgx.ConnectConfig(ctx, config)
 	if err != nil {
 		return err
 	}

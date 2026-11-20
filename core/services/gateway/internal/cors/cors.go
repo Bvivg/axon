@@ -20,6 +20,7 @@ var allowedHeaders = []string{
 	"X-Grpc-Web",
 	"X-User-Agent",
 	"X-Filename",
+	"X-Axon-Device",
 	"Traceparent",
 	"Tracestate",
 }

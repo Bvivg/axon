@@ -50,6 +50,23 @@ services:
       retries: 10
       start_period: 5s
 
+  edge-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      EDGE_REDIS_PASSWORD: ${EDGE_REDIS_PASSWORD:-axon-edge}
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --maxmemory 64mb --maxmemory-policy volatile-ttl --requirepass \"$$EDGE_REDIS_PASSWORD\""]
+    volumes:
+      - type: tmpfs
+        target: /data
+    networks: [edge-state]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$EDGE_REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   minio:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     restart: unless-stopped
@@ -277,6 +294,8 @@ services:
       GAME_SERVICE_URL: "http://game:8083"
 
       JWKS_URL: "http://auth:9091/.well-known/jwks.json"
+      RATE_LIMIT_REDIS_ADDR: "edge-redis:6379"
+      RATE_LIMIT_REDIS_PASSWORD: ${EDGE_REDIS_PASSWORD:-axon-edge}
 
       TRUSTED_PROXIES: "0"
     ports:
@@ -284,11 +303,13 @@ services:
       - "127.0.0.1:${GATEWAY_METRICS_HOST_PORT:-19090}:9090"
     volumes:
       - ..:/src
-    networks: [edge, app, media]
+    networks: [edge, app, media, edge-state]
     depends_on:
       auth:
         condition: service_healthy
       chat:
+        condition: service_healthy
+      edge-redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:9090/healthz"]
@@ -345,3 +366,4 @@ networks:
   data:
   media:
   lan:
+  edge-state:

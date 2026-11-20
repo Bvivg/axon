@@ -63,7 +63,11 @@ func setup(t *testing.T) *env {
 		}
 	}
 	store := session.NewStore(pool, games)
-	return &env{ctx: ctx, pool: pool, store: store, model: projection.New(store, session.NewRules(games)), log: journal.NewMemory(partitions), rules: session.NewRules(games)}
+	model := projection.New(store, session.NewRules(games))
+	if _, err := model.EnsureMovePartitions(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	return &env{ctx: ctx, pool: pool, store: store, model: model, log: journal.NewMemory(partitions), rules: session.NewRules(games)}
 }
 
 func migrate(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
@@ -81,6 +85,7 @@ func migrate(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		{"000004_draw_offers", `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='game' AND table_name='sessions' AND column_name='agreed_draw')`},
 		{"000005_event_log", `SELECT to_regclass('game.owners') IS NOT NULL`},
 		{"000006_owner_lease", `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='game' AND table_name='owners' AND column_name='lease_until')`},
+		{"000007_moves_partitioned", `SELECT EXISTS (SELECT 1 FROM pg_partitioned_table WHERE partrelid = 'game.moves'::regclass)`},
 	}
 	for _, check := range checks {
 		var applied bool
@@ -454,4 +459,149 @@ func TestProjectionReplaysCompactMovesFromAnyOffset(t *testing.T) {
 	e.model.Forget()
 	e.project(t)
 	check("replayed from zero")
+}
+
+type moveRow struct {
+	Ply       int
+	Partition string
+	PlayedAt  time.Time
+	Player    uuid.UUID
+	Data      string
+	Clock     string
+}
+
+func (e *env) moveRows(t *testing.T, id uuid.UUID) []moveRow {
+	t.Helper()
+	rows, err := e.pool.Query(e.ctx, `SELECT m.ply, c.relname, m.played_at, m.player_id, m.data::text, COALESCE(m.clock_before::text, '')
+		FROM game.moves m JOIN pg_class c ON c.oid = m.tableoid WHERE m.session_id=$1 ORDER BY m.ply, m.played_at`, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []moveRow
+	for rows.Next() {
+		var row moveRow
+		if err := rows.Scan(&row.Ply, &row.Partition, &row.PlayedAt, &row.Player, &row.Data, &row.Clock); err != nil {
+			t.Fatal(err)
+		}
+		row.PlayedAt = row.PlayedAt.UTC()
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func monthPartition(at time.Time) string {
+	return at.UTC().Format("moves_2006_01")
+}
+
+func TestMovesAcrossMonthsLandInMonthlyPartitionsAndReplayIdentically(t *testing.T) {
+	e := setup(t)
+	node := e.node(t, "a")
+	x, o := uuid.New(), uuid.New()
+	game, err := node.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, x, o, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ply, at := range []int{0, 4} {
+		player := []uuid.UUID{x, o}[ply%2]
+		if game, err = node.Move(e.ctx, game.ID, player, ply, tictactoe.Key, cell(at), &game.Revision); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.project(t)
+	now := time.Now().UTC()
+	next := time.Date(now.Year(), now.Month()+1, 2, 12, 0, 0, 0, time.UTC)
+	e.skew.Store(int64(time.Until(next)))
+	if game, err = node.AdjustClock(e.ctx, game.ID, [2]int64{300_000, 300_000}); err != nil {
+		t.Fatal(err)
+	}
+	if game, err = node.Undo(e.ctx, game.ID, o, &game.Revision); err != nil || game.State.Ply != 1 {
+		t.Fatal("undo", game.State.Ply, err)
+	}
+	if game, err = node.Move(e.ctx, game.ID, o, 1, tictactoe.Key, cell(8), &game.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if game, err = node.Move(e.ctx, game.ID, x, 2, tictactoe.Key, cell(1), &game.Revision); err != nil {
+		t.Fatal(err)
+	}
+	e.project(t)
+	want := e.moveRows(t, game.ID)
+	if len(want) != 3 || want[0].Ply != 1 || want[1].Ply != 2 || want[2].Ply != 3 {
+		t.Fatal("redone ply must replace the undone row", want)
+	}
+	var redone tictactoe.Cell
+	if err := json.Unmarshal([]byte(want[1].Data), &redone); err != nil || redone != (tictactoe.Cell{Row: 2, Col: 2}) {
+		t.Fatal("ply 2 kept the undone move", want[1].Data, err)
+	}
+	first, second := monthPartition(want[0].PlayedAt), monthPartition(next)
+	if first == second || want[0].Partition != first || want[1].Partition != second || want[2].Partition != second {
+		t.Fatal("moves are not split by month", first, second, want)
+	}
+	if !want[2].PlayedAt.Equal(game.UpdatedAt.UTC().Truncate(time.Microsecond)) {
+		t.Fatal("played_at must be the journal time of the move", want[2].PlayedAt, game.UpdatedAt)
+	}
+	if _, err := e.pool.Exec(e.ctx, `UPDATE game.projector_offsets SET next_offset=0`); err != nil {
+		t.Fatal(err)
+	}
+	e.model.Forget()
+	e.project(t)
+	if got := e.moveRows(t, game.ID); !reflect.DeepEqual(got, want) {
+		t.Fatal("replay over the read model changed moves", got, want)
+	}
+	for _, statement := range []string{`DELETE FROM game.moves WHERE session_id=$1`, `DELETE FROM game.sessions WHERE id=$1`} {
+		if _, err := e.pool.Exec(e.ctx, statement, game.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.pool.Exec(e.ctx, `UPDATE game.projector_offsets SET next_offset=0, claim_generation=0`); err != nil {
+		t.Fatal(err)
+	}
+	e.model.Forget()
+	e.project(t)
+	if got := e.moveRows(t, game.ID); !reflect.DeepEqual(got, want) {
+		t.Fatal("rebuild from the journal produced different moves", got, want)
+	}
+}
+
+func TestEnsureMovePartitionsAdoptsRowsFromDefault(t *testing.T) {
+	e := setup(t)
+	node := e.node(t, "a")
+	x, o := uuid.New(), uuid.New()
+	game, err := node.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, x, o, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.project(t)
+	now := time.Now().UTC()
+	later := time.Date(now.Year(), now.Month()+9, 15, 0, 0, 0, 0, time.UTC)
+	partition := monthPartition(later)
+	drop := func() {
+		if _, err := e.pool.Exec(e.ctx, `DROP TABLE IF EXISTS game.`+partition); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drop()
+	t.Cleanup(func() {
+		_, _ = e.pool.Exec(e.ctx, `DELETE FROM game.moves WHERE session_id=$1`, game.ID)
+		drop()
+	})
+	if _, err := e.pool.Exec(e.ctx, `INSERT INTO game.moves (session_id, ply, player_id, data, played_at) VALUES ($1, 1, $2, '{}', $3)`, game.ID, x, later); err != nil {
+		t.Fatal(err)
+	}
+	if rows := e.moveRows(t, game.ID); len(rows) != 1 || rows[0].Partition != "moves_default" {
+		t.Fatal("row outside known months must land in the default partition", rows)
+	}
+	created, err := e.model.EnsureMovePartitions(e.ctx, 9)
+	if err != nil || created < 1 {
+		t.Fatal("ensure", created, err)
+	}
+	if rows := e.moveRows(t, game.ID); len(rows) != 1 || rows[0].Partition != partition {
+		t.Fatal("default row was not moved into its month", rows)
+	}
+	if again, err := e.model.EnsureMovePartitions(e.ctx, 9); err != nil || again != 0 {
+		t.Fatal("ensure is not idempotent", again, err)
+	}
 }

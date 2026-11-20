@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -34,7 +35,10 @@ type Handler struct {
 	logger   *slog.Logger
 	timeout  time.Duration
 	checkers []Checker
+	draining atomic.Bool
 }
+
+func (h *Handler) Drain() { h.draining.Store(true) }
 
 type Option func(*Handler)
 
@@ -70,6 +74,10 @@ func (h *Handler) Live(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
+	if h.draining.Load() {
+		writeJSON(w, http.StatusServiceUnavailable, response{Status: statusDown, Checks: map[string]string{"shutdown": "draining"}})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), h.timeout)
 	defer cancel()
 

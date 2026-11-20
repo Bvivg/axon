@@ -149,3 +149,20 @@ func TestProbesAreNotCacheable(t *testing.T) {
 		}
 	}
 }
+
+func TestDrainingFailsReadinessButNotLiveness(t *testing.T) {
+	h := health.New(nil, nil)
+	mux := http.NewServeMux()
+	h.Register(mux)
+	h.Drain()
+	ready := httptest.NewRecorder()
+	mux.ServeHTTP(ready, httptest.NewRequestWithContext(context.Background(), http.MethodGet, health.PathReady, nil))
+	if ready.Code != http.StatusServiceUnavailable {
+		t.Fatal("ready while draining", ready.Code)
+	}
+	live := httptest.NewRecorder()
+	mux.ServeHTTP(live, httptest.NewRequestWithContext(context.Background(), http.MethodGet, health.PathLive, nil))
+	if live.Code != http.StatusOK {
+		t.Fatal("liveness failed while draining", live.Code)
+	}
+}

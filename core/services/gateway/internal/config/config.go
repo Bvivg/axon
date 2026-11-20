@@ -64,6 +64,10 @@ func socketURL(base, path string) string {
 }
 
 type RateLimitConfig struct {
+	RedisAddr string
+
+	RedisPassword string
+
 	SearchPerMinute int
 
 	StandardPerMinute int
@@ -101,6 +105,8 @@ func Load() (Config, error) {
 			AllowedOrigins: l.StringSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
 		},
 		RateLimit: RateLimitConfig{
+			RedisAddr:          l.StringDefault("RATE_LIMIT_REDIS_ADDR", ""),
+			RedisPassword:      l.StringDefault("RATE_LIMIT_REDIS_PASSWORD", ""),
 			SearchPerMinute:    l.IntDefault("RATE_LIMIT_SEARCH_PER_MINUTE", 60),
 			StandardPerMinute:  l.IntDefault("RATE_LIMIT_PER_MINUTE", 120),
 			SensitivePerMinute: l.IntDefault("RATE_LIMIT_AUTH_PER_MINUTE", 10),

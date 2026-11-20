@@ -13,16 +13,25 @@ scrape_configs:
       - targets: ["localhost:9090"]
 
   - job_name: gateway
-    static_configs:
-      - targets: ["gateway:9090"]
+    dns_sd_configs:
+      - names: ["gateway"]
+        type: A
+        port: 9090
+        refresh_interval: 15s
 
   - job_name: auth
-    static_configs:
-      - targets: ["auth:9091"]
+    dns_sd_configs:
+      - names: ["auth"]
+        type: A
+        port: 9091
+        refresh_interval: 15s
 
   - job_name: chat
-    static_configs:
-      - targets: ["chat:9092"]
+    dns_sd_configs:
+      - names: ["chat"]
+        type: A
+        port: 9092
+        refresh_interval: 15s
 
   - job_name: game
     dns_sd_configs:

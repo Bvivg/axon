@@ -23,6 +23,13 @@ type Config struct {
 	Uploads     UploadsConfig
 	Push        PushConfig
 	Calls       CallsConfig
+	Fanout      FanoutConfig
+}
+
+type FanoutConfig struct {
+	Shards int
+	MaxLen int
+	Block  time.Duration
 }
 
 type CallsConfig struct {
@@ -129,6 +136,11 @@ func Load() (Config, error) {
 			MaxBytes:  int64(l.IntDefault("CHAT_MAX_UPLOAD_MB", 200)) << 20,
 			PartBytes: int64(l.IntDefault("CHAT_UPLOAD_PART_MB", 10)) << 20,
 			Workers:   l.IntDefault("CHAT_UPLOAD_WORKERS", 1),
+		},
+		Fanout: FanoutConfig{
+			Shards: l.IntDefault("CHAT_FANOUT_SHARDS", 16),
+			MaxLen: l.IntDefault("CHAT_FANOUT_MAXLEN", 10000),
+			Block:  l.DurationDefault("CHAT_FANOUT_BLOCK", time.Second),
 		},
 	}
 

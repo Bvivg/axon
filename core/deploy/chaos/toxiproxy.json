@@ -1,0 +1,4 @@
+[
+  {"name": "postgres", "listen": "0.0.0.0:5432", "upstream": "postgres-real:5432", "enabled": true},
+  {"name": "redis", "listen": "0.0.0.0:6379", "upstream": "redis-real:6379", "enabled": true}
+]

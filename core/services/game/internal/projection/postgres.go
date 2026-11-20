@@ -22,9 +22,10 @@ import (
 const OwnerChannel = "game_owner_changed"
 
 type Postgres struct {
-	pool  *pgxpool.Pool
-	store *session.Store
-	rules session.Rules
+	pool   *pgxpool.Pool
+	leases *pgxpool.Pool
+	store  *session.Store
+	rules  session.Rules
 
 	mu    sync.Mutex
 	cache map[uuid.UUID]session.Session
@@ -32,8 +33,22 @@ type Postgres struct {
 
 const cacheLimit = 50_000
 
-func New(store *session.Store, rules session.Rules) *Postgres {
-	return &Postgres{pool: store.Pool(), store: store, rules: rules, cache: map[uuid.UUID]session.Session{}}
+type Option func(*Postgres)
+
+func LeasesOn(pool *pgxpool.Pool) Option {
+	return func(m *Postgres) {
+		if pool != nil {
+			m.leases = pool
+		}
+	}
+}
+
+func New(store *session.Store, rules session.Rules, options ...Option) *Postgres {
+	m := &Postgres{pool: store.Pool(), leases: store.Pool(), store: store, rules: rules, cache: map[uuid.UUID]session.Session{}}
+	for _, option := range options {
+		option(m)
+	}
+	return m
 }
 
 func (m *Postgres) Forget() {
@@ -44,7 +59,7 @@ func (m *Postgres) Forget() {
 
 func (m *Postgres) Claim(ctx context.Context, partition int32, ownerID, address string, ttl time.Duration) (owner.Lease, error) {
 	var lease owner.Lease
-	err := pgx.BeginFunc(ctx, m.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, m.leases, func(tx pgx.Tx) error {
 		var waitMS int64
 		err := tx.QueryRow(ctx, `SELECT CASE WHEN owner_id = $2 THEN 0
 				ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (lease_until - clock_timestamp())) * 1000))::bigint END
@@ -73,7 +88,7 @@ func (m *Postgres) Renew(ctx context.Context, ownerID string, held map[int32]int
 		partitions = append(partitions, partition)
 		generations = append(generations, generation)
 	}
-	rows, err := m.pool.Query(ctx, `UPDATE game.owners o SET lease_until = clock_timestamp() + make_interval(secs => $4)
+	rows, err := m.leases.Query(ctx, `UPDATE game.owners o SET lease_until = clock_timestamp() + make_interval(secs => $4)
 		FROM unnest($2::smallint[], $3::bigint[]) AS h(partition, generation)
 		WHERE o.partition = h.partition AND o.generation = h.generation AND o.owner_id = $1
 		RETURNING o.partition`, ownerID, partitions, generations, ttl.Seconds())
@@ -84,7 +99,7 @@ func (m *Postgres) Renew(ctx context.Context, ownerID string, held map[int32]int
 }
 
 func (m *Postgres) Release(ctx context.Context, ownerID string, partition int32, generation int64) error {
-	_, err := m.pool.Exec(ctx, `UPDATE game.owners SET lease_until = clock_timestamp()
+	_, err := m.leases.Exec(ctx, `UPDATE game.owners SET lease_until = clock_timestamp()
 		WHERE partition=$1 AND generation=$2 AND owner_id=$3`, partition, generation, ownerID)
 	return err
 }
@@ -167,7 +182,7 @@ func (m *Postgres) Moves(ctx context.Context, id uuid.UUID, below int) ([]sessio
 }
 
 func (m *Postgres) Owners(ctx context.Context) (map[int32]string, error) {
-	rows, err := m.pool.Query(ctx, `SELECT partition, address FROM game.owners`)
+	rows, err := m.leases.Query(ctx, `SELECT partition, address FROM game.owners`)
 	if err != nil {
 		return nil, err
 	}
@@ -193,8 +208,16 @@ type pending struct {
 	cancelled bool
 	notify    bool
 	settle    bool
-	moves     map[int]*session.MoveRecord
+	moves     map[int]played
+	undone    map[int]bool
 }
+
+type played struct {
+	session.MoveRecord
+	At time.Time
+}
+
+func playedAt(at time.Time) time.Time { return at.UTC().Truncate(time.Microsecond) }
 
 type batch struct {
 	model *Postgres
@@ -294,7 +317,7 @@ func (b *batch) item(ctx context.Context, id uuid.UUID, partition int32, reload 
 		return item, nil
 	}
 	if item == nil {
-		item = &pending{partition: partition, moves: map[int]*session.MoveRecord{}}
+		item = &pending{partition: partition, moves: map[int]played{}, undone: map[int]bool{}}
 		b.items[id] = item
 		b.order = append(b.order, id)
 		if game, ok := b.model.cached(id); ok {
@@ -345,10 +368,10 @@ func (b *batch) fold(ctx context.Context, partition int32, event journal.Event) 
 	item.exists, item.write = true, true
 	switch change.Fact {
 	case session.FactMoved:
-		move := *change.Move
-		item.moves[move.Ply] = &move
+		item.moves[change.Move.Ply] = played{MoveRecord: *change.Move, At: playedAt(change.At)}
 	case session.FactUndone:
-		item.moves[change.UndonePly] = nil
+		delete(item.moves, change.UndonePly)
+		item.undone[change.UndonePly] = true
 		item.notify = true
 	default:
 		item.notify = true
@@ -373,11 +396,13 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 	rows := &pgx.Batch{}
 	var dropSessions []uuid.UUID
 	var dropPlies []int32
+	var dropKeep []*time.Time
 	var sessions []uuid.UUID
 	var plies []int32
 	var players []uuid.UUID
 	var data []string
 	var clocks []*string
+	var times []time.Time
 	for _, id := range b.order {
 		item := b.items[id]
 		if item.notify {
@@ -393,11 +418,14 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 		if err := queueSession(rows, item); err != nil {
 			return nil, err
 		}
-		for ply, move := range item.moves {
-			if move == nil {
-				dropSessions, dropPlies = append(dropSessions, id), append(dropPlies, int32(ply))
-				continue
+		for ply := range item.undone {
+			var keep *time.Time
+			if move, ok := item.moves[ply]; ok {
+				keep = &move.At
 			}
+			dropSessions, dropPlies, dropKeep = append(dropSessions, id), append(dropPlies, int32(ply)), append(dropKeep, keep)
+		}
+		for ply, move := range item.moves {
 			var clock *string
 			if move.ClockBefore != nil {
 				raw, err := json.Marshal(move.ClockBefore)
@@ -408,7 +436,7 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 				clock = &value
 			}
 			sessions, plies, players = append(sessions, id), append(plies, int32(ply)), append(players, move.Player)
-			data, clocks = append(data, string(move.Data)), append(clocks, clock)
+			data, clocks, times = append(data, string(move.Data)), append(clocks, clock), append(times, move.At)
 		}
 	}
 	if len(cancelled) > 0 {
@@ -426,16 +454,16 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 		}
 	}
 	if len(dropSessions) > 0 {
-		if _, err := b.tx.Exec(ctx, `DELETE FROM game.moves m USING unnest($1::uuid[], $2::int[]) AS d(session_id, ply)
-			WHERE m.session_id = d.session_id AND m.ply = d.ply`, dropSessions, dropPlies); err != nil {
+		if _, err := b.tx.Exec(ctx, `DELETE FROM game.moves m USING unnest($1::uuid[], $2::int[], $3::timestamptz[]) AS d(session_id, ply, keep)
+			WHERE m.session_id = d.session_id AND m.ply = d.ply AND m.played_at IS DISTINCT FROM d.keep`, dropSessions, dropPlies, dropKeep); err != nil {
 			return nil, err
 		}
 	}
 	if len(sessions) > 0 {
-		if _, err := b.tx.Exec(ctx, `INSERT INTO game.moves (session_id, ply, player_id, data, clock_before)
-			SELECT s, p, pl, d::jsonb, c::jsonb FROM unnest($1::uuid[], $2::int[], $3::uuid[], $4::text[], $5::text[]) AS m(s, p, pl, d, c)
-			ON CONFLICT (session_id, ply) DO UPDATE SET player_id=EXCLUDED.player_id, data=EXCLUDED.data,
-				state_before=NULL, clock_before=EXCLUDED.clock_before`, sessions, plies, players, data, clocks); err != nil {
+		if _, err := b.tx.Exec(ctx, `INSERT INTO game.moves (session_id, ply, player_id, data, clock_before, played_at)
+			SELECT s, p, pl, d::jsonb, c::jsonb, t FROM unnest($1::uuid[], $2::int[], $3::uuid[], $4::text[], $5::text[], $6::timestamptz[]) AS m(s, p, pl, d, c, t)
+			ON CONFLICT (session_id, ply, played_at) DO UPDATE SET player_id=EXCLUDED.player_id, data=EXCLUDED.data,
+				state_before=NULL, clock_before=EXCLUDED.clock_before`, sessions, plies, players, data, clocks, times); err != nil {
 			return nil, err
 		}
 	}

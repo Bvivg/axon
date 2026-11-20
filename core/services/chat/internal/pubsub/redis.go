@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,28 +19,81 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
+const (
+	defaultShards = 16
+	maxShards     = 1024
+	defaultMaxLen = 10000
+	defaultBlock  = time.Second
+
+	defaultRetryMin = 100 * time.Millisecond
+	defaultRetryMax = 5 * time.Second
+
+	readBatch       = 256
+	positionTimeout = 3 * time.Second
+
+	streamStart = "0-0"
+
+	fieldKind    = "kind"
+	fieldTo      = "to"
+	fieldPayload = "payload"
+
+	entryMessage    = "message"
+	entryRoomSignal = "room_signal"
+	entryUserSignal = "user_signal"
+)
+
+type fanoutConfig struct {
+	shards   int
+	maxLen   int
+	block    time.Duration
+	retryMin time.Duration
+	retryMax time.Duration
+}
+
+type Option func(*fanoutConfig)
+
+func WithShards(n int) Option { return func(c *fanoutConfig) { c.shards = n } }
+
+func WithMaxLen(n int) Option { return func(c *fanoutConfig) { c.maxLen = n } }
+
+func WithBlock(d time.Duration) Option { return func(c *fanoutConfig) { c.block = d } }
+
+func withRetry(lo, hi time.Duration) Option {
+	return func(c *fanoutConfig) { c.retryMin, c.retryMax = lo, hi }
+}
+
+func (c fanoutConfig) validate() error {
+	switch {
+	case c.shards < 1 || c.shards > maxShards:
+		return fmt.Errorf("pubsub: fan-out shards must be between 1 and %d, got %d", maxShards, c.shards)
+	case c.maxLen < 1:
+		return fmt.Errorf("pubsub: fan-out stream length must be positive, got %d", c.maxLen)
+	case c.block < time.Millisecond:
+		return fmt.Errorf("pubsub: fan-out block timeout must be at least 1ms, got %s", c.block)
+	case c.retryMin <= 0 || c.retryMax < c.retryMin:
+		return fmt.Errorf("pubsub: fan-out retry window %s..%s is invalid", c.retryMin, c.retryMax)
+	}
+	return nil
+}
+
 type Redis struct {
 	client goredis.UniversalClient
 	local  *Memory
 	log    *slog.Logger
+	cfg    fanoutConfig
 
-	mu    sync.Mutex
-	rooms map[uuid.UUID]*roomSubscription
+	streams []string
+	shardOf map[string]int
 
-	roomSignals *signalTopic
-	userSignals *signalTopic
+	cursor  []string
+	resumed bool
+
+	quit      chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
-type roomSubscription struct {
-	sub *goredis.PubSub
-
-	listeners int
-
-	stop context.CancelFunc
-	done chan struct{}
-}
-
-func NewRedis(client goredis.UniversalClient, log *slog.Logger) (*Redis, error) {
+func NewRedis(client goredis.UniversalClient, log *slog.Logger, opts ...Option) (*Redis, error) {
 	if client == nil {
 		return nil, errors.New("pubsub: a redis client is required")
 	}
@@ -45,33 +101,50 @@ func NewRedis(client goredis.UniversalClient, log *slog.Logger) (*Redis, error) 
 		return nil, errors.New("pubsub: a logger is required")
 	}
 
-	local := NewMemory()
+	cfg := fanoutConfig{
+		shards:   defaultShards,
+		maxLen:   defaultMaxLen,
+		block:    defaultBlock,
+		retryMin: defaultRetryMin,
+		retryMax: defaultRetryMax,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 
-	return &Redis{
-		client: client,
-		local:  local,
-		log:    log,
-		rooms:  make(map[uuid.UUID]*roomSubscription),
-		roomSignals: &signalTopic{
-			name:    "room",
-			channel: signalChannel,
-			deliver: func(_ uuid.UUID, sig Signal) { local.signals.publish(sig.RoomID, sig) },
-			subs:    make(map[uuid.UUID]*roomSubscription),
-		},
-		userSignals: &signalTopic{
-			name:    "user",
-			channel: userSignalChannel,
-			deliver: func(userID uuid.UUID, sig Signal) { local.userSignals.publish(userID, sig) },
-			subs:    make(map[uuid.UUID]*roomSubscription),
-		},
-	}, nil
+	streams := make([]string, cfg.shards)
+	shardOf := make(map[string]int, cfg.shards)
+	for i := range streams {
+		streams[i] = fanoutStream(i)
+		shardOf[streams[i]] = i
+	}
+
+	r := &Redis{
+		client:  client,
+		local:   NewMemory(),
+		log:     log,
+		cfg:     cfg,
+		streams: streams,
+		shardOf: shardOf,
+		quit:    make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+
+	start, cancelStart := context.WithTimeout(context.Background(), positionTimeout)
+	if err := r.position(start); err != nil {
+		log.Warn("chat fan-out could not find the stream ends yet, the reader will retry", "error", err)
+	}
+	cancelStart()
+
+	go r.run()
+
+	return r, nil
 }
 
-func channel(roomID uuid.UUID) string { return "chat:room:" + roomID.String() }
-
-func signalChannel(roomID uuid.UUID) string { return "chat:room:" + roomID.String() + ":signals" }
-
-func userSignalChannel(userID uuid.UUID) string { return "chat:user:" + userID.String() + ":signals" }
+func fanoutStream(shard int) string { return "chat:fanout:" + strconv.Itoa(shard) }
 
 type signalWire struct {
 	Kind       string          `json:"kind"`
@@ -233,302 +306,252 @@ func kindOrText(raw string) domain.MessageKind {
 }
 
 func (r *Redis) Publish(ctx context.Context, m domain.Message) error {
-	return r.publish(ctx, m.RoomID, toWire(m))
+	return r.publishMessage(ctx, m.RoomID, toWire(m))
 }
 
 func (r *Redis) PublishUpdate(ctx context.Context, m domain.Message) error {
 	w := toWire(m)
 	w.Update = true
-	return r.publish(ctx, m.RoomID, w)
+	return r.publishMessage(ctx, m.RoomID, w)
 }
 
-func (r *Redis) publish(ctx context.Context, roomID uuid.UUID, w wire) error {
+func (r *Redis) publishMessage(ctx context.Context, roomID uuid.UUID, w wire) error {
 	payload, err := json.Marshal(w)
 	if err != nil {
 		return fmt.Errorf("pubsub: encode message: %w", err)
 	}
-
-	if err := r.client.Publish(ctx, channel(roomID), payload).Err(); err != nil {
-		return fmt.Errorf("pubsub: publish to %s: %w", channel(roomID), err)
-	}
-	return nil
-}
-
-func (r *Redis) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan Delivery, func(), error) {
-	if err := r.acquire(roomID); err != nil {
-		return nil, nil, err
-	}
-
-	messages, stopLocal, err := r.local.Subscribe(ctx, roomID)
-	if err != nil {
-		r.release(roomID)
-		return nil, nil, err
-	}
-
-	var once sync.Once
-	stop := func() {
-		once.Do(func() {
-			stopLocal()
-			r.release(roomID)
-		})
-	}
-
-	return messages, stop, nil
-}
-
-func (r *Redis) acquire(roomID uuid.UUID) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if room, ok := r.rooms[roomID]; ok {
-		room.listeners++
-		return nil
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	sub := r.client.Subscribe(ctx, channel(roomID))
-	room := &roomSubscription{sub: sub, listeners: 1, stop: cancel, done: make(chan struct{})}
-	r.rooms[roomID] = room
-
-	go r.pump(ctx, roomID, sub, room.done)
-
-	return nil
-}
-
-func (r *Redis) release(roomID uuid.UUID) {
-	r.mu.Lock()
-
-	room, ok := r.rooms[roomID]
-	if !ok {
-		r.mu.Unlock()
-		return
-	}
-
-	room.listeners--
-	if room.listeners > 0 {
-		r.mu.Unlock()
-		return
-	}
-
-	delete(r.rooms, roomID)
-	r.mu.Unlock()
-
-	room.stop()
-	if err := room.sub.Close(); err != nil {
-		r.log.Debug("could not close a room subscription", "room_id", roomID, "error", err)
-	}
-	<-room.done
-}
-
-func (r *Redis) pump(ctx context.Context, roomID uuid.UUID, sub *goredis.PubSub, done chan<- struct{}) {
-	defer close(done)
-
-	messages := sub.Channel()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg, ok := <-messages:
-			if !ok {
-				return
-			}
-
-			var w wire
-			if err := json.Unmarshal([]byte(msg.Payload), &w); err != nil {
-				r.log.Error("could not decode a fanned-out message",
-					"room_id", roomID, "error", err)
-				continue
-			}
-
-			m, err := w.toDomain()
-			if err != nil {
-				r.log.Error("a fanned-out message was malformed",
-					"room_id", roomID, "error", err)
-				continue
-			}
-
-			r.local.deliver(Delivery{Message: m, Update: w.Update})
-		}
-	}
+	return r.append(ctx, entryMessage, roomID, payload)
 }
 
 func (r *Redis) PublishSignal(ctx context.Context, sig Signal) error {
-	return r.publishSignal(ctx, r.roomSignals, sig.RoomID, sig)
-}
-
-func (r *Redis) SubscribeSignals(ctx context.Context, roomID uuid.UUID) (<-chan Signal, func(), error) {
-	return r.subscribeSignals(ctx, r.roomSignals, roomID, r.local.SubscribeSignals)
+	return r.publishSignal(ctx, entryRoomSignal, sig.RoomID, sig)
 }
 
 func (r *Redis) PublishUserSignal(ctx context.Context, userID uuid.UUID, sig Signal) error {
-	return r.publishSignal(ctx, r.userSignals, userID, sig)
+	return r.publishSignal(ctx, entryUserSignal, userID, sig)
 }
 
-func (r *Redis) SubscribeUserSignals(ctx context.Context, userID uuid.UUID) (<-chan Signal, func(), error) {
-	return r.subscribeSignals(ctx, r.userSignals, userID, r.local.SubscribeUserSignals)
-}
-
-type signalTopic struct {
-	name    string
-	channel func(uuid.UUID) string
-	deliver func(uuid.UUID, Signal)
-	subs    map[uuid.UUID]*roomSubscription
-}
-
-func (r *Redis) publishSignal(ctx context.Context, topic *signalTopic, id uuid.UUID, sig Signal) error {
+func (r *Redis) publishSignal(ctx context.Context, kind string, to uuid.UUID, sig Signal) error {
 	payload, err := json.Marshal(toSignalWire(sig))
 	if err != nil {
 		return fmt.Errorf("pubsub: encode %s signal: %w", sig.Kind, err)
 	}
+	return r.append(ctx, kind, to, payload)
+}
 
-	name := topic.channel(id)
-	if err := r.client.Publish(ctx, name, payload).Err(); err != nil {
-		return fmt.Errorf("pubsub: publish to %s: %w", name, err)
+func (r *Redis) append(ctx context.Context, kind string, to uuid.UUID, payload []byte) error {
+	stream := r.streams[r.shard(to)]
+	err := r.client.XAdd(ctx, &goredis.XAddArgs{
+		Stream: stream,
+		MaxLen: int64(r.cfg.maxLen),
+		Approx: true,
+		Values: []any{fieldKind, kind, fieldTo, to.String(), fieldPayload, payload},
+	}).Err()
+	if err != nil {
+		return fmt.Errorf("pubsub: append to %s: %w", stream, err)
 	}
 	return nil
 }
 
-func (r *Redis) subscribeSignals(
-	ctx context.Context,
-	topic *signalTopic,
-	id uuid.UUID,
-	local func(context.Context, uuid.UUID) (<-chan Signal, func(), error),
-) (<-chan Signal, func(), error) {
-	signals, stopLocal, err := local(ctx, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := r.acquireSignals(ctx, topic, id); err != nil {
-		stopLocal()
-		return nil, nil, err
-	}
-
-	var once sync.Once
-	stop := func() {
-		once.Do(func() {
-			stopLocal()
-			r.releaseSignals(topic, id)
-		})
-	}
-
-	return signals, stop, nil
+func (r *Redis) shard(id uuid.UUID) int {
+	h := fnv.New32a()
+	_, _ = h.Write(id[:])
+	return int(h.Sum32() % uint32(len(r.streams)))
 }
 
-func (r *Redis) acquireSignals(caller context.Context, topic *signalTopic, id uuid.UUID) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (r *Redis) Subscribe(ctx context.Context, roomID uuid.UUID) (<-chan Delivery, func(), error) {
+	return r.local.Subscribe(ctx, roomID)
+}
 
-	if existing, ok := topic.subs[id]; ok {
-		existing.listeners++
-		return nil
-	}
+func (r *Redis) SubscribeSignals(ctx context.Context, roomID uuid.UUID) (<-chan Signal, func(), error) {
+	return r.local.SubscribeSignals(ctx, roomID)
+}
+
+func (r *Redis) SubscribeUserSignals(ctx context.Context, userID uuid.UUID) (<-chan Signal, func(), error) {
+	return r.local.SubscribeUserSignals(ctx, userID)
+}
+
+func (r *Redis) run() {
+	defer close(r.done)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-r.quit:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
-	sub := r.client.Subscribe(ctx, topic.channel(id))
-	ready, stopReady := context.WithTimeout(caller, 3*time.Second)
-	_, err := sub.Receive(ready)
-	stopReady()
-	if err != nil {
-		cancel()
-		_ = sub.Close()
-		return fmt.Errorf("pubsub: subscription ready: %w", err)
-	}
-	subscription := &roomSubscription{sub: sub, listeners: 1, stop: cancel, done: make(chan struct{})}
-	topic.subs[id] = subscription
-
-	go r.pumpSignals(ctx, topic, id, sub, subscription.done)
-	return nil
-}
-
-func (r *Redis) releaseSignals(topic *signalTopic, id uuid.UUID) {
-	r.mu.Lock()
-
-	subscription, ok := topic.subs[id]
-	if !ok {
-		r.mu.Unlock()
-		return
-	}
-
-	subscription.listeners--
-	if subscription.listeners > 0 {
-		r.mu.Unlock()
-		return
-	}
-
-	delete(topic.subs, id)
-	r.mu.Unlock()
-
-	subscription.stop()
-	if err := subscription.sub.Close(); err != nil {
-		r.log.Debug("could not close a signal subscription", "topic", topic.name, "id", id, "error", err)
-	}
-	<-subscription.done
-}
-
-func (r *Redis) pumpSignals(
-	ctx context.Context,
-	topic *signalTopic,
-	id uuid.UUID,
-	sub *goredis.PubSub,
-	done chan<- struct{},
-) {
-	defer close(done)
-
-	messages := sub.Channel()
+	delay := r.cfg.retryMin
 	for {
+		err := r.read(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			delay = r.cfg.retryMin
+			continue
+		}
+
+		r.resumed = true
+		r.log.Warn("chat fan-out read failed, retrying", "error", err, "retry_in", delay)
+
 		select {
 		case <-ctx.Done():
 			return
-		case msg, ok := <-messages:
-			if !ok {
-				return
-			}
-
-			var w signalWire
-			if err := json.Unmarshal([]byte(msg.Payload), &w); err != nil {
-				r.log.Error("could not decode a fanned-out signal", "topic", topic.name, "id", id, "error", err)
-				continue
-			}
-
-			sig, err := w.toDomain()
-			if err != nil {
-				r.log.Error("a fanned-out signal was malformed", "topic", topic.name, "id", id, "error", err)
-				continue
-			}
-
-			topic.deliver(id, sig)
+		case <-time.After(delay):
 		}
+		delay = min(delay*2, r.cfg.retryMax)
 	}
 }
 
-func (r *Redis) Close() error {
-	r.mu.Lock()
-	rooms := r.rooms
-	r.rooms = make(map[uuid.UUID]*roomSubscription)
-	signalSubs := make(map[uuid.UUID]*roomSubscription)
-	for _, topic := range []*signalTopic{r.roomSignals, r.userSignals} {
-		for id, sub := range topic.subs {
-			signalSubs[id] = sub
+func (r *Redis) read(ctx context.Context) error {
+	if r.cursor == nil {
+		if err := r.position(ctx); err != nil {
+			return err
 		}
-		topic.subs = make(map[uuid.UUID]*roomSubscription)
 	}
-	r.mu.Unlock()
+	if r.resumed {
+		if err := r.checkGaps(ctx); err != nil {
+			return err
+		}
+		r.resumed = false
+		r.log.Info("chat fan-out reconnected, continuing from the last processed entries")
+	}
 
-	for id, room := range rooms {
-		room.stop()
-		if err := room.sub.Close(); err != nil {
-			r.log.Debug("could not close a room subscription", "room_id", id, "error", err)
-		}
-		<-room.done
+	streams, err := r.client.XRead(ctx, &goredis.XReadArgs{
+		Streams: append(append(make([]string, 0, 2*len(r.streams)), r.streams...), r.cursor...),
+		Count:   readBatch,
+		Block:   r.cfg.block,
+	}).Result()
+	if errors.Is(err, goredis.Nil) {
+		return nil
 	}
-	for id, room := range signalSubs {
-		room.stop()
-		if err := room.sub.Close(); err != nil {
-			r.log.Debug("could not close a signal subscription", "room_id", id, "error", err)
-		}
-		<-room.done
+	if err != nil {
+		return fmt.Errorf("pubsub: read fan-out: %w", err)
 	}
+
+	for _, stream := range streams {
+		shard, ok := r.shardOf[stream.Stream]
+		if !ok {
+			continue
+		}
+		for _, entry := range stream.Messages {
+			if err := r.dispatch(entry); err != nil {
+				r.log.Error("could not deliver a fan-out entry", "stream", stream.Stream, "id", entry.ID, "error", err)
+			}
+			r.cursor[shard] = entry.ID
+		}
+	}
+	return nil
+}
+
+func (r *Redis) position(ctx context.Context) error {
+	pipe := r.client.Pipeline()
+	last := make([]*goredis.XMessageSliceCmd, len(r.streams))
+	for i, stream := range r.streams {
+		last[i] = pipe.XRevRangeN(ctx, stream, "+", "-", 1)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("pubsub: find fan-out stream ends: %w", err)
+	}
+
+	cursor := make([]string, len(r.streams))
+	for i, cmd := range last {
+		cursor[i] = streamStart
+		if entries := cmd.Val(); len(entries) > 0 {
+			cursor[i] = entries[0].ID
+		}
+	}
+	r.cursor = cursor
+	return nil
+}
+
+func (r *Redis) checkGaps(ctx context.Context) error {
+	pipe := r.client.Pipeline()
+	oldest := make([]*goredis.XMessageSliceCmd, len(r.streams))
+	for i, stream := range r.streams {
+		oldest[i] = pipe.XRangeN(ctx, stream, "-", "+", 1)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("pubsub: check fan-out gaps: %w", err)
+	}
+
+	for i, cmd := range oldest {
+		entries := cmd.Val()
+		if len(entries) == 0 || r.cursor[i] == streamStart {
+			continue
+		}
+		if streamIDBefore(r.cursor[i], entries[0].ID) {
+			r.log.Warn("chat fan-out resumed after its last entry was trimmed, events in between may be lost",
+				"stream", r.streams[i], "last_id", r.cursor[i], "oldest_id", entries[0].ID)
+		}
+	}
+	return nil
+}
+
+func streamIDBefore(a, b string) bool {
+	aMS, aSeq := splitStreamID(a)
+	bMS, bSeq := splitStreamID(b)
+	if aMS != bMS {
+		return aMS < bMS
+	}
+	return aSeq < bSeq
+}
+
+func splitStreamID(id string) (uint64, uint64) {
+	ms, seq, _ := strings.Cut(id, "-")
+	msValue, _ := strconv.ParseUint(ms, 10, 64)
+	seqValue, _ := strconv.ParseUint(seq, 10, 64)
+	return msValue, seqValue
+}
+
+func (r *Redis) dispatch(entry goredis.XMessage) error {
+	kind, _ := entry.Values[fieldKind].(string)
+	payload, _ := entry.Values[fieldPayload].(string)
+
+	switch kind {
+	case entryMessage:
+		var w wire
+		if err := json.Unmarshal([]byte(payload), &w); err != nil {
+			return fmt.Errorf("pubsub: decode message: %w", err)
+		}
+		m, err := w.toDomain()
+		if err != nil {
+			return err
+		}
+		r.local.deliver(Delivery{Message: m, Update: w.Update})
+		return nil
+
+	case entryRoomSignal, entryUserSignal:
+		raw, _ := entry.Values[fieldTo].(string)
+		to, err := uuid.Parse(raw)
+		if err != nil {
+			return fmt.Errorf("pubsub: signal recipient: %w", err)
+		}
+		var w signalWire
+		if err := json.Unmarshal([]byte(payload), &w); err != nil {
+			return fmt.Errorf("pubsub: decode %s: %w", kind, err)
+		}
+		sig, err := w.toDomain()
+		if err != nil {
+			return err
+		}
+		if kind == entryRoomSignal {
+			r.local.signals.publish(to, sig)
+		} else {
+			r.local.userSignals.publish(to, sig)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("pubsub: unknown fan-out entry kind %q", kind)
+}
+
+func (r *Redis) Close() error {
+	r.closeOnce.Do(func() { close(r.quit) })
+	<-r.done
 	return nil
 }
