@@ -681,7 +681,7 @@ func (s *fakeStore) SearchUsers(_ context.Context, query string, excludeUserID u
 	rank := func(u domain.User) int {
 		name, nickname := strings.ToLower(u.DisplayName), strings.ToLower(u.Nickname)
 		switch {
-		case query == "" || strings.ToLower(u.Email) == lowered || name == lowered || u.Username == username:
+		case name == lowered || u.Username == username:
 			return 0
 		case strings.HasPrefix(name, lowered) || strings.HasPrefix(nickname, lowered) ||
 			(username != "" && strings.HasPrefix(u.Username, username)):
