@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSession } from "@/lib/auth/session";
 import { fromTimestamp, profileName, shortWhen } from "@/lib/format";
 import { type GameKey, games } from "@/lib/games/catalog";
-import { formatDelta, gameHref, gameStatusLabel, ratingDelta, useGameSessions, useRatings } from "@/lib/query/games";
+import { formatDelta, gameHref, gameStatusLabel, ratingDelta, useGameSessions, useLiveSessions, useRatings } from "@/lib/query/games";
 import { usePublicProfiles } from "@/lib/query/people";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +18,8 @@ export function GameLobby({ game: kind, quick = false }: { game: GameKey; quick?
   const { user } = useSession();
   const sessions = useGameSessions();
   const list = sessions.data?.filter(item => item.game === kind);
-  const opponents = usePublicProfiles(list?.flatMap(game => game.playerIds.filter(id => id !== user?.id)) ?? []).data;
+  const live = useLiveSessions(kind).data?.filter(item => !item.playerIds.includes(user?.id ?? ""));
+  const opponents = usePublicProfiles([...(list?.flatMap(game => game.playerIds.filter(id => id !== user?.id)) ?? []), ...(live?.flatMap(game => game.playerIds) ?? [])]).data;
   const mine = useRatings(kind, user?.id ? [user.id] : []).data?.get(user?.id ?? "");
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -33,6 +34,24 @@ export function GameLobby({ game: kind, quick = false }: { game: GameKey; quick?
             </div>
             <StartGameDialog game={kind} rating={mine?.rating} autoQuick={quick} />
           </div>
+          {live?.length ? (
+            <section aria-labelledby="live-games-title" className="rounded-[14px] border border-line bg-surface p-4">
+              <h2 id="live-games-title" className="flex items-center justify-between pb-2 text-sm font-semibold">
+                Live games<span className="text-xs font-normal text-muted-foreground">{live.length}</span>
+              </h2>
+              <ul className="-mx-2 flex flex-col">
+                {live.map(game => (
+                  <li key={game.id}>
+                    <Link href={gameHref(game.id, game.game)} data-live-game={game.id} className="flex min-h-11 items-center gap-3 rounded-[10px] px-2 py-1.5 text-sm transition-colors hover:bg-muted">
+                      <span className="min-w-0 flex-1 truncate">{game.playerIds.map(id => profileName(opponents?.get(id)) || "Player").join(" vs ")}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">Move {game.ply}</span>
+                      <span className="shrink-0 text-xs font-medium text-signal">Watch</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <section id="game-history" aria-labelledby="your-games-title" className="rounded-[14px] border border-line bg-surface p-4">
             <h2 id="your-games-title" className="flex items-center justify-between pb-2 text-sm font-semibold">
               Your games<span className="text-xs font-normal text-muted-foreground">{list?.length ?? "—"}</span>

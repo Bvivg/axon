@@ -72,7 +72,7 @@ async function play(people: [Page, Page], moves: number[]) {
   }
 }
 
-test("two players invite, win, reload and draw; a third player cannot join", async ({ browser, baseURL }, testInfo) => {
+test("two players invite, win, reload and draw; a third player watches but cannot join", async ({ browser, baseURL }, testInfo) => {
   test.setTimeout(90_000);
   const origin = new URL(baseURL!).origin;
   const a = await player(browser, origin, "Alexandra Montgomery-Willoughby");
@@ -91,7 +91,7 @@ test("two players invite, win, reload and draw; a third player cannot join", asy
     const first = await createGame(a.page);
     await joinGame(b.page, first);
     const sessionId = first.split("/").at(-1);
-    expect((await outsider.rpc("GetSession", { sessionId })).status()).toBe(404);
+    expect((await outsider.rpc("GetSession", { sessionId })).status()).toBe(200);
     expect((await outsider.rpc("JoinSession", { sessionId })).status()).toBe(400);
     await expect(status(a.page)).toContainText("Your turn");
     await expect(status(b.page)).toContainText("Opponent’s turn");

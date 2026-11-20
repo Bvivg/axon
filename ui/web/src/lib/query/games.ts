@@ -15,6 +15,25 @@ export function useGameSessions() {
   });
 }
 
+export const liveSessionsKey = (game: string) => ["game", "live", game] as const;
+export const historyKey = (id: string) => ["game", "history", id] as const;
+
+export function useLiveSessions(game: string) {
+  return useQuery({
+    queryKey: liveSessionsKey(game),
+    queryFn: async ({ signal }) => (await gameClient.listLiveSessions({ game }, { signal })).sessions,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useSessionHistory(id: string) {
+  return useQuery({
+    queryKey: historyKey(id),
+    queryFn: async ({ signal }) => await gameClient.getSessionHistory({ sessionId: id }, { signal }),
+    staleTime: 5_000,
+  });
+}
+
 export function gameStatusLabel(status: SessionStatus, winner?: string, user?: string) {
   switch (status) {
     case SessionStatus.WAITING: return "Waiting for opponent";

@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { SessionLoader } from "@/components/games/session-loader";
+import { ReplayLink, SpectatorCount, SpectatorStatus, WatchingTag, isSpectator, spectatorStatus } from "@/components/games/watch";
 import { Copy, Flag, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -84,11 +85,13 @@ function Match({ initial }: { initial: Session }) {
     Math.max(0, time - (!complete && !waiting && game.turnUserId === game.playerIds[index] ? elapsed : 0)));
   const mySeat = user?.id === game.playerIds[1] ? 1 : 0;
   const myTurn = game.turnUserId === user?.id;
-  const status = game.status === SessionStatus.DRAW ? "Draw"
+  const spectating = isSpectator(game, user?.id);
+  const status = spectating ? spectatorStatus(game, game.playerIds.map(id => profileName(profiles.data?.get(id))), ["X", "O"])
+    : game.status === SessionStatus.DRAW ? "Draw"
     : game.status === SessionStatus.WON ? (game.winnerUserId === user?.id ? (game.resigned ? "Opponent resigned" : "You won") : (game.resigned ? "You resigned" : "You lost"))
     : waiting ? "Waiting for opponent"
     : myTurn ? "Your turn" : "Opponent’s turn";
-  const displayNames = game.playerIds.map(id => id === user?.id ? "You" : profileName(profiles.data?.get(id)) || "Opponent");
+  const displayNames = game.playerIds.map((id, seat) => id === user?.id ? "You" : profileName(profiles.data?.get(id)) || (spectating ? (seat === 0 ? "X" : "O") : "Opponent"));
   const shareLink = () => {
     if (!navigator.clipboard) { setCopy("manual"); return; }
     void navigator.clipboard.writeText(window.location.href).then(() => setCopy("copied"), () => setCopy("manual"));
@@ -102,10 +105,10 @@ function Match({ initial }: { initial: Session }) {
   };
   const delta = ratingDelta(game, user?.id);
   const makeMove = (cell: number) => { if (!modal && connected && !pending && !waiting && !complete && myTurn) move(cell); };
-  useArenaShortcuts({ enabled: !modal, move: makeMove, undo: () => { if (canUndo) undo(); }, restart: () => { if (!playAgain.isPending && !playAgain.isSuccess) playAgain.mutate(); } });
+  useArenaShortcuts({ enabled: !modal && !spectating, move: makeMove, undo: () => { if (canUndo) undo(); }, restart: () => { if (!playAgain.isPending && !playAgain.isSuccess) playAgain.mutate(); } });
   return (
     <div className={arenaClass}>
-      <ArenaHeader><ArenaTools pending={playAgain.isPending || playAgain.isSuccess} restart={() => playAgain.mutate()} undo={undo} canUndo={canUndo} undoHidden={game.rated}><StatisticsIcon onClick={() => setModal("stats")} /><SettingsIcon onClick={() => setModal("settings")} /></ArenaTools></ArenaHeader>
+      <ArenaHeader>{spectating ? <WatchingTag /> : <ArenaTools pending={playAgain.isPending || playAgain.isSuccess} restart={() => playAgain.mutate()} undo={undo} canUndo={canUndo} undoHidden={game.rated}><StatisticsIcon onClick={() => setModal("stats")} /><SettingsIcon onClick={() => setModal("settings")} /></ArenaTools>}</ArenaHeader>
       <section aria-labelledby="game-board-title" className="grid min-w-0 gap-3">
         <h2 id="game-board-title" className="sr-only">Game board</h2>
         <div role="status" aria-atomic="true" data-game-status className="sr-only">
@@ -116,7 +119,7 @@ function Match({ initial }: { initial: Session }) {
         <ArenaPlayer mark={user?.id === game.playerIds[1] ? Mark.X : Mark.O} name={displayNames[user?.id === game.playerIds[1] ? 0 : 1] ?? "Open seat"} active={!complete && !waiting && !myTurn} time={remaining[1 - mySeat]} rating={ratingOf(1 - mySeat)} />
         <div className="relative">
           <Board board={game.ticTacToe} turn={mySeat === 0 ? Mark.X : Mark.O} playable={!modal && connected && game.status === SessionStatus.PLAYING && myTurn && !pending && remaining[mySeat] > 0} move={makeMove} />
-          {complete && dismissedRevision !== revision ? <ArenaResult title={status} detail={delta !== undefined ? `Rating ${formatDelta(delta)}` : undefined} kind={game.status === SessionStatus.DRAW ? "draw" : won ? "win" : "lose"} close={() => setDismissedRevision(revision)} restart={() => playAgain.mutate()} pending={playAgain.isPending || playAgain.isSuccess} /> : null}
+          {complete && !spectating && dismissedRevision !== revision ? <ArenaResult title={status} detail={delta !== undefined ? `Rating ${formatDelta(delta)}` : undefined} kind={game.status === SessionStatus.DRAW ? "draw" : won ? "win" : "lose"} close={() => setDismissedRevision(revision)} restart={() => playAgain.mutate()} pending={playAgain.isPending || playAgain.isSuccess} /> : null}
         </div>
         <ArenaPlayer mark={user?.id === game.playerIds[1] ? Mark.O : Mark.X} name={displayNames[mySeat] ?? "You"} rating={ratingOf(mySeat)} active={!complete && !waiting && myTurn} time={remaining[mySeat]} />
         {game.timedOut ? <span className="sr-only">{"Time's up"}</span> : null}
@@ -124,12 +127,15 @@ function Match({ initial }: { initial: Session }) {
         {!connected ? <Button variant="outline" className="min-h-11" onClick={retry}>Reconnect</Button> : null}
       </section>
       <aside className="flex min-w-0 flex-col gap-3 empty:hidden">
+        <SpectatorCount count={game.spectators} />
+        {spectating ? <SpectatorStatus text={status} /> : null}
+        {complete ? <ReplayLink game={game} /> : null}
         {waiting ? <div className="space-y-2">
           <Button variant="outline" className="min-h-11 w-full" onClick={shareLink}><Copy />Copy invite link</Button>
           {copy === "copied" ? <p role="status" className="text-sm text-muted-foreground">Link copied</p> : null}
           {copy === "manual" ? <input aria-label="Invite link" readOnly value={window.location.href} onFocus={event => event.target.select()} className="min-h-11 w-full rounded-md border border-border bg-background px-2 text-sm" /> : null}
         </div> : null}
-        {!complete ? (confirmLeave ? <div className="space-y-2 rounded-[14px] border border-line bg-surface p-3">
+        {!spectating && !complete ? (confirmLeave ? <div className="space-y-2 rounded-[14px] border border-line bg-surface p-3">
           <p className="text-sm">{waiting ? "Cancel this game?" : game.rated ? "Resign? You will lose rating." : "Resign this game?"}</p>
           <div className="flex gap-2">
             <Button variant="destructive" className="min-h-11 flex-1" disabled={leave.isPending} onClick={() => leave.mutate()}>{waiting ? "Cancel game" : "Resign"}</Button>
