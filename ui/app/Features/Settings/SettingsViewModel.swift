@@ -34,6 +34,7 @@ final class SettingsViewModel {
             case .unsupportedScheme: "Use an http:// or https:// address."
             case .missingHost: "The address has no host."
             case .hasPath: "Use only scheme, host and port, without a path."
+            case .insecureRemote: "Use https:// for a gateway that is not on this device."
             }
             return false
         }

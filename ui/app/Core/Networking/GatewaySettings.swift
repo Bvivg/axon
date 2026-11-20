@@ -6,6 +6,7 @@ enum GatewayAddressError: Error, Equatable {
     case unsupportedScheme
     case missingHost
     case hasPath
+    case insecureRemote
 }
 
 struct GatewayAddress: Hashable, Sendable {
@@ -25,6 +26,7 @@ struct GatewayAddress: Hashable, Sendable {
             throw .unsupportedScheme
         }
         guard let host = components.host, !host.isEmpty else { throw .missingHost }
+        guard scheme == "https" || Self.isLoopback(host) else { throw .insecureRemote }
         let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard path.isEmpty, components.query == nil, components.fragment == nil else { throw .hasPath }
         components.scheme = scheme
@@ -34,6 +36,13 @@ struct GatewayAddress: Hashable, Sendable {
     }
 
     var host: String { url.absoluteString }
+
+    static func isLoopback(_ host: String) -> Bool {
+        let name = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if name == "localhost" || name.hasSuffix(".localhost") || name == "::1" { return true }
+        let octets = name.split(separator: ".", omittingEmptySubsequences: false)
+        return octets.count == 4 && octets.first == "127" && octets.allSatisfy { UInt8($0) != nil }
+    }
 
     var gameSocketURL: URL {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!

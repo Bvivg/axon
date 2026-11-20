@@ -38,8 +38,8 @@ struct TokenStoreTests {
 
     @Test
     func keychainAccountFollowsTheGateway() throws {
-        let store = KeychainTokenStore(address: try GatewayAddress(parsing: "http://192.168.1.20:18680/"))
-        #expect(store.account == "http://192.168.1.20:18680")
+        let store = KeychainTokenStore(address: try GatewayAddress(parsing: "https://192.168.1.20:3443/"))
+        #expect(store.account == "https://192.168.1.20:3443")
         #expect(store.service == "dev.axon.Axon.tokens")
     }
 
