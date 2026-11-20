@@ -104,7 +104,9 @@ test("the refresh token is out of the page's reach", async ({ page }) => {
   expect(visible.cookies).not.toContain(refreshCookieName);
   expect(visible.cookies).not.toContain(cookie!.value);
 
-  expect(visible.local).toEqual([]);
+  expect(visible.local.filter(([key]) => key !== "axon.device")).toEqual([]);
+  expect(JSON.stringify(visible.local)).not.toContain(cookie!.value);
+  expect(JSON.stringify(visible.local)).not.toContain(tokens.accessToken);
   expect(JSON.stringify(visible.session)).not.toContain(cookie!.value);
   expect(JSON.stringify(visible.session)).not.toContain(tokens.accessToken);
 

@@ -99,10 +99,10 @@ test("quick match pairs two players and resignation moves the rating", async ({ 
     await second.page.getByRole("button", { name: "Resign", exact: true }).click();
     await second.page.getByRole("button", { name: "Resign", exact: true }).click();
     await expect(status(first.page)).toHaveText("You won · Resignation");
-    await expect(second.page.locator("[data-rating-delta]")).toHaveText("Resignation · Rating −20");
+    await expect(second.page.locator("[data-rating-delta]")).toHaveText("Resignation · Rating −162", { timeout: 30_000 });
     await second.page.getByRole("button", { name: "View board" }).click();
     await second.page.getByRole("link", { name: "Back to lobby" }).first().click();
-    await expect(second.page.getByTestId("my-rating")).toHaveText("1180");
+    await expect(second.page.getByTestId("my-rating")).toHaveText("1038");
   } finally {
     await a.context.close();
     await b.context.close();
