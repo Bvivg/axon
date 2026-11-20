@@ -1,4 +1,5 @@
 global:
+  appEnv: test
   imageTag: local
   imagePullPolicy: Never
   mtls:
