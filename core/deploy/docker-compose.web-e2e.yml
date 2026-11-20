@@ -340,6 +340,7 @@ services:
       STOCKFISH_PATH: /usr/games/stockfish
       ANALYSIS_ENGINES: 2
       ANALYSIS_DEPTH: 12
+      ANALYSIS_POSITION_TIMEOUT: 60s
     depends_on:
       analysis-migrate:
         condition: service_completed_successfully

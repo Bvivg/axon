@@ -14,6 +14,10 @@ services:
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9090/readyz"]
 
+  analysis:
+    environment:
+      ANALYSIS_POSITION_TIMEOUT: 60s
+
   analysis-e2e:
     image: golang:1.27.4-alpine
     working_dir: /src/core/services/analysis
