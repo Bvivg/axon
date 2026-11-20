@@ -24,6 +24,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/resilience"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
@@ -107,6 +108,11 @@ func run() error {
 		_ = shutdownTracing(flush)
 	}()
 
+	identity, err := mtls.LoadEnv()
+	if err != nil {
+		return err
+	}
+
 	log.InfoContext(ctx, "starting gateway",
 		"version", version,
 		"environment", string(cfg.Environment),
@@ -115,6 +121,7 @@ func run() error {
 
 	keys, err := authn.NewCache(authn.JWKSConfig{
 		URL:             cfg.JWKSURL,
+		HTTPClient:      mtls.HTTPClient(identity, 10*time.Second),
 		RefreshInterval: cfg.JWKSRefreshInterval,
 		Logger:          log,
 	})
@@ -188,7 +195,7 @@ func run() error {
 	upstream := &http.Client{
 		Timeout: cfg.UpstreamTimeout,
 
-		Transport: internalTransport(),
+		Transport: mtls.Internal(identity),
 	}
 
 	authClient := proxy.NewClient(upstream, cfg.AuthServiceURL,
@@ -204,7 +211,15 @@ func run() error {
 		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()),
 	)
 
+	var socketClient *http.Client
+	var mediaTransport http.RoundTripper
+	if identity != nil {
+		socketClient = &http.Client{Transport: identity.Transport(mtls.HTTP1Only())}
+		mediaTransport = identity.Transport()
+	}
+
 	chatSocket, err := wsproxy.New(wsproxy.Config{
+		HTTPClient:    socketClient,
 		SocketOptions: ws.Options{Compression: true, ReadLimit: ws.LargeMessageReadLimit},
 		Upstream:      cfg.ChatSocketURL,
 		Protocol:      chatSubprotocol,
@@ -220,18 +235,19 @@ func run() error {
 	gameSocket, err := wsproxy.New(wsproxy.Config{
 		SocketOptions: ws.Options{ReadLimit: 4096},
 		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
-		Inspect: wstrace.Game,
+		Inspect: wstrace.Game, HTTPClient: socketClient,
 	})
 	if err != nil {
 		return err
 	}
 
 	presenceSocket, err := wsproxy.New(wsproxy.Config{
-		Upstream: cfg.PresenceSocketURL,
-		Protocol: presenceSubprotocol,
-		Verifier: verifier,
-		Origins:  cfg.CORS.AllowedOrigins,
-		Logger:   log,
+		HTTPClient: socketClient,
+		Upstream:   cfg.PresenceSocketURL,
+		Protocol:   presenceSubprotocol,
+		Verifier:   verifier,
+		Origins:    cfg.CORS.AllowedOrigins,
+		Logger:     log,
 	})
 	if err != nil {
 		return err
@@ -263,7 +279,7 @@ func run() error {
 		Limiter:  uploads,
 		Client: &http.Client{
 			Timeout:   cfg.UploadTimeout,
-			Transport: internalTransport(),
+			Transport: mtls.Internal(identity),
 		},
 		Logger: log,
 	})
@@ -278,7 +294,7 @@ func run() error {
 		PartLimiter: uploadParts,
 		Client: &http.Client{
 			Timeout:   cfg.UploadTimeout,
-			Transport: internalTransport(),
+			Transport: mtls.Internal(identity),
 		},
 		Logger: log,
 	})
@@ -292,9 +308,9 @@ func run() error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
-		Protocols:         unencryptedHTTP2(),
+		Protocols:         mtls.ServerProtocols(nil),
 	})
-	mediaDownload, err := mediaproxy.New(cfg.ChatServiceURL, verifier)
+	mediaDownload, err := mediaproxy.New(cfg.ChatServiceURL, verifier, mediaTransport)
 	if err != nil {
 		return err
 	}
@@ -320,8 +336,8 @@ func run() error {
 	}
 
 	errs := make(chan error, 2)
-	go serve(ctx, publicSrv, "public", log, errs)
-	go serve(ctx, adminSrv, "admin", log, errs)
+	go serve(ctx, publicSrv, "public", nil, log, errs)
+	go serve(ctx, adminSrv, "admin", nil, log, errs)
 
 	select {
 	case err := <-errs:
@@ -429,33 +445,10 @@ func (c jwksChecker) Check(context.Context) error {
 	return nil
 }
 
-func internalTransport() *http.Transport {
+func serve(ctx context.Context, srv *http.Server, name string, identity *mtls.Identity, log *slog.Logger, errs chan<- error) {
+	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr, "mtls", identity != nil)
 
-	base, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		base = &http.Transport{}
-	}
-	t := base.Clone()
-
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
-	protocols.SetUnencryptedHTTP2(true)
-	t.Protocols = protocols
-
-	return t
-}
-
-func unencryptedHTTP2() *http.Protocols {
-	p := new(http.Protocols)
-	p.SetHTTP1(true)
-	p.SetUnencryptedHTTP2(true)
-	return p
-}
-
-func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger, errs chan<- error) {
-	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr)
-
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := mtls.ListenAndServe(srv, identity); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
 }

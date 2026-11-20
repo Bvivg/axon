@@ -229,10 +229,65 @@ func (id *Identity) Transport(options ...TransportOption) *http.Transport {
 	return transport
 }
 
-func Serve(srv *http.Server, id *Identity) error {
+func LoadEnv() (*Identity, error) {
+	l := config.NewLoader()
+	cfg := FromEnv(l)
+	if err := l.Err(); err != nil {
+		return nil, err
+	}
+	if !cfg.Enabled() {
+		return nil, nil
+	}
+	return Load(cfg)
+}
+
+func Internal(id *Identity, options ...TransportOption) *http.Transport {
+	if id != nil {
+		return id.Transport(options...)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	transport.Protocols = protocols
+	return transport
+}
+
+func ServerProtocols(id *Identity) *http.Protocols {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	if id != nil {
+		protocols.SetHTTP2(true)
+	} else {
+		protocols.SetUnencryptedHTTP2(true)
+	}
+	return protocols
+}
+
+func Scheme(id *Identity, plain string) string {
+	if id == nil {
+		return plain
+	}
+	switch plain {
+	case "http":
+		return "https"
+	case "ws":
+		return "wss"
+	}
+	return plain
+}
+
+func ListenAndServe(srv *http.Server, id *Identity) error {
 	if id == nil {
 		return srv.ListenAndServe()
 	}
 	srv.TLSConfig = id.ServerConfig()
 	return srv.ListenAndServeTLS("", "")
+}
+
+func HTTPClient(id *Identity, timeout time.Duration, options ...TransportOption) *http.Client {
+	if id == nil {
+		return &http.Client{Timeout: timeout}
+	}
+	return &http.Client{Timeout: timeout, Transport: id.Transport(options...)}
 }

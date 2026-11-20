@@ -9,12 +9,12 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 )
 
-func New(upstream string, verifier *authn.Verifier) (http.Handler, error) {
+func New(upstream string, verifier *authn.Verifier, transport http.RoundTripper) (http.Handler, error) {
 	target, err := url.Parse(upstream)
 	if err != nil {
 		return nil, err
 	}
-	proxy := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) {
+	proxy := &httputil.ReverseProxy{Transport: transport, Rewrite: func(r *httputil.ProxyRequest) {
 		r.SetURL(target)
 		r.Out.URL.Path = "/internal/media/" + strings.TrimPrefix(r.In.URL.Path, authn.MediaPath+"/")
 		r.Out.URL.RawPath = ""

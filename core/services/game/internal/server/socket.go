@@ -276,7 +276,12 @@ func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, inco
 	if user := incoming.Get(TestUserHeader); user != "" && h.hooks {
 		header.Set(TestUserHeader, user)
 	}
-	upstream, err := ws.Dial(ctx, "ws://"+address+"/ws", ws.DialOptions{
+	socketScheme := "ws"
+	if h.scheme == "https" {
+		socketScheme = "wss"
+	}
+	upstream, err := ws.Dial(ctx, socketScheme+"://"+address+"/ws", ws.DialOptions{
+		HTTPClient:   h.sockets,
 		Subprotocols: []string{Protocol},
 		Header:       header,
 		Options:      ws.Options{ReadLimit: ws.LargeMessageReadLimit},

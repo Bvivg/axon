@@ -25,6 +25,7 @@ type Handler struct {
 	origins       []string
 	log           *slog.Logger
 	socketOptions ws.Options
+	client        *http.Client
 }
 
 type Config struct {
@@ -41,6 +42,8 @@ type Config struct {
 	Logger *slog.Logger
 
 	Inspect Inspect
+
+	HTTPClient *http.Client
 }
 
 func New(cfg Config) (*Handler, error) {
@@ -65,6 +68,7 @@ func New(cfg Config) (*Handler, error) {
 		verifier:      cfg.Verifier,
 		origins:       cfg.Origins,
 		log:           cfg.Logger,
+		client:        cfg.HTTPClient,
 	}, nil
 }
 
@@ -103,6 +107,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Subprotocols: []string{h.protocol},
 		Header:       header,
 		Options:      options,
+		HTTPClient:   h.client,
 	})
 	if err != nil {
 		h.log.ErrorContext(ctx, "could not reach the realtime service",

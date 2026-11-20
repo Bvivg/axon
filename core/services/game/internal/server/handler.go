@@ -34,6 +34,8 @@ type Config struct {
 	Self      string
 	Verifier  *authn.Verifier
 	Client    *http.Client
+	Sockets   *http.Client
+	Secure    bool
 	TestHooks bool
 	Metrics   *metrics.Game
 }
@@ -49,6 +51,8 @@ type Handler struct {
 	verifier *authn.Verifier
 	hooks    bool
 	peers    *peers
+	sockets  *http.Client
+	scheme   string
 	updates  updates
 	matches  updates
 }
@@ -58,9 +62,15 @@ func New(cfg Config) *Handler {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
+	scheme := "http"
+	if cfg.Secure {
+		scheme = "https"
+	}
 	return &Handler{
 		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks, metrics: cfg.Metrics,
-		peers:   newPeers(client),
+		peers:   newPeers(client, scheme),
+		sockets: cfg.Sockets,
+		scheme:  scheme,
 		updates: newUpdates(),
 		matches: newUpdates(),
 	}

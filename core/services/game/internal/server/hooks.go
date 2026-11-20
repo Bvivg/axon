@@ -71,7 +71,7 @@ func (h *Handler) forwardHook(w http.ResponseWriter, r *http.Request, id uuid.UU
 		http.Error(w, "no owner", http.StatusServiceUnavailable)
 		return
 	}
-	forward, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "http://"+address+ClockHookPath, bytes.NewReader(raw))
+	forward, err := http.NewRequestWithContext(r.Context(), http.MethodPost, h.scheme+"://"+address+ClockHookPath, bytes.NewReader(raw))
 	if err != nil {
 		http.Error(w, "forward failed", http.StatusInternalServerError)
 		return

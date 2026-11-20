@@ -22,6 +22,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
@@ -83,6 +84,11 @@ func run() error {
 		_ = shutdownTracing(flush)
 	}()
 
+	tlsIdentity, err := mtls.LoadEnv()
+	if err != nil {
+		return err
+	}
+
 	log.InfoContext(ctx, "starting chat",
 		"version", version,
 		"environment", string(cfg.Environment),
@@ -96,6 +102,7 @@ func run() error {
 
 	keys, err := authn.NewCache(authn.JWKSConfig{
 		URL:             cfg.JWT.JWKSURL,
+		HTTPClient:      mtls.HTTPClient(tlsIdentity, 10*time.Second),
 		RefreshInterval: cfg.JWT.JWKSRefreshInterval,
 		Logger:          log,
 	})
@@ -120,7 +127,7 @@ func run() error {
 	names, err := identity.New(identity.Config{
 		HTTPClient: &http.Client{
 			Timeout:   cfg.Auth.Timeout,
-			Transport: internalTransport(),
+			Transport: mtls.Internal(tlsIdentity),
 		},
 		BaseURL: cfg.Auth.ServiceURL,
 		Timeout: cfg.Auth.Timeout,
@@ -370,7 +377,7 @@ func run() error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           withMediaAdmission(publicHandler(handler, callHandler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log), mediaHandler),
 		ReadHeaderTimeout: 10 * time.Second,
-		Protocols:         unencryptedHTTP2(),
+		Protocols:         mtls.ServerProtocols(tlsIdentity),
 	})
 	mediaMux := http.NewServeMux()
 	mediaMux.Handle("/internal/media/", middleware.Chain(middleware.Correlation, middleware.Recovery(log), middleware.RequestLogger(log))(
@@ -387,8 +394,8 @@ func run() error {
 
 	errs := make(chan error, 2)
 
-	go serve(ctx, publicSrv, "public", log, errs)
-	go serve(ctx, adminSrv, "admin", log, errs)
+	go serve(ctx, publicSrv, "public", tlsIdentity, log, errs)
+	go serve(ctx, adminSrv, "admin", nil, log, errs)
 
 	select {
 	case err := <-errs:
@@ -485,32 +492,10 @@ func adminHandler(
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }
 
-func internalTransport() *http.Transport {
-	base, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		base = &http.Transport{}
-	}
-	t := base.Clone()
+func serve(ctx context.Context, srv *http.Server, name string, tlsIdentity *mtls.Identity, log *slog.Logger, errs chan<- error) {
+	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr, "mtls", tlsIdentity != nil)
 
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
-	protocols.SetUnencryptedHTTP2(true)
-	t.Protocols = protocols
-
-	return t
-}
-
-func unencryptedHTTP2() *http.Protocols {
-	p := new(http.Protocols)
-	p.SetHTTP1(true)
-	p.SetUnencryptedHTTP2(true)
-	return p
-}
-
-func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger, errs chan<- error) {
-	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr)
-
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := mtls.ListenAndServe(srv, tlsIdentity); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
 }

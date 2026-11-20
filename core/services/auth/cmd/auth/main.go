@@ -19,6 +19,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
@@ -73,6 +74,11 @@ func run() error {
 		defer cancel()
 		_ = shutdownTracing(flush)
 	}()
+
+	identity, err := mtls.LoadEnv()
+	if err != nil {
+		return err
+	}
 
 	log.InfoContext(ctx, "starting auth service",
 		"version", version,
@@ -177,10 +183,10 @@ func run() error {
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
 	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, handler, metrics, log),
+		Handler:           publicHandler(cfg, handler, ring, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 
-		Protocols: unencryptedHTTP2(),
+		Protocols: mtls.ServerProtocols(identity),
 	})
 
 	adminSrv := &http.Server{
@@ -191,8 +197,8 @@ func run() error {
 
 	errs := make(chan error, 2)
 
-	go serve(ctx, publicSrv, "public", log, errs)
-	go serve(ctx, adminSrv, "admin", log, errs)
+	go serve(ctx, publicSrv, "public", identity, log, errs)
+	go serve(ctx, adminSrv, "admin", nil, log, errs)
 
 	select {
 	case err := <-errs:
@@ -244,7 +250,7 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 	}, nil
 }
 
-func publicHandler(cfg config.Config, handler *server.Handler, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
 	interceptors := connectInterceptors(metrics, log)
 
 	mux := http.NewServeMux()
@@ -253,6 +259,7 @@ func publicHandler(cfg config.Config, handler *server.Handler, metrics *middlewa
 		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}))
 	}
 	mux.HandleFunc("POST /internal/avatar", handler.UploadAvatar)
+	mux.Handle("GET /.well-known/jwks.json", jwksHandler(keys, log))
 
 	if cfg.OAuth.FakeEnabled {
 		mux.Handle("GET "+oauth.FakeAuthorizePath, oauth.FakeAuthorizeHandler())
@@ -263,13 +270,6 @@ func publicHandler(cfg config.Config, handler *server.Handler, metrics *middlewa
 		middleware.Recovery(log),
 		middleware.RequestLogger(log),
 	)(mux)
-}
-
-func unencryptedHTTP2() *http.Protocols {
-	p := new(http.Protocols)
-	p.SetHTTP1(true)
-	p.SetUnencryptedHTTP2(true)
-	return p
 }
 
 func adminHandler(
@@ -336,10 +336,10 @@ func connectInterceptors(metrics *middleware.Metrics, log *slog.Logger) connect.
 	)
 }
 
-func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger, errs chan<- error) {
-	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr)
+func serve(ctx context.Context, srv *http.Server, name string, identity *mtls.Identity, log *slog.Logger, errs chan<- error) {
+	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr, "mtls", identity != nil)
 
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := mtls.ListenAndServe(srv, identity); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
 }
