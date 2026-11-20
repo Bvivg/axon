@@ -39,6 +39,7 @@ type Config struct {
 	TestHooks bool
 	Metrics   *metrics.Game
 	Watchers  int
+	OwnerKey  string
 }
 
 type Handler struct {
@@ -57,6 +58,7 @@ type Handler struct {
 	updates  updates
 	matches  updates
 	watchers *watchers
+	ownerKey string
 }
 
 func New(cfg Config) *Handler {
@@ -70,12 +72,13 @@ func New(cfg Config) *Handler {
 	}
 	return &Handler{
 		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks, metrics: cfg.Metrics,
-		peers:    newPeers(client, scheme),
+		peers:    newPeers(client, scheme, cfg.OwnerKey),
 		sockets:  cfg.Sockets,
 		scheme:   scheme,
 		updates:  newUpdates(),
 		matches:  newUpdates(),
 		watchers: newWatchers(cfg.Watchers),
+		ownerKey: cfg.OwnerKey,
 	}
 }
 
