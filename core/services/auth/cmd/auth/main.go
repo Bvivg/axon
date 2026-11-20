@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
@@ -158,12 +159,20 @@ func run() error {
 		return err
 	}
 
+	metrics := middleware.NewMetrics(cfg.Service)
+	auditFailures := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_audit_write_failures_total",
+		Help: "Security events that could not be written to the auth outbox.",
+	})
+	metrics.Registry().MustRegister(auditFailures)
+
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
-		RefreshTTL: cfg.JWT.RefreshTTL,
-		OAuth:      oauthCfg,
-		Avatar:     avatarPipeline,
-		Presence:   presence.NewTracker(cache),
-		Revocation: revocationPublisher,
+		RefreshTTL:    cfg.JWT.RefreshTTL,
+		OAuth:         oauthCfg,
+		Avatar:        avatarPipeline,
+		Presence:      presence.NewTracker(cache),
+		Revocation:    revocationPublisher,
+		AuditFailures: auditFailures,
 	})
 	if err != nil {
 		return err
@@ -178,8 +187,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	metrics := middleware.NewMetrics(cfg.Service)
 
 	checks := health.New(log, []health.Checker{pool, cache})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
@@ -335,6 +342,7 @@ func connectInterceptors(metrics *middleware.Metrics, log *slog.Logger) connect.
 		middleware.NewRecoveryInterceptor(log),
 		metrics.Interceptor(),
 		middleware.NewLoggingInterceptor(log),
+		server.DeviceInterceptor(),
 	)
 }
 

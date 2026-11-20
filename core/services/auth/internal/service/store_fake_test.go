@@ -27,6 +27,8 @@ type fakeStore struct {
 	rolePermissions map[uuid.UUID]map[string]bool
 	userRoles       map[uuid.UUID]map[uuid.UUID]bool
 
+	securityEvents []domain.SecurityEvent
+
 	failOn map[string]error
 
 	beforeRotate func()
@@ -711,4 +713,25 @@ func (s *fakeStore) liveTokensForUser(userID uuid.UUID, now time.Time) int {
 		}
 	}
 	return n
+}
+
+func (s *fakeStore) RecordSecurityEvent(ctx context.Context, e domain.SecurityEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.fail("RecordSecurityEvent"); err != nil {
+		return err
+	}
+	s.securityEvents = append(s.securityEvents, e)
+	return nil
+}
+
+func (s *fakeStore) recordedSecurityEvents() []domain.SecurityEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return append([]domain.SecurityEvent(nil), s.securityEvents...)
 }
