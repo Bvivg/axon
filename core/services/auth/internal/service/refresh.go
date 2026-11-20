@@ -107,6 +107,8 @@ func (s *Service) revokeCompromisedFamily(ctx context.Context, t domain.RefreshT
 		UserID:  t.UserID,
 		Subject: t.FamilyID.String(),
 	})
+
+	s.publishFamilyRevocation(ctx, t.FamilyID)
 }
 
 func (s *Service) Logout(ctx context.Context, presented string) error {
