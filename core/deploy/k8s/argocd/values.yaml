@@ -63,6 +63,9 @@ applicationSet:
       memory: 256Mi
 
 redis:
+  image:
+    repository: docker.io/library/redis
+    tag: 8.6.4-alpine
   resources:
     requests:
       cpu: 20m
