@@ -50,12 +50,35 @@ func (s Session) HasPlayer(user uuid.UUID) bool {
 }
 
 type Store struct {
-	pool  *pgxpool.Pool
-	games *engine.Registry
+	pool    *pgxpool.Pool
+	replica *pgxpool.Pool
+	listen  *pgx.ConnConfig
+	games   *engine.Registry
 }
 
-func NewStore(pool *pgxpool.Pool, games *engine.Registry) *Store {
-	return &Store{pool: pool, games: games}
+type Option func(*Store)
+
+func ReadReplica(pool *pgxpool.Pool) Option {
+	return func(s *Store) { s.replica = pool }
+}
+
+func ListenVia(config *pgx.ConnConfig) Option {
+	return func(s *Store) { s.listen = config }
+}
+
+func NewStore(pool *pgxpool.Pool, games *engine.Registry, options ...Option) *Store {
+	store := &Store{pool: pool, games: games}
+	for _, option := range options {
+		option(store)
+	}
+	return store
+}
+
+func (s *Store) Replica() *Store {
+	if s.replica == nil {
+		return s
+	}
+	return &Store{pool: s.replica, games: s.games}
 }
 
 const Columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw"
@@ -103,7 +126,11 @@ func (s *Store) NewClock(game engine.Key, now time.Time) *Clock {
 }
 
 func (s *Store) Watch(ctx context.Context, changed, matched func(uuid.UUID), ready func()) error {
-	conn, err := pgx.ConnectConfig(ctx, s.pool.Config().ConnConfig)
+	config := s.listen
+	if config == nil {
+		config = s.pool.Config().ConnConfig
+	}
+	conn, err := pgx.ConnectConfig(ctx, config)
 	if err != nil {
 		return err
 	}

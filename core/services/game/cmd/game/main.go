@@ -31,7 +31,6 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
-	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -48,7 +47,7 @@ func main() {
 func run() error {
 	loader := config.NewLoader()
 	cfg := config.LoadBase(loader, "game")
-	db := postgres.LoadConfig(loader)
+	dbs := loadDatabases(loader)
 	log := cfg.Logger()
 	keyConfig := authn.JWKSConfig{
 		URL:             loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
@@ -89,11 +88,11 @@ func run() error {
 		defer cancel()
 		_ = shutdownTracing(flush)
 	}()
-	pool, err := postgres.Connect(ctx, db, log)
+	db, err := dbs.connect(ctx, log)
 	if err != nil {
 		return err
 	}
-	defer pool.Close()
+	defer db.Close()
 	keys, err := authn.NewCache(keyConfig)
 	if err != nil {
 		return err
@@ -113,7 +112,7 @@ func run() error {
 			return err
 		}
 	}
-	store := session.NewStore(pool.Pool, games)
+	store := session.NewStore(db.primary.Pool, games, db.storeOptions()...)
 	metrics := middleware.NewMetrics(cfg.Service)
 	observed := gamemetrics.New(metrics.Registry())
 	rules := session.NewRules(games)
@@ -130,7 +129,7 @@ func run() error {
 		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(http.DefaultTransport)}})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
-	go routes.Run(ctx, pool.Pool, projection.OwnerChannel, log)
+	go routes.Run(ctx, db.listen, projection.OwnerChannel, log)
 	go model.MaintainMovePartitions(ctx, movePartitionsAhead, 24*time.Hour, log)
 	go handler.Watch(ctx, log)
 	go handler.RunMatchmaking(ctx, log)
@@ -152,7 +151,7 @@ func run() error {
 	if testHooks {
 		mux.HandleFunc("POST "+server.ClockHookPath, handler.AdjustClock)
 	}
-	checks := health.New(log, []health.Checker{pool, journalLog})
+	checks := health.New(log, []health.Checker{db.primary, journalLog})
 	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
