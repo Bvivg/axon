@@ -281,3 +281,25 @@ test-web-e2e: e2e-key ## Run the browser e2e suite (Playwright) against the full
 		$(COMPOSE_WEB_E2E) --env-file $(E2E_ENV_FILE) logs --no-color; \
 		exit 1; \
 	fi
+
+APP_DIR         := ui/app
+APP_LOCAL       := $(CURDIR)/.local/app
+APP_SIMULATOR   ?= iPhone 18 Pro
+APP_XCODEBUILD  := xcodebuild -project $(APP_DIR)/Axon.xcodeproj -derivedDataPath $(APP_LOCAL)/DerivedData \
+	-clonedSourcePackagesDirPath $(APP_LOCAL)/spm -skipPackagePluginValidation
+
+.PHONY: app-project
+app-project: ## Generate the Xcode project for the SwiftUI app (XcodeGen)
+	cd $(APP_DIR) && xcodegen generate --quiet
+
+.PHONY: app-lint
+app-lint: ## Lint the SwiftUI app (SwiftLint)
+	cd $(APP_DIR) && swiftlint lint --strict --quiet
+
+.PHONY: app-build
+app-build: app-project ## Build the SwiftUI app for the iOS Simulator
+	$(APP_XCODEBUILD) build -scheme Axon -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+
+.PHONY: app-test
+app-test: app-project ## Run the SwiftUI app's unit tests on macOS
+	$(APP_XCODEBUILD) test -scheme Axon -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
