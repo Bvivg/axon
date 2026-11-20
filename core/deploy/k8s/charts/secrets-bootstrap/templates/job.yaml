@@ -25,8 +25,9 @@ data:
         echo "secret $name kept"
         return 0
       fi
-      kubectl -n "$ns" create secret generic "$name" "$@" >/dev/null
-      kubectl -n "$ns" label secret "$name" app.kubernetes.io/part-of=axon app.kubernetes.io/managed-by=secrets-bootstrap >/dev/null
+      kubectl -n "$ns" create secret generic "$name" "$@" --dry-run=client -o yaml \
+        | kubectl label --local -f - app.kubernetes.io/part-of=axon app.kubernetes.io/managed-by=secrets-bootstrap -o yaml \
+        | kubectl -n "$ns" create -f - >/dev/null
       echo "secret $name created"
     }
 
