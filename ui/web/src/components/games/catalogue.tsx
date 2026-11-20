@@ -1,6 +1,6 @@
 "use client";
 
-import { BrickWall, ChessKnight, Circle, Gamepad2, X } from "lucide-react";
+import { BrickWall, ChessKnight, Circle, Gamepad2, Trophy, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -9,7 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListColumnHeader } from "@/components/ui/list-column";
-import { ListBadge, ListItem, ListLabel } from "@/components/ui/list-item";
+import { ListBadge, ListIcon, ListItem, ListLabel } from "@/components/ui/list-item";
 import { ListSearchField } from "@/components/ui/list-search-field";
 import { PaneHeader } from "@/components/ui/pane";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,6 +19,7 @@ import { fromTimestamp, initials, profileName, shortWhen } from "@/lib/format";
 import { GameKey, gameKey, gameKeys, games, lobbyHref } from "@/lib/games/catalog";
 import { gameHref, gameStatusLabel, useGameSessions, useRatings } from "@/lib/query/games";
 import { usePublicProfiles } from "@/lib/query/people";
+import { tournamentsHref } from "@/lib/query/tournaments";
 
 export const ticTacToeLobbyHref = lobbyHref(GameKey.TicTacToe);
 
@@ -93,6 +94,20 @@ export function GamesSidebar() {
             <p className="px-4 py-2 text-xs text-muted-foreground">No games found</p>
           )}
         </nav>
+        {!needle || "tournaments".includes(needle) ? (
+          <>
+            <ListLabel>Compete</ListLabel>
+            <nav aria-label="Competitions" className="flex flex-col gap-0.5">
+              <ListItem
+                href={tournamentsHref}
+                active={pathname.startsWith(tournamentsHref)}
+                leading={<ListIcon icon={Trophy} />}
+                title="Tournaments"
+                subtitle="Brackets and Swiss"
+              />
+            </nav>
+          </>
+        ) : null}
         {active.length && !needle ? (
           <>
             <ListLabel>In progress</ListLabel>
@@ -135,6 +150,7 @@ export function GamesCatalogue() {
             <Link href={lobbyHref(GameKey.Chess)} className={buttonVariants({ variant: "signal", className: "min-h-10" })}>Open Chess</Link>
             <Link href={lobbyHref(GameKey.Quoridor)} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Quoridor</Link>
             <Link href={ticTacToeLobbyHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Tic-Tac-Toe</Link>
+            <Link href={tournamentsHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Tournaments</Link>
           </div>
         </EmptyState>
       </div>

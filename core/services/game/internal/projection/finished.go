@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
@@ -44,6 +45,10 @@ func FinishedEvent(game session.Session, at time.Time) (outbox.Event, bool) {
 		WinnerSeat: int32(game.State.Winner),
 		FinishedAt: timestamppb.New(at.UTC()),
 		Rated:      game.Rated,
+		Plies:      proto.Uint32(uint32(game.State.Ply)),
+	}
+	if game.Tournament != nil {
+		payload.TournamentId = proto.String(game.Tournament.String())
 	}
 	if game.Game == chess.Key {
 		if moves, err := chess.Moves(game.State); err == nil {

@@ -532,6 +532,35 @@ func (o *Owner) Start(ctx context.Context, id uuid.UUID, key engine.Key, creator
 	})
 }
 
+func (o *Owner) StartTournament(ctx context.Context, id uuid.UUID, key engine.Key, tournament, creator, opponent uuid.UUID) (session.Session, error) {
+	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
+		if c.exists {
+			return c.game, session.Change{}, nil
+		}
+		return o.cfg.Rules.StartTournament(id, key, tournament, creator, opponent, now)
+	})
+}
+
+func (o *Owner) Forfeit(ctx context.Context, id uuid.UUID) (session.Session, error) {
+	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
+		game, err := o.existing(c)
+		if err != nil {
+			return session.Session{}, session.Change{}, err
+		}
+		return o.cfg.Rules.Forfeit(game, now)
+	})
+}
+
+func (o *Owner) Abort(ctx context.Context, id uuid.UUID) (session.Session, error) {
+	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
+		if !c.exists {
+			return session.Session{}, session.Change{}, nil
+		}
+		next, change := o.cfg.Rules.Abort(c.game, now)
+		return next, change, nil
+	})
+}
+
 func (o *Owner) Get(ctx context.Context, id, user uuid.UUID) (session.Session, error) {
 	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
 		game, err := o.existing(c)

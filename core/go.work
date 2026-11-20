@@ -7,5 +7,6 @@ use (
 	./services/game
 	./services/gateway
 	./services/rating
+	./services/tournament
 	./shared
 )

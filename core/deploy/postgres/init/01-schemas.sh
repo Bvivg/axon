@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-for var in AUTH_DB_PASSWORD CHAT_DB_PASSWORD GAME_DB_PASSWORD CALLING_DB_PASSWORD RATING_DB_PASSWORD ANALYSIS_DB_PASSWORD; do
+for var in AUTH_DB_PASSWORD CHAT_DB_PASSWORD GAME_DB_PASSWORD CALLING_DB_PASSWORD RATING_DB_PASSWORD ANALYSIS_DB_PASSWORD TOURNAMENT_DB_PASSWORD; do
 	eval "value=\${$var:-}"
 	if [ -z "$value" ]; then
 		echo "init: $var is empty — check core/deploy/.env against .env.example" >&2
@@ -39,10 +39,11 @@ init_service_schema game "$GAME_DB_PASSWORD"
 init_service_schema calling "$CALLING_DB_PASSWORD"
 init_service_schema rating "$RATING_DB_PASSWORD"
 init_service_schema analysis "$ANALYSIS_DB_PASSWORD"
+init_service_schema tournament "$TOURNAMENT_DB_PASSWORD"
 
 psql -v ON_ERROR_STOP=1 \
 	--username "$POSTGRES_USER" \
 	--dbname "$POSTGRES_DB" \
 	-c 'REVOKE CREATE ON SCHEMA public FROM PUBLIC;'
 
-echo "init: ensured schemas auth, chat, game, calling, rating, analysis and their service roles"
+echo "init: ensured schemas auth, chat, game, calling, rating, analysis, tournament and their service roles"

@@ -1,0 +1,167 @@
+syntax = "proto3";
+
+package axon.tournament.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service TournamentService {
+  rpc CreateTournament(CreateTournamentRequest) returns (CreateTournamentResponse);
+  rpc RegisterForTournament(RegisterForTournamentRequest) returns (RegisterForTournamentResponse);
+  rpc WithdrawFromTournament(WithdrawFromTournamentRequest) returns (WithdrawFromTournamentResponse);
+  rpc StartTournament(StartTournamentRequest) returns (StartTournamentResponse);
+  rpc GetTournament(GetTournamentRequest) returns (GetTournamentResponse);
+  rpc ListTournaments(ListTournamentsRequest) returns (ListTournamentsResponse);
+  rpc CancelTournament(CancelTournamentRequest) returns (CancelTournamentResponse);
+}
+
+enum TournamentFormat {
+  TOURNAMENT_FORMAT_UNSPECIFIED = 0;
+  TOURNAMENT_FORMAT_SINGLE_ELIMINATION = 1;
+  TOURNAMENT_FORMAT_SWISS = 2;
+}
+
+enum TournamentStatus {
+  TOURNAMENT_STATUS_UNSPECIFIED = 0;
+  TOURNAMENT_STATUS_REGISTRATION = 1;
+  TOURNAMENT_STATUS_SEEDING = 2;
+  TOURNAMENT_STATUS_RUNNING = 3;
+  TOURNAMENT_STATUS_FINISHED = 4;
+  TOURNAMENT_STATUS_CANCELLED = 5;
+}
+
+enum RoundStatus {
+  ROUND_STATUS_UNSPECIFIED = 0;
+  ROUND_STATUS_RUNNING = 1;
+  ROUND_STATUS_FINISHED = 2;
+}
+
+enum MatchResult {
+  MATCH_RESULT_UNSPECIFIED = 0;
+  MATCH_RESULT_PENDING = 1;
+  MATCH_RESULT_WIN = 2;
+  MATCH_RESULT_DRAW = 3;
+  MATCH_RESULT_BYE = 4;
+  MATCH_RESULT_ABORTED = 5;
+}
+
+message Registration {
+  string user_id = 1;
+  uint32 rating = 2;
+  optional uint32 seed = 3;
+  google.protobuf.Timestamp registered_at = 4;
+  bool returned = 5;
+}
+
+message Match {
+  uint32 board = 1;
+  optional string session_id = 2;
+  repeated string player_ids = 3;
+  MatchResult result = 4;
+  optional string winner_id = 5;
+  bool forfeit = 6;
+  optional google.protobuf.Timestamp finished_at = 7;
+}
+
+message Round {
+  uint32 number = 1;
+  RoundStatus status = 2;
+  repeated Match matches = 3;
+  google.protobuf.Timestamp started_at = 4;
+  optional google.protobuf.Timestamp finished_at = 5;
+}
+
+message Standing {
+  uint32 rank = 1;
+  string user_id = 2;
+  uint32 half_points = 3;
+  uint32 wins = 4;
+  uint32 draws = 5;
+  uint32 losses = 6;
+  uint32 byes = 7;
+  optional uint32 seed = 8;
+  bool eliminated = 9;
+}
+
+message Tournament {
+  string id = 1;
+  string name = 2;
+  string game = 3;
+  TournamentFormat format = 4;
+  TournamentStatus status = 5;
+  uint32 capacity = 6;
+  uint32 total_rounds = 7;
+  uint32 current_round = 8;
+  string creator_id = 9;
+  uint32 player_count = 10;
+  repeated Registration registrations = 11;
+  repeated Round rounds = 12;
+  repeated Standing standings = 13;
+  optional string winner_id = 14;
+  google.protobuf.Timestamp created_at = 15;
+  optional google.protobuf.Timestamp started_at = 16;
+  optional google.protobuf.Timestamp finished_at = 17;
+  optional google.protobuf.Timestamp cancelled_at = 18;
+  uint32 no_show_seconds = 19;
+}
+
+message CreateTournamentRequest {
+  string request_id = 1;
+  string name = 2;
+  string game = 3;
+  TournamentFormat format = 4;
+  uint32 capacity = 5;
+  optional uint32 rounds = 6;
+}
+
+message CreateTournamentResponse {
+  Tournament tournament = 1;
+}
+
+message RegisterForTournamentRequest {
+  string tournament_id = 1;
+}
+
+message RegisterForTournamentResponse {
+  Tournament tournament = 1;
+}
+
+message WithdrawFromTournamentRequest {
+  string tournament_id = 1;
+}
+
+message WithdrawFromTournamentResponse {
+  Tournament tournament = 1;
+}
+
+message StartTournamentRequest {
+  string tournament_id = 1;
+}
+
+message StartTournamentResponse {
+  Tournament tournament = 1;
+}
+
+message GetTournamentRequest {
+  string tournament_id = 1;
+}
+
+message GetTournamentResponse {
+  Tournament tournament = 1;
+}
+
+message ListTournamentsRequest {
+  optional TournamentStatus status = 1;
+  uint32 limit = 2;
+}
+
+message ListTournamentsResponse {
+  repeated Tournament tournaments = 1;
+}
+
+message CancelTournamentRequest {
+  string tournament_id = 1;
+}
+
+message CancelTournamentResponse {
+  Tournament tournament = 1;
+}

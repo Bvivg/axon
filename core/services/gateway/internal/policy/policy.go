@@ -29,6 +29,14 @@ var procedures = map[string]Rule{
 
 	"/axon.analysis.v1.AnalysisService/GetAnalysis": {Public: false, Tier: TierStandard},
 
+	"/axon.tournament.v1.TournamentService/CreateTournament":       {Public: false, Tier: TierSensitive},
+	"/axon.tournament.v1.TournamentService/StartTournament":        {Public: false, Tier: TierSensitive},
+	"/axon.tournament.v1.TournamentService/RegisterForTournament":  {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/WithdrawFromTournament": {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/GetTournament":          {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/ListTournaments":        {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/CancelTournament":       {Public: false, Tier: TierStandard},
+
 	"/axon.calls.v1.CallsService/RegisterEndpoint":        {Public: false, Tier: TierSensitive},
 	"/axon.calls.v1.CallsService/StartCall":               {Public: false, Tier: TierSensitive},
 	"/axon.calls.v1.CallsService/StartDirectCall":         {Public: false, Tier: TierSensitive},

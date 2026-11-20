@@ -1,0 +1,50 @@
+services:
+  auth:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/readyz"]
+
+  chat:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/readyz"]
+
+  gateway:
+    environment:
+      RATE_LIMIT_PER_MINUTE: 100000
+      RATE_LIMIT_AUTH_PER_MINUTE: 3000
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9090/readyz"]
+
+  tournament:
+    environment:
+      TOURNAMENT_NO_SHOW_TIMEOUT: 30s
+      TOURNAMENT_SWEEP_INTERVAL: 1s
+
+  tournament-e2e:
+    image: golang:1.27.4-alpine
+    working_dir: /src/core/services/tournament
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      GAME_SOCKET_URL: ws://gateway:8080/ws/game
+      TOURNAMENT_METRICS_URL: http://tournament:9096/metrics
+      TOURNAMENT_E2E_NO_SHOW: 30s
+      GOWORK: "off"
+      GOFLAGS: -mod=mod
+    volumes:
+      - ../..:/src
+      - tournament-e2e-go-mod:/go/pkg/mod
+      - tournament-e2e-go-build:/root/.cache/go-build
+    networks: [edge, app]
+    command: ["go", "test", "-tags", "e2e", "-count=1", "-v", "-timeout", "15m", "./e2e/..."]
+    depends_on:
+      gateway:
+        condition: service_healthy
+      game:
+        condition: service_healthy
+      tournament:
+        condition: service_healthy
+      cdc-connector:
+        condition: service_completed_successfully
+
+volumes:
+  tournament-e2e-go-mod:
+  tournament-e2e-go-build:

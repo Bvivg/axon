@@ -125,6 +125,10 @@ func encodeSnapshot(game session.Session) (*gamev1.SessionSnapshot, error) {
 		offer := game.DrawOffer.String()
 		out.DrawOfferUserId = &offer
 	}
+	if game.Tournament != nil {
+		tournament := game.Tournament.String()
+		out.TournamentId = &tournament
+	}
 	return out, nil
 }
 
@@ -247,6 +251,13 @@ func decodeSnapshot(id uuid.UUID, in *gamev1.SessionSnapshot) (session.Session, 
 			return session.Session{}, fmt.Errorf("%w: draw offer: %w", ErrMalformed, err)
 		}
 		game.DrawOffer = &offer
+	}
+	if in.TournamentId != nil {
+		tournament, err := uuid.Parse(*in.TournamentId)
+		if err != nil {
+			return session.Session{}, fmt.Errorf("%w: tournament: %w", ErrMalformed, err)
+		}
+		game.Tournament = &tournament
 	}
 	if err := json.Unmarshal(in.StateJson, &game.State); err != nil {
 		return session.Session{}, fmt.Errorf("%w: state: %w", ErrMalformed, err)

@@ -92,6 +92,43 @@ func (r Rules) Start(id uuid.UUID, key engine.Key, creator, opponent uuid.UUID, 
 	return game, Change{Fact: FactCreated, Actor: creator, At: now}, nil
 }
 
+func (r Rules) StartTournament(id uuid.UUID, key engine.Key, tournament, creator, opponent uuid.UUID, now time.Time) (Session, Change, error) {
+	game, change, err := r.Start(id, key, creator, opponent, true, now)
+	if err != nil {
+		return Session{}, Change{}, err
+	}
+	game.Tournament = &tournament
+	return game, change, nil
+}
+
+func (r Rules) Forfeit(game Session, now time.Time) (Session, Change, error) {
+	if game.Opponent == nil {
+		return Session{}, Change{}, ErrNotPlaying
+	}
+	if next, change := r.Expire(game, now); change.Recorded() {
+		return next, change, nil
+	}
+	seat := game.State.Turn
+	if game.State.Over() || seat < 0 || seat >= len(game.State.Players) || game.State.Ply > seat {
+		return game, Change{}, nil
+	}
+	absent, err := uuid.Parse(string(game.State.Players[seat]))
+	if err != nil {
+		return Session{}, Change{}, fmt.Errorf("session: forfeit %s: %w", game.ID, err)
+	}
+	game.Clock = game.ClockAt(now)
+	game.State = game.State.Finish(1 - seat)
+	game.Resigned, game.DrawOffer = true, nil
+	return game, Change{Fact: FactResigned, Actor: absent, At: now}, nil
+}
+
+func (r Rules) Abort(game Session, now time.Time) (Session, Change) {
+	if game.Opponent != nil && game.State.Over() {
+		return game, Change{}
+	}
+	return game, Change{Fact: FactCancelled, At: now}
+}
+
 func (r Rules) Join(game Session, user uuid.UUID, now time.Time) (Session, Change, error) {
 	if game.HasPlayer(user) {
 		return game, Change{}, nil

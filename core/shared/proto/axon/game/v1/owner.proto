@@ -4,6 +4,8 @@ package axon.game.v1;
 
 service GameOwnerService {
   rpc StartMatch(StartMatchRequest) returns (StartMatchResponse);
+  rpc ForfeitSession(ForfeitSessionRequest) returns (ForfeitSessionResponse);
+  rpc AbortSession(AbortSessionRequest) returns (AbortSessionResponse);
 }
 
 message StartMatchRequest {
@@ -11,6 +13,19 @@ message StartMatchRequest {
   string game = 2;
   string creator_id = 3;
   string opponent_id = 4;
+  optional string tournament_id = 5;
 }
 
 message StartMatchResponse {}
+
+message ForfeitSessionRequest {
+  StartMatchRequest session = 1;
+}
+
+message ForfeitSessionResponse {}
+
+message AbortSessionRequest {
+  string session_id = 1;
+}
+
+message AbortSessionResponse {}
