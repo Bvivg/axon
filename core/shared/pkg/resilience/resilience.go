@@ -24,6 +24,7 @@ type Options struct {
 	Now           func() time.Time
 	Sleep         func(context.Context, time.Duration) error
 	OnState       func(procedure string, state State)
+	Retryable     func(spec connect.Spec) bool
 }
 
 type State string
@@ -64,6 +65,27 @@ func (o *Options) defaults() {
 	}
 	if o.Sleep == nil {
 		o.Sleep = sleep
+	}
+	if o.Retryable == nil {
+		o.Retryable = Idempotent
+	}
+}
+
+func Idempotent(spec connect.Spec) bool {
+	return spec.IdempotencyLevel != connect.IdempotencyUnknown
+}
+
+func Procedures(names ...string) func(connect.Spec) bool {
+	set := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		set[name] = struct{}{}
+	}
+	return func(spec connect.Spec) bool {
+		if Idempotent(spec) {
+			return true
+		}
+		_, ok := set[spec.Procedure]
+		return ok
 	}
 }
 
@@ -115,7 +137,7 @@ func (i *Interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 		}
 		procedure := req.Spec().Procedure
 		b := i.breaker(procedure)
-		retryable := req.Spec().IdempotencyLevel != connect.IdempotencyUnknown
+		retryable := i.opts.Retryable(req.Spec())
 		i.budget.request()
 		var lastErr error
 		for attempt := 0; attempt < i.opts.Attempts; attempt++ {

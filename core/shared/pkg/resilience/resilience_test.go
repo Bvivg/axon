@@ -189,3 +189,20 @@ func TestDefaultTimeoutApplies(t *testing.T) {
 		t.Fatal("timeout was not applied")
 	}
 }
+
+func TestRetriesProceduresMarkedRetryable(t *testing.T) {
+	s := &server{fail: func(call int32) error {
+		if call == 1 {
+			return unavailable(call)
+		}
+		return nil
+	}}
+	url := s.start(t)
+	i := resilience.New(resilience.Options{Sleep: noSleep, Retryable: resilience.Procedures(procedure)})
+	if err := call(client(url, i, connect.IdempotencyUnknown)); err != nil {
+		t.Fatal(err)
+	}
+	if s.calls.Load() != 2 {
+		t.Fatal("calls", s.calls.Load())
+	}
+}

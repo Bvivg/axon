@@ -24,6 +24,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/resilience"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 
@@ -48,6 +49,28 @@ const sensitiveBurst = 5
 const uploadsBurst = 30
 
 const networkFactor = 10
+
+var retryableProcedures = []string{
+	gamev1connect.GameServiceGetSessionProcedure,
+	gamev1connect.GameServiceListSessionsProcedure,
+	gamev1connect.GameServiceGetMatchProcedure,
+	gamev1connect.GameServiceGetRatingsProcedure,
+	chatv1connect.ChatServiceListRoomsProcedure,
+	chatv1connect.ChatServiceGetRoomProcedure,
+	chatv1connect.ChatServiceListMessagesProcedure,
+	chatv1connect.ChatServiceSearchMessagesProcedure,
+	chatv1connect.ChatServiceListMessageReadersProcedure,
+	authv1connect.AuthServiceGetMeProcedure,
+	authv1connect.AuthServiceListSessionsProcedure,
+	authv1connect.AuthServiceListRolesProcedure,
+	authv1connect.AuthServiceSearchUsersProcedure,
+	authv1connect.AuthServiceGetUsersPublicProfilesProcedure,
+	authv1connect.AuthServiceGetPublicProfileByUsernameProcedure,
+	callsv1connect.CallsServiceGetCallProcedure,
+	callsv1connect.CallsServiceGetActiveCallProcedure,
+	callsv1connect.CallsServiceListCallsProcedure,
+	callsv1connect.CallsServiceGetCallCapabilitiesProcedure,
+}
 
 func main() {
 
@@ -150,6 +173,17 @@ func run() error {
 
 	metrics := middleware.NewMetrics(cfg.Service)
 	metrics.Registry().MustRegister(limitFailures)
+	breakerTransitions := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "gateway_circuit_transitions_total", Help: "Circuit breaker state changes per upstream procedure."}, []string{"procedure", "state"})
+	metrics.Registry().MustRegister(breakerTransitions)
+	guarded := func() *resilience.Interceptor {
+		return resilience.New(resilience.Options{
+			Retryable: resilience.Procedures(retryableProcedures...),
+			OnState: func(procedure string, state resilience.State) {
+				breakerTransitions.WithLabelValues(procedure, string(state)).Inc()
+				log.Warn("circuit breaker changed state", "procedure", procedure, "state", string(state))
+			},
+		})
+	}
 
 	upstream := &http.Client{
 		Timeout: cfg.UpstreamTimeout,
@@ -158,7 +192,7 @@ func run() error {
 	}
 
 	authClient := proxy.NewClient(upstream, cfg.AuthServiceURL,
-		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()),
+		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()),
 	)
 
 	authProxy, err := proxy.NewAuth(authClient)
@@ -167,7 +201,7 @@ func run() error {
 	}
 
 	chatClient := proxy.NewChatClient(upstream, cfg.ChatServiceURL,
-		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()),
+		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()),
 	)
 
 	chatSocket, err := wsproxy.New(wsproxy.Config{
@@ -182,7 +216,7 @@ func run() error {
 		return err
 	}
 
-	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()))
+	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
 	gameSocket, err := wsproxy.New(wsproxy.Config{
 		SocketOptions: ws.Options{ReadLimit: 4096},
 		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
@@ -207,7 +241,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	callsProxy, err := proxy.NewCalls(upstream, cfg.ChatServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()))
+	callsProxy, err := proxy.NewCalls(upstream, cfg.ChatServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
 	if err != nil {
 		return err
 	}
