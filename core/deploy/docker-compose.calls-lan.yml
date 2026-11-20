@@ -48,6 +48,7 @@ services:
     environment:
       MINIO_ROOT_PASSWORD: !reset null
   auth:
+    networks: [edge]
     environment:
       AVATARS_PUBLIC_URL: https://axon.test/storage
       OAUTH_FAKE_AUTHORIZE_URL: /oauth/fake/authorize

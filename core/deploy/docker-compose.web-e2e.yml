@@ -440,6 +440,7 @@ services:
       KAFKA_BROKERS: kafka:29092
       GAME_JOURNAL_REPLICATION: 1
       GAME_JOURNAL_MIN_INSYNC: 1
+      GAME_INTERNAL_KEY: web-e2e-game-owner-key-0123456789abcdef
     deploy:
       replicas: 2
     depends_on:
