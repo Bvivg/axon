@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -210,7 +211,11 @@ func TestScholarsMateBlunderIsFoundThroughTheGateway(t *testing.T) {
 		if ply > 0 && position.GetPlayedMove() != scholar[ply-1] {
 			t.Fatalf("ply %d played %q", ply, position.GetPlayedMove())
 		}
-		t.Logf("ply %d %-5s cp %6d mate %v best %-5s loss %5d %v", ply, position.GetPlayedMove(), position.GetCentipawns(), position.Mate,
+		mate := "-"
+		if position.Mate != nil {
+			mate = strconv.Itoa(int(position.GetMate()))
+		}
+		t.Logf("ply %d %-5s cp %6d mate %-2s best %-5s loss %5d %v", ply, position.GetPlayedMove(), position.GetCentipawns(), mate,
 			position.GetBestMove(), position.GetLoss(), position.GetMoveClass())
 	}
 	if blunder := positions[6]; blunder.GetMoveClass() != analysisv1.MoveClass_MOVE_CLASS_BLUNDER || blunder.GetLoss() < 300 || blunder.GetMate() != 1 || blunder.GetBestMove() != "h5f7" {
