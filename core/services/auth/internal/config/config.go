@@ -11,6 +11,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
@@ -37,6 +38,7 @@ type AvatarConfig struct {
 	Bucket    string
 	UseSSL    bool
 	PublicURL string
+	Limits    avatar.Limits
 }
 
 type OAuthConfig struct {
@@ -240,7 +242,15 @@ func applePrivateKey(l *config.Loader) string {
 }
 
 func loadAvatar(l *config.Loader) AvatarConfig {
+	defaults := avatar.DefaultLimits()
+
 	return AvatarConfig{
+		Limits: avatar.Limits{
+			MaxPixels:     l.IntDefault("AVATARS_MAX_PIXELS", defaults.MaxPixels),
+			MaxSide:       l.IntDefault("AVATARS_MAX_SIDE", defaults.MaxSide),
+			MaxConcurrent: l.IntDefault("AVATARS_MAX_CONCURRENT", defaults.MaxConcurrent),
+			QueueTimeout:  l.DurationDefault("AVATARS_QUEUE_TIMEOUT", defaults.QueueTimeout),
+		},
 		Endpoint:  l.StringDefault("AVATARS_ENDPOINT", "minio:9000"),
 		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
 		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),

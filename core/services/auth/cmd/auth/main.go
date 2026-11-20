@@ -152,7 +152,7 @@ func run() error {
 		return err
 	}
 	avatarURLs := avatar.NewURLBuilder(cfg.Avatar.PublicURL, cfg.Avatar.Bucket)
-	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs, nil)
+	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs, nil, cfg.Avatar.Limits)
 
 	revocationPublisher, err := revocation.NewPublisher(cache)
 	if err != nil {
