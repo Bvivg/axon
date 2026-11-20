@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -66,5 +67,22 @@ func TestQuoridorBoard(t *testing.T) {
 	waiting, err := present(session.Session{ID: uuid.New(), Creator: x, Game: quoridor.Key, UpdatedAt: time.Now()}, session.TimeLimitMS, nil)
 	if err != nil || len(waiting.GetQuoridor().GetPawns()) != 2 {
 		t.Fatal(waiting, err)
+	}
+}
+
+func TestTestIdentityNeedsHooks(t *testing.T) {
+	user := uuid.New()
+	headers := http.Header{}
+	headers.Set(TestUserHeader, user.String())
+	if _, _, err := New(Config{}).identity(headers); err == nil {
+		t.Fatal("test identity accepted without hooks")
+	}
+	got, claims, err := New(Config{TestHooks: true}).identity(headers)
+	if err != nil || got != user || claims.UserID != user || !claims.ExpiresAt.After(time.Now()) {
+		t.Fatal(got, claims, err)
+	}
+	headers.Set(TestUserHeader, "nobody")
+	if _, _, err := New(Config{TestHooks: true}).identity(headers); err == nil {
+		t.Fatal("malformed test identity accepted")
 	}
 }

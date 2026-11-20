@@ -88,7 +88,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 			moved()
 			return
 		}
-		h.relay(ctx, conn, id, r.Header.Get("Authorization"), frame)
+		h.relay(ctx, conn, id, r.Header, frame)
 		return
 	}
 	push := func(item session.Session, err error) error {
@@ -229,7 +229,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 
 const StatusMoved ws.StatusCode = 4001
 
-func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, authorization string, first []byte) {
+func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, incoming http.Header, first []byte) {
 	routing, cancel := context.WithTimeout(ctx, routeTimeout)
 	address, mine, err := h.ownerAddress(routing, id)
 	cancel()
@@ -238,8 +238,11 @@ func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, auth
 		return
 	}
 	header := http.Header{}
-	header.Set("Authorization", authorization)
+	header.Set("Authorization", incoming.Get("Authorization"))
 	header.Set(HopHeader, "1")
+	if user := incoming.Get(TestUserHeader); user != "" && h.hooks {
+		header.Set(TestUserHeader, user)
+	}
 	upstream, err := ws.Dial(ctx, "ws://"+address+"/ws", ws.DialOptions{
 		Subprotocols: []string{Protocol},
 		Header:       header,

@@ -14,7 +14,10 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/session"
 )
 
-const ClockHookPath = "/internal/test/clock"
+const (
+	ClockHookPath  = "/internal/test/clock"
+	TestUserHeader = "X-Axon-Test-User"
+)
 
 type clockAdjustment struct {
 	SessionID   string   `json:"session_id"`
