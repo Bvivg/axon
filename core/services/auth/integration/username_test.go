@@ -24,6 +24,16 @@ const (
 
 func migrateTo(t *testing.T, version uint) {
 	t.Helper()
+	runMigrations(t, func(m *migrate.Migrate) error { return m.Migrate(version) })
+}
+
+func migrateToLatest(t *testing.T) {
+	t.Helper()
+	runMigrations(t, func(m *migrate.Migrate) error { return m.Up() })
+}
+
+func runMigrations(t *testing.T, step func(*migrate.Migrate) error) {
+	t.Helper()
 
 	m, err := migrate.New("file://../migrations", "pgx5://"+authDSN[len("postgres://"):])
 	if err != nil {
@@ -32,8 +42,8 @@ func migrateTo(t *testing.T, version uint) {
 	defer func() { _, _ = m.Close() }()
 
 	m.LockTimeout = migrationLockTimeout
-	if err := m.Migrate(version); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		t.Fatalf("migrate to %d: %v", version, err)
+	if err := step(m); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("migrate: %v", err)
 	}
 }
 
@@ -42,7 +52,7 @@ func TestTheUsernameMigrationNamesExistingAccounts(t *testing.T) {
 	ctx := t.Context()
 
 	migrateTo(t, versionBeforeUsernames)
-	t.Cleanup(func() { migrateTo(t, versionWithUsernames) })
+	t.Cleanup(func() { migrateToLatest(t) })
 
 	type naming int
 	const (

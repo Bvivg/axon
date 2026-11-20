@@ -208,7 +208,7 @@ func newRepo(t *testing.T) *repository.Repository {
 	t.Helper()
 
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, credentials, refresh_tokens, oauth_accounts CASCADE`)
+		`TRUNCATE users, credentials, refresh_tokens, oauth_accounts, outbox CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
