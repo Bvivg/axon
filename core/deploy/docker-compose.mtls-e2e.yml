@@ -1,0 +1,66 @@
+x-migrate: &migrate
+  image: migrate/migrate:v4.20.1
+  networks: [data]
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  migrate-auth:
+    <<: *migrate
+    volumes:
+      - ../services/auth/migrations:/migrations:ro
+    command: ["-path=/migrations", "-database", "postgres://auth_service:${AUTH_DB_PASSWORD:-auth}@postgres:5432/axon?sslmode=disable&search_path=auth", "up"]
+
+  migrate-chat:
+    <<: *migrate
+    volumes:
+      - ../services/chat/migrations:/migrations:ro
+    command: ["-path=/migrations", "-database", "postgres://chat_service:${CHAT_DB_PASSWORD:-chat}@postgres:5432/axon?sslmode=disable&search_path=chat", "up"]
+
+  certs:
+    environment:
+      MTLS_IDENTITIES: gateway auth chat game intruder
+      MTLS_CERT_LIFETIME: 6m
+      MTLS_RENEW_BEFORE: 5m
+      MTLS_RENEW_CHECK: "10"
+    volumes:
+      - certs-intruder:/certs/intruder
+
+  auth:
+    depends_on:
+      migrate-auth:
+        condition: service_completed_successfully
+
+  chat:
+    depends_on:
+      migrate-chat:
+        condition: service_completed_successfully
+
+  security-e2e:
+    image: golang:1.27.4-alpine
+    profiles: ["e2e"]
+    working_dir: /src/core/shared
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      MTLS_WATCH_RENEWAL: ${MTLS_WATCH_RENEWAL:-}
+      JWT_ROTATION_WATCH: ${JWT_ROTATION_WATCH:-}
+      GOWORK: "off"
+      GOFLAGS: -mod=mod
+    volumes:
+      - ../..:/src
+      - certs-intruder:/certs/intruder:ro
+      - security-e2e-go-mod:/go/pkg/mod
+      - security-e2e-go-build:/root/.cache/go-build
+    networks: [edge, app]
+    command: ["go", "test", "-tags", "e2e", "-count=1", "-v", "./e2e/security/..."]
+    depends_on:
+      gateway:
+        condition: service_healthy
+      game:
+        condition: service_healthy
+
+volumes:
+  certs-intruder:
+  security-e2e-go-mod:
+  security-e2e-go-build:
