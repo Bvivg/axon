@@ -16,7 +16,107 @@ x-kafka-ha-env: &kafka-ha-env
   KAFKA_LOG_DIRS: /var/lib/kafka/data
   CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
 
+x-replication-env: &replication-env
+  REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-replicator}
+  REPLICATION_SLOT: ${POSTGRES_REPLICATION_SLOT:-axon_replica}
+
 services:
+  postgres:
+    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf", "-c", "max_slot_wal_keep_size=1GB"]
+    volumes:
+      - ./postgres/replication/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+
+  postgres-replication:
+    image: postgres:17-alpine
+    restart: "no"
+    entrypoint: ["sh", "/replication/primary.sh"]
+    environment:
+      <<: *replication-env
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-axon}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-axon}
+      PGDATABASE: ${POSTGRES_DB:-axon}
+    volumes:
+      - ./postgres/replication:/replication:ro
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres-replica:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    user: postgres
+    entrypoint: ["sh", "/replication/replica.sh"]
+    environment:
+      <<: *replication-env
+      PGDATA: /var/lib/postgresql/data/pgdata
+      PRIMARY_HOST: postgres
+      PRIMARY_PORT: 5432
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+      - ./postgres/replication:/replication:ro
+    networks: [data]
+    depends_on:
+      postgres-replication:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U ${POSTGRES_USER:-axon} -d ${POSTGRES_DB:-axon} -tAc 'SELECT pg_is_in_recovery()' | grep -qx t"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    restart: unless-stopped
+    entrypoint: ["sh", "/etc/pgbouncer/entrypoint.sh"]
+    environment:
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
+      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
+      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
+      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
+    volumes:
+      - ./pgbouncer:/etc/pgbouncer:ro
+      - type: tmpfs
+        target: /run/pgbouncer
+        tmpfs:
+          mode: 0o1777
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$GAME_DB_PASSWORD\" psql -h 127.0.0.1 -p 6432 -U game_service -d axon -tAc 'SELECT 1' | grep -qx 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  auth:
+    environment:
+      POSTGRES_DSN: ${AUTH_POOLED_POSTGRES_DSN:-postgres://auth_service:${AUTH_DB_PASSWORD:-auth}@pgbouncer:6432/axon?sslmode=disable}
+      SHUTDOWN_DRAIN: 3s
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    ports: !reset []
+    deploy:
+      replicas: ${AUTH_REPLICAS:-2}
+
+  chat:
+    environment:
+      POSTGRES_DSN: ${CHAT_POOLED_POSTGRES_DSN:-postgres://chat_service:${CHAT_DB_PASSWORD:-chat}@pgbouncer:6432/axon?sslmode=disable}
+      SHUTDOWN_DRAIN: 3s
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    ports: !reset []
+    deploy:
+      replicas: ${CHAT_REPLICAS:-2}
+
   kafka:
     environment:
       <<: *kafka-ha-env
@@ -67,6 +167,9 @@ services:
 
   game:
     environment:
+      POSTGRES_DSN: ${GAME_POOLED_POSTGRES_DSN:-postgres://game_service:${GAME_DB_PASSWORD:-game}@pgbouncer:6432/axon?sslmode=disable}
+      GAME_LISTEN_DATABASE_URL: ${GAME_POSTGRES_DSN:-postgres://game_service:game@postgres:5432/axon?sslmode=disable&search_path=game}
+      GAME_READ_DATABASE_URL: ${GAME_REPLICA_POSTGRES_DSN:-postgres://game_service:${GAME_DB_PASSWORD:-game}@postgres-replica:5432/axon?sslmode=disable&search_path=game}
       KAFKA_BROKERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
       GAME_JOURNAL_REPLICATION: 3
       GAME_JOURNAL_MIN_INSYNC: 2
@@ -77,6 +180,10 @@ services:
         condition: service_healthy
       kafka-3:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      postgres-replica:
+        condition: service_healthy
 
   gateway:
     environment:
@@ -85,20 +192,6 @@ services:
     ports: !reset []
     deploy:
       replicas: ${GATEWAY_REPLICAS:-2}
-
-  auth:
-    environment:
-      SHUTDOWN_DRAIN: 3s
-    ports: !reset []
-    deploy:
-      replicas: ${AUTH_REPLICAS:-2}
-
-  chat:
-    environment:
-      SHUTDOWN_DRAIN: 3s
-    ports: !reset []
-    deploy:
-      replicas: ${CHAT_REPLICAS:-2}
 
   envoy:
     image: envoyproxy/envoy:v1.34.1
@@ -125,6 +218,7 @@ services:
       AXON_GATEWAY_RPC_URL: "http://envoy:8080"
 
 volumes:
+  postgres-replica-data:
   kafka-ha-1:
   kafka-ha-2:
   kafka-ha-3:
