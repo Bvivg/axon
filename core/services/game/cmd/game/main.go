@@ -87,6 +87,9 @@ func run() error {
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
 	spectatorLimit := loader.IntDefault("GAME_SPECTATOR_LIMIT", 200)
+	chessGame, quoridorGame := chess.Definition(), quoridor.Definition()
+	chessGame.MaxPlies = loader.IntDefault("GAME_CHESS_MAX_PLIES", chess.MaxPlies)
+	quoridorGame.MaxPlies = loader.IntDefault("GAME_QUORIDOR_MAX_PLIES", quoridor.MaxPlies)
 	if err := loader.Err(); err != nil {
 		return err
 	}
@@ -120,7 +123,7 @@ func run() error {
 		return err
 	}
 	games := engine.NewRegistry()
-	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition(), quoridor.Definition()} {
+	for _, def := range []engine.Definition{tictactoe.Definition(), chessGame, quoridorGame} {
 		if err := games.Register(def); err != nil {
 			return err
 		}

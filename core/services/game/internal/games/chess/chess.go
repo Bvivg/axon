@@ -11,6 +11,8 @@ import (
 
 const Key engine.Key = "chess"
 
+const MaxPlies = 600
+
 var ErrIllegalMove = errors.New("chess: illegal move")
 
 type MoveData struct {
@@ -32,7 +34,7 @@ var _ engine.Game = Game{}
 func New() Game { return Game{} }
 
 func Definition() engine.Definition {
-	return engine.Definition{Key: Key, MinPlayers: 2, MaxPlayers: 2, Game: New(), TimeLimit: 10 * time.Minute}
+	return engine.Definition{Key: Key, MinPlayers: 2, MaxPlayers: 2, Game: New(), TimeLimit: 10 * time.Minute, MaxPlies: MaxPlies}
 }
 
 func NewMove(player engine.PlayerID, ply int, uci string) engine.Move {

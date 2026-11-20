@@ -282,6 +282,7 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 		Status:    gamev1.SessionStatus_SESSION_STATUS_WAITING,
 		UpdatedAt: timestamppb.New(item.UpdatedAt), Revision: proto.Uint32(item.Revision), TimedOut: proto.Bool(item.TimedOut),
 		Rated: proto.Bool(item.Rated), Resigned: proto.Bool(item.Resigned), AgreedDraw: proto.Bool(item.AgreedDraw),
+		MoveLimit: proto.Bool(item.State.MoveLimit),
 	}
 	if item.DrawOffer != nil {
 		offer := item.DrawOffer.String()
