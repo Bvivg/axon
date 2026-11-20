@@ -21,6 +21,8 @@ type Config struct {
 
 	GameServiceURL string
 
+	AnalysisServiceURL string
+
 	GameSocketURL string
 
 	ChatSocketURL string
@@ -97,6 +99,7 @@ func Load() (Config, error) {
 		AuthServiceURL:      l.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
 		ChatServiceURL:      l.StringDefault("CHAT_SERVICE_URL", "http://chat:8082"),
 		GameServiceURL:      l.StringDefault("GAME_SERVICE_URL", "http://game:8083"),
+		AnalysisServiceURL:  l.StringDefault("ANALYSIS_SERVICE_URL", "http://analysis:8085"),
 		JWKSURL:             l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		JWKSRefreshInterval: l.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
 		UpstreamTimeout:     l.DurationDefault("UPSTREAM_TIMEOUT", 10*time.Second),

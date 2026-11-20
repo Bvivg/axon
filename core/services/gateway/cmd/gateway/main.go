@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	goredis "github.com/redis/go-redis/v9"
 
+	"github.com/bvivg/axon/core/shared/gen/go/axon/analysis/v1/analysisv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
@@ -56,6 +57,7 @@ var retryableProcedures = []string{
 	gamev1connect.GameServiceListSessionsProcedure,
 	gamev1connect.GameServiceGetMatchProcedure,
 	gamev1connect.GameServiceGetRatingsProcedure,
+	analysisv1connect.AnalysisServiceGetAnalysisProcedure,
 	chatv1connect.ChatServiceListRoomsProcedure,
 	chatv1connect.ChatServiceGetRoomProcedure,
 	chatv1connect.ChatServiceListMessagesProcedure,
@@ -232,6 +234,7 @@ func run() error {
 	}
 
 	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
+	analysisProxy := proxy.NewAnalysis(upstream, cfg.AnalysisServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
 	gameSocket, err := wsproxy.New(wsproxy.Config{
 		SocketOptions: ws.Options{ReadLimit: 4096},
 		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
@@ -306,7 +309,7 @@ func run() error {
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
 	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, analysisProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         mtls.ServerProtocols(nil),
 	})
@@ -365,6 +368,7 @@ func publicHandler(
 	chatProxy chatv1connect.ChatServiceHandler,
 	callsProxy callsv1connect.CallsServiceHandler,
 	gameProxy gamev1connect.GameServiceHandler,
+	analysisProxy analysisv1connect.AnalysisServiceHandler,
 	chatSocket http.Handler,
 	presenceSocket http.Handler,
 	gameSocket http.Handler,
@@ -385,6 +389,7 @@ func publicHandler(
 	uploadSessions.Register(mux, uploadSessionsPath)
 	mux.Handle(callsv1connect.NewCallsServiceHandler(callsProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
 	mux.Handle(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
+	mux.Handle(analysisv1connect.NewAnalysisServiceHandler(analysisProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(
