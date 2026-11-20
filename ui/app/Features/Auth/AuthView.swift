@@ -42,7 +42,7 @@ struct AuthView: View {
                             .accessibilityIdentifier(AccessibilityID.Auth.username)
                     }
                     SecureField("Password", text: $model.password)
-                        .textContentType(model.mode == .register ? .newPassword : .password)
+                        .textContentType(.password)
                         .accessibilityIdentifier(AccessibilityID.Auth.password)
                         .onSubmit(submit)
                 } footer: {

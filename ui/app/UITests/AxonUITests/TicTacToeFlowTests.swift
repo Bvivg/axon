@@ -50,12 +50,40 @@ final class TicTacToeFlowTests: XCTestCase {
         try await type(account.password, into: app.secureTextFields[AccessibilityID.Auth.password], "the password field")
         app.buttons[AccessibilityID.Auth.submit].tap()
         try await existing(app.descendants(matching: .any)[AccessibilityID.Lobby.root], "the lobby", timeout: 30)
+        await dismissSavePasswordPrompt(in: app, within: 10)
+    }
+
+    @MainActor
+    @discardableResult
+    private func dismissSavePasswordPrompt(in app: XCUIApplication, within seconds: TimeInterval) async -> Bool {
+        let notNow = NSPredicate(format: "label IN %@", ["Not Now", "Не сейчас"])
+        let candidates = [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")].map {
+            $0.descendants(matching: .any).matching(notNow).firstMatch
+        }
+        let deadline = Date.now.addingTimeInterval(seconds)
+        while Date.now < deadline {
+            if let button = candidates.first(where: { $0.exists && $0.isHittable }) {
+                button.tap()
+                try? await Task.sleep(for: .seconds(2))
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+        return false
     }
 
     @MainActor
     private func createTicTacToe(in app: XCUIApplication) async throws -> String {
-        try await existing(app.buttons[AccessibilityID.Lobby.create("tictactoe")], "the tic-tac-toe button").tap()
+        let create = try await existing(app.buttons[AccessibilityID.Lobby.create("tictactoe")], "the tic-tac-toe button")
         let sessionLabel = app.staticTexts[AccessibilityID.Game.sessionID]
+        for _ in 0..<3 where !sessionLabel.exists {
+            await dismissSavePasswordPrompt(in: app, within: 2)
+            if create.exists && create.isHittable {
+                create.tap()
+            }
+            _ = sessionLabel.waitForExistence(timeout: 8)
+        }
+        try await existing(sessionLabel, "the session id")
         try await until(sessionLabel, "the session id", NSPredicate(format: "label != ''"))
         return sessionLabel.label
     }
@@ -122,6 +150,7 @@ final class TicTacToeFlowTests: XCTestCase {
 
     @MainActor
     private func label(of element: XCUIElement, is expected: String, timeout: TimeInterval = 20) async throws {
+        try await existing(element, "an element labelled \(expected)", timeout: timeout)
         try await until(element, "label \"\(expected)\"", NSPredicate(format: "label == %@", expected), timeout: timeout)
     }
 
@@ -135,6 +164,12 @@ final class TicTacToeFlowTests: XCTestCase {
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         guard await XCTWaiter().fulfillment(of: [expectation], timeout: timeout) == .completed else {
             let seen = element.exists ? "\"\(element.label)\"" : "no element"
+            let app = XCUIApplication()
+            attachScreenshot("Timed out: \(waiting)", of: app)
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "Accessibility tree"
+            tree.lifetime = .keepAlways
+            add(tree)
             throw FlowError.timedOut("\(waiting) (\(seen))")
         }
     }
