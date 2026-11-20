@@ -19,8 +19,10 @@ export function chatAt(address: string): RegExp {
 
 export async function goToChats(page: Page): Promise<void> {
   const nav = page.getByRole("navigation", { name: "Primary", exact: true });
+  const back = page.getByRole("link", { name: "Back to chats", exact: true });
+  await expect(nav.or(back).first()).toBeVisible();
   if (await nav.isVisible()) await nav.getByRole("link", { name: "Chats", exact: true }).click();
-  else await page.getByRole("link", { name: "Back to chats", exact: true }).click();
+  else await back.click();
   await expectLobby(page);
 }
 

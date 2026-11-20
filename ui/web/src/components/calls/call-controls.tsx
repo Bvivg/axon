@@ -1,6 +1,6 @@
 "use client";
 
-import { Mic, MicOff, MonitorUp, PhoneOff, Settings2, Users, Video, VideoOff } from "lucide-react";
+import { LogOut, Mic, MicOff, MonitorUp, PhoneOff, Settings2, Users, Video, VideoOff } from "lucide-react";
 import { useState } from "react";
 
 import { useCallAudio } from "@/components/calls/call-audio-renderer";
@@ -24,7 +24,12 @@ export function CallEndButton({ compact = false }: { compact?: boolean }) {
   const leave = call.kind === "group" && call.ownerId !== manager.userID && !incoming;
   const label = incoming ? "Decline" : leave ? "Leave call" : call.state === CallState.RINGING ? "Cancel call" : call.kind === "group" ? "End for everyone" : "End call";
   const text = incoming ? "Decline" : leave ? "Leave" : call.state === CallState.RINGING ? "Cancel" : compact ? "End" : "End call";
-  return <Button variant="destructive" size="sm" className="min-h-11 min-w-11" aria-label={label} disabled={view.ending} onClick={() => { void (leave ? manager.leave() : manager.end()); }}><PhoneOff />{text}</Button>;
+  const end = <Button variant="destructive" size="sm" className="min-h-11 min-w-11" aria-label={label} disabled={view.ending} onClick={() => { void (leave ? manager.leave() : manager.end()); }}><PhoneOff />{text}</Button>;
+  if (compact || leave || incoming || call.kind !== "group" || call.state === CallState.RINGING) return end;
+  return <span className="inline-flex gap-2">
+    <Button variant="outline" size="sm" className="min-h-11 min-w-11" aria-label="Leave call" disabled={view.ending} onClick={() => { void manager.leave(); }}><LogOut />Leave</Button>
+    {end}
+  </span>;
 }
 
 export function CallControls({ profiles, active, migrating }: { profiles?: Map<string, PublicProfile>; active: boolean; migrating: boolean }) {
@@ -67,11 +72,11 @@ export function CallControls({ profiles, active, migrating }: { profiles?: Map<s
           <DropdownMenuContent side="top" align="center" className="max-h-[65dvh] overflow-y-auto">
             <DropdownMenuLabel>Microphone</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={inputID("audio")} onValueChange={id => run(() => media.device("audio", id))}>
-              {inputs("audio").map((device, index) => <DropdownMenuRadioItem key={device.deviceId} className="min-h-11 whitespace-normal" value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</DropdownMenuRadioItem>)}
+              {inputs("audio").map((device, index) => <DropdownMenuRadioItem key={device.deviceId} className="min-h-11 whitespace-normal" value={device.deviceId} disabled={migrating || applying}>{device.label || `Microphone ${index + 1}`}</DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
             {video ? <><DropdownMenuLabel>Camera</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={inputID("video")} onValueChange={id => run(() => media.device("video", id))}>
-                {inputs("video").map((device, index) => <DropdownMenuRadioItem key={device.deviceId} className="min-h-11 whitespace-normal" value={device.deviceId}>{device.label || `Camera ${index + 1}`}</DropdownMenuRadioItem>)}
+                {inputs("video").map((device, index) => <DropdownMenuRadioItem key={device.deviceId} className="min-h-11 whitespace-normal" value={device.deviceId} disabled={migrating || applying}>{device.label || `Camera ${index + 1}`}</DropdownMenuRadioItem>)}
               </DropdownMenuRadioGroup>
               {!inputs("video").length ? <DropdownMenuItem disabled>Camera becomes available after access is allowed</DropdownMenuItem> : null}
             </> : null}
