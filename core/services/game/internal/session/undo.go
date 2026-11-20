@@ -33,7 +33,7 @@ func (s *Store) Undo(ctx context.Context, id, user uuid.UUID, revision *uint32) 
 		if err != nil {
 			return Session{}, err
 		}
-		clock := NewClock(time.Now())
+		clock := s.NewClock(game.Game, time.Now())
 		if len(clockRaw) > 0 && string(clockRaw) != "null" {
 			if err := json.Unmarshal(clockRaw, clock); err != nil {
 				return Session{}, err
@@ -44,6 +44,7 @@ func (s *Store) Undo(ctx context.Context, id, user uuid.UUID, revision *uint32) 
 			return Session{}, err
 		}
 		game.State, game.Clock, game.TimedOut = previous, clock, false
+		game.DrawOffer, game.AgreedDraw = nil, false
 		return s.persist(ctx, tx, game)
 	})
 }

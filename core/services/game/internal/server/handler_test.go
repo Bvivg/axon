@@ -16,8 +16,8 @@ func TestResultClock(t *testing.T) {
 	x, o := uuid.New(), uuid.New()
 	item := session.Session{ID: uuid.New(), Creator: x, Opponent: &o, Game: tictactoe.Key,
 		State: tictactoe.New().Init([]engine.PlayerID{engine.PlayerID(x.String()), engine.PlayerID(o.String())}),
-		Clock: session.NewClock(time.Now().Add(-2 * time.Second)), Revision: 7, UpdatedAt: time.Now()}
-	out, err := result(item, nil)
+		Clock: session.NewClock(time.Now().Add(-2*time.Second), session.TimeLimitMS), Revision: 7, UpdatedAt: time.Now()}
+	out, err := present(item, session.TimeLimitMS, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,14 +29,14 @@ func TestResultClock(t *testing.T) {
 	}
 	item.State = item.State.Finish(1)
 	item.Clock.RemainingMS[0], item.TimedOut = 0, true
-	out, err = result(item, nil)
+	out, err = present(item, session.TimeLimitMS, nil)
 	if err != nil || !out.GetTimedOut() || out.GetWinnerUserId() != o.String() || out.GetTurnUserId() != "" || out.GetClock().GetXRemainingMs() != 0 || len(out.TicTacToe.WinningCells) != 0 {
 		t.Fatal(out, err)
 	}
 }
 
 func TestWaitingResultClock(t *testing.T) {
-	out, err := result(session.Session{ID: uuid.New(), Creator: uuid.New(), UpdatedAt: time.Now()}, nil)
+	out, err := present(session.Session{ID: uuid.New(), Creator: uuid.New(), UpdatedAt: time.Now()}, session.TimeLimitMS, nil)
 	if err != nil || out.Status != gamev1.SessionStatus_SESSION_STATUS_WAITING || out.Clock.GetXRemainingMs() != 300000 || out.Clock.GetORemainingMs() != 300000 {
 		t.Fatal(out, err)
 	}

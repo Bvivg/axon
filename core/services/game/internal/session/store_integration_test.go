@@ -14,8 +14,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 )
+
+func cellData(cell int) json.RawMessage {
+	raw, _ := json.Marshal(tictactoe.Cell{Row: cell / tictactoe.Size, Col: cell % tictactoe.Size})
+	return raw
+}
 
 func testStore(t *testing.T) (*Store, context.Context) {
 	t.Helper()
@@ -50,6 +56,13 @@ func testStore(t *testing.T) (*Store, context.Context) {
 	if !rated {
 		migrations = append(migrations, "../../migrations/000003_ratings_matchmaking.up.sql")
 	}
+	var drawn bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='game' AND table_name='sessions' AND column_name='agreed_draw')`).Scan(&drawn); err != nil {
+		t.Fatal(err)
+	}
+	if !drawn {
+		migrations = append(migrations, "../../migrations/000004_draw_offers.up.sql")
+	}
 	for _, path := range migrations {
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -60,8 +73,10 @@ func testStore(t *testing.T) (*Store, context.Context) {
 		}
 	}
 	games := engine.NewRegistry()
-	if err := games.Register(tictactoe.Definition()); err != nil {
-		t.Fatal(err)
+	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition()} {
+		if err := games.Register(def); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return NewStore(pool, games), ctx
 }
@@ -92,7 +107,7 @@ func testGame(t *testing.T, store *Store, ctx context.Context) (Session, uuid.UU
 
 func testMove(t *testing.T, store *Store, ctx context.Context, game Session, user uuid.UUID, cell int) Session {
 	t.Helper()
-	result, err := store.Move(ctx, game.ID, user, game.State.Ply, cell, &game.Revision)
+	result, err := store.Move(ctx, game.ID, user, game.State.Ply, tictactoe.Key, cellData(cell), &game.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +130,7 @@ func TestStoreUndoAndRevision(t *testing.T) {
 	if game.State.Ply != 1 || game.State.Turn != 1 || game.Revision != 4 {
 		t.Fatal(game)
 	}
-	if _, err := store.Move(ctx, game.ID, o, 1, 8, &oldRevision); !errors.Is(err, engine.ErrStaleMove) {
+	if _, err := store.Move(ctx, game.ID, o, 1, tictactoe.Key, cellData(8), &oldRevision); !errors.Is(err, engine.ErrStaleMove) {
 		t.Fatal("stale command accepted", err)
 	}
 	if _, err := store.Undo(ctx, game.ID, x, &oldRevision); !errors.Is(err, engine.ErrStaleMove) {
@@ -224,7 +239,10 @@ func TestStoreConcurrentUndoAndMove(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
 	wg.Go(func() { _, err := store.Undo(ctx, game.ID, x, &game.Revision); results <- err })
-	wg.Go(func() { _, err := store.Move(ctx, game.ID, o, game.State.Ply, 4, &game.Revision); results <- err })
+	wg.Go(func() {
+		_, err := store.Move(ctx, game.ID, o, game.State.Ply, tictactoe.Key, cellData(4), &game.Revision)
+		results <- err
+	})
 	wg.Wait()
 	close(results)
 	success, stale := 0, 0

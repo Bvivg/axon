@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"slices"
+	"time"
 )
 
 type Definition struct {
@@ -12,7 +13,11 @@ type Definition struct {
 	MaxPlayers int
 
 	Game Game
+
+	TimeLimit time.Duration
 }
+
+const DefaultTimeLimit = 5 * time.Minute
 
 type Registry struct {
 	definitions map[Key]Definition
@@ -56,6 +61,13 @@ func (r *Registry) Definition(key Key) (Definition, error) {
 		return Definition{}, fmt.Errorf("%w: %q", ErrUnknownGame, key)
 	}
 	return def, nil
+}
+
+func (r *Registry) TimeLimit(key Key) time.Duration {
+	if def, ok := r.definitions[key]; ok && def.TimeLimit > 0 {
+		return def.TimeLimit
+	}
+	return DefaultTimeLimit
 }
 
 func (r *Registry) Keys() []Key {

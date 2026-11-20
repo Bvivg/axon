@@ -13,7 +13,7 @@ func TestClock(t *testing.T) {
 	for _, turn := range []int{0, 1} {
 		state := tictactoe.New().Init([]engine.PlayerID{"x", "o"})
 		state.Turn = turn
-		game := Session{State: state, Clock: NewClock(start)}
+		game := Session{State: state, Clock: NewClock(start, TimeLimitMS)}
 		clock := game.ClockAt(start.Add(1234 * time.Millisecond))
 		if clock.RemainingMS[turn] != TimeLimitMS-1234 || clock.RemainingMS[1-turn] != TimeLimitMS {
 			t.Fatal(clock)

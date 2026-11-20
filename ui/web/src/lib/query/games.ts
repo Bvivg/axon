@@ -5,7 +5,7 @@ import { gameClient } from "@/lib/connect/clients";
 
 export const sessionsKey = ["game", "sessions"] as const;
 export const sessionKey = (id: string) => ["game", "session", id] as const;
-export const gameHref = (id: string) => `/games/tic-tac-toe/${id}`;
+export { gameHref } from "@/lib/games/catalog";
 
 export function useGameSessions() {
   return useQuery({

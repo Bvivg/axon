@@ -4,7 +4,7 @@ import { create, fromJsonString, toJson, type MessageInitShape } from "@bufbuild
 import { useEffect, useMemo, useRef, useState } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
-import { SessionCommandSchema, SessionError, SessionEventSchema, type Session } from "@/gen/axon/game/v1/game_pb";
+import { SessionCommandSchema, SessionError, SessionEventSchema, type DrawAction, type Session } from "@/gen/axon/game/v1/game_pb";
 import { refreshSession } from "@/lib/auth/refresh";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { apiBaseUrl } from "@/lib/connect/transport";
@@ -21,6 +21,9 @@ const reasons: Partial<Record<SessionError, string>> = {
   [SessionError.NOT_PLAYING]: "This game is not in progress.",
   [SessionError.UNAVAILABLE]: "The game service is unavailable.",
   [SessionError.UNDO_DISABLED]: "Undo is off in rated games.",
+  [SessionError.ILLEGAL_MOVE]: "That move is not allowed.",
+  [SessionError.NO_DRAW_OFFER]: "The draw offer is no longer open.",
+  [SessionError.RATE_LIMITED]: "You are moving too fast. Try again.",
 };
 
 function command(action: MessageInitShape<typeof SessionCommandSchema>) {
@@ -90,6 +93,13 @@ export function useGameSocket(initial: Session) {
   });
 
   const connected = readyState === ReadyState.OPEN && synchronized;
+  const send = (action: MessageInitShape<typeof SessionCommandSchema>["action"]) => {
+    if (!connected || pendingRevision.current !== undefined) return;
+    pendingRevision.current = game.revision ?? game.ply;
+    setPending(true);
+    setError("");
+    sendJsonMessage(command({ action }), false);
+  };
 
   useEffect(() => {
     if (!pending) return;
@@ -114,12 +124,8 @@ export function useGameSocket(initial: Session) {
       setError("");
       sendJsonMessage(command({ action: { case: "undo", value: { revision: game.revision } } }), false);
     },
-    move: (cell: number) => {
-      if (!connected || pendingRevision.current !== undefined) return;
-      pendingRevision.current = game.revision ?? game.ply;
-      setPending(true);
-      setError("");
-      sendJsonMessage(command({ action: { case: "move", value: { ply: game.ply, cell, revision: game.revision } } }), false);
-    },
+    move: (cell: number) => send({ case: "move", value: { ply: game.ply, cell, revision: game.revision } }),
+    chessMove: (uci: string) => send({ case: "chessMove", value: { ply: game.ply, uci, revision: game.revision } }),
+    draw: (action: DrawAction) => send({ case: "draw", value: { action } }),
   };
 }

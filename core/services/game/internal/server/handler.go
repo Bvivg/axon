@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
@@ -131,7 +132,7 @@ func (h *Handler) ListSessions(ctx context.Context, req *connect.Request[gamev1.
 	}
 	response := &gamev1.ListSessionsResponse{}
 	for _, item := range items {
-		state, err := result(item, nil)
+		state, err := h.result(item, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -142,7 +143,7 @@ func (h *Handler) ListSessions(ctx context.Context, req *connect.Request[gamev1.
 }
 
 func (h *Handler) view(ctx context.Context, item session.Session, err error) (*gamev1.Session, error) {
-	state, err := result(item, err)
+	state, err := h.result(item, err)
 	if err != nil || !item.Rated || !item.State.Over() {
 		return state, err
 	}
@@ -168,7 +169,11 @@ func sessionID(raw string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func result(item session.Session, err error) (*gamev1.Session, error) {
+func (h *Handler) result(item session.Session, err error) (*gamev1.Session, error) {
+	return present(item, h.store.TimeLimitMS(item.Game), err)
+}
+
+func present(item session.Session, limit int64, err error) (*gamev1.Session, error) {
 	switch {
 	case errors.Is(err, session.ErrNotFound):
 		return nil, connect.NewError(connect.CodeNotFound, err)
@@ -181,12 +186,22 @@ func result(item session.Session, err error) (*gamev1.Session, error) {
 	}
 	out := &gamev1.Session{
 		Id: item.ID.String(), Game: string(item.Game), PlayerIds: []string{item.Creator.String()},
-		Status: gamev1.SessionStatus_SESSION_STATUS_WAITING, TicTacToe: &gamev1.TicTacToeBoard{Cells: make([]gamev1.Mark, 9)},
+		Status:    gamev1.SessionStatus_SESSION_STATUS_WAITING,
 		UpdatedAt: timestamppb.New(item.UpdatedAt), Revision: proto.Uint32(item.Revision), TimedOut: proto.Bool(item.TimedOut),
-		Rated: proto.Bool(item.Rated), Resigned: proto.Bool(item.Resigned),
+		Rated: proto.Bool(item.Rated), Resigned: proto.Bool(item.Resigned), AgreedDraw: proto.Bool(item.AgreedDraw),
+	}
+	if item.DrawOffer != nil {
+		offer := item.DrawOffer.String()
+		out.DrawOfferUserId = &offer
+	}
+	switch item.Game {
+	case tictactoe.Key:
+		out.TicTacToe = &gamev1.TicTacToeBoard{Cells: make([]gamev1.Mark, 9)}
+	case chess.Key:
+		out.Chess = &gamev1.ChessBoard{Fen: chess.StartFEN}
 	}
 	if item.Opponent == nil {
-		out.Clock = &gamev1.SessionClock{XRemainingMs: proto.Uint32(uint32(session.TimeLimitMS)), ORemainingMs: proto.Uint32(uint32(session.TimeLimitMS)), SampledAt: timestamppb.Now()}
+		out.Clock = &gamev1.SessionClock{XRemainingMs: proto.Uint32(uint32(limit)), ORemainingMs: proto.Uint32(uint32(limit)), SampledAt: timestamppb.Now()}
 		return out, nil
 	}
 	if clock := item.ClockAt(time.Now()); clock != nil {
@@ -195,15 +210,8 @@ func result(item session.Session, err error) (*gamev1.Session, error) {
 	out.PlayerIds = append(out.PlayerIds, item.Opponent.String())
 	out.Ply = uint32(item.State.Ply)
 	out.Status = gamev1.SessionStatus_SESSION_STATUS_PLAYING
-	cells, winning, err := tictactoe.Position(item.State)
-	if err != nil {
+	if err := board(out, item); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("invalid saved game"))
-	}
-	for i, seat := range cells {
-		out.TicTacToe.Cells[i] = gamev1.Mark(seat + 1)
-	}
-	for _, cell := range winning {
-		out.TicTacToe.WinningCells = append(out.TicTacToe.WinningCells, uint32(cell))
 	}
 	if user, ok := item.State.Current(); ok {
 		id := string(user)
@@ -237,4 +245,38 @@ func (h *Handler) LeaveSession(ctx context.Context, req *connect.Request[gamev1.
 	}
 	h.updates.notify(id)
 	return connect.NewResponse(&gamev1.LeaveSessionResponse{Session: state}), nil
+}
+
+var chessEnds = map[chess.End]gamev1.ChessEnd{
+	chess.Checkmate:            gamev1.ChessEnd_CHESS_END_CHECKMATE,
+	chess.Stalemate:            gamev1.ChessEnd_CHESS_END_STALEMATE,
+	chess.InsufficientMaterial: gamev1.ChessEnd_CHESS_END_INSUFFICIENT_MATERIAL,
+	chess.ThreefoldRepetition:  gamev1.ChessEnd_CHESS_END_THREEFOLD_REPETITION,
+	chess.FiftyMoves:           gamev1.ChessEnd_CHESS_END_FIFTY_MOVES,
+}
+
+func board(out *gamev1.Session, item session.Session) error {
+	switch item.Game {
+	case tictactoe.Key:
+		cells, winning, err := tictactoe.Position(item.State)
+		if err != nil {
+			return err
+		}
+		for i, seat := range cells {
+			out.TicTacToe.Cells[i] = gamev1.Mark(seat + 1)
+		}
+		for _, cell := range winning {
+			out.TicTacToe.WinningCells = append(out.TicTacToe.WinningCells, uint32(cell))
+		}
+	case chess.Key:
+		snap, err := chess.View(item.State)
+		if err != nil {
+			return err
+		}
+		out.Chess = &gamev1.ChessBoard{Fen: snap.FEN, San: snap.SAN, Check: snap.Check, LegalMoves: snap.Legal, End: chessEnds[snap.End]}
+		if snap.LastMove != "" {
+			out.Chess.LastMove = &snap.LastMove
+		}
+	}
+	return nil
 }

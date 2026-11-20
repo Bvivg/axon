@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { MatchTicket } from "@/gen/axon/game/v1/game_pb";
 import { gameClient } from "@/lib/connect/clients";
 import { fromTimestamp } from "@/lib/format";
+import { type GameKey, practiceHref } from "@/lib/games/catalog";
 import { gameHref, sessionKey, sessionsKey } from "@/lib/query/games";
 import { useMatchSearch } from "@/lib/ws/use-match-search";
 
@@ -29,19 +30,19 @@ function Option({ icon, title, hint, children }: { icon: ReactNode; title: strin
   );
 }
 
-export function StartGameDialog({ rating, autoQuick = false }: { rating?: number; autoQuick?: boolean }) {
+export function StartGameDialog({ game, rating, autoQuick = false }: { game: GameKey; rating?: number; autoQuick?: boolean }) {
   const router = useRouter();
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const requestID = useRef<string | undefined>(undefined);
-  const search = useMatchSearch("tictactoe", sessionId => {
+  const search = useMatchSearch(game, sessionId => {
     void client.invalidateQueries({ queryKey: sessionsKey });
-    router.push(gameHref(sessionId));
+    router.push(gameHref(sessionId, game));
   });
   const privateGame = useMutation({
     mutationFn: async () => {
       requestID.current ??= crypto.randomUUID();
-      const { session } = await gameClient.createSession({ game: "tictactoe", requestId: requestID.current });
+      const { session } = await gameClient.createSession({ game, requestId: requestID.current });
       if (!session) throw new Error("Could not create the game.");
       return session;
     },
@@ -49,7 +50,7 @@ export function StartGameDialog({ rating, autoQuick = false }: { rating?: number
       requestID.current = undefined;
       client.setQueryData(sessionKey(session.id), session);
       void client.invalidateQueries({ queryKey: sessionsKey });
-      router.push(gameHref(session.id));
+      router.push(gameHref(session.id, session.game));
     },
   });
   const started = useRef(false);
@@ -81,7 +82,7 @@ export function StartGameDialog({ rating, autoQuick = false }: { rating?: number
               <button type="button" className={optionClass} disabled={privateGame.isPending} onClick={() => privateGame.mutate()}>
                 <Option icon={<Link2 aria-hidden className="size-5" />} title={privateGame.isPending ? "Creating game…" : "Private game"} hint="Unrated · share the link with a friend" />
               </button>
-              <Link href="/games/tic-tac-toe/practice" className={optionClass}>
+              <Link href={practiceHref(game)} className={optionClass}>
                 <Option icon={<Cpu aria-hidden className="size-5" />} title="Practice offline" hint="Against the computer or on one device" />
               </Link>
               {search.error ? <p role="alert" className="text-sm text-destructive">{search.error}</p> : null}
