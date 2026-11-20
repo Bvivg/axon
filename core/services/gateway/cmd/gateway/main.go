@@ -21,6 +21,7 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
+	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
@@ -251,12 +252,14 @@ func run() error {
 		return err
 	}
 
-	publicSrv := &http.Server{
+	checks := health.New(log, []health.Checker{jwksChecker{keys}})
+	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
+	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
-	}
+	})
 	mediaDownload, err := mediaproxy.New(cfg.ChatServiceURL, verifier)
 	if err != nil {
 		return err
@@ -278,7 +281,7 @@ func run() error {
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(keys, metrics, log),
+		Handler:           adminHandler(checks, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -293,7 +296,7 @@ func run() error {
 		log.Info("shutdown signal received")
 	}
 
-	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
+	return graceful.Stop(publicSrv, adminSrv)
 }
 
 const (
@@ -371,10 +374,10 @@ func publicHandler(
 	)(mux)
 }
 
-func adminHandler(keys *authn.Cache, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func adminHandler(checks *health.Handler, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
-	health.New(log, []health.Checker{jwksChecker{keys}}).Register(mux)
+	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
 
@@ -421,23 +424,4 @@ func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger,
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
-}
-
-func shutdown(timeout time.Duration, log *slog.Logger, servers ...*http.Server) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	var errs []error
-	for _, srv := range servers {
-		if err := srv.Shutdown(ctx); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
-	}
-
-	log.Info("stopped cleanly")
-	return nil
 }

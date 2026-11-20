@@ -16,6 +16,7 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
+	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
@@ -159,17 +160,19 @@ func run() error {
 
 	metrics := middleware.NewMetrics(cfg.Service)
 
-	publicSrv := &http.Server{
+	checks := health.New(log, []health.Checker{pool, cache})
+	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
+	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           publicHandler(cfg, handler, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 
 		Protocols: unencryptedHTTP2(),
-	}
+	})
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(cfg, pool, cache, metrics, log),
+		Handler:           adminHandler(cfg, checks, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -185,7 +188,7 @@ func run() error {
 		log.Info("shutdown signal received")
 	}
 
-	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
+	return graceful.Stop(publicSrv, adminSrv)
 }
 
 func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*service.OAuthConfig, error) {
@@ -258,14 +261,13 @@ func unencryptedHTTP2() *http.Protocols {
 
 func adminHandler(
 	cfg config.Config,
-	pool *postgres.Pool,
-	cache *redis.Client,
+	checks *health.Handler,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	health.New(log, []health.Checker{pool, cache}).Register(mux)
+	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
 	mux.Handle("GET /.well-known/jwks.json", jwksHandler(cfg.JWT.Keys, log))
@@ -307,23 +309,4 @@ func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger,
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
-}
-
-func shutdown(timeout time.Duration, log *slog.Logger, servers ...*http.Server) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	var errs []error
-	for _, srv := range servers {
-		if err := srv.Shutdown(ctx); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
-	}
-
-	log.Info("stopped cleanly")
-	return nil
 }

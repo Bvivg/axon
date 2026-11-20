@@ -19,6 +19,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/kafka"
+	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
@@ -355,12 +356,18 @@ func run() error {
 
 	metrics := middleware.NewMetrics(cfg.Service)
 
-	publicSrv := &http.Server{
+	mediaCheck := health.CheckerFunc{
+		CheckerName: "media",
+		Fn:          func(context.Context) error { return mediaTools.Check() },
+	}
+	checks := health.New(log, []health.Checker{pool, cache, mediaCheck})
+	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
+	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           withMediaAdmission(publicHandler(handler, callHandler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log), mediaHandler),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         unencryptedHTTP2(),
-	}
+	})
 	mediaMux := http.NewServeMux()
 	mediaMux.Handle("/internal/media/", middleware.Chain(middleware.Correlation, middleware.Recovery(log), middleware.RequestLogger(log))(
 		server.MediaDownload{Verifier: verifier, Access: repo, Families: names, Objects: attachmentStore},
@@ -370,7 +377,7 @@ func run() error {
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(pool, cache, mediaTools, metrics, log),
+		Handler:           adminHandler(checks, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -386,7 +393,7 @@ func run() error {
 		log.Info("shutdown signal received")
 	}
 
-	return shutdown(cfg.ShutdownTimeout, log, publicSrv, adminSrv)
+	return graceful.Stop(publicSrv, adminSrv)
 }
 
 func withMediaAdmission(base http.Handler, handler *server.MediaAdmissionHandler) http.Handler {
@@ -461,19 +468,13 @@ func publicHandler(
 }
 
 func adminHandler(
-	pool *postgres.Pool,
-	cache *redis.Client,
-	tools *media.Tools,
+	checks *health.Handler,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	mediaCheck := health.CheckerFunc{
-		CheckerName: "media",
-		Fn:          func(context.Context) error { return tools.Check() },
-	}
-	health.New(log, []health.Checker{pool, cache, mediaCheck}).Register(mux)
+	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
 
@@ -508,23 +509,4 @@ func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger,
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
-}
-
-func shutdown(timeout time.Duration, log *slog.Logger, servers ...*http.Server) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	var errs []error
-	for _, srv := range servers {
-		if err := srv.Shutdown(ctx); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
-	}
-
-	log.Info("stopped cleanly")
-	return nil
 }

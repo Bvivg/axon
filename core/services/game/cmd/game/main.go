@@ -71,6 +71,7 @@ func run() error {
 		Linger:            loader.DurationDefault("GAME_JOURNAL_LINGER", time.Millisecond),
 	}
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
+	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
 	if err := loader.Err(); err != nil {
 		return err
@@ -148,7 +149,8 @@ func run() error {
 	if testHooks {
 		mux.HandleFunc("POST "+server.ClockHookPath, handler.AdjustClock)
 	}
-	health.New(log, []health.Checker{pool, journalLog}).Register(mux)
+	checks := health.New(log, []health.Checker{pool, journalLog})
+	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
 	srv := &http.Server{
@@ -165,6 +167,9 @@ func run() error {
 		}
 		return nil
 	case <-ctx.Done():
+		checks.Drain()
+		log.Info("draining before shutdown", "drain", drain)
+		time.Sleep(drain)
 		shutdown, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 		<-ownership
