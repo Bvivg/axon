@@ -1,0 +1,127 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: axon-resilience
+  labels:
+    app.kubernetes.io/part-of: axon-chaos
+spec:
+  entry: scenario
+  templates:
+    - name: scenario
+      templateType: Serial
+      deadline: 15m
+      children:
+        - postgres-latency
+        - settle-postgres
+        - redis-outage
+        - settle-redis
+        - kill-game
+        - settle-game
+        - kill-chat
+        - settle-chat
+        - kill-gateway
+        - settle-gateway
+        - kill-auth
+        - settle-auth
+        - kill-kafka-broker
+        - settle-kafka
+    - name: postgres-latency
+      templateType: NetworkChaos
+      deadline: 20s
+      networkChaos:
+        action: delay
+        mode: all
+        direction: to
+        selector:
+          labelSelectors:
+            cnpg.io/cluster: axon-pg
+            cnpg.io/instanceRole: primary
+        delay:
+          latency: 300ms
+          jitter: 0ms
+          correlation: "0"
+    - name: settle-postgres
+      templateType: Suspend
+      deadline: 5s
+    - name: redis-outage
+      templateType: NetworkChaos
+      deadline: 10s
+      networkChaos:
+        action: loss
+        mode: all
+        direction: to
+        selector:
+          labelSelectors:
+            app: app-redis
+        loss:
+          loss: "100"
+          correlation: "0"
+    - name: settle-redis
+      templateType: Suspend
+      deadline: 5s
+    - name: kill-game
+      templateType: PodChaos
+      deadline: 5s
+      podChaos:
+        action: pod-kill
+        mode: one
+        gracePeriod: 30
+        selector:
+          labelSelectors:
+            app.kubernetes.io/name: game
+    - name: settle-game
+      templateType: Suspend
+      deadline: 15s
+    - name: kill-chat
+      templateType: PodChaos
+      deadline: 5s
+      podChaos:
+        action: pod-kill
+        mode: one
+        gracePeriod: 30
+        selector:
+          labelSelectors:
+            app.kubernetes.io/name: chat
+    - name: settle-chat
+      templateType: Suspend
+      deadline: 10s
+    - name: kill-gateway
+      templateType: PodChaos
+      deadline: 5s
+      podChaos:
+        action: pod-kill
+        mode: one
+        gracePeriod: 30
+        selector:
+          labelSelectors:
+            app.kubernetes.io/name: gateway
+    - name: settle-gateway
+      templateType: Suspend
+      deadline: 10s
+    - name: kill-auth
+      templateType: PodChaos
+      deadline: 5s
+      podChaos:
+        action: pod-kill
+        mode: one
+        gracePeriod: 30
+        selector:
+          labelSelectors:
+            app.kubernetes.io/name: auth
+    - name: settle-auth
+      templateType: Suspend
+      deadline: 10s
+    - name: kill-kafka-broker
+      templateType: PodChaos
+      deadline: 5s
+      podChaos:
+        action: pod-kill
+        mode: one
+        gracePeriod: 0
+        selector:
+          labelSelectors:
+            strimzi.io/cluster: axon-kafka
+            strimzi.io/broker-role: "true"
+    - name: settle-kafka
+      templateType: Suspend
+      deadline: 30s
