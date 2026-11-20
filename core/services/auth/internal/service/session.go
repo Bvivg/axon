@@ -68,6 +68,13 @@ func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID
 	s.log.InfoContext(ctx, "session revoked",
 		"user_id", userID, "family_id", sessionID, "tokens_revoked", revoked)
 
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecuritySessionRevoked,
+		UserID:  userID,
+		ActorID: userID,
+		Subject: sessionID.String(),
+	})
+
 	s.publishFamilyRevocation(ctx, sessionID)
 
 	return nil

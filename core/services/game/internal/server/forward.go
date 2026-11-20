@@ -23,13 +23,14 @@ var errMoved = connect.NewError(connect.CodeUnavailable, errors.New("the game is
 
 type peers struct {
 	client *http.Client
+	scheme string
 	mu     sync.Mutex
 	games  map[string]gamev1connect.GameServiceClient
 	owners map[string]gamev1connect.GameOwnerServiceClient
 }
 
-func newPeers(client *http.Client) *peers {
-	return &peers{client: client, games: map[string]gamev1connect.GameServiceClient{}, owners: map[string]gamev1connect.GameOwnerServiceClient{}}
+func newPeers(client *http.Client, scheme string) *peers {
+	return &peers{client: client, scheme: scheme, games: map[string]gamev1connect.GameServiceClient{}, owners: map[string]gamev1connect.GameOwnerServiceClient{}}
 }
 
 func (p *peers) game(address string) gamev1connect.GameServiceClient {
@@ -37,7 +38,7 @@ func (p *peers) game(address string) gamev1connect.GameServiceClient {
 	defer p.mu.Unlock()
 	client, ok := p.games[address]
 	if !ok {
-		client = gamev1connect.NewGameServiceClient(p.client, "http://"+address)
+		client = gamev1connect.NewGameServiceClient(p.client, p.scheme+"://"+address)
 		p.games[address] = client
 	}
 	return client
@@ -48,7 +49,7 @@ func (p *peers) owner(address string) gamev1connect.GameOwnerServiceClient {
 	defer p.mu.Unlock()
 	client, ok := p.owners[address]
 	if !ok {
-		client = gamev1connect.NewGameOwnerServiceClient(p.client, "http://"+address)
+		client = gamev1connect.NewGameOwnerServiceClient(p.client, p.scheme+"://"+address)
 		p.owners[address] = client
 	}
 	return client

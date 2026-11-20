@@ -41,6 +41,21 @@ services:
       - ../..:/workspace:ro
     command: ["check", "config", "core/deploy/observability/prometheus/prometheus.yml"]
 
+  trivy:
+    image: aquasec/trivy:0.58.1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - trivy-cache:/root/.cache/trivy
+    command: ["--version"]
+
+  syft:
+    image: anchore/syft:v1.18.1
+    working_dir: /workspace
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../..:/workspace
+    command: ["version"]
+
   node:
     image: node:22-alpine
     working_dir: /app
@@ -52,6 +67,7 @@ services:
     command: ["npm", "run", "lint"]
 
 volumes:
+  trivy-cache:
   buf-cache:
   go-mod-cache:
   go-build-cache:

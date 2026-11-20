@@ -39,6 +39,13 @@ func (s *Service) AssignRole(ctx context.Context, callerID, userID, roleID uuid.
 	}
 
 	s.log.InfoContext(ctx, "role assigned", "user_id", userID, "role_id", roleID, "granted_by", callerID)
+
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityRoleAssigned,
+		UserID:  userID,
+		ActorID: callerID,
+		Subject: roleID.String(),
+	})
 	return nil
 }
 
@@ -52,6 +59,13 @@ func (s *Service) RevokeRole(ctx context.Context, callerID, userID, roleID uuid.
 	}
 
 	s.log.InfoContext(ctx, "role revoked", "user_id", userID, "role_id", roleID, "revoked_by", callerID)
+
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityRoleRevoked,
+		UserID:  userID,
+		ActorID: callerID,
+		Subject: roleID.String(),
+	})
 	return nil
 }
 

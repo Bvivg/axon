@@ -51,7 +51,14 @@ logs: ## Follow stack logs
 ENV_FILE := core/deploy/.env
 
 .PHONY: jwt-key
-jwt-key: env ## Generate a development RS256 signing key into core/deploy/.env
+jwt-key: env ## Generate a development RS256 signing key and the key-encryption key into core/deploy/.env
+	@if ! grep -qE '^JWT_KEY_ENCRYPTION_KEY=.+' $(ENV_FILE); then \
+		tmp=$$(mktemp); \
+		grep -v '^JWT_KEY_ENCRYPTION_KEY=' $(ENV_FILE) > "$$tmp"; \
+		echo "JWT_KEY_ENCRYPTION_KEY=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')" >> "$$tmp"; \
+		mv "$$tmp" $(ENV_FILE); \
+		echo "wrote JWT_KEY_ENCRYPTION_KEY to $(ENV_FILE) (git-ignored)"; \
+	fi
 	@if grep -qE '^JWT_PRIVATE_KEY_DEV_1=.+' $(ENV_FILE); then \
 		echo "JWT_PRIVATE_KEY_DEV_1 is already set in $(ENV_FILE); delete the line to regenerate"; \
 		exit 0; \
@@ -170,6 +177,17 @@ test-e2e: e2e-key ## Run e2e against the full stack on the shipping images
 	       $(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
 	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) run --rm --build e2e && \
 	$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) run --rm e2e-chat
+
+COMPOSE_SECURITY_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55732 REDIS_HOST_PORT=56679 KAFKA_HOST_PORT=59392 MINIO_HOST_PORT=59300 \
+	MINIO_CONSOLE_HOST_PORT=59301 GATEWAY_HOST_PORT=18380 WEB_HOST_PORT=3303 AUTH_HOST_PORT=18381 AUTH_METRICS_HOST_PORT=19391 \
+	CHAT_HOST_PORT=18382 CHAT_METRICS_HOST_PORT=19392 GATEWAY_METRICS_HOST_PORT=19390 CONNECT_HOST_PORT=58183 REGISTRY_HOST_PORT=58181 \
+	MTLS_WATCH_RENEWAL=$(if $(WATCH),1,) JWT_ROTATION_WATCH=$(if $(WATCH),3m,) \
+	docker compose -p axon-security-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.mtls.yml -f core/deploy/docker-compose.mtls-e2e.yml
+
+.PHONY: test-e2e-security
+test-e2e-security: jwt-key ## mTLS and key-rotation e2e on the base stack with the mTLS overlay (WATCH=1 also waits for renewals and rotations)
+	@trap '$(COMPOSE_SECURITY_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_SECURITY_E2E) --profile e2e run --rm --build security-e2e
 
 .PHONY: e2e-key
 e2e-key:

@@ -1,0 +1,117 @@
+x-mtls: &mtls
+  MTLS_CERT_FILE: /etc/axon/tls/tls.crt
+  MTLS_KEY_FILE: /etc/axon/tls/tls.key
+  MTLS_CA_FILE: /etc/axon/tls/ca.crt
+  MTLS_RELOAD_INTERVAL: ${MTLS_RELOAD_INTERVAL:-30s}
+
+x-certs-ready: &certs-ready
+  certs:
+    condition: service_healthy
+
+services:
+  step-ca:
+    image: smallstep/step-ca:0.28.3
+    restart: unless-stopped
+    environment:
+      DOCKER_STEPCA_INIT_NAME: Axon Internal CA
+      DOCKER_STEPCA_INIT_DNS_NAMES: step-ca,localhost
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: axon
+      DOCKER_STEPCA_INIT_PASSWORD: ${STEP_CA_PASSWORD:-axon-step-ca}
+    volumes:
+      - step-ca-data:/home/step
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  certs:
+    image: smallstep/step-cli:0.28.3
+    restart: unless-stopped
+    user: "0"
+    entrypoint: ["sh", "/mtls/certs.sh"]
+    environment:
+      STEP_CA_URL: https://step-ca:9000
+      STEP_PROVISIONER: axon
+      STEP_CA_PASSWORD: ${STEP_CA_PASSWORD:-axon-step-ca}
+      MTLS_IDENTITIES: ${MTLS_IDENTITIES:-gateway auth chat game rating}
+      MTLS_CERT_LIFETIME: ${MTLS_CERT_LIFETIME:-1h}
+      MTLS_RENEW_BEFORE: ${MTLS_RENEW_BEFORE:-20m}
+      MTLS_RENEW_CHECK: ${MTLS_RENEW_CHECK:-60}
+      MTLS_OWNER: "65532"
+    volumes:
+      - ./mtls:/mtls:ro
+      - step-ca-data:/ca:ro
+      - certs-gateway:/certs/gateway
+      - certs-auth:/certs/auth
+      - certs-chat:/certs/chat
+      - certs-game:/certs/game
+      - certs-rating:/certs/rating
+    networks: [app]
+    depends_on:
+      step-ca:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/certs/.ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  auth:
+    environment:
+      <<: *mtls
+      MTLS_ALLOWED_CLIENTS: gateway,chat,game
+    volumes:
+      - certs-auth:/etc/axon/tls:ro
+    depends_on: *certs-ready
+
+  chat:
+    environment:
+      <<: *mtls
+      MTLS_ALLOWED_CLIENTS: gateway
+      AUTH_SERVICE_URL: https://auth:8081
+      JWKS_URL: https://auth:8081/.well-known/jwks.json
+    volumes:
+      - certs-chat:/etc/axon/tls:ro
+    depends_on: *certs-ready
+
+  game:
+    environment:
+      <<: *mtls
+      MTLS_ALLOWED_CLIENTS: gateway,game
+      GAME_ADMIN_ADDR: ":9093"
+      JWKS_URL: https://auth:8081/.well-known/jwks.json
+    volumes:
+      - certs-game:/etc/axon/tls:ro
+    depends_on: *certs-ready
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9093/readyz"]
+
+  rating:
+    environment:
+      <<: *mtls
+      MTLS_ALLOWED_CLIENTS: gateway
+    volumes:
+      - certs-rating:/etc/axon/tls:ro
+    depends_on: *certs-ready
+
+  gateway:
+    environment:
+      <<: *mtls
+      AUTH_SERVICE_URL: https://auth:8081
+      CHAT_SERVICE_URL: https://chat:8082
+      GAME_SERVICE_URL: https://game:8083
+      JWKS_URL: https://auth:8081/.well-known/jwks.json
+    volumes:
+      - certs-gateway:/etc/axon/tls:ro
+    depends_on: *certs-ready
+
+volumes:
+  step-ca-data:
+  certs-gateway:
+  certs-auth:
+  certs-chat:
+  certs-game:
+  certs-rating:

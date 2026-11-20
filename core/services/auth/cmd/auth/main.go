@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
@@ -19,6 +20,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/outbox"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/presence"
@@ -29,6 +31,7 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
+	"github.com/bvivg/axon/core/services/auth/internal/keyring"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
@@ -74,6 +77,11 @@ func run() error {
 		_ = shutdownTracing(flush)
 	}()
 
+	identity, err := mtls.LoadEnv()
+	if err != nil {
+		return err
+	}
+
 	log.InfoContext(ctx, "starting auth service",
 		"version", version,
 		"environment", string(cfg.Environment),
@@ -102,8 +110,20 @@ func run() error {
 		return err
 	}
 
+	ring := jwt.NewRing(cfg.JWT.Keys)
+	if cfg.JWT.Rotation.Interval > 0 {
+		rotator, err := signingKeys(cfg, pool, ring, log)
+		if err != nil {
+			return err
+		}
+		if err := rotator.Sync(ctx); err != nil {
+			return fmt.Errorf("signing keys: %w", err)
+		}
+		go rotator.Run(ctx)
+	}
+
 	issuer, err := jwt.NewIssuer(jwt.IssuerConfig{
-		Keys:     cfg.JWT.Keys,
+		Keys:     ring,
 		Issuer:   cfg.JWT.Issuer,
 		Audience: cfg.JWT.Audience,
 		TTL:      cfg.JWT.AccessTTL,
@@ -113,7 +133,7 @@ func run() error {
 	}
 
 	verifier, err := authn.NewVerifier(authn.Config{
-		Keys:     cfg.JWT.Keys,
+		Keys:     ring,
 		Issuer:   cfg.JWT.Issuer,
 		Audience: cfg.JWT.Audience,
 	})
@@ -139,12 +159,20 @@ func run() error {
 		return err
 	}
 
+	metrics := middleware.NewMetrics(cfg.Service)
+	auditFailures := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_audit_write_failures_total",
+		Help: "Security events that could not be written to the auth outbox.",
+	})
+	metrics.Registry().MustRegister(auditFailures)
+
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
-		RefreshTTL: cfg.JWT.RefreshTTL,
-		OAuth:      oauthCfg,
-		Avatar:     avatarPipeline,
-		Presence:   presence.NewTracker(cache),
-		Revocation: revocationPublisher,
+		RefreshTTL:    cfg.JWT.RefreshTTL,
+		OAuth:         oauthCfg,
+		Avatar:        avatarPipeline,
+		Presence:      presence.NewTracker(cache),
+		Revocation:    revocationPublisher,
+		AuditFailures: auditFailures,
 	})
 	if err != nil {
 		return err
@@ -160,28 +188,26 @@ func run() error {
 		return err
 	}
 
-	metrics := middleware.NewMetrics(cfg.Service)
-
 	checks := health.New(log, []health.Checker{pool, cache})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
 	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, handler, metrics, log),
+		Handler:           publicHandler(cfg, handler, ring, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 
-		Protocols: unencryptedHTTP2(),
+		Protocols: mtls.ServerProtocols(identity),
 	})
 
 	adminSrv := &http.Server{
 		Addr:              cfg.MetricsAddr,
-		Handler:           adminHandler(cfg, checks, metrics, log),
+		Handler:           adminHandler(ring, checks, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errs := make(chan error, 2)
 
-	go serve(ctx, publicSrv, "public", log, errs)
-	go serve(ctx, adminSrv, "admin", log, errs)
+	go serve(ctx, publicSrv, "public", identity, log, errs)
+	go serve(ctx, adminSrv, "admin", nil, log, errs)
 
 	select {
 	case err := <-errs:
@@ -233,7 +259,7 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 	}, nil
 }
 
-func publicHandler(cfg config.Config, handler *server.Handler, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
+func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
 	interceptors := connectInterceptors(metrics, log)
 
 	mux := http.NewServeMux()
@@ -242,6 +268,7 @@ func publicHandler(cfg config.Config, handler *server.Handler, metrics *middlewa
 		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}))
 	}
 	mux.HandleFunc("POST /internal/avatar", handler.UploadAvatar)
+	mux.Handle("GET /.well-known/jwks.json", jwksHandler(keys, log))
 
 	if cfg.OAuth.FakeEnabled {
 		mux.Handle("GET "+oauth.FakeAuthorizePath, oauth.FakeAuthorizeHandler())
@@ -254,15 +281,8 @@ func publicHandler(cfg config.Config, handler *server.Handler, metrics *middlewa
 	)(mux)
 }
 
-func unencryptedHTTP2() *http.Protocols {
-	p := new(http.Protocols)
-	p.SetHTTP1(true)
-	p.SetUnencryptedHTTP2(true)
-	return p
-}
-
 func adminHandler(
-	cfg config.Config,
+	keys jwt.Keys,
 	checks *health.Handler,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
@@ -272,26 +292,46 @@ func adminHandler(
 	checks.Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	telemetry.Profiling(mux)
-	mux.Handle("GET /.well-known/jwks.json", jwksHandler(cfg.JWT.Keys, log))
+	mux.Handle("GET /.well-known/jwks.json", jwksHandler(keys, log))
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }
 
-func jwksHandler(keys *jwt.KeySet, log *slog.Logger) http.Handler {
-	document, err := keys.JWKS()
-	if err != nil {
-
-		log.Error("could not render the JWKS document", "error", err)
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+func jwksHandler(keys jwt.Keys, log *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		document, err := keys.JWKS()
+		if err != nil {
+			log.ErrorContext(r.Context(), "could not render the JWKS document", "error", err)
 			http.Error(w, "jwks unavailable", http.StatusInternalServerError)
-		})
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/jwk-set+json")
-
-		w.Header().Set("Cache-Control", "public, max-age=300")
+		w.Header().Set("Cache-Control", "public, max-age=60")
 		_, _ = w.Write(document)
+	})
+}
+
+func signingKeys(cfg config.Config, pool *postgres.Pool, ring *jwt.Ring, log *slog.Logger) (*keyring.Rotator, error) {
+	if len(cfg.JWT.Rotation.EncryptionKey) == 0 {
+		return nil, errors.New("JWT_KEY_ENCRYPTION_KEY is required when JWT_ROTATION_INTERVAL is set")
+	}
+	sealer, err := keyring.NewSealer(cfg.JWT.Rotation.EncryptionKey)
+	if err != nil {
+		return nil, err
+	}
+	return keyring.New(keyring.Config{
+		Store:  keyring.NewPostgres(pool.Pool),
+		Sealer: sealer,
+		Ring:   ring,
+		Policy: keyring.Policy{
+			Interval: cfg.JWT.Rotation.Interval,
+			Lead:     cfg.JWT.Rotation.Lead,
+			Retain:   cfg.JWT.AccessTTL + time.Minute,
+		},
+		Bootstrap: cfg.JWT.Keys.Active(),
+		Extra:     cfg.JWT.Retired,
+		Check:     cfg.JWT.Rotation.Check,
+		Log:       log.With("component", "keyring"),
 	})
 }
 
@@ -302,13 +342,14 @@ func connectInterceptors(metrics *middleware.Metrics, log *slog.Logger) connect.
 		middleware.NewRecoveryInterceptor(log),
 		metrics.Interceptor(),
 		middleware.NewLoggingInterceptor(log),
+		server.DeviceInterceptor(),
 	)
 }
 
-func serve(ctx context.Context, srv *http.Server, name string, log *slog.Logger, errs chan<- error) {
-	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr)
+func serve(ctx context.Context, srv *http.Server, name string, identity *mtls.Identity, log *slog.Logger, errs chan<- error) {
+	log.InfoContext(ctx, "listening", "listener", name, "addr", srv.Addr, "mtls", identity != nil)
 
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := mtls.ListenAndServe(srv, identity); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errs <- fmt.Errorf("%s listener: %w", name, err)
 	}
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -50,7 +51,13 @@ func run() error {
 	cfg := config.LoadBase(loader, "game")
 	dbs := loadDatabases(loader)
 	log := cfg.Logger()
+	identity, err := mtls.LoadEnv()
+	if err != nil {
+		return err
+	}
+	adminAddr := loader.StringDefault("GAME_ADMIN_ADDR", "")
 	keyConfig := authn.JWKSConfig{
+		HTTPClient:      mtls.HTTPClient(identity, 10*time.Second),
 		URL:             loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		RefreshInterval: loader.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
 		Logger:          log,
@@ -128,8 +135,14 @@ func run() error {
 	defer journalLog.Close()
 	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL, Metrics: observed})
 	routes := route.New(model.Owners)
+	peerTransport := http.DefaultTransport
+	var sockets *http.Client
+	if identity != nil {
+		peerTransport = identity.Transport(mtls.ServerName("game"))
+		sockets = &http.Client{Transport: identity.Transport(mtls.ServerName("game"), mtls.HTTP1Only())}
+	}
 	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed,
-		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(http.DefaultTransport)}})
+		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
 	go routes.Run(ctx, db.listen, projection.OwnerChannel, log)
@@ -157,16 +170,29 @@ func run() error {
 		mux.HandleFunc("POST "+server.ClockHookPath, handler.AdjustClock)
 	}
 	checks := health.New(log, []health.Checker{db.primary, journalLog})
-	checks.Register(mux)
-	mux.Handle("/metrics", metrics.Handler())
-	telemetry.Profiling(mux)
+	admin := mux
+	if adminAddr != "" {
+		admin = http.NewServeMux()
+	}
+	checks.Register(admin)
+	admin.Handle("/metrics", metrics.Handler())
+	telemetry.Profiling(admin)
 	graceful := lifecycle.New(drain, cfg.ShutdownTimeout, checks, log)
 	srv := graceful.Serve(&http.Server{
 		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	})
-	done := make(chan error, 1)
-	go func() { done <- srv.ListenAndServe() }()
+	if identity != nil {
+		srv.Protocols = mtls.ServerProtocols(identity)
+	}
+	servers := []*http.Server{srv}
+	done := make(chan error, 2)
+	go func() { done <- mtls.ListenAndServe(srv, identity) }()
+	if adminAddr != "" {
+		adminSrv := &http.Server{Addr: adminAddr, Handler: admin, ReadHeaderTimeout: 5 * time.Second}
+		servers = append(servers, adminSrv)
+		go func() { done <- adminSrv.ListenAndServe() }()
+	}
 	select {
 	case err := <-done:
 		if !errors.Is(err, http.ErrServerClosed) {
@@ -175,7 +201,7 @@ func run() error {
 		return nil
 	case <-ctx.Done():
 		<-ownership
-		return graceful.Stop(srv)
+		return graceful.Stop(servers...)
 	}
 }
 

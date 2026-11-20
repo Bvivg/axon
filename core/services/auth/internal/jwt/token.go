@@ -12,7 +12,7 @@ import (
 )
 
 type Issuer struct {
-	keys     *KeySet
+	keys     Keys
 	issuer   string
 	audience string
 	ttl      time.Duration
@@ -20,7 +20,7 @@ type Issuer struct {
 }
 
 type IssuerConfig struct {
-	Keys     *KeySet
+	Keys     Keys
 	Issuer   string
 	Audience string
 	TTL      time.Duration
