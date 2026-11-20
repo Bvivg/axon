@@ -48,6 +48,31 @@ message Session {
   QuoridorBoard quoridor = 19;
   optional uint32 spectators = 20;
   optional string tournament_id = 21;
+  CheckersBoard checkers = 23;
+}
+
+message CheckersBoard {
+  repeated CheckersPiece squares = 1;
+  repeated string moves = 2;
+  optional string last_move = 3;
+  repeated string legal_moves = 4;
+  CheckersEnd end = 5;
+  uint32 quiet_plies = 6;
+}
+
+enum CheckersPiece {
+  CHECKERS_PIECE_UNSPECIFIED = 0;
+  CHECKERS_PIECE_BLACK_MAN = 1;
+  CHECKERS_PIECE_BLACK_KING = 2;
+  CHECKERS_PIECE_WHITE_MAN = 3;
+  CHECKERS_PIECE_WHITE_KING = 4;
+}
+
+enum CheckersEnd {
+  CHECKERS_END_UNSPECIFIED = 0;
+  CHECKERS_END_NO_MOVES = 1;
+  CHECKERS_END_FORTY_MOVES = 2;
+  CHECKERS_END_MOVE_LIMIT = 3;
 }
 
 message QuoridorBoard {
@@ -210,11 +235,18 @@ message SessionCommand {
     ChessMove chess_move = 5;
     DrawCommand draw = 6;
     QuoridorMove quoridor_move = 7;
+    CheckersMove checkers_move = 8;
   }
   optional string traceparent = 15;
 }
 
 message QuoridorMove {
+  uint32 ply = 1;
+  string move = 2;
+  optional uint32 revision = 3;
+}
+
+message CheckersMove {
   uint32 ply = 1;
   string move = 2;
   optional uint32 revision = 3;
@@ -287,6 +319,7 @@ message HistoryFrame {
   optional TicTacToeBoard tic_tac_toe = 4;
   optional ChessBoard chess = 5;
   optional QuoridorBoard quoridor = 6;
+  optional CheckersBoard checkers = 8;
 }
 
 message ListLiveSessionsRequest {

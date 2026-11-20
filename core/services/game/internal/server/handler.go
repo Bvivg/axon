@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
@@ -297,6 +298,8 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 		out.Chess = &gamev1.ChessBoard{Fen: chess.StartFEN}
 	case quoridor.Key:
 		out.Quoridor = &gamev1.QuoridorBoard{Pawns: []string{"e1", "e9"}, WallsLeft: []uint32{quoridor.WallsEach, quoridor.WallsEach}}
+	case checkers.Key:
+		out.Checkers = &gamev1.CheckersBoard{Squares: checkersSquares(checkers.NewBoard().String())}
 	}
 	if item.Opponent == nil {
 		out.Clock = &gamev1.SessionClock{XRemainingMs: proto.Uint32(uint32(limit)), ORemainingMs: proto.Uint32(uint32(limit)), SampledAt: timestamppb.Now()}
@@ -362,6 +365,12 @@ func board(out *gamev1.Session, item session.Session) error {
 		if snap.LastMove != "" {
 			out.Quoridor.LastMove = &snap.LastMove
 		}
+	case checkers.Key:
+		snap, err := checkers.View(item.State)
+		if err != nil {
+			return err
+		}
+		out.Checkers = checkersBoard(snap)
 	}
 	return nil
 }

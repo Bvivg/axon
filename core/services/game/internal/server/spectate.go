@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
@@ -128,6 +129,9 @@ func historyFrame(game session.Session, position engine.State) (*gamev1.HistoryF
 	case quoridor.Key:
 		frame.Quoridor = out.Quoridor
 		frame.Quoridor.LegalMoves = nil
+	case checkers.Key:
+		frame.Checkers = out.Checkers
+		frame.Checkers.LegalMoves = nil
 	}
 	return frame, nil
 }

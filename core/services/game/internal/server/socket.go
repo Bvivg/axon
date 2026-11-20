@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
@@ -221,6 +222,18 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 				name, run = "move", func(ctx context.Context) (session.Session, error) {
 					return h.owner.Move(ctx, id, user, int(move.Ply), quoridor.Key, data, move.Revision)
 				}
+			case *gamev1.SessionCommand_CheckersMove:
+				move := action.CheckersMove
+				if move == nil || len(move.Move) > checkers.MaxNotation {
+					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
+						return
+					}
+					continue
+				}
+				data, _ := json.Marshal(checkers.MoveData{Move: move.Move})
+				name, run = "move", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Move(ctx, id, user, int(move.Ply), checkers.Key, data, move.Revision)
+				}
 			case *gamev1.SessionCommand_Draw:
 				drawAction, ok := drawActions[action.Draw.GetAction()]
 				if !ok {
@@ -367,7 +380,8 @@ func moveError(err error) gamev1.SessionError {
 		return gamev1.SessionError_SESSION_ERROR_STALE_MOVE
 	case errors.Is(err, tictactoe.ErrCellTaken):
 		return gamev1.SessionError_SESSION_ERROR_CELL_TAKEN
-	case errors.Is(err, chess.ErrIllegalMove), errors.Is(err, chess.ErrBadMove), errors.Is(err, quoridor.ErrIllegalMove), errors.Is(err, quoridor.ErrBadMove):
+	case errors.Is(err, chess.ErrIllegalMove), errors.Is(err, chess.ErrBadMove), errors.Is(err, quoridor.ErrIllegalMove), errors.Is(err, quoridor.ErrBadMove),
+		errors.Is(err, checkers.ErrIllegalMove), errors.Is(err, checkers.ErrBadMove):
 		return gamev1.SessionError_SESSION_ERROR_ILLEGAL_MOVE
 	case errors.Is(err, session.ErrNoDrawOffer):
 		return gamev1.SessionError_SESSION_ERROR_NO_DRAW_OFFER
