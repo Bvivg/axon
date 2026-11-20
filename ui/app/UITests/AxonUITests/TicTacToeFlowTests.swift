@@ -23,7 +23,6 @@ final class TicTacToeFlowTests: XCTestCase {
         app.launch()
 
         try await register(.random(prefix: "app"), in: app)
-        attachScreenshot("Lobby", of: app)
 
         let sessionID = try await createTicTacToe(in: app)
         let opponent = Opponent(baseURL: gateway)
@@ -76,6 +75,8 @@ final class TicTacToeFlowTests: XCTestCase {
     private func createTicTacToe(in app: XCUIApplication) async throws -> String {
         let create = try await existing(app.buttons[AccessibilityID.Lobby.create("tictactoe")], "the tic-tac-toe button")
         let sessionLabel = app.staticTexts[AccessibilityID.Game.sessionID]
+        await dismissSavePasswordPrompt(in: app, within: 5)
+        attachScreenshot("Lobby", of: app)
         for _ in 0..<3 where !sessionLabel.exists {
             await dismissSavePasswordPrompt(in: app, within: 2)
             if create.exists && create.isHittable {
