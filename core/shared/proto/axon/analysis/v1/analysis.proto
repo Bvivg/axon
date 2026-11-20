@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package axon.analysis.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service AnalysisService {
+  rpc GetAnalysis(GetAnalysisRequest) returns (GetAnalysisResponse);
+}
+
+enum AnalysisStatus {
+  ANALYSIS_STATUS_UNSPECIFIED = 0;
+  ANALYSIS_STATUS_PENDING = 1;
+  ANALYSIS_STATUS_READY = 2;
+  ANALYSIS_STATUS_FAILED = 3;
+}
+
+enum MoveClass {
+  MOVE_CLASS_UNSPECIFIED = 0;
+  MOVE_CLASS_BEST = 1;
+  MOVE_CLASS_GOOD = 2;
+  MOVE_CLASS_INACCURACY = 3;
+  MOVE_CLASS_MISTAKE = 4;
+  MOVE_CLASS_BLUNDER = 5;
+}
+
+message GetAnalysisRequest {
+  string session_id = 1;
+}
+
+message PositionAnalysis {
+  uint32 ply = 1;
+  int32 centipawns = 2;
+  optional int32 mate = 3;
+  optional string best_move = 4;
+  optional string played_move = 5;
+  uint32 loss = 6;
+  MoveClass move_class = 7;
+}
+
+message GetAnalysisResponse {
+  string session_id = 1;
+  AnalysisStatus status = 2;
+  uint32 depth = 3;
+  string engine = 4;
+  repeated PositionAnalysis positions = 5;
+  optional google.protobuf.Timestamp completed_at = 6;
+}

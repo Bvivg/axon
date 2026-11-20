@@ -36,7 +36,7 @@ services:
       STEP_CA_URL: https://step-ca:9000
       STEP_PROVISIONER: axon
       STEP_CA_PASSWORD: ${STEP_CA_PASSWORD:-axon-step-ca}
-      MTLS_IDENTITIES: ${MTLS_IDENTITIES:-gateway auth chat game rating}
+      MTLS_IDENTITIES: ${MTLS_IDENTITIES:-gateway auth chat game rating analysis tournament}
       MTLS_CERT_LIFETIME: ${MTLS_CERT_LIFETIME:-1h}
       MTLS_RENEW_BEFORE: ${MTLS_RENEW_BEFORE:-20m}
       MTLS_RENEW_CHECK: ${MTLS_RENEW_CHECK:-60}
@@ -49,6 +49,8 @@ services:
       - certs-chat:/certs/chat
       - certs-game:/certs/game
       - certs-rating:/certs/rating
+      - certs-analysis:/certs/analysis
+      - certs-tournament:/certs/tournament
     networks: [app]
     depends_on:
       step-ca:
@@ -62,7 +64,7 @@ services:
   auth:
     environment:
       <<: *mtls
-      MTLS_ALLOWED_CLIENTS: gateway,chat,game
+      MTLS_ALLOWED_CLIENTS: gateway,chat,game,analysis,tournament
     volumes:
       - certs-auth:/etc/axon/tls:ro
     depends_on: *certs-ready
@@ -97,12 +99,33 @@ services:
       - certs-rating:/etc/axon/tls:ro
     depends_on: *certs-ready
 
+  analysis:
+    environment:
+      <<: *mtls
+      MTLS_ALLOWED_CLIENTS: gateway
+      JWKS_URL: https://auth:8081/.well-known/jwks.json
+    volumes:
+      - certs-analysis:/etc/axon/tls:ro
+    depends_on: *certs-ready
+
+  tournament:
+    environment:
+      <<: *mtls
+      MTLS_ALLOWED_CLIENTS: gateway
+      AUTH_SERVICE_URL: https://auth:8081
+      JWKS_URL: https://auth:8081/.well-known/jwks.json
+    volumes:
+      - certs-tournament:/etc/axon/tls:ro
+    depends_on: *certs-ready
+
   gateway:
     environment:
       <<: *mtls
       AUTH_SERVICE_URL: https://auth:8081
       CHAT_SERVICE_URL: https://chat:8082
       GAME_SERVICE_URL: https://game:8083
+      ANALYSIS_SERVICE_URL: https://analysis:8085
+      TOURNAMENT_SERVICE_URL: https://tournament:8086
       JWKS_URL: https://auth:8081/.well-known/jwks.json
     volumes:
       - certs-gateway:/etc/axon/tls:ro
@@ -115,3 +138,5 @@ volumes:
   certs-chat:
   certs-game:
   certs-rating:
+  certs-analysis:
+  certs-tournament:

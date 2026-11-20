@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	eventsv1 "github.com/bvivg/axon/core/shared/gen/go/axon/events/v1"
 	"github.com/bvivg/axon/core/shared/pkg/outbox"
@@ -43,6 +45,15 @@ func FinishedEvent(game session.Session, at time.Time) (outbox.Event, bool) {
 		WinnerSeat: int32(game.State.Winner),
 		FinishedAt: timestamppb.New(at.UTC()),
 		Rated:      game.Rated,
+		Plies:      proto.Uint32(uint32(game.State.Ply)),
+	}
+	if game.Tournament != nil {
+		payload.TournamentId = proto.String(game.Tournament.String())
+	}
+	if game.Game == chess.Key {
+		if moves, err := chess.Moves(game.State); err == nil {
+			payload.Moves = moves
+		}
 	}
 	if game.State.Status == engine.StatusDraw || game.State.Winner < 0 {
 		payload.Outcome, payload.WinnerSeat = eventsv1.GameFinished_OUTCOME_DRAW, int32(engine.NoSeat)

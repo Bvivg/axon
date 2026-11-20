@@ -3,10 +3,12 @@ package policy_test
 import (
 	"testing"
 
+	"github.com/bvivg/axon/core/shared/gen/go/axon/analysis/v1/analysisv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/policy"
 )
@@ -127,6 +129,34 @@ func TestDirectMessagingProcedures(t *testing.T) {
 	}
 }
 
+func TestTournamentProcedures(t *testing.T) {
+	tests := map[string]struct {
+		procedure string
+		wantTier  policy.Tier
+	}{
+		"create":   {tournamentv1connect.TournamentServiceCreateTournamentProcedure, policy.TierSensitive},
+		"start":    {tournamentv1connect.TournamentServiceStartTournamentProcedure, policy.TierSensitive},
+		"register": {tournamentv1connect.TournamentServiceRegisterForTournamentProcedure, policy.TierStandard},
+		"withdraw": {tournamentv1connect.TournamentServiceWithdrawFromTournamentProcedure, policy.TierStandard},
+		"get":      {tournamentv1connect.TournamentServiceGetTournamentProcedure, policy.TierStandard},
+		"list":     {tournamentv1connect.TournamentServiceListTournamentsProcedure, policy.TierStandard},
+		"cancel":   {tournamentv1connect.TournamentServiceCancelTournamentProcedure, policy.TierStandard},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			rule := policy.For(tt.procedure)
+
+			if rule.Public {
+				t.Error("a tournament procedure is public")
+			}
+			if rule.Tier != tt.wantTier {
+				t.Errorf("Tier = %v, want %v", rule.Tier, tt.wantTier)
+			}
+		})
+	}
+}
+
 func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 	for _, procedure := range []string{
 		authv1connect.AuthServiceLoginProcedure,
@@ -141,15 +171,27 @@ func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 
 func TestPolicyMatchesTheContract(t *testing.T) {
 	known := map[string]bool{
-		gamev1connect.GameServiceCreateSessionProcedure:             true,
-		gamev1connect.GameServiceJoinSessionProcedure:               true,
-		gamev1connect.GameServiceGetSessionProcedure:                true,
-		gamev1connect.GameServiceListSessionsProcedure:              true,
-		gamev1connect.GameServiceFindMatchProcedure:                 true,
-		gamev1connect.GameServiceCancelMatchProcedure:               true,
-		gamev1connect.GameServiceGetMatchProcedure:                  true,
-		gamev1connect.GameServiceGetRatingsProcedure:                true,
-		gamev1connect.GameServiceLeaveSessionProcedure:              true,
+		gamev1connect.GameServiceCreateSessionProcedure:       true,
+		gamev1connect.GameServiceJoinSessionProcedure:         true,
+		gamev1connect.GameServiceGetSessionProcedure:          true,
+		gamev1connect.GameServiceListSessionsProcedure:        true,
+		gamev1connect.GameServiceFindMatchProcedure:           true,
+		gamev1connect.GameServiceCancelMatchProcedure:         true,
+		gamev1connect.GameServiceGetMatchProcedure:            true,
+		gamev1connect.GameServiceGetRatingsProcedure:          true,
+		gamev1connect.GameServiceLeaveSessionProcedure:        true,
+		gamev1connect.GameServiceGetSessionHistoryProcedure:   true,
+		gamev1connect.GameServiceListLiveSessionsProcedure:    true,
+		analysisv1connect.AnalysisServiceGetAnalysisProcedure: true,
+
+		tournamentv1connect.TournamentServiceCreateTournamentProcedure:       true,
+		tournamentv1connect.TournamentServiceStartTournamentProcedure:        true,
+		tournamentv1connect.TournamentServiceRegisterForTournamentProcedure:  true,
+		tournamentv1connect.TournamentServiceWithdrawFromTournamentProcedure: true,
+		tournamentv1connect.TournamentServiceGetTournamentProcedure:          true,
+		tournamentv1connect.TournamentServiceListTournamentsProcedure:        true,
+		tournamentv1connect.TournamentServiceCancelTournamentProcedure:       true,
+
 		callsv1connect.CallsServiceRegisterEndpointProcedure:        true,
 		callsv1connect.CallsServiceStartCallProcedure:               true,
 		callsv1connect.CallsServiceStartDirectCallProcedure:         true,

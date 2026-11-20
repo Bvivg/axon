@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
 COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
-GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/...
+GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/... ./services/analysis/... ./services/tournament/...
 
 -include core/deploy/.env
 
@@ -165,7 +165,7 @@ test-cover: ## Run unit tests with a coverage summary
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (testcontainers spins up Postgres)
-	cd core && go test -tags integration -count=1 ./services/auth/integration/... ./services/chat/integration/... ./services/game/integration/... ./shared/integration/...
+	cd core && go test -tags integration -count=1 ./services/auth/integration/... ./services/chat/integration/... ./services/game/integration/... ./services/analysis/integration/... ./services/tournament/integration/... ./shared/integration/...
 
 E2E_ENV_FILE := core/deploy/.env.e2e
 
@@ -188,6 +188,36 @@ COMPOSE_SECURITY_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55732 REDIS_HOST
 test-e2e-security: jwt-key ## mTLS and key-rotation e2e on the base stack with the mTLS overlay (WATCH=1 also waits for renewals and rotations)
 	@trap '$(COMPOSE_SECURITY_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
 	$(COMPOSE_SECURITY_E2E) --profile e2e run --rm --build security-e2e
+
+COMPOSE_GAME_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55832 REDIS_HOST_PORT=56779 KAFKA_HOST_PORT=59492 MINIO_HOST_PORT=59400 \
+	MINIO_CONSOLE_HOST_PORT=59401 GATEWAY_HOST_PORT=18480 WEB_HOST_PORT=3403 AUTH_HOST_PORT=18481 AUTH_METRICS_HOST_PORT=19491 \
+	CHAT_HOST_PORT=18482 CHAT_METRICS_HOST_PORT=19492 GATEWAY_METRICS_HOST_PORT=19490 CONNECT_HOST_PORT=58283 REGISTRY_HOST_PORT=58281 \
+	docker compose -p axon-game-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.game-e2e.yml
+
+.PHONY: test-e2e-game
+test-e2e-game: jwt-key ## Spectator and replay e2e through the gateway on the base stack
+	@trap '$(COMPOSE_GAME_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_GAME_E2E) --profile e2e run --rm --build game-e2e
+
+COMPOSE_ANALYSIS_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55932 REDIS_HOST_PORT=56879 KAFKA_HOST_PORT=59592 MINIO_HOST_PORT=59500 \
+	MINIO_CONSOLE_HOST_PORT=59501 GATEWAY_HOST_PORT=18580 WEB_HOST_PORT=3503 AUTH_HOST_PORT=18581 AUTH_METRICS_HOST_PORT=19591 \
+	CHAT_HOST_PORT=18582 CHAT_METRICS_HOST_PORT=19592 GATEWAY_METRICS_HOST_PORT=19590 CONNECT_HOST_PORT=58383 REGISTRY_HOST_PORT=58381 \
+	docker compose -p axon-analysis-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.analysis-e2e.yml
+
+.PHONY: test-e2e-analysis
+test-e2e-analysis: jwt-key ## Scholar's mate through the gateway, CDC and Stockfish analysis (one-off stack)
+	@trap '$(COMPOSE_ANALYSIS_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_ANALYSIS_E2E) run --rm --build analysis-e2e
+
+COMPOSE_TOURNAMENT_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=56132 REDIS_HOST_PORT=57079 KAFKA_HOST_PORT=59792 MINIO_HOST_PORT=59700 \
+	MINIO_CONSOLE_HOST_PORT=59701 GATEWAY_HOST_PORT=18780 WEB_HOST_PORT=3703 AUTH_HOST_PORT=18781 AUTH_METRICS_HOST_PORT=19791 \
+	CHAT_HOST_PORT=18782 CHAT_METRICS_HOST_PORT=19792 GATEWAY_METRICS_HOST_PORT=19790 CONNECT_HOST_PORT=58583 REGISTRY_HOST_PORT=58581 \
+	docker compose -p axon-tournament-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.tournament-e2e.yml
+
+.PHONY: test-e2e-tournament
+test-e2e-tournament: jwt-key ## Eight-player tic-tac-toe bracket with a no-show through the gateway, CDC and the tournament saga (one-off stack)
+	@trap '$(COMPOSE_TOURNAMENT_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_TOURNAMENT_E2E) run --rm --build tournament-e2e
 
 .PHONY: e2e-key
 e2e-key:
@@ -236,7 +266,7 @@ web-check: web-lint web-typecheck web-test web-build ## Everything CI runs for t
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace
-	@for module in shared services/auth services/chat services/gateway services/game services/rating; do \
+	@for module in shared services/auth services/chat services/gateway services/game services/rating services/analysis services/tournament; do \
 		echo "tidy $$module"; \
 		(cd core/$$module && GOWORK=off go mod tidy) || exit 1; \
 	done

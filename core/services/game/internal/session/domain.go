@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,7 @@ type MoveRecord struct {
 	Data        json.RawMessage
 	StateBefore engine.State
 	ClockBefore *Clock
+	PlayedAt    time.Time
 }
 
 type Change struct {
@@ -90,6 +92,43 @@ func (r Rules) Start(id uuid.UUID, key engine.Key, creator, opponent uuid.UUID, 
 	return game, Change{Fact: FactCreated, Actor: creator, At: now}, nil
 }
 
+func (r Rules) StartTournament(id uuid.UUID, key engine.Key, tournament, creator, opponent uuid.UUID, now time.Time) (Session, Change, error) {
+	game, change, err := r.Start(id, key, creator, opponent, true, now)
+	if err != nil {
+		return Session{}, Change{}, err
+	}
+	game.Tournament = &tournament
+	return game, change, nil
+}
+
+func (r Rules) Forfeit(game Session, now time.Time) (Session, Change, error) {
+	if game.Opponent == nil {
+		return Session{}, Change{}, ErrNotPlaying
+	}
+	if next, change := r.Expire(game, now); change.Recorded() {
+		return next, change, nil
+	}
+	seat := game.State.Turn
+	if game.State.Over() || seat < 0 || seat >= len(game.State.Players) || game.State.Ply > seat {
+		return game, Change{}, nil
+	}
+	absent, err := uuid.Parse(string(game.State.Players[seat]))
+	if err != nil {
+		return Session{}, Change{}, fmt.Errorf("session: forfeit %s: %w", game.ID, err)
+	}
+	game.Clock = game.ClockAt(now)
+	game.State = game.State.Finish(1 - seat)
+	game.Resigned, game.DrawOffer = true, nil
+	return game, Change{Fact: FactResigned, Actor: absent, At: now}, nil
+}
+
+func (r Rules) Abort(game Session, now time.Time) (Session, Change) {
+	if game.Opponent != nil && game.State.Over() {
+		return game, Change{}
+	}
+	return game, Change{Fact: FactCancelled, At: now}
+}
+
 func (r Rules) Join(game Session, user uuid.UUID, now time.Time) (Session, Change, error) {
 	if game.HasPlayer(user) {
 		return game, Change{}, nil
@@ -115,7 +154,7 @@ func (r Rules) Expire(game Session, now time.Time) (Session, Change) {
 }
 
 func (r Rules) Get(game Session, user uuid.UUID, now time.Time) (Session, Change, error) {
-	if !game.HasPlayer(user) {
+	if !game.Watchable(user) {
 		return Session{}, Change{}, ErrNotFound
 	}
 	next, change := r.Expire(game, now)
@@ -256,6 +295,30 @@ func (r Rules) Replay(game Session, moves []MoveRecord) (engine.State, error) {
 		}
 	}
 	return state, nil
+}
+
+func (r Rules) Frames(game Session, moves []MoveRecord) ([]engine.State, error) {
+	state, err := r.games.NewState(game.Game, game.State.Players)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := r.games.Get(game.Game)
+	if err != nil {
+		return nil, err
+	}
+	frames := make([]engine.State, 0, len(moves)+1)
+	frames = append(frames, state)
+	for _, move := range moves {
+		if move.Ply != state.Ply+1 {
+			return nil, fmt.Errorf("%w: move %d follows position %d", ErrHistoryGap, move.Ply, state.Ply)
+		}
+		state, err = rules.ApplyMove(state, engine.Move{Player: engine.PlayerID(move.Player.String()), Ply: state.Ply, Data: move.Data})
+		if err != nil {
+			return nil, fmt.Errorf("session: replay move %d: %w", move.Ply, err)
+		}
+		frames = append(frames, state)
+	}
+	return frames, nil
 }
 
 func (r Rules) Leave(game Session, user uuid.UUID, now time.Time) (Session, Change, error) {

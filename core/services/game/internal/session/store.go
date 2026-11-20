@@ -22,6 +22,7 @@ var (
 	ErrNoDrawOffer = errors.New("there is no draw offer to answer")
 
 	ErrNotReplayable = errors.New("only recorded moves can be replayed")
+	ErrHistoryGap    = errors.New("game history has a gap")
 )
 
 const (
@@ -43,10 +44,15 @@ type Session struct {
 	Resigned   bool
 	DrawOffer  *uuid.UUID
 	AgreedDraw bool
+	Tournament *uuid.UUID
 }
 
 func (s Session) HasPlayer(user uuid.UUID) bool {
 	return s.Creator == user || s.Opponent != nil && *s.Opponent == user
+}
+
+func (s Session) Watchable(user uuid.UUID) bool {
+	return s.Opponent != nil || s.HasPlayer(user)
 }
 
 type Store struct {
@@ -81,12 +87,12 @@ func (s *Store) Replica() *Store {
 	return &Store{pool: s.replica, games: s.games}
 }
 
-const Columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw"
+const Columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw, tournament_id"
 
 func Scan(row pgx.Row) (Session, error) {
 	var s Session
 	var raw, clock []byte
-	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned, &s.DrawOffer, &s.AgreedDraw)
+	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned, &s.DrawOffer, &s.AgreedDraw, &s.Tournament)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}
@@ -115,6 +121,57 @@ func (s *Store) List(ctx context.Context, user uuid.UUID) ([]Session, error) {
 		result = append(result, item)
 	}
 	return result, rows.Err()
+}
+
+func (s *Store) Live(ctx context.Context, game engine.Key, limit int) ([]Session, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+Columns+` FROM game.sessions
+		WHERE opponent_id IS NOT NULL AND state->>'status' = 'in_progress' AND updated_at > now() - interval '6 hours'
+			AND ($1 = '' OR game = $1)
+		ORDER BY updated_at DESC, id DESC LIMIT $2`, string(game), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []Session
+	for rows.Next() {
+		item, err := Scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) History(ctx context.Context, id uuid.UUID) (Session, []MoveRecord, error) {
+	var game Session
+	var moves []MoveRecord
+	err := pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		var err error
+		game, err = Scan(tx.QueryRow(ctx, `SELECT `+Columns+` FROM game.sessions WHERE id=$1`, id))
+		if err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `SELECT DISTINCT ON (ply) ply, player_id, data, played_at FROM game.moves WHERE session_id=$1 AND ply<=$2 ORDER BY ply, played_at DESC`, id, game.State.Ply)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var move MoveRecord
+			var data []byte
+			if err := rows.Scan(&move.Ply, &move.Player, &data, &move.PlayedAt); err != nil {
+				return err
+			}
+			move.Data = data
+			moves = append(moves, move)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return Session{}, nil, fmt.Errorf("session: history: %w", err)
+	}
+	return game, moves, nil
 }
 
 func (s *Store) TimeLimitMS(game engine.Key) int64 {

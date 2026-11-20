@@ -21,6 +21,10 @@ type Config struct {
 
 	GameServiceURL string
 
+	AnalysisServiceURL string
+
+	TournamentServiceURL string
+
 	GameSocketURL string
 
 	ChatSocketURL string
@@ -91,16 +95,18 @@ func Load() (Config, error) {
 	l := config.NewLoader()
 
 	cfg := Config{
-		LiveKitURL:          l.StringDefault("LIVEKIT_SIGNAL_URL", ""),
-		CallsInternalKey:    l.SecretDefault("CALLS_INTERNAL_KEY", ""),
-		Base:                config.LoadBase(l, ServiceName),
-		AuthServiceURL:      l.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
-		ChatServiceURL:      l.StringDefault("CHAT_SERVICE_URL", "http://chat:8082"),
-		GameServiceURL:      l.StringDefault("GAME_SERVICE_URL", "http://game:8083"),
-		JWKSURL:             l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
-		JWKSRefreshInterval: l.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
-		UpstreamTimeout:     l.DurationDefault("UPSTREAM_TIMEOUT", 10*time.Second),
-		UploadTimeout:       l.DurationDefault("UPLOAD_TIMEOUT", 4*time.Minute),
+		LiveKitURL:           l.StringDefault("LIVEKIT_SIGNAL_URL", ""),
+		CallsInternalKey:     l.SecretDefault("CALLS_INTERNAL_KEY", ""),
+		Base:                 config.LoadBase(l, ServiceName),
+		AuthServiceURL:       l.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
+		ChatServiceURL:       l.StringDefault("CHAT_SERVICE_URL", "http://chat:8082"),
+		GameServiceURL:       l.StringDefault("GAME_SERVICE_URL", "http://game:8083"),
+		AnalysisServiceURL:   l.StringDefault("ANALYSIS_SERVICE_URL", "http://analysis:8085"),
+		TournamentServiceURL: l.StringDefault("TOURNAMENT_SERVICE_URL", "http://tournament:8086"),
+		JWKSURL:              l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
+		JWKSRefreshInterval:  l.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
+		UpstreamTimeout:      l.DurationDefault("UPSTREAM_TIMEOUT", 10*time.Second),
+		UploadTimeout:        l.DurationDefault("UPLOAD_TIMEOUT", 4*time.Minute),
 		CORS: CORSConfig{
 			AllowedOrigins: l.StringSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
 		},

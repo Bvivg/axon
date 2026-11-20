@@ -1,10 +1,12 @@
 go 1.27.4
 
 use (
+	./services/analysis
 	./services/auth
 	./services/chat
 	./services/game
 	./services/gateway
 	./services/rating
+	./services/tournament
 	./shared
 )

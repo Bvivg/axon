@@ -49,6 +49,14 @@ func (p *Game) GetRatings(ctx context.Context, req *connect.Request[gamev1.GetRa
 	return p.client.GetRatings(ctx, forward(ctx, req))
 }
 
+func (p *Game) GetSessionHistory(ctx context.Context, req *connect.Request[gamev1.GetSessionHistoryRequest]) (*connect.Response[gamev1.GetSessionHistoryResponse], error) {
+	return p.client.GetSessionHistory(ctx, forward(ctx, req))
+}
+
+func (p *Game) ListLiveSessions(ctx context.Context, req *connect.Request[gamev1.ListLiveSessionsRequest]) (*connect.Response[gamev1.ListLiveSessionsResponse], error) {
+	return p.client.ListLiveSessions(ctx, forward(ctx, req))
+}
+
 func (p *Game) LeaveSession(ctx context.Context, req *connect.Request[gamev1.LeaveSessionRequest]) (*connect.Response[gamev1.LeaveSessionResponse], error) {
 	return p.client.LeaveSession(ctx, forward(ctx, req))
 }

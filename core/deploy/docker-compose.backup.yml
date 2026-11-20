@@ -11,6 +11,8 @@ services:
       GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
       CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
       RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
+      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD:-analysis}
+      TOURNAMENT_DB_PASSWORD: ${TOURNAMENT_DB_PASSWORD:-tournament}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro

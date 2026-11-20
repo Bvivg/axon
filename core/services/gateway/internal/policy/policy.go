@@ -15,15 +15,27 @@ type Rule struct {
 }
 
 var procedures = map[string]Rule{
-	"/axon.game.v1.GameService/CreateSession": {Public: false, Tier: TierSensitive},
-	"/axon.game.v1.GameService/JoinSession":   {Public: false, Tier: TierStandard},
-	"/axon.game.v1.GameService/GetSession":    {Public: false, Tier: TierStandard},
-	"/axon.game.v1.GameService/ListSessions":  {Public: false, Tier: TierStandard},
-	"/axon.game.v1.GameService/FindMatch":     {Public: false, Tier: TierSensitive},
-	"/axon.game.v1.GameService/CancelMatch":   {Public: false, Tier: TierStandard},
-	"/axon.game.v1.GameService/GetMatch":      {Public: false, Tier: TierStandard},
-	"/axon.game.v1.GameService/GetRatings":    {Public: false, Tier: TierStandard},
-	"/axon.game.v1.GameService/LeaveSession":  {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/CreateSession":     {Public: false, Tier: TierSensitive},
+	"/axon.game.v1.GameService/JoinSession":       {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/GetSession":        {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/ListSessions":      {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/FindMatch":         {Public: false, Tier: TierSensitive},
+	"/axon.game.v1.GameService/CancelMatch":       {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/GetMatch":          {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/GetRatings":        {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/LeaveSession":      {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/GetSessionHistory": {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/ListLiveSessions":  {Public: false, Tier: TierStandard},
+
+	"/axon.analysis.v1.AnalysisService/GetAnalysis": {Public: false, Tier: TierStandard},
+
+	"/axon.tournament.v1.TournamentService/CreateTournament":       {Public: false, Tier: TierSensitive},
+	"/axon.tournament.v1.TournamentService/StartTournament":        {Public: false, Tier: TierSensitive},
+	"/axon.tournament.v1.TournamentService/RegisterForTournament":  {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/WithdrawFromTournament": {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/GetTournament":          {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/ListTournaments":        {Public: false, Tier: TierStandard},
+	"/axon.tournament.v1.TournamentService/CancelTournament":       {Public: false, Tier: TierStandard},
 
 	"/axon.calls.v1.CallsService/RegisterEndpoint":        {Public: false, Tier: TierSensitive},
 	"/axon.calls.v1.CallsService/StartCall":               {Public: false, Tier: TierSensitive},

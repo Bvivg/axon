@@ -26,6 +26,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/route"
 	"github.com/bvivg/axon/core/services/game/internal/server"
 	"github.com/bvivg/axon/core/services/game/internal/session"
+	"github.com/bvivg/axon/core/services/game/internal/tournament"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/config"
@@ -80,10 +81,12 @@ func run() error {
 		Linger:            loader.DurationDefault("GAME_JOURNAL_LINGER", time.Millisecond),
 	}
 	ratingTopic := loader.StringDefault("GAME_RATING_TOPIC", rating.Topic)
+	tournamentTopics := loader.StringSlice("GAME_TOURNAMENT_TOPICS", []string{tournament.RoundStartedTopic, tournament.ForfeitTopic, tournament.CancelledTopic})
 	outboxRetention := loader.DurationDefault("GAME_OUTBOX_RETENTION", 24*time.Hour)
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
+	spectatorLimit := loader.IntDefault("GAME_SPECTATOR_LIMIT", 200)
 	if err := loader.Err(); err != nil {
 		return err
 	}
@@ -141,7 +144,7 @@ func run() error {
 		peerTransport = identity.Transport(mtls.ServerName("game"))
 		sockets = &http.Client{Transport: identity.Transport(mtls.ServerName("game"), mtls.HTTP1Only())}
 	}
-	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed,
+	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed, Watchers: spectatorLimit,
 		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
@@ -151,6 +154,12 @@ func run() error {
 	go handler.RunMatchmaking(ctx, log)
 	go func() { _ = cluster.NewProjector(kafka, model, log, observed).Run(ctx) }()
 	go func() { _ = rating.NewConsumer(kafka.Brokers, ratingTopic, store, log).Run(ctx) }()
+	go func() {
+		_ = tournament.NewConsumer(tournament.Config{
+			Brokers: kafka.Brokers, Topics: tournamentTopics, Games: handler, Cancellations: tournament.NewPostgres(db.primary.Pool),
+			Log: log, Commands: tournament.NewCounter(metrics.Registry()),
+		}).Run(ctx)
+	}()
 	go model.PruneOutbox(ctx, time.Hour, outboxRetention, log)
 	go reportActive(ctx, own, observed)
 	ownership := make(chan struct{})

@@ -1,7 +1,7 @@
 services:
   certs:
     environment:
-      MTLS_IDENTITIES: gateway auth chat game rating intruder
+      MTLS_IDENTITIES: gateway auth chat game rating analysis tournament intruder
       MTLS_CERT_LIFETIME: 6m
       MTLS_RENEW_BEFORE: 5m
       MTLS_RENEW_CHECK: "10"
@@ -32,6 +32,16 @@ services:
 
   rating:
     environment:
+      MTLS_RELOAD_INTERVAL: 5s
+
+  analysis:
+    environment:
+      JWKS_REFRESH_INTERVAL: 10s
+      MTLS_RELOAD_INTERVAL: 5s
+
+  tournament:
+    environment:
+      JWKS_REFRESH_INTERVAL: 10s
       MTLS_RELOAD_INTERVAL: 5s
 
   gateway:
@@ -66,6 +76,10 @@ services:
       game:
         condition: service_healthy
       rating:
+        condition: service_healthy
+      analysis:
+        condition: service_healthy
+      tournament:
         condition: service_healthy
 
 volumes:

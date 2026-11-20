@@ -44,7 +44,7 @@ func run(m *testing.M) (int, error) {
 		tcpostgres.WithUsername("axon"),
 		tcpostgres.WithPassword("axon"),
 		tcpostgres.WithInitScripts("../../../deploy/postgres/init/01-schemas.sh", "../../../deploy/postgres/init/02-extensions.sql"),
-		testcontainers.WithEnv(map[string]string{"AUTH_DB_PASSWORD": "auth", "CHAT_DB_PASSWORD": "chat", "GAME_DB_PASSWORD": "game", "CALLING_DB_PASSWORD": "calling", "RATING_DB_PASSWORD": "rating"}),
+		testcontainers.WithEnv(map[string]string{"AUTH_DB_PASSWORD": "auth", "CHAT_DB_PASSWORD": "chat", "GAME_DB_PASSWORD": "game", "CALLING_DB_PASSWORD": "calling", "RATING_DB_PASSWORD": "rating", "ANALYSIS_DB_PASSWORD": "analysis", "TOURNAMENT_DB_PASSWORD": "tournament"}),
 		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(time.Minute)),
 	)
 	if err != nil {
