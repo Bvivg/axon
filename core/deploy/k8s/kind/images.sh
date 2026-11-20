@@ -43,8 +43,12 @@ for image in $images; do
 done
 
 if kind get clusters 2>/dev/null | grep -qx "$cluster"; then
+  workers=$(kind get nodes --name "$cluster" | grep -v control-plane | paste -sd, -)
   for image in $images; do
-    kind load docker-image --name "$cluster" "axon/$image:$tag" >/dev/null
-    echo "loaded axon/$image:$tag into $cluster"
+    if ! out=$(kind load docker-image --name "$cluster" --nodes "$workers" "axon/$image:$tag" 2>&1); then
+      echo "$out" >&2
+      exit 1
+    fi
+    echo "loaded axon/$image:$tag into $workers"
   done
 fi

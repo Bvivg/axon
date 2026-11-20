@@ -2,7 +2,7 @@ global: {}
 infra: {}
 postgres:
   instances: 1
-  image: ghcr.io/cloudnative-pg/postgresql:17.10
+  image: ghcr.io/cloudnative-pg/postgresql:17.10-minimal-trixie
   storage: 1Gi
   roles:
     - auth

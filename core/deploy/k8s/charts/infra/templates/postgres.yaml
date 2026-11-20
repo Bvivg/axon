@@ -20,7 +20,7 @@ spec:
       max_connections: "200"
       max_replication_slots: "10"
       max_wal_senders: "10"
-      max_slot_wal_keep_size: 1GB
+      max_slot_wal_keep_size: 512MB
   managed:
     roles:
       {{- range $v.postgres.roles }}
