@@ -53,5 +53,17 @@ Loki, Alloy, Pyroscope, postgres-exporter и Grafana с готовыми даш�
   `gateway.ws`, `game.command`, `journal.append`, `projector.apply`; в Grafana дашборды заполнены,
   exemplar ведёт в трейс, лог с тем же trace_id находится в Loki, профиль game есть в Pyroscope.
 
+## Результаты (2026-11-20)
+- Стенд axon.test с overlay: ход в крестики-нолики из браузера дал трейс
+  `gateway.ws move → game.command move → journal.append → projector.apply` с одним trace ID.
+- Логи RPC несут `trace_id`; по нему из Loki находится трейс gateway → game. У ходов логов нет
+  намеренно: при тысячах ходов в секунду info-лог на ход забил бы Loki, ход виден в трейсе и метриках.
+- Exemplars `game_command_duration_seconds` ведут на trace ID; профили auth/chat/game/gateway в Pyroscope.
+- Нагрузка через overlay (100% сэмплирование, 300 партий одновременно, пауза 260 мс):
+  p50 2 / p95 8–16 / p99 27–40 мс. Первый прогон сразу после рестарта game дал всплеск p99
+  до ~400 мс (прогрев: claim партиций и холодный кэш проектора), повторы — нет.
+- Promtool: 8 правил, unit-тест burn-rate (fast/slow срабатывают при 20% медленных команд,
+  молчат при 0,5%).
+
 ## Критерий готовности
 В Grafana по одному trace ID виден путь хода gateway → game → Kafka → проектор.
