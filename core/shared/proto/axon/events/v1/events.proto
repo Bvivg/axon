@@ -18,6 +18,7 @@ message GameFinished {
   int32 winner_seat = 6;
   google.protobuf.Timestamp finished_at = 7;
   bool rated = 8;
+  repeated string moves = 9;
 }
 
 message ChatMessageSent {
