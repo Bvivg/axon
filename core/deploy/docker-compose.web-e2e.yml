@@ -193,6 +193,29 @@ services:
       postgres:
         condition: service_healthy
 
+  kafka:
+    image: confluentinc/confluent-local:7.5.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+      CLUSTER_ID: "wE2eGameJournalQ9xLHZD"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
+      interval: 3s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+
   game:
     build:
       context: ..
@@ -207,11 +230,18 @@ services:
       JWKS_URL: http://auth:9091/.well-known/jwks.json
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
+      KAFKA_BROKERS: kafka:29092
+      GAME_JOURNAL_REPLICATION: 1
+      GAME_JOURNAL_MIN_INSYNC: 1
+    deploy:
+      replicas: 2
     depends_on:
       auth:
         condition: service_healthy
       game-migrate:
         condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:8083/readyz"]
       interval: 3s

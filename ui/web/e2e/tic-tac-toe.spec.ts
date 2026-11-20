@@ -330,7 +330,10 @@ function fixtureSQL(id: string, sql: string) {
 }
 
 function shortenFixtureClock(id: string) {
-  fixtureSQL(id, `UPDATE game.sessions SET clock=jsonb_build_object('remaining_ms',jsonb_build_array(1500,1500),'started_at',clock_timestamp()) WHERE id='${id}'; SELECT pg_notify('game_session_changed','${id}');`);
+  const container = process.env.GAME_E2E_POSTGRES_CONTAINER;
+  if (!container || !/^axon-postgres-\d+$/.test(container) || !/^[0-9a-f-]{36}$/.test(id)) throw new Error("Requires an Axon dev fixture session");
+  const body = JSON.stringify({ session_id: id, remaining_ms: [1500, 1500] });
+  execFileSync("docker", ["exec", container, "wget", "-q", "-O", "-", "--header", "Content-Type: application/json", "--post-data", body, "http://game:8083/internal/test/clock"], { encoding: "utf8" });
 }
 
 test("server clocks survive offline clients, timeout and an empty room", async ({ browser, baseURL }, testInfo) => {

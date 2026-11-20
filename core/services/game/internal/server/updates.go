@@ -9,23 +9,33 @@ import (
 	"github.com/google/uuid"
 )
 
-type updates struct {
-	mu       sync.Mutex
-	sessions map[uuid.UUID]map[chan struct{}]struct{}
+type listener struct {
+	inbox chan struct{}
+	gone  chan struct{}
+	once  sync.Once
 }
 
-func (u *updates) subscribe(id uuid.UUID) (<-chan struct{}, func()) {
+type updates struct {
+	mu       sync.Mutex
+	sessions map[uuid.UUID]map[*listener]struct{}
+}
+
+func newUpdates() updates {
+	return updates{sessions: map[uuid.UUID]map[*listener]struct{}{}}
+}
+
+func (u *updates) subscribe(id uuid.UUID) (<-chan struct{}, <-chan struct{}, func()) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.sessions[id] == nil {
-		u.sessions[id] = make(map[chan struct{}]struct{})
+		u.sessions[id] = map[*listener]struct{}{}
 	}
-	inbox := make(chan struct{}, 1)
-	u.sessions[id][inbox] = struct{}{}
-	return inbox, func() {
+	item := &listener{inbox: make(chan struct{}, 1), gone: make(chan struct{})}
+	u.sessions[id][item] = struct{}{}
+	return item.inbox, item.gone, func() {
 		u.mu.Lock()
 		defer u.mu.Unlock()
-		delete(u.sessions[id], inbox)
+		delete(u.sessions[id], item)
 		if len(u.sessions[id]) == 0 {
 			delete(u.sessions, id)
 		}
@@ -35,21 +45,29 @@ func (u *updates) subscribe(id uuid.UUID) (<-chan struct{}, func()) {
 func (u *updates) notify(id uuid.UUID) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.refresh(u.sessions[id])
+	refresh(u.sessions[id])
+}
+
+func (u *updates) move(id uuid.UUID) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for item := range u.sessions[id] {
+		item.once.Do(func() { close(item.gone) })
+	}
 }
 
 func (u *updates) refreshAll() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	for _, listeners := range u.sessions {
-		u.refresh(listeners)
+		refresh(listeners)
 	}
 }
 
-func (*updates) refresh(listeners map[chan struct{}]struct{}) {
-	for inbox := range listeners {
+func refresh(listeners map[*listener]struct{}) {
+	for item := range listeners {
 		select {
-		case inbox <- struct{}{}:
+		case item.inbox <- struct{}{}:
 		default:
 		}
 	}
@@ -68,21 +86,6 @@ func (h *Handler) Watch(ctx context.Context, log *slog.Logger) {
 		select {
 		case <-ctx.Done():
 		case <-time.After(time.Second):
-		}
-	}
-}
-
-func (h *Handler) RunClocks(ctx context.Context, log *slog.Logger) {
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if err := h.store.Expire(ctx); err != nil && ctx.Err() == nil {
-			log.ErrorContext(ctx, "expire game clocks", "error", err)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
 		}
 	}
 }

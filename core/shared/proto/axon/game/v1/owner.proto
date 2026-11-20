@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package axon.game.v1;
+
+service GameOwnerService {
+  rpc StartMatch(StartMatchRequest) returns (StartMatchResponse);
+}
+
+message StartMatchRequest {
+  string session_id = 1;
+  string game = 2;
+  string creator_id = 3;
+  string opponent_id = 4;
+}
+
+message StartMatchResponse {}

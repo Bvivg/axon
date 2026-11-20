@@ -158,7 +158,7 @@ test-cover: ## Run unit tests with a coverage summary
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (testcontainers spins up Postgres)
-	cd core && go test -tags integration -count=1 ./services/auth/integration/... ./services/chat/integration/... ./shared/integration/...
+	cd core && go test -tags integration -count=1 ./services/auth/integration/... ./services/chat/integration/... ./services/game/integration/... ./shared/integration/...
 
 E2E_ENV_FILE := core/deploy/.env.e2e
 

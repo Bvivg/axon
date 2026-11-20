@@ -207,7 +207,7 @@ integration-тестами (Kafka через testcontainers). Это созна�
 
 - ~~`internal/engine/`: интерфейс `Game` + `registry.go`~~ ✅
 - ~~`internal/games/tictactoe/` — первая реализация, `ApplyMove` чистая функция~~ ✅
-- Game Service хранит снимок партии и ходы в `game.sessions` и `game.moves` в одной транзакции. Для доставки актуального снимка используется PostgreSQL LISTEN/NOTIFY.
+- Game Service хранит снимок партии и ходы в `game.sessions` и `game.moves` в одной транзакции. Для доставки актуального снимка используется PostgreSQL LISTEN/NOTIFY. С фазы 1 архитектурного усиления источник истины — журнал Kafka, эти таблицы — read model (`platform-phase-1-game-event-sourcing.md`).
 - `internal/server/` предоставляет `CreateSession`, `JoinSession`, `GetSession`, `ListSessions` и WebSocket ходов. Сервис проверяет участника, очередь хода и версию доски.
 - Web рисует доску в `components/games/tictactoe/`. Транспорт находится в `lib/ws/use-game-socket.ts`.
 - E2E покрывает выигрыш, ничью, перезагрузку, повтор создания партии и отказ третьему аккаунту.
@@ -217,7 +217,7 @@ integration-тестами (Kafka через testcontainers). Это созна�
 
 ---
 
-## Этап 4 — Chess (флагманская игра)
+## Этап 4 — Chess (флагманская игра) ✅ ВЫПОЛНЕН (PR #11)
 
 **Статус на 19 ноября 2026.** Реализовано в ветке `feat/game-chess`, детали — `stage-4-chess.md`.
 Шахматы играются онлайн по ссылке и через Quick match с рейтингом, есть ничья по соглашению,
@@ -238,7 +238,7 @@ integration-тестами (Kafka через testcontainers). Это созна�
 
 ---
 
-## Этап 4б — Quoridor
+## Этап 4б — Quoridor ✅ ВЫПОЛНЕН (PR #12)
 
 **Статус на 20 ноября 2026.** Реализовано в ветке `feat/game-quoridor`, детали — `stage-4-quoridor.md`.
 Вторая игра поверх обобщённого `session`/`server`: добавлены домен, контракт доски и клиент,
@@ -249,7 +249,9 @@ integration-тестами (Kafka через testcontainers). Это созна�
 
 ---
 
-## Этап 5 — Calling (LiveKit)
+## Этап 5 — Calling (LiveKit) ✅ Рубежи 1–3 закрыты
+
+**Статус на 20 ноября 2026.** Рубеж 1 (1:1 native WebRTC/coturn), Рубеж 2 (группы на LiveKit, admission) и Рубеж 3 (mid-call migration P2P→SFU) реализованы и проверены по `calls-hybrid.md`. Живьём не проверены: push-уведомления о звонке, внешний NAT вне LAN/tailnet, Safari/iOS.
 
 Решение владельца 2026-11-03 заменяет прежнюю схему ниже: Calls остаётся внутри Chat, данные в `chat.call_*`, отдельного calling-оркестратора нет. Рубеж 1 — native P2P/coturn 1:1 из существующего direct-чата; Рубеж 2 — отдельно разрешаемые LiveKit/группы и fallback до ACTIVE; Рубеж 3 — необязательная mid-call migration только по отдельному APPROVE. Актуальные задачи/граница выделения — `.claude/plans/calls-hybrid.md`. E2E требуют настоящих медиа: старое указание мокать LiveKit ниже отменено; прежние буллеты сохранены как история заменённого дизайна.
 
@@ -260,6 +262,14 @@ integration-тестами (Kafka через testcontainers). Это созна�
 - Web: LiveKit client SDK, звонок поверх игровой сессии
 - **E2E:** создание комнаты → выдача токена → участник подключился (медиа мокаем,
   проверяем оркестрацию: комнаты/токены/вебхуки)
+
+---
+
+## Архитектурное усиление (вне этапов)
+
+План и порядок фаз 1→4→3→2→5→6→7 — `platform-architecture-upgrade.md`.
+
+- Фаза 1 — game как stateful event-sourced сервис (журнал Kafka, владельцы партиций, проектор в Postgres): `platform-phase-1-game-event-sourcing.md`. ✅ реализована, PR на ревью
 
 ---
 

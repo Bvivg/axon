@@ -31,7 +31,7 @@ type RatingChange struct {
 	At      time.Time
 }
 
-func (s *Store) settle(ctx context.Context, tx pgx.Tx, game Session) error {
+func (s *Store) Settle(ctx context.Context, tx pgx.Tx, game Session) error {
 	if game.Opponent == nil {
 		return nil
 	}
