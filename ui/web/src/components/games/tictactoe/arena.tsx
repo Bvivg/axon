@@ -49,7 +49,7 @@ function Identicon({ name, hue }: { name: string; hue: number }) {
   return <svg aria-hidden viewBox="0 0 8 8" className="size-full" style={{ fill: `light-dark(hsl(${hue} 42% 46%), hsl(${hue} 70% 76%))` }}>{pixels}</svg>;
 }
 
-export function ArenaPlayer({ mark = Mark.X, badge, side, name, active, time, rating, difficulty, avatar = "", bot = false }: { mark?: Mark; badge?: ReactNode; side?: string; name: string; active: boolean; time?: number; rating?: number; difficulty?: string; avatar?: string; bot?: boolean }) {
+export function ArenaPlayer({ mark = Mark.X, badge, side, name, active, time, rating, difficulty, avatar = "", bot = false, extra }: { mark?: Mark; badge?: ReactNode; side?: string; name: string; active: boolean; time?: number; rating?: number; difficulty?: string; avatar?: string; bot?: boolean; extra?: ReactNode }) {
   const hue = 235 + (profileHash(name) >>> 16) % 80;
   const symbol = side ?? (mark === Mark.X ? "X" : "O");
   const low = time !== undefined && time <= 10000 && (active || time === 0);
@@ -57,7 +57,7 @@ export function ArenaPlayer({ mark = Mark.X, badge, side, name, active, time, ra
     <span className="relative size-[38px] shrink-0"><span className={cn("grid size-full place-items-center overflow-hidden rounded-full bg-game-accent text-game-text2", bot && "bg-game-bg2")} style={!bot && !avatar ? { backgroundColor: `light-dark(hsl(${hue} 45% 91%), hsl(${hue} 28% 24%))` } : undefined}>
       {avatar ? <Image src={avatar} alt="" width={38} height={38} unoptimized className="size-full object-cover" /> : bot ? <Bot aria-hidden size={20} strokeWidth={1.75} /> : <Identicon name={name} hue={hue} />}
     </span><span className="absolute -right-1 -bottom-1 grid size-[18px] place-items-center rounded-full border border-game-border bg-game-card">{badge ?? <GameMark mark={mark} className="size-[11px]" />}</span></span>
-    <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2"><b className="min-w-0 truncate text-[15px] font-medium">{name}</b>{difficulty || rating !== undefined ? <span className={cn("text-[13px] text-game-text2", rating !== undefined && "font-mono")}>{difficulty ?? rating}</span> : null}</span>
+    <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2"><b className="min-w-0 truncate text-[15px] font-medium">{name}</b>{difficulty || rating !== undefined ? <span className={cn("text-[13px] text-game-text2", rating !== undefined && "font-mono")}>{difficulty ?? rating}</span> : null}{extra}</span>
     {time !== undefined ? <span data-clock data-low={low || undefined} aria-label={`${symbol} clock, ${formatClock(time)}${active ? ", running" : ""}`} className={cn("grid h-[38px] min-w-[84px] shrink-0 place-items-center rounded-game-sm bg-game-bg2 px-3 font-mono text-[18px] leading-none font-medium text-game-text2 tabular-nums transition-colors duration-200 motion-reduce:transition-none @max-[320px]:min-w-[72px] @max-[320px]:text-[16px]", active && "bg-game-primary text-game-on-primary", low && "bg-game-error text-game-on-primary")}>{formatClock(time).replace(/^0/, "")}</span> : null}
   </div>;
 }

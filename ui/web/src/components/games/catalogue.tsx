@@ -1,6 +1,6 @@
 "use client";
 
-import { ChessKnight, Circle, Gamepad2, X } from "lucide-react";
+import { BrickWall, ChessKnight, Circle, Gamepad2, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -39,8 +39,18 @@ export function ChessIcon({ className = "size-8" }: { className?: string }) {
   );
 }
 
+export function QuoridorIcon({ className = "size-8" }: { className?: string }) {
+  return (
+    <span aria-hidden className={`flex items-center justify-center rounded-[10px] bg-accent text-signal ${className}`}>
+      <BrickWall className="size-[55%]" strokeWidth={2} />
+    </span>
+  );
+}
+
 export function GameIcon({ game, className }: { game: GameKey; className?: string }) {
-  return game === GameKey.Chess ? <ChessIcon className={className} /> : <TicTacToeIcon className={className} />;
+  if (game === GameKey.Chess) return <ChessIcon className={className} />;
+  if (game === GameKey.Quoridor) return <QuoridorIcon className={className} />;
+  return <TicTacToeIcon className={className} />;
 }
 
 function CatalogueItem({ game, pathname, rating }: { game: GameKey; pathname: string; rating?: number }) {
@@ -64,7 +74,8 @@ export function GamesSidebar() {
   const me = user?.id ? [user.id] : [];
   const ticTacToeRating = useRatings(GameKey.TicTacToe, me).data?.get(user?.id ?? "")?.rating;
   const chessRating = useRatings(GameKey.Chess, me).data?.get(user?.id ?? "")?.rating;
-  const ratings: Record<GameKey, number | undefined> = { [GameKey.TicTacToe]: ticTacToeRating, [GameKey.Chess]: chessRating };
+  const quoridorRating = useRatings(GameKey.Quoridor, me).data?.get(user?.id ?? "")?.rating;
+  const ratings: Record<GameKey, number | undefined> = { [GameKey.TicTacToe]: ticTacToeRating, [GameKey.Chess]: chessRating, [GameKey.Quoridor]: quoridorRating };
   const sessions = useGameSessions();
   const active = (sessions.data ?? []).filter((game) => game.status === SessionStatus.WAITING || game.status === SessionStatus.PLAYING);
   const opponents = usePublicProfiles(active.flatMap((game) => game.playerIds.filter((id) => id !== user?.id))).data;
@@ -122,6 +133,7 @@ export function GamesCatalogue() {
         <EmptyState icon={Gamepad2} title="Pick a game to play">
           <div className="flex flex-wrap justify-center gap-2">
             <Link href={lobbyHref(GameKey.Chess)} className={buttonVariants({ variant: "signal", className: "min-h-10" })}>Open Chess</Link>
+            <Link href={lobbyHref(GameKey.Quoridor)} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Quoridor</Link>
             <Link href={ticTacToeLobbyHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Tic-Tac-Toe</Link>
           </div>
         </EmptyState>

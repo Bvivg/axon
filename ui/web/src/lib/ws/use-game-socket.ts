@@ -127,5 +127,6 @@ export function useGameSocket(initial: Session) {
     move: (cell: number) => send({ case: "move", value: { ply: game.ply, cell, revision: game.revision } }),
     chessMove: (uci: string) => send({ case: "chessMove", value: { ply: game.ply, uci, revision: game.revision } }),
     draw: (action: DrawAction) => send({ case: "draw", value: { action } }),
+    quoridorMove: (move: string) => send({ case: "quoridorMove", value: { ply: game.ply, move, revision: game.revision } }),
   };
 }
