@@ -15,12 +15,19 @@ import (
 
 type databases struct {
 	primary postgres.Config
+	leases  postgres.Config
 	replica *postgres.Config
 	listen  *config.Secret
 }
 
 func loadDatabases(loader *config.Loader) databases {
 	out := databases{primary: postgres.LoadConfig(loader)}
+	out.leases = out.primary
+	out.leases.MaxConns = int32(loader.IntDefault("GAME_LEASE_MAX_CONNS", 4))
+	out.leases.MinConns = 1
+	if dsn := loader.SecretDefault("GAME_LEASE_DATABASE_URL", ""); dsn.Reveal() != "" {
+		out.leases.DSN = dsn
+	}
 	if dsn := loader.SecretDefault("GAME_READ_DATABASE_URL", ""); dsn.Reveal() != "" {
 		replica := out.primary
 		replica.DSN = dsn
@@ -48,6 +55,7 @@ func (d databases) listenConfig(fallback *pgx.ConnConfig) (*pgx.ConnConfig, erro
 
 type connections struct {
 	primary *postgres.Pool
+	leases  *postgres.Pool
 	replica *postgres.Pool
 	listen  *pgx.ConnConfig
 }
@@ -59,12 +67,16 @@ func (d databases) connect(ctx context.Context, log *slog.Logger) (connections, 
 	}
 	out := connections{primary: primary}
 	if out.listen, err = d.listenConfig(primary.Config().ConnConfig); err != nil {
-		primary.Close()
+		out.Close()
 		return connections{}, err
+	}
+	if out.leases, err = postgres.Connect(ctx, d.leases, log.With("role", "leases")); err != nil {
+		out.Close()
+		return connections{}, fmt.Errorf("lease pool: %w", err)
 	}
 	if d.replica != nil {
 		if out.replica, err = postgres.Connect(ctx, *d.replica, log.With("role", "read-replica")); err != nil {
-			primary.Close()
+			out.Close()
 			return connections{}, fmt.Errorf("read replica: %w", err)
 		}
 	}
@@ -82,6 +94,9 @@ func (c connections) storeOptions() []session.Option {
 func (c connections) Close() {
 	if c.replica != nil {
 		c.replica.Close()
+	}
+	if c.leases != nil {
+		c.leases.Close()
 	}
 	c.primary.Close()
 }

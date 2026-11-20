@@ -22,9 +22,10 @@ import (
 const OwnerChannel = "game_owner_changed"
 
 type Postgres struct {
-	pool  *pgxpool.Pool
-	store *session.Store
-	rules session.Rules
+	pool   *pgxpool.Pool
+	leases *pgxpool.Pool
+	store  *session.Store
+	rules  session.Rules
 
 	mu    sync.Mutex
 	cache map[uuid.UUID]session.Session
@@ -32,8 +33,22 @@ type Postgres struct {
 
 const cacheLimit = 50_000
 
-func New(store *session.Store, rules session.Rules) *Postgres {
-	return &Postgres{pool: store.Pool(), store: store, rules: rules, cache: map[uuid.UUID]session.Session{}}
+type Option func(*Postgres)
+
+func LeasesOn(pool *pgxpool.Pool) Option {
+	return func(m *Postgres) {
+		if pool != nil {
+			m.leases = pool
+		}
+	}
+}
+
+func New(store *session.Store, rules session.Rules, options ...Option) *Postgres {
+	m := &Postgres{pool: store.Pool(), leases: store.Pool(), store: store, rules: rules, cache: map[uuid.UUID]session.Session{}}
+	for _, option := range options {
+		option(m)
+	}
+	return m
 }
 
 func (m *Postgres) Forget() {
@@ -44,7 +59,7 @@ func (m *Postgres) Forget() {
 
 func (m *Postgres) Claim(ctx context.Context, partition int32, ownerID, address string, ttl time.Duration) (owner.Lease, error) {
 	var lease owner.Lease
-	err := pgx.BeginFunc(ctx, m.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, m.leases, func(tx pgx.Tx) error {
 		var waitMS int64
 		err := tx.QueryRow(ctx, `SELECT CASE WHEN owner_id = $2 THEN 0
 				ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (lease_until - clock_timestamp())) * 1000))::bigint END
@@ -73,7 +88,7 @@ func (m *Postgres) Renew(ctx context.Context, ownerID string, held map[int32]int
 		partitions = append(partitions, partition)
 		generations = append(generations, generation)
 	}
-	rows, err := m.pool.Query(ctx, `UPDATE game.owners o SET lease_until = clock_timestamp() + make_interval(secs => $4)
+	rows, err := m.leases.Query(ctx, `UPDATE game.owners o SET lease_until = clock_timestamp() + make_interval(secs => $4)
 		FROM unnest($2::smallint[], $3::bigint[]) AS h(partition, generation)
 		WHERE o.partition = h.partition AND o.generation = h.generation AND o.owner_id = $1
 		RETURNING o.partition`, ownerID, partitions, generations, ttl.Seconds())
@@ -84,7 +99,7 @@ func (m *Postgres) Renew(ctx context.Context, ownerID string, held map[int32]int
 }
 
 func (m *Postgres) Release(ctx context.Context, ownerID string, partition int32, generation int64) error {
-	_, err := m.pool.Exec(ctx, `UPDATE game.owners SET lease_until = clock_timestamp()
+	_, err := m.leases.Exec(ctx, `UPDATE game.owners SET lease_until = clock_timestamp()
 		WHERE partition=$1 AND generation=$2 AND owner_id=$3`, partition, generation, ownerID)
 	return err
 }
@@ -167,7 +182,7 @@ func (m *Postgres) Moves(ctx context.Context, id uuid.UUID, below int) ([]sessio
 }
 
 func (m *Postgres) Owners(ctx context.Context) (map[int32]string, error) {
-	rows, err := m.pool.Query(ctx, `SELECT partition, address FROM game.owners`)
+	rows, err := m.leases.Query(ctx, `SELECT partition, address FROM game.owners`)
 	if err != nil {
 		return nil, err
 	}

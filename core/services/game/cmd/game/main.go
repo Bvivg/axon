@@ -116,7 +116,7 @@ func run() error {
 	metrics := middleware.NewMetrics(cfg.Service)
 	observed := gamemetrics.New(metrics.Registry())
 	rules := session.NewRules(games)
-	model := projection.New(store, rules)
+	model := projection.New(store, rules, projection.LeasesOn(db.leases.Pool))
 	log = log.With("instance", instance)
 	journalLog, err := journal.NewKafka(ctx, kafka)
 	if err != nil {
