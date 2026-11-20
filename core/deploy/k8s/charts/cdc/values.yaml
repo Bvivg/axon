@@ -5,6 +5,8 @@ curlImage: curlimages/curl:8.23.0
 connector:
   name: axon-outbox
   cluster: axon-connect
+  config:
+    slot.failover: "true"
 publication: axon_outbox
 registry:
   enabled: true

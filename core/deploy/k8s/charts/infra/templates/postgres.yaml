@@ -11,6 +11,12 @@ spec:
   enableSuperuserAccess: true
   primaryUpdateStrategy: unsupervised
   livenessProbeTimeout: 60
+  {{- if gt (int $v.postgres.instances) 1 }}
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      synchronizeLogicalDecoding: true
+  {{- end }}
   bootstrap:
     initdb:
       database: {{ $v.global.postgres.database }}

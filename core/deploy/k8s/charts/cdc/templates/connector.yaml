@@ -1,5 +1,5 @@
 {{- $v := fromYaml (include "cdc.values" .) -}}
-{{- $config := fromJson (.Files.Get "files/outbox-connector.json") -}}
+{{- $config := mergeOverwrite (fromJson (.Files.Get "files/outbox-connector.json")) (deepCopy ($v.connector.config | default dict)) -}}
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaConnector
 metadata:
