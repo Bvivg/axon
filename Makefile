@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
 COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
-GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/...
+GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/...
 
 -include core/deploy/.env
 
@@ -218,13 +218,20 @@ web-check: web-lint web-typecheck web-test web-build ## Everything CI runs for t
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace
-	@for module in shared services/auth services/chat services/gateway services/game; do \
+	@for module in shared services/auth services/chat services/gateway services/game services/rating; do \
 		echo "tidy $$module"; \
 		(cd core/$$module && GOWORK=off go mod tidy) || exit 1; \
 	done
 
 .PHONY: check
 check: fmt-check vet test ## Everything CI runs that needs no Docker
+
+COMPOSE_RATING_E2E := docker compose -p axon-rating-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.rating-e2e.yml --env-file core/deploy/.env --env-file core/deploy/rating-e2e.env
+
+.PHONY: test-rating-e2e
+test-rating-e2e: jwt-key ## Rated quick matches through gateway, CDC and rating, a Connect outage and a rebuild (one-off stack)
+	@trap '$(COMPOSE_RATING_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	core/deploy/rating-e2e.sh $(COMPOSE_RATING_E2E)
 
 COMPOSE_WEB_E2E := docker compose -f core/deploy/docker-compose.web-e2e.yml
 

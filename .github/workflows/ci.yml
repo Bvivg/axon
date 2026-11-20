@@ -51,7 +51,7 @@ jobs:
         working-directory: core
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
-          for module in shared services/auth services/chat services/gateway services/game; do
+          for module in shared services/auth services/chat services/gateway services/game services/rating; do
             (cd "$module" && govulncheck ./...)
           done
 
@@ -78,7 +78,7 @@ jobs:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: core
 
-          args: ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/...
+          args: ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/...
 
   proto:
     name: Contracts
@@ -143,6 +143,7 @@ jobs:
           docker compose -f core/deploy/docker-compose.yml config -q
           docker compose -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.ha.yml config -q
           docker compose -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.observability.yml config -q
+          docker compose -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.rating-e2e.yml config -q
           docker compose -f core/deploy/docker-compose.tools.yml config -q
 
           JWT_PRIVATE_KEY_DEV_1=placeholder \
@@ -205,7 +206,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [auth, chat, gateway, game]
+        service: [auth, chat, gateway, game, rating]
     steps:
       - uses: actions/checkout@v4
 

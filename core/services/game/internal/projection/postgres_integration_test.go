@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
@@ -21,6 +22,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/projection"
 	"github.com/bvivg/axon/core/services/game/internal/session"
+	eventsv1 "github.com/bvivg/axon/core/shared/gen/go/axon/events/v1"
 )
 
 const partitions = 4
@@ -51,7 +53,7 @@ func setup(t *testing.T) *env {
 	}
 	t.Cleanup(pool.Close)
 	migrate(t, ctx, pool)
-	for _, table := range []string{"game.match_queue", "game.rating_changes", "game.moves", "game.sessions", "game.ratings", "game.owners", "game.projector_offsets"} {
+	for _, table := range []string{"game.outbox", "game.match_queue", "game.rating_changes", "game.moves", "game.sessions", "game.ratings", "game.owners", "game.projector_offsets"} {
 		if _, err := pool.Exec(ctx, `DELETE FROM `+table); err != nil {
 			t.Fatal(err)
 		}
@@ -86,6 +88,7 @@ func migrate(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		{"000005_event_log", `SELECT to_regclass('game.owners') IS NOT NULL`},
 		{"000006_owner_lease", `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='game' AND table_name='owners' AND column_name='lease_until')`},
 		{"000007_moves_partitioned", `SELECT EXISTS (SELECT 1 FROM pg_partitioned_table WHERE partrelid = 'game.moves'::regclass)`},
+		{"000008_outbox", `SELECT to_regclass('game.outbox') IS NOT NULL`},
 	}
 	for _, check := range checks {
 		var applied bool
@@ -143,6 +146,54 @@ func (e *env) rating(t *testing.T, game engine.Key, user uuid.UUID) session.Rati
 		t.Fatal(err)
 	}
 	return ratings[user]
+}
+
+func (e *env) finished(t *testing.T, id uuid.UUID) []*eventsv1.GameFinished {
+	t.Helper()
+	rows, err := e.pool.Query(e.ctx, `SELECT id, aggregateid, type, payload FROM game.outbox WHERE aggregatetype = $1 ORDER BY created_at`, projection.FinishedTopic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []*eventsv1.GameFinished
+	for rows.Next() {
+		var eventID uuid.UUID
+		var key, kind string
+		var payload []byte
+		if err := rows.Scan(&eventID, &key, &kind, &payload); err != nil {
+			t.Fatal(err)
+		}
+		event := &eventsv1.GameFinished{}
+		if err := proto.Unmarshal(payload, event); err != nil {
+			t.Fatal(err)
+		}
+		if event.SessionId != id.String() {
+			continue
+		}
+		if eventID != projection.FinishedEventID(id) || event.EventId != eventID.String() || key != event.Game || kind != "axon.events.v1.GameFinished" {
+			t.Fatal("outbox envelope", eventID, key, kind, event)
+		}
+		out = append(out, event)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func (e *env) finishedOnce(t *testing.T, game session.Session, outcome eventsv1.GameFinished_Outcome, winner int32) *eventsv1.GameFinished {
+	t.Helper()
+	events := e.finished(t, game.ID)
+	if len(events) != 1 {
+		t.Fatal("finished events for", game.ID, len(events))
+	}
+	event := events[0]
+	players := []string{game.Creator.String(), game.Opponent.String()}
+	if event.Outcome != outcome || event.WinnerSeat != winner || event.Rated != game.Rated || event.Game != string(game.Game) ||
+		!reflect.DeepEqual(event.Players, players) || !event.FinishedAt.IsValid() {
+		t.Fatal("finished event", event)
+	}
+	return event
 }
 
 func (e *env) match(t *testing.T, node *owner.Owner, game engine.Key, a, b uuid.UUID) session.Session {
@@ -221,23 +272,42 @@ func TestMatchedGameProjectsAndSettlesOnce(t *testing.T) {
 		t.Fatal(game.State)
 	}
 	e.project(t)
-	if got := e.rating(t, tictactoe.Key, x); got.Rating != 1220 || got.Wins != 1 || got.Games != 1 {
-		t.Fatal("winner", got)
+	event := e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_WIN, 0)
+	if !event.FinishedAt.AsTime().Equal(game.UpdatedAt) {
+		t.Fatal("finished_at is not the journal time", event.FinishedAt.AsTime(), game.UpdatedAt)
 	}
-	if got := e.rating(t, tictactoe.Key, o); got.Rating != 1180 || got.Losses != 1 {
-		t.Fatal("loser", got)
+	if got := e.rating(t, tictactoe.Key, x); got.Rating != session.InitialRating || got.Games != 0 {
+		t.Fatal("the projector settled a rating itself", got)
 	}
 	if _, _, err := node.Leave(e.ctx, game.ID, o); err != nil {
 		t.Fatal(err)
 	}
 	e.project(t)
 	e.project(t)
+	e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_WIN, 0)
+	update := session.RatingUpdate{Session: game.ID, Game: tictactoe.Key, At: game.UpdatedAt, Players: []session.RatedPlayer{
+		{User: x, Before: 1200, After: 1362, Games: 1, Wins: 1},
+		{User: o, Before: 1200, After: 1038, Games: 1, Losses: 1},
+	}}
+	for range 2 {
+		if err := e.store.ApplyRatings(e.ctx, update); err != nil {
+			t.Fatal(err)
+		}
+	}
 	changes, err := e.store.Changes(e.ctx, []uuid.UUID{game.ID})
 	if err != nil || len(changes[game.ID]) != 2 {
 		t.Fatal("changes", changes, err)
 	}
-	if got := e.rating(t, tictactoe.Key, x); got.Games != 1 {
-		t.Fatal("settled twice", got)
+	for _, change := range changes[game.ID] {
+		if !change.At.Equal(game.UpdatedAt) || change.Before != 1200 || (change.User == x) != (change.After == 1362) {
+			t.Fatal("change", change)
+		}
+	}
+	if got := e.rating(t, tictactoe.Key, x); got.Rating != 1362 || got.Games != 1 || got.Wins != 1 {
+		t.Fatal("winner", got)
+	}
+	if got := e.rating(t, tictactoe.Key, o); got.Rating != 1038 || got.Games != 1 || got.Losses != 1 {
+		t.Fatal("loser", got)
 	}
 	var moves int
 	if err := e.pool.QueryRow(e.ctx, `SELECT count(*) FROM game.moves WHERE session_id=$1`, game.ID).Scan(&moves); err != nil || moves != 5 {
@@ -273,15 +343,8 @@ func TestRatedTimeoutAndResignSettle(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.project(t)
-	if got := e.rating(t, tictactoe.Key, timed.Creator); got.Rating != 1180 || got.Games != 1 {
-		t.Fatal("timed out player", got)
-	}
-	if got := e.rating(t, tictactoe.Key, *timed.Opponent); got.Rating != 1220 {
-		t.Fatal("waiting player", got)
-	}
-	if got := e.rating(t, tictactoe.Key, loser); got.Rating != 1180 || got.Losses != 1 || got.Games != 1 {
-		t.Fatal("resigned player", got)
-	}
+	e.finishedOnce(t, timed, eventsv1.GameFinished_OUTCOME_WIN, 1)
+	e.finishedOnce(t, resigned, eventsv1.GameFinished_OUTCOME_WIN, 0)
 }
 
 func TestChessDrawAndCheckmateSettle(t *testing.T) {
@@ -339,13 +402,60 @@ func TestChessDrawAndCheckmateSettle(t *testing.T) {
 		}
 	}
 	e.project(t)
-	if got := e.rating(t, chess.Key, white); got.Rating != 1200 || got.Draws != 1 {
-		t.Fatal("draw rating", got)
+	e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_DRAW, -1)
+	e.finishedOnce(t, mate, eventsv1.GameFinished_OUTCOME_WIN, 1)
+}
+
+func TestFinishedRatedSessionWritesOneOutboxRowAcrossReplays(t *testing.T) {
+	e := setup(t)
+	node := e.node(t, "a")
+	game := e.match(t, node, tictactoe.Key, uuid.New(), uuid.New())
+	players := []uuid.UUID{game.Creator, *game.Opponent}
+	var err error
+	for ply, at := range []int{0, 3, 1, 4, 2} {
+		if game, err = node.Move(e.ctx, game.ID, players[ply%2], ply, tictactoe.Key, cell(at), &game.Revision); err != nil {
+			t.Fatal(err)
+		}
 	}
-	ratings, err := e.store.Ratings(e.ctx, chess.Key, players)
-	if err != nil || ratings[players[1]].Rating != 1220 || ratings[players[0]].Rating != 1180 {
-		t.Fatal("mate rating", ratings, err)
+	unrated, err := node.Start(e.ctx, session.SessionID(players[0], uuid.New()), tictactoe.Key, players[0], players[1], false)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if unrated, _, err = node.Leave(e.ctx, unrated.ID, players[1]); err != nil {
+		t.Fatal(err)
+	}
+	e.project(t)
+	count := func() int {
+		var rows int
+		if err := e.pool.QueryRow(e.ctx, `SELECT count(*) FROM game.outbox WHERE aggregatetype = $1`, projection.FinishedTopic).Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		return rows
+	}
+	if got := count(); got != 2 {
+		t.Fatal("outbox rows after the first projection", got)
+	}
+	e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_WIN, 0)
+	e.finishedOnce(t, unrated, eventsv1.GameFinished_OUTCOME_WIN, 0)
+	if _, err := e.pool.Exec(e.ctx, `UPDATE game.projector_offsets SET next_offset=0`); err != nil {
+		t.Fatal(err)
+	}
+	e.model.Forget()
+	e.project(t)
+	if got := count(); got != 2 {
+		t.Fatal("a replay from offset zero added outbox rows", got)
+	}
+	for _, statement := range []string{`DELETE FROM game.match_queue`, `DELETE FROM game.moves`, `DELETE FROM game.sessions`, `UPDATE game.projector_offsets SET next_offset=0`} {
+		if _, err := e.pool.Exec(e.ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.model.Forget()
+	e.project(t)
+	if got := count(); got != 2 {
+		t.Fatal("rebuilding the read model from the journal added outbox rows", got)
+	}
+	e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_WIN, 0)
 }
 
 func TestCancelledWaitingGameIsRemoved(t *testing.T) {

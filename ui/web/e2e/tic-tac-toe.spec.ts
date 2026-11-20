@@ -401,12 +401,12 @@ test("quick match pairs two players into a rated game and moves both ratings", a
     await expect(status(second.page)).toContainText("Opponent’s turn");
     await play([first.page, second.page], [0, 3, 1, 4, 2]);
     await expect(status(first.page)).toHaveText("You won");
-    await expect(first.page.locator("[data-rating-delta]")).toHaveText("Rating +20");
-    await expect(second.page.locator("[data-rating-delta]")).toHaveText("Rating −20");
+    await expect(first.page.locator("[data-rating-delta]")).toHaveText("Rating +162", { timeout: 30_000 });
+    await expect(second.page.locator("[data-rating-delta]")).toHaveText("Rating −162", { timeout: 30_000 });
     await first.page.getByRole("button", { name: "View board" }).click();
     await first.page.getByRole("link", { name: "Back to lobby" }).first().click();
-    await expect(first.page.getByTestId("my-rating")).toHaveText("1220");
-    await expect(first.page.locator("#game-history")).toContainText("+20");
+    await expect(first.page.getByTestId("my-rating")).toHaveText("1362");
+    await expect(first.page.locator("#game-history")).toContainText("+162");
   } finally {
     await a.context.close();
     await b.context.close();

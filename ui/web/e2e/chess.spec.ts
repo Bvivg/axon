@@ -83,7 +83,7 @@ test("quick match pairs two chess players who agree a draw", async ({ browser, b
     await expect(black.page.getByRole("button", { name: "Draw offered", exact: true })).toBeDisabled();
     await white.page.getByRole("button", { name: "Accept draw", exact: true }).click();
     await expect(status(white.page)).toHaveText("Draw · Draw agreed");
-    await expect(white.page.locator("[data-rating-delta]")).toHaveText("Draw agreed · Rating ±0");
+    await expect(white.page.locator("[data-rating-delta]")).toHaveText("Draw agreed · Rating ±0", { timeout: 30_000 });
     await white.page.getByRole("button", { name: "View board" }).click();
     await white.page.getByRole("link", { name: "Back to lobby" }).first().click();
     await expect(white.page.getByTestId("my-rating")).toHaveText("1200");

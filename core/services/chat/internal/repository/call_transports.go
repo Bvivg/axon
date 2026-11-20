@@ -99,11 +99,22 @@ func (r *Repository) persistCall(ctx context.Context, call calls.Call, now time.
 	return r.persistMigration(ctx, call, now)
 }
 func (r *Repository) writeCall(ctx context.Context, call calls.Call, document []byte) error {
-	const base = `INSERT INTO calls(id,room_id,caller_id,start_key,state,version,deadline,created_at,document) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET state=excluded.state,version=excluded.version,deadline=excluded.deadline,document=excluded.document`
-	_, err := r.q.Exec(ctx, base, call.ID, nullCallID(call.RoomID), call.CallerID, call.StartKey, call.State, call.Version, nullCallTime(call.Deadline), call.CreatedAt, document)
-	if err != nil || !r.sfu {
+	var prior string
+	if err := r.q.QueryRow(ctx, `SELECT state FROM calls WHERE id=$1 FOR UPDATE`, call.ID).Scan(&prior); err != nil && !noRows(err) {
 		return err
 	}
-	_, err = r.q.Exec(ctx, `UPDATE calls SET predecessor_call_id=$2,replaced_by_call_id=$3 WHERE id=$1`, call.ID, nullCallID(call.PredecessorID), nullCallID(call.ReplacedByID))
+	const base = `INSERT INTO calls(id,room_id,caller_id,start_key,state,version,deadline,created_at,document) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET state=excluded.state,version=excluded.version,deadline=excluded.deadline,document=excluded.document`
+	if _, err := r.q.Exec(ctx, base, call.ID, nullCallID(call.RoomID), call.CallerID, call.StartKey, call.State, call.Version, nullCallTime(call.Deadline), call.CreatedAt, document); err != nil {
+		return err
+	}
+	if call.State == calls.Ended && prior != calls.Ended {
+		if err := r.recordEvent(ctx, CallEndedEvent(uuid.New(), call)); err != nil {
+			return err
+		}
+	}
+	if !r.sfu {
+		return nil
+	}
+	_, err := r.q.Exec(ctx, `UPDATE calls SET predecessor_call_id=$2,replaced_by_call_id=$3 WHERE id=$1`, call.ID, nullCallID(call.PredecessorID), nullCallID(call.ReplacedByID))
 	return err
 }

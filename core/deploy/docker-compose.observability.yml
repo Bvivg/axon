@@ -25,6 +25,11 @@ services:
       <<: *otel-env
     networks: [obs]
 
+  rating:
+    environment:
+      <<: *otel-env
+    networks: [obs]
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.120.0
     restart: unless-stopped
