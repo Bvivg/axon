@@ -22,7 +22,7 @@
 - Тестовые стеки (`docker-compose.e2e.yml`, `docker-compose.web-e2e.yml` и их overlay) — одноразовые проекты одного прогона и остаются одной сетью.
 
 ## Postgres
-- Одна база, schema-level изоляция: `auth`, `chat`, `game`, `calling` — каждый сервис пишет только в свою схему, никаких cross-schema JOIN из кода сервиса.
+- Одна база, schema-level изоляция: `auth`, `chat`, `game`, `calling`, `rating` — каждый сервис пишет только в свою схему, никаких cross-schema JOIN из кода сервиса.
 - Миграции — по сервису, в `services/<name>/migrations/`, применяются независимо.
 
 ## Redis
