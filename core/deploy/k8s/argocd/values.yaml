@@ -20,6 +20,10 @@ configs:
           hs.status = "Progressing"
           hs.message = "waiting for the application to sync"
         end
+        if hs.status == "Healthy" and obj.status.operationState ~= nil and (obj.status.operationState.phase == "Running" or obj.status.operationState.phase == "Terminating") then
+          hs.status = "Progressing"
+          hs.message = "waiting for the sync operation to finish"
+        end
       end
       return hs
     resource.customizations.health.redis.redis.opstreelabs.in_RedisReplication: |
