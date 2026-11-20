@@ -125,7 +125,7 @@ async function main() {
       const files = project ? project.ConfigFiles.split(",") : [join(root, "core/deploy/docker-compose.yml")];
       if (!files.includes(join(root, "core/deploy/docker-compose.yml"))) throw new Error("Another checkout owns the axon Compose project; stop it before starting this checkout");
       const compose = ["compose", "--project-name", "axon", "--project-directory", join(root, "core/deploy"), ...files.flatMap((file) => ["-f", file])];
-      await launch("infrastructure", "docker", [...compose, "up", "-d", "--wait", "--wait-timeout", "180", "--no-recreate", "postgres", "redis", "kafka", "minio"]).completed;
+      await launch("infrastructure", "docker", [...compose, "up", "-d", "--wait", "--wait-timeout", "180", "--no-recreate", "postgres", "redis", "kafka", "kafka-2", "kafka-3", "minio"]).completed;
       await launch("storage-init", "docker", [...compose, "run", "--rm", "--no-deps", "minio-init"]).completed;
       if (env.CALLS_SFU_ENABLED === "true" && !env.DEV_LIVEKIT_URL) {
         const networkInfo = spawnSync("docker", ["inspect", "axon-postgres-1", "--format", "{{json .NetworkSettings.Networks}}"], { encoding: "utf8" });
@@ -197,6 +197,7 @@ async function main() {
     for (const service of ["auth", "chat", "game", "gateway"]) {
       const serviceEnv = { ...common, HTTP_ADDR: `127.0.0.1:${ports[service]}`, METRICS_ADDR: `127.0.0.1:${ports[`${service}Admin`] || 0}` };
       if (service !== "gateway") serviceEnv.POSTGRES_DSN = localDSN(env[`${service.toUpperCase()}_POSTGRES_DSN`]);
+      if (service === "game") serviceEnv.GAME_ADVERTISE_ADDR = `127.0.0.1:${ports.game}`;
       const task = launch(service, "go", ["run", `./services/${service}/cmd/${service}`], { cwd: join(root, "core"), env: serviceEnv, persistent: true });
       task.completed.catch(() => {});
       await ready(`http://127.0.0.1:${service === "game" ? ports.game : ports[`${service}Admin`]}/readyz`);
