@@ -17,7 +17,7 @@ import (
 
 const (
 	OutboxTable   = "tournament.outbox"
-	InitialRating = 1500
+	InitialRating = 1200
 )
 
 var ErrNotFound = errors.New("store: tournament not found")
