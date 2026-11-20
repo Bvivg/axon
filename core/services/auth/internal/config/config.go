@@ -140,7 +140,7 @@ func loadJWT(l *config.Loader) JWTConfig {
 func loadRotation(l *config.Loader) Rotation {
 	out := Rotation{
 		Interval: l.DurationDefault("JWT_ROTATION_INTERVAL", 0),
-		Lead:     l.DurationDefault("JWT_ROTATION_LEAD", 10*time.Minute),
+		Lead:     l.DurationDefault("JWT_ROTATION_LEAD", 20*time.Minute),
 		Check:    l.DurationDefault("JWT_ROTATION_CHECK", 30*time.Second),
 	}
 	if out.Interval <= 0 {
