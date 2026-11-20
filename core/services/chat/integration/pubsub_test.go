@@ -75,8 +75,6 @@ func TestAMessageCrossesBetweenInstances(t *testing.T) {
 	}
 	defer stop()
 
-	waitForSubscriber(t, roomID)
-
 	sent := newTestMessage(roomID, 1, "across the wire")
 	if err := writer.Publish(t.Context(), sent); err != nil {
 		t.Fatalf("Publish: %v", err)
@@ -109,8 +107,6 @@ func TestARichMessageCrossesWhole(t *testing.T) {
 		t.Fatalf("Subscribe: %v", err)
 	}
 	defer stop()
-
-	waitForSubscriber(t, roomID)
 
 	replyTo, forwardedFrom := uuid.New(), uuid.New()
 	sent := newTestMessage(roomID, 2, "the view")
@@ -150,8 +146,6 @@ func TestAChangeCrossesAsAnUpdateWithItsDetails(t *testing.T) {
 	}
 	defer stop()
 
-	waitForSubscriber(t, roomID)
-
 	origin := uuid.New()
 	edited := time.Now().UTC().Truncate(time.Millisecond)
 	sent := newTestMessage(roomID, 3, "fixed typo")
@@ -189,8 +183,6 @@ func TestAnInstanceHearsItsOwnMessage(t *testing.T) {
 	}
 	defer stop()
 
-	waitForSubscriber(t, roomID)
-
 	sent := newTestMessage(roomID, 1, "to myself")
 	if err := bus.Publish(t.Context(), sent); err != nil {
 		t.Fatalf("Publish: %v", err)
@@ -217,8 +209,6 @@ func TestTwoLocalListenersShareOneSubscription(t *testing.T) {
 		t.Fatalf("second Subscribe: %v", err)
 	}
 	defer stopSecond()
-
-	waitForSubscriber(t, roomID)
 
 	sent := newTestMessage(roomID, 1, "to both")
 	if err := bus.Publish(t.Context(), sent); err != nil {
@@ -266,29 +256,6 @@ func TestStoppingTheLastListenerClosesTheChannel(t *testing.T) {
 	}
 }
 
-func waitForSubscriber(t *testing.T, roomID uuid.UUID) {
-	t.Helper()
-	waitForChannel(t, "chat:room:"+roomID.String())
-}
-
-func waitForChannel(t *testing.T, channel string) {
-	t.Helper()
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		counts, err := cache.PubSubNumSub(t.Context(), channel).Result()
-		if err != nil {
-			t.Fatalf("PUBSUB NUMSUB: %v", err)
-		}
-		if counts[channel] > 0 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	t.Fatalf("redis never reported a subscriber on %s", channel)
-}
-
 func TestSignalsCrossBetweenInstancesOnTheirOwnTopics(t *testing.T) {
 	writer, reader := newBus(t), newBus(t)
 
@@ -305,9 +272,6 @@ func TestSignalsCrossBetweenInstancesOnTheirOwnTopics(t *testing.T) {
 		t.Fatalf("SubscribeUserSignals: %v", err)
 	}
 	defer stopUser()
-
-	waitForChannel(t, "chat:room:"+roomID.String()+":signals")
-	waitForChannel(t, "chat:user:"+userID.String()+":signals")
 
 	typing := pubsub.Signal{Kind: pubsub.SignalTyping, RoomID: roomID, UserID: uuid.New()}
 	if err := writer.PublishSignal(t.Context(), typing); err != nil {
