@@ -1,6 +1,9 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var (
 	ErrUserNotFound = errors.New("auth: user not found")
@@ -33,12 +36,24 @@ var (
 
 	ErrOauthAccountExists = errors.New("auth: an account with this email exists and cannot be linked")
 
+	ErrLoginThrottled = errors.New("auth: too many failed sign-ins for this account")
+
+	ErrPasswordHashingBusy = errors.New("auth: password hashing is at capacity")
+
 	ErrSessionNotFound = errors.New("auth: session not found")
 
 	ErrRoleNotFound = errors.New("auth: role not found")
 
 	ErrPermissionDenied = errors.New("auth: permission denied")
 )
+
+type ThrottledError struct {
+	RetryAfter time.Duration
+}
+
+func (e *ThrottledError) Error() string { return ErrLoginThrottled.Error() }
+
+func (e *ThrottledError) Unwrap() error { return ErrLoginThrottled }
 
 type ValidationError struct {
 	Field  string

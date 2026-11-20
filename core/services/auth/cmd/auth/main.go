@@ -32,11 +32,13 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/keyring"
+	"github.com/bvivg/axon/core/services/auth/internal/limit"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 	"github.com/bvivg/axon/core/services/auth/internal/server"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
+	"github.com/bvivg/axon/core/services/auth/internal/throttle"
 )
 
 var version = "dev"
@@ -168,6 +170,8 @@ func run() error {
 
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
 		RefreshTTL:    cfg.JWT.RefreshTTL,
+		PasswordGate:  limit.NewGate(cfg.PasswordWork.MaxConcurrent, cfg.PasswordWork.QueueTimeout),
+		LoginThrottle: throttle.NewLogins(cache, cfg.LoginThrottle),
 		OAuth:         oauthCfg,
 		Avatar:        avatarPipeline,
 		Presence:      presence.NewTracker(cache),

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -21,6 +22,8 @@ func TestSecurityRefusalsReachTheClientWithExplicitCodes(t *testing.T) {
 	}{
 		"fake provider outside its domain": {err: fmt.Errorf("oauth: fake: %w", domain.ErrOauthEmailNotAllowed), code: connect.CodeInvalidArgument},
 		"link to an unverified account":    {err: domain.ErrOauthAccountExists, code: connect.CodeFailedPrecondition},
+		"throttled account":                {err: &domain.ThrottledError{RetryAfter: 1500 * time.Millisecond}, code: connect.CodeResourceExhausted, retryAfter: "2"},
+		"hashing at capacity":              {err: domain.ErrPasswordHashingBusy, code: connect.CodeResourceExhausted, retryAfter: "1"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := translateError(context.Background(), logger.Discard(), tc.err)
