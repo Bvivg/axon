@@ -416,6 +416,7 @@ func play(ctx context.Context, cfg config, client gamev1connect.GameServiceClien
 					}
 					return res
 				}
+				sentPly = -1
 				continue
 			}
 			if code := u.event.GetError(); code != gamev1.SessionError_SESSION_ERROR_UNSPECIFIED {
