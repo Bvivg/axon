@@ -210,7 +210,7 @@ jobs:
       id-token: write
     strategy:
       matrix:
-        service: [auth, chat, gateway, game, rating]
+        service: [auth, chat, gateway, game, rating, analysis]
     steps:
       - uses: actions/checkout@v4
 
@@ -226,7 +226,7 @@ jobs:
           docker build \
             --file core/deploy/Dockerfile.service \
             --build-arg SERVICE=${{ matrix.service }} \
-            --build-arg RUNTIME_FLAVOR=${{ matrix.service == 'chat' && 'media' || 'static' }} \
+            --build-arg RUNTIME_FLAVOR=${{ matrix.service == 'chat' && 'media' || matrix.service == 'analysis' && 'analysis' || 'static' }} \
             --target runtime \
             --tag axon/${{ matrix.service }}:${{ github.sha }} \
             core

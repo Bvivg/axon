@@ -47,6 +47,13 @@ scrape_configs:
         port: 9094
         refresh_interval: 15s
 
+  - job_name: analysis
+    dns_sd_configs:
+      - names: ["analysis"]
+        type: A
+        port: 9095
+        refresh_interval: 15s
+
   - job_name: postgres
     static_configs:
       - targets: ["postgres-exporter:9187"]
