@@ -1,0 +1,73 @@
+global: {}
+infra: {}
+postgres:
+  instances: 1
+  image: ghcr.io/cloudnative-pg/postgresql:17.10
+  storage: 1Gi
+  roles:
+    - auth
+    - chat
+    - game
+    - calling
+    - rating
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+  clientImage: postgres:17-alpine
+kafka:
+  version: 4.3.2
+  replicas: 1
+  storage: 2Gi
+  heap: 384m
+  resources:
+    requests:
+      cpu: 100m
+      memory: 640Mi
+    limits:
+      memory: 900Mi
+  journal:
+    partitions: 24
+connect:
+  enabled: true
+  image: axon/connect
+  heap: 256m
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      memory: 768Mi
+registry:
+  enabled: true
+  image: quay.io/apicurio/apicurio-registry:3.3.4
+  resources:
+    requests:
+      cpu: 20m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+redis:
+  image: quay.io/opstree/redis:v7.2.7
+  sentinelImage: quay.io/opstree/redis-sentinel:v7.2.7
+  replicas: 1
+  sentinel:
+    enabled: false
+    size: 3
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+minio:
+  image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+  storage: 1Gi
+  resources:
+    requests:
+      cpu: 10m
+      memory: 96Mi
+    limits:
+      memory: 384Mi

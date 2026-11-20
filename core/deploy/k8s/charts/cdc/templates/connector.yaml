@@ -1,0 +1,20 @@
+{{- $v := fromYaml (include "cdc.values" .) -}}
+{{- $config := fromJson (.Files.Get "files/outbox-connector.json") -}}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnector
+metadata:
+  name: {{ $v.connector.name }}
+  labels:
+    strimzi.io/cluster: {{ $v.connector.cluster }}
+    {{- include "cdc.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  class: {{ get $config "connector.class" }}
+  tasksMax: {{ get $config "tasks.max" | int }}
+  autoRestart:
+    enabled: true
+  config:
+    {{- range $key, $value := omit $config "connector.class" "tasks.max" }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}

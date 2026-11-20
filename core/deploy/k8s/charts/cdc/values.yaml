@@ -1,0 +1,13 @@
+global: {}
+cdc: {}
+postgresImage: postgres:17-alpine
+curlImage: curlimages/curl:8.23.0
+connector:
+  name: axon-outbox
+  cluster: axon-connect
+publication: axon_outbox
+registry:
+  enabled: true
+  url: http://registry:8080
+  group: default
+  artifact: axon.events.v1
