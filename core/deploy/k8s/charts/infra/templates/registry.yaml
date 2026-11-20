@@ -33,17 +33,26 @@ spec:
               containerPort: 8080
             - name: management
               containerPort: 9000
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /health/ready
               port: management
             periodSeconds: 5
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health/live
               port: management
-            initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             {{- toYaml $v.registry.resources | nindent 12 }}
           securityContext:

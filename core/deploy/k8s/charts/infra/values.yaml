@@ -45,7 +45,7 @@ registry:
   image: quay.io/apicurio/apicurio-registry:3.3.4
   resources:
     requests:
-      cpu: 20m
+      cpu: 100m
       memory: 256Mi
     limits:
       memory: 512Mi
