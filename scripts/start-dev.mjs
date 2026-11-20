@@ -173,6 +173,7 @@ async function main() {
       CORS_ALLOWED_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
       OAUTH_ALLOWED_RETURN_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
       OAUTH_REDIRECT_BASE_URL: `${origin}/auth/callback`,
+      OAUTH_FAKE_ENABLED: "true",
       OAUTH_FAKE_AUTHORIZE_URL: `${auth}/oauth/fake/authorize`,
       NEXT_PUBLIC_API_BASE_URL: api,
       AVATARS_ENDPOINT: env.DEV_S3_ENDPOINT || `127.0.0.1:${env.MINIO_HOST_PORT}`,

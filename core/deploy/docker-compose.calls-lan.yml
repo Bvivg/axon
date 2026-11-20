@@ -40,7 +40,7 @@ services:
   auth:
     environment:
       AVATARS_PUBLIC_URL: https://axon.test/storage
-      OAUTH_FAKE_AUTHORIZE_URL: /oauth/fake/authorize
+      OAUTH_FAKE_ENABLED: "false"
       OAUTH_REDIRECT_BASE_URL: /auth/callback
       OAUTH_ALLOWED_RETURN_ORIGINS: http://localhost:3003,http://127.0.0.1:3003,https://axon.test,https://axon.test:3443,https://${AXON_LAN_IP:-192.168.2.1},https://${AXON_LAN_ALT_IP:-10.80.10.122},https://${AXON_LAN_IP:-192.168.2.1}:3443,https://${AXON_LAN_ALT_IP:-10.80.10.122}:3443
   chat:
