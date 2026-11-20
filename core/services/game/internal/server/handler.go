@@ -39,6 +39,13 @@ type Config struct {
 	TestHooks bool
 	Metrics   *metrics.Game
 	Watchers  int
+	History   HistoryLimits
+}
+
+type HistoryLimits struct {
+	Plies   int
+	Bytes   int
+	Entries int
 }
 
 type Handler struct {
@@ -57,6 +64,10 @@ type Handler struct {
 	updates  updates
 	matches  updates
 	watchers *watchers
+
+	historyPlies int
+	historyBytes int
+	histories    *historyCache
 }
 
 func New(cfg Config) *Handler {
@@ -76,6 +87,10 @@ func New(cfg Config) *Handler {
 		updates:  newUpdates(),
 		matches:  newUpdates(),
 		watchers: newWatchers(cfg.Watchers),
+
+		historyPlies: cfg.History.Plies,
+		historyBytes: cfg.History.Bytes,
+		histories:    newHistoryCache(cfg.History.Entries),
 	}
 }
 
