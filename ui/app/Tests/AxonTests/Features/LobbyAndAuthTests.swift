@@ -11,22 +11,22 @@ final class RouteRecorder {
 struct LobbyViewModelTests {
     private func lobby(_ world: FakeWorld) -> (LobbyViewModel, RouteRecorder) {
         let recorder = RouteRecorder()
-        let model = LobbyViewModel(services: world.services, me: Fixtures.me) { recorder.routes.append($0) }
+        let model = LobbyViewModel(services: world.services, me: GameFixtures.me) { recorder.routes.append($0) }
         return (model, recorder)
     }
 
     @Test func refreshSplitsGamesAndLoadsNames() async {
         let world = FakeWorld()
         world.game.mine = [
-            Fixtures.session(id: "a", updated: 1),
-            Fixtures.session(id: "b", status: .won, turn: nil, winner: Fixtures.me, updated: 3),
-            Fixtures.session(id: "c", updated: 2),
+            GameFixtures.session(id: "a", updated: 1),
+            GameFixtures.session(id: "b", status: .won, turn: nil, winner: GameFixtures.me, updated: 3),
+            GameFixtures.session(id: "c", updated: 2),
         ]
         world.game.live = [
-            Fixtures.session(id: "c", updated: 2),
-            Fixtures.session(id: "d", players: [Fixtures.rival, Fixtures.third], updated: 4),
+            GameFixtures.session(id: "c", updated: 2),
+            GameFixtures.session(id: "d", players: [GameFixtures.rival, GameFixtures.third], updated: 4),
         ]
-        world.auth.profileMap = [Fixtures.rival: Fixtures.profile(Fixtures.rival, "grace")]
+        world.auth.profileMap = [GameFixtures.rival: GameFixtures.profile(GameFixtures.rival, "grace")]
         let (model, _) = lobby(world)
         await model.refresh()
         #expect(model.active.map(\.id) == ["c", "a"])
@@ -38,7 +38,7 @@ struct LobbyViewModelTests {
 
     @Test func createOpensTheNewGame() async {
         let world = FakeWorld()
-        world.game.created = Fixtures.session(id: "new", players: [Fixtures.me], status: .waiting, turn: nil)
+        world.game.created = GameFixtures.session(id: "new", players: [GameFixtures.me], status: .waiting, turn: nil)
         let (model, recorder) = lobby(world)
         await model.create(.chess)
         #expect(recorder.routes == [.game("new")])
@@ -52,13 +52,13 @@ struct LobbyViewModelTests {
     ])
     func joinAcceptsIDsAndLinks(input: String, expected: String?) async {
         let world = FakeWorld()
-        world.game.joined = Fixtures.session()
+        world.game.joined = GameFixtures.session()
         let (model, recorder) = lobby(world)
         model.joinID = input
         await model.join()
         if let expected {
             #expect(world.game.joinedIDs == [expected])
-            #expect(recorder.routes == [.game(Fixtures.sessionID)])
+            #expect(recorder.routes == [.game(GameFixtures.sessionID)])
         } else {
             #expect(world.game.joinedIDs.isEmpty)
             #expect(model.error == "Paste a game ID or link.")
@@ -121,14 +121,14 @@ struct AuthViewModelTests {
 
     @Test func registersWithTrimmedFields() async {
         let auth = FakeAuth()
-        auth.registerResult = .success(Fixtures.user())
+        auth.registerResult = .success(GameFixtures.user())
         let model = AuthViewModel(auth: auth)
         model.mode = .register
         model.email = "  ada@axon.test "
         model.username = " ada "
         model.password = "correct horse"
         let user = await model.submit()
-        #expect(user?.id == Fixtures.me)
+        #expect(user?.id == GameFixtures.me)
         #expect(auth.lastRegistration?.email == "ada@axon.test")
         #expect(auth.lastRegistration?.username == "ada")
     }
@@ -162,7 +162,7 @@ struct SettingsViewModelTests {
 struct ReplayViewModelTests {
     private func history(plies: UInt32) -> SessionHistory {
         SessionHistory.with {
-            $0.session = Fixtures.session(status: .won, turn: nil, winner: Fixtures.me, revision: plies)
+            $0.session = GameFixtures.session(status: .won, turn: nil, winner: GameFixtures.me, revision: plies)
             $0.frames = (0...plies).reversed().map { ply in HistoryFrame.with { $0.ply = ply } }
         }
     }
@@ -170,7 +170,7 @@ struct ReplayViewModelTests {
     @Test func startsAtTheEndAndNavigatesWithinBounds() async {
         let world = FakeWorld()
         world.game.historyResult = history(plies: 5)
-        let model = ReplayViewModel(sessionID: Fixtures.sessionID, game: world.game)
+        let model = ReplayViewModel(sessionID: GameFixtures.sessionID, game: world.game)
         await model.load()
         #expect(model.positionText == "Move 5 of 5")
         #expect(model.resultText == "X won")
@@ -188,7 +188,7 @@ struct ReplayViewModelTests {
     }
 
     @Test func missingReplayShowsAnError() async {
-        let model = ReplayViewModel(sessionID: Fixtures.sessionID, game: FakeGame())
+        let model = ReplayViewModel(sessionID: GameFixtures.sessionID, game: FakeGame())
         await model.load()
         #expect(model.error == "This game has no replay.")
         #expect(model.frame == nil)
@@ -198,26 +198,26 @@ struct ReplayViewModelTests {
 @MainActor
 struct SessionStatusTextTests {
     @Test(arguments: [
-        (Fixtures.session(players: [Fixtures.me], status: .waiting, turn: nil), Fixtures.me, "Waiting for an opponent"),
-        (Fixtures.session(), Fixtures.me, "Your turn"),
-        (Fixtures.session(turn: Fixtures.rival), Fixtures.me, "Opponent's turn"),
-        (Fixtures.session(status: .draw, turn: nil), Fixtures.me, "Draw"),
-        (Fixtures.session(), Fixtures.third, "X to move"),
-        (Fixtures.session(game: .chess, status: .won, turn: nil, winner: Fixtures.rival), Fixtures.third, "Black won"),
-        (Fixtures.session(game: .quoridor, turn: Fixtures.rival), Fixtures.third, "Green to move"),
+        (GameFixtures.session(players: [GameFixtures.me], status: .waiting, turn: nil), GameFixtures.me, "Waiting for an opponent"),
+        (GameFixtures.session(), GameFixtures.me, "Your turn"),
+        (GameFixtures.session(turn: GameFixtures.rival), GameFixtures.me, "Opponent's turn"),
+        (GameFixtures.session(status: .draw, turn: nil), GameFixtures.me, "Draw"),
+        (GameFixtures.session(), GameFixtures.third, "X to move"),
+        (GameFixtures.session(game: .chess, status: .won, turn: nil, winner: GameFixtures.rival), GameFixtures.third, "Black won"),
+        (GameFixtures.session(game: .quoridor, turn: GameFixtures.rival), GameFixtures.third, "Green to move"),
     ])
     func headlines(session: Session, me: String, text: String) {
         #expect(SessionStatusText.headline(session, me: me) == text)
     }
 
     @Test func detailsExplainHowAGameEnded() {
-        var session = Fixtures.session(status: .won, turn: nil, winner: Fixtures.me)
+        var session = GameFixtures.session(status: .won, turn: nil, winner: GameFixtures.me)
         session.timedOut = true
         #expect(SessionStatusText.detail(session) == "on time")
-        var mate = Fixtures.session(game: .chess, status: .won, turn: nil, winner: Fixtures.me)
+        var mate = GameFixtures.session(game: .chess, status: .won, turn: nil, winner: GameFixtures.me)
         mate.chess.end = .checkmate
         #expect(SessionStatusText.detail(mate) == "by checkmate")
-        #expect(SessionStatusText.detail(Fixtures.session()) == nil)
+        #expect(SessionStatusText.detail(GameFixtures.session()) == nil)
     }
 }
 
@@ -239,15 +239,15 @@ struct AppModelTests {
         let (signedOut, _) = app(world)
         await signedOut.start()
         #expect(signedOut.phase == .signedOut)
-        world.auth.restored = Fixtures.user()
+        world.auth.restored = GameFixtures.user()
         let (signedIn, _) = app(world)
         await signedIn.start()
-        #expect(signedIn.user?.id == Fixtures.me)
+        #expect(signedIn.user?.id == GameFixtures.me)
     }
 
     @Test func expiredSessionsSignOut() async {
         let world = FakeWorld()
-        world.auth.restored = Fixtures.user()
+        world.auth.restored = GameFixtures.user()
         let (model, _) = app(world)
         await model.start()
         model.path = [.game("x")]
@@ -258,7 +258,7 @@ struct AppModelTests {
 
     @Test func changingTheGatewayRebuildsServicesAndSignsOut() async throws {
         let world = FakeWorld()
-        world.auth.restored = Fixtures.user()
+        world.auth.restored = GameFixtures.user()
         let (model, counter) = app(world)
         await model.start()
         try await model.updateGateway(GatewayAddress(parsing: "http://10.0.0.2:18080"))

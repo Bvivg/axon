@@ -15,7 +15,13 @@ struct RootView: View {
                 AuthView(services: app.services, onSignedIn: app.signedIn, onSettings: { showsSettings = true })
             case .signedIn(let user):
                 AdaptiveNavigation(path: $app.path) {
-                    LobbyView(services: app.services, user: user, onOpen: { app.path.open($0) }, onSettings: { showsSettings = true }, onSignOut: { Task { await app.signOut() } })
+                    LobbyView(
+                        services: app.services,
+                        user: user,
+                        onOpen: { app.path.open($0) },
+                        onSettings: { showsSettings = true },
+                        onSignOut: { Task { await app.signOut() } }
+                    )
                 } placeholder: {
                     ContentUnavailableView("Pick a game", systemImage: "gamecontroller")
                 } destination: { route in

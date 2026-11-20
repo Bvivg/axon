@@ -8,7 +8,9 @@ struct AxonApp: App {
         let arguments = ProcessInfo.processInfo.arguments
         let storage = UserDefaultsStorage()
         let tokens = KeychainTokenStore(account: "default")
-        if let index = arguments.firstIndex(of: AccessibilityID.Launch.resetArgument), arguments.indices.contains(index + 1), arguments[index + 1] == "YES" {
+        if let index = arguments.firstIndex(of: AccessibilityID.Launch.resetArgument),
+           arguments.indices.contains(index + 1),
+           arguments[index + 1] == "YES" {
             try? tokens.clear()
         }
         let settings = GatewaySettings(storage: storage)

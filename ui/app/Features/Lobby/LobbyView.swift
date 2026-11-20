@@ -6,7 +6,13 @@ struct LobbyView: View {
     let onSettings: () -> Void
     let onSignOut: () -> Void
 
-    init(services: Services, user: User, onOpen: @escaping (Route) -> Void, onSettings: @escaping () -> Void, onSignOut: @escaping () -> Void) {
+    init(
+        services: Services,
+        user: User,
+        onOpen: @escaping (Route) -> Void,
+        onSettings: @escaping () -> Void,
+        onSignOut: @escaping () -> Void
+    ) {
         _model = State(initialValue: LobbyViewModel(services: services, me: user.id, open: onOpen))
         self.user = user
         self.onSettings = onSettings

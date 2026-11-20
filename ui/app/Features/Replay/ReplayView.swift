@@ -25,7 +25,7 @@ struct ReplayView: View {
                         }
                     }
                     if model.lastIndex > 0 {
-                        Slider(value: Binding(get: { Double(model.index) }, set: { model.index = Int($0.rounded()) }), in: 0...Double(model.lastIndex), step: 1) {
+                        Slider(value: model.sliderValue, in: 0...Double(model.lastIndex), step: 1) {
                             Text("Move")
                         }
                         .accessibilityIdentifier(AccessibilityID.Replay.slider)

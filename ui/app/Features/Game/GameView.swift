@@ -17,26 +17,20 @@ struct GameView: View {
                 AdaptiveGameLayout {
                     VStack(spacing: 10) {
                         PlayerBar(model: model, seat: 1 - model.perspective)
-                        GameBoard(session: session, perspective: model.perspective, interactive: model.interactive, onCell: { cell in
-                            Task { await model.tap(cell: cell) }
-                        }, onMove: { move in
-                            Task {
-                                if session.kind == .chess {
-                                    await model.chessMove(move)
-                                } else {
-                                    await model.quoridorMove(move)
-                                }
-                            }
-                        })
+                        GameBoard(
+                            session: session,
+                            perspective: model.perspective,
+                            interactive: model.interactive,
+                            onCell: { cell in Task { await model.tap(cell: cell) } },
+                            onMove: { move in Task { await model.play(move) } }
+                        )
                         .opacity(model.pending ? 0.7 : 1)
                         PlayerBar(model: model, seat: model.perspective)
                     }
                 } panel: {
                     StatusPanel(model: model, confirmsResign: $confirmsResign, onReplay: onReplay)
-                    if session.kind == .chess {
-                        MoveListView(moves: session.chess.san, highlightedPly: session.chess.san.isEmpty ? nil : session.chess.san.count - 1)
-                    } else if session.kind == .quoridor {
-                        MoveListView(moves: session.quoridor.moves, highlightedPly: session.quoridor.moves.isEmpty ? nil : session.quoridor.moves.count - 1)
+                    if !model.moves.isEmpty {
+                        MoveListView(moves: model.moves, highlightedPly: model.moves.count - 1)
                     }
                     SessionIDRow(id: session.id, waiting: session.status == .waiting)
                 }
@@ -57,7 +51,7 @@ struct GameView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .confirmationDialog(model.session?.status == .waiting ? "Cancel this game?" : "Resign this game?", isPresented: $confirmsResign, titleVisibility: .visible) {
+        .confirmationDialog(model.resignPrompt, isPresented: $confirmsResign, titleVisibility: .visible) {
             Button(model.session?.status == .waiting ? "Cancel game" : "Resign", role: .destructive) {
                 Task { await model.resign() }
             }
@@ -100,7 +94,7 @@ enum SeatStyle {
     static func color(_ kind: GameKind, seat: Int) -> Color {
         switch kind {
         case .quoridor: seat == 0 ? .purple : .green
-        case .chess: seat == 0 ? Color(white: 0.92) : Color(white: 0.15)
+        case .chess: Color(white: seat == 0 ? 0.92 : 0.15)
         case .ticTacToe: seat == 0 ? .blue : .orange
         }
     }
@@ -121,7 +115,15 @@ private struct StatusPanel: View {
                     Text(detail)
                         .foregroundStyle(.secondary)
                 }
-                if !model.connected, !model.isFinished {
+                if model.connection == .closed, !model.isFinished {
+                    HStack {
+                        Label("Disconnected", systemImage: "wifi.slash")
+                        Button("Reconnect") { Task { await model.retry() } }
+                            .buttonStyle(.borderless)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else if !model.connected, !model.isFinished {
                     Label("Connecting…", systemImage: "wifi.exclamationmark")
                         .font(.caption)
                         .foregroundStyle(.secondary)

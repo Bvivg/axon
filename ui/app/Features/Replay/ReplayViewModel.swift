@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -70,6 +71,10 @@ final class ReplayViewModel {
             default: error.message.isEmpty ? "Could not load the replay." : error.message
             }
         }
+    }
+
+    var sliderValue: Binding<Double> {
+        Binding(get: { Double(self.index) }, set: { self.index = Int($0.rounded()) })
     }
 
     func first() { index = 0 }

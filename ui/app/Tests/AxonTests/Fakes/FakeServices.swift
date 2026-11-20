@@ -1,13 +1,19 @@
 import Foundation
 @testable import Axon
 
+struct Registration: Equatable {
+    let email: String
+    let username: String
+    let password: String
+}
+
 final class FakeAuth: AuthAPI, @unchecked Sendable {
     var restored: User?
     var loginResult: Result<User, APIError> = .failure(APIError(.unauthenticated))
     var registerResult: Result<User, APIError> = .failure(APIError(.alreadyExists))
     var profileMap: [String: PublicProfile] = [:]
     var logoutCount = 0
-    var lastRegistration: (email: String, username: String, password: String)?
+    var lastRegistration: Registration?
     let signedOut: AsyncStream<Void>
     let signOuts: AsyncStream<Void>.Continuation
 
@@ -18,7 +24,7 @@ final class FakeAuth: AuthAPI, @unchecked Sendable {
     func restore() async -> User? { restored }
 
     func register(email: String, username: String, password: String) async throws(APIError) -> User {
-        lastRegistration = (email, username, password)
+        lastRegistration = Registration(email: email, username: username, password: password)
         return try registerResult.get()
     }
 
@@ -144,7 +150,7 @@ struct FakeWorld {
     var services: Services { Services(auth: auth, game: game, channels: channels) }
 }
 
-enum Fixtures {
+enum GameFixtures {
     static let me = "11111111-1111-1111-1111-111111111111"
     static let rival = "22222222-2222-2222-2222-222222222222"
     static let third = "33333333-3333-3333-3333-333333333333"

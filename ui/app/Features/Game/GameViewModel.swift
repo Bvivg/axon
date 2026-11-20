@@ -25,7 +25,13 @@ final class GameViewModel {
     @ObservationIgnored private var watchdog: Task<Void, Never>?
     @ObservationIgnored private var pendingRevision: UInt32?
 
-    init(sessionID: String, me: String, services: Services, pendingTimeout: Duration = .seconds(5), sleep: @escaping Sleeper = { try await Task.sleep(for: $0) }) {
+    init(
+        sessionID: String,
+        me: String,
+        services: Services,
+        pendingTimeout: Duration = .seconds(5),
+        sleep: @escaping Sleeper = { try await Task.sleep(for: $0) }
+    ) {
         self.sessionID = sessionID
         self.me = me
         self.services = services
@@ -81,6 +87,19 @@ final class GameViewModel {
         return session.status == .playing && session.ply > 0 && !rated && connected && !pending
     }
 
+    var resignPrompt: String {
+        session?.status == .waiting ? "Cancel this game?" : "Resign this game?"
+    }
+
+    var moves: [String] {
+        guard let session else { return [] }
+        switch session.kind {
+        case .chess: return session.chess.san
+        case .quoridor: return session.quoridor.moves
+        case .ticTacToe: return []
+        }
+    }
+
     var spectators: Int {
         guard let session, session.hasSpectators else { return 0 }
         return Int(session.spectators)
@@ -130,57 +149,12 @@ final class GameViewModel {
         error = nil
         if session == nil {
             await start()
+        } else if connection == .closed {
+            stop()
+            connect()
         } else {
             await channel?.resync()
         }
-    }
-
-    func tap(cell: Int) async {
-        guard let session, isMyTurn else { return }
-        var command = SessionCommand()
-        command.move = Axon_Game_V1_TicTacToeMove.with {
-            $0.ply = session.ply
-            $0.cell = UInt32(cell)
-            if session.hasRevision { $0.revision = session.revision }
-        }
-        await send(command)
-    }
-
-    func chessMove(_ uci: String) async {
-        guard let session, isMyTurn else { return }
-        var command = SessionCommand()
-        command.chessMove = Axon_Game_V1_ChessMove.with {
-            $0.ply = session.ply
-            $0.uci = uci
-            if session.hasRevision { $0.revision = session.revision }
-        }
-        await send(command)
-    }
-
-    func quoridorMove(_ move: String) async {
-        guard let session, isMyTurn else { return }
-        var command = SessionCommand()
-        command.quoridorMove = Axon_Game_V1_QuoridorMove.with {
-            $0.ply = session.ply
-            $0.move = move
-            if session.hasRevision { $0.revision = session.revision }
-        }
-        await send(command)
-    }
-
-    func draw(_ action: DrawAction) async {
-        var command = SessionCommand()
-        command.draw = Axon_Game_V1_DrawCommand.with { $0.action = action }
-        await send(command)
-    }
-
-    func undo() async {
-        guard let session, canUndo else { return }
-        var command = SessionCommand()
-        command.undo = Axon_Game_V1_UndoMove.with {
-            if session.hasRevision { $0.revision = session.revision }
-        }
-        await send(command)
     }
 
     func join() async {
@@ -237,7 +211,7 @@ final class GameViewModel {
         }
     }
 
-    private func send(_ command: SessionCommand) async {
+    fileprivate func send(_ command: SessionCommand) async {
         guard connected, pendingRevision == nil, mySeat != nil, let session, let channel else { return }
         pendingRevision = session.revisionValue
         pending = true
@@ -297,21 +271,7 @@ final class GameViewModel {
     }
 
     static func message(for error: SessionError) -> String {
-        switch error {
-        case .invalidCommand: "That move is invalid."
-        case .notFound: "This game is unavailable."
-        case .notYourTurn: "Wait for your turn."
-        case .staleMove: "The board changed. Try again."
-        case .cellTaken: "That square is already taken."
-        case .notPlaying: "This game is not in progress."
-        case .unavailable: "The game service is unavailable."
-        case .undoDisabled: "Undo is off in rated games."
-        case .illegalMove: "That move is not allowed."
-        case .noDrawOffer: "The draw offer is no longer open."
-        case .rateLimited: "You are moving too fast. Try again."
-        case .spectator: "Spectators cannot move."
-        default: "Could not play that move."
-        }
+        sessionErrorMessages[error] ?? "Could not play that move."
     }
 
     static func message(for error: APIError) -> String {
@@ -324,3 +284,76 @@ final class GameViewModel {
         }
     }
 }
+
+extension GameViewModel {
+    func tap(cell: Int) async {
+        guard let session, isMyTurn else { return }
+        var command = SessionCommand()
+        command.move = Axon_Game_V1_TicTacToeMove.with {
+            $0.ply = session.ply
+            $0.cell = UInt32(cell)
+            if session.hasRevision { $0.revision = session.revision }
+        }
+        await send(command)
+    }
+
+    func chessMove(_ uci: String) async {
+        guard let session, isMyTurn else { return }
+        var command = SessionCommand()
+        command.chessMove = Axon_Game_V1_ChessMove.with {
+            $0.ply = session.ply
+            $0.uci = uci
+            if session.hasRevision { $0.revision = session.revision }
+        }
+        await send(command)
+    }
+
+    func quoridorMove(_ move: String) async {
+        guard let session, isMyTurn else { return }
+        var command = SessionCommand()
+        command.quoridorMove = Axon_Game_V1_QuoridorMove.with {
+            $0.ply = session.ply
+            $0.move = move
+            if session.hasRevision { $0.revision = session.revision }
+        }
+        await send(command)
+    }
+
+    func draw(_ action: DrawAction) async {
+        var command = SessionCommand()
+        command.draw = Axon_Game_V1_DrawCommand.with { $0.action = action }
+        await send(command)
+    }
+
+    func play(_ move: String) async {
+        if kind == .chess {
+            await chessMove(move)
+        } else {
+            await quoridorMove(move)
+        }
+    }
+
+    func undo() async {
+        guard let session, canUndo else { return }
+        var command = SessionCommand()
+        command.undo = Axon_Game_V1_UndoMove.with {
+            if session.hasRevision { $0.revision = session.revision }
+        }
+        await send(command)
+    }
+}
+
+private let sessionErrorMessages: [SessionError: String] = [
+    .invalidCommand: "That move is invalid.",
+    .notFound: "This game is unavailable.",
+    .notYourTurn: "Wait for your turn.",
+    .staleMove: "The board changed. Try again.",
+    .cellTaken: "That square is already taken.",
+    .notPlaying: "This game is not in progress.",
+    .unavailable: "The game service is unavailable.",
+    .undoDisabled: "Undo is off in rated games.",
+    .illegalMove: "That move is not allowed.",
+    .noDrawOffer: "The draw offer is no longer open.",
+    .rateLimited: "You are moving too fast. Try again.",
+    .spectator: "Spectators cannot move.",
+]

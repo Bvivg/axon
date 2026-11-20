@@ -31,16 +31,15 @@ enum SessionStatusText {
         if session.hasTimedOut, session.timedOut { return "on time" }
         if session.hasResigned, session.resigned { return "by resignation" }
         if session.hasAgreedDraw, session.agreedDraw { return "by agreement" }
-        if session.kind == .chess, session.hasChess {
-            switch session.chess.end {
-            case .checkmate: return "by checkmate"
-            case .stalemate: return "by stalemate"
-            case .insufficientMaterial: return "insufficient material"
-            case .threefoldRepetition: return "threefold repetition"
-            case .fiftyMoves: return "fifty-move rule"
-            default: return nil
-            }
-        }
-        return nil
+        guard session.kind == .chess, session.hasChess else { return nil }
+        return chessEndings[session.chess.end]
     }
+
+    private static let chessEndings: [ChessEnd: String] = [
+        .checkmate: "by checkmate",
+        .stalemate: "by stalemate",
+        .insufficientMaterial: "insufficient material",
+        .threefoldRepetition: "threefold repetition",
+        .fiftyMoves: "fifty-move rule",
+    ]
 }
