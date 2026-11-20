@@ -13,6 +13,7 @@ services:
       GAME_DB_PASSWORD: game
       CALLING_DB_PASSWORD: calling
       RATING_DB_PASSWORD: rating
+      ANALYSIS_DB_PASSWORD: analysis
     volumes:
 
       - e2e-postgres-data:/var/lib/postgresql/data

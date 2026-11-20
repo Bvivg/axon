@@ -16,6 +16,7 @@ services:
       GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
       CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
       RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
+      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD:-analysis}
     command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10", "-c", "max_slot_wal_keep_size=1GB"]
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"
@@ -306,6 +307,7 @@ services:
       GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
       CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
       RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
+      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD:-analysis}
     volumes:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
       - type: tmpfs
