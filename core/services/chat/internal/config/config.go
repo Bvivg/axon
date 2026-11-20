@@ -64,8 +64,18 @@ type MediaConfig struct {
 	FFmpeg  string
 	FFprobe string
 
-	Workers int
-	Timeout time.Duration
+	Workers        int
+	Timeout        time.Duration
+	MaxVideoPixels int64
+
+	Images ImageLimitsConfig
+}
+
+type ImageLimitsConfig struct {
+	MaxPixels          int64
+	MaxFrames          int
+	MaxAnimationPixels int64
+	MaxAnimationScreen int64
 }
 
 type KafkaConfig struct {
@@ -122,10 +132,17 @@ func Load() (Config, error) {
 		},
 		Attachments: loadAttachments(l),
 		Media: MediaConfig{
-			FFmpeg:  l.StringDefault("FFMPEG_PATH", "ffmpeg"),
-			FFprobe: l.StringDefault("FFPROBE_PATH", "ffprobe"),
-			Workers: l.IntDefault("MEDIA_WORKERS", 2),
-			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 15*time.Minute),
+			FFmpeg:         l.StringDefault("FFMPEG_PATH", "ffmpeg"),
+			FFprobe:        l.StringDefault("FFPROBE_PATH", "ffprobe"),
+			Workers:        l.IntDefault("MEDIA_WORKERS", 2),
+			Timeout:        l.DurationDefault("MEDIA_TIMEOUT", 15*time.Minute),
+			MaxVideoPixels: megapixels(l, "MEDIA_VIDEO_MAX_MP", 36),
+			Images: ImageLimitsConfig{
+				MaxPixels:          megapixels(l, "MEDIA_IMAGE_MAX_MP", 50),
+				MaxFrames:          l.IntDefault("MEDIA_GIF_MAX_FRAMES", 1000),
+				MaxAnimationPixels: megapixels(l, "MEDIA_GIF_MAX_MP", 300),
+				MaxAnimationScreen: megapixels(l, "MEDIA_GIF_MAX_SCREEN_MP", 16),
+			},
 		},
 		Push: PushConfig{
 			PublicKey:  l.StringDefault("CHAT_VAPID_PUBLIC_KEY", ""),
@@ -152,6 +169,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func megapixels(l *config.Loader, key string, def int) int64 {
+	return int64(l.IntDefault(key, def)) * 1_000_000
 }
 
 func loadAttachments(l *config.Loader) AttachmentConfig {

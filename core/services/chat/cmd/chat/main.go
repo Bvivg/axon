@@ -321,16 +321,17 @@ func run() error {
 	go sweeper.Run(ctx)
 
 	mediaTools := media.NewTools(media.ToolsConfig{
-		FFmpeg:  cfg.Media.FFmpeg,
-		FFprobe: cfg.Media.FFprobe,
-		Workers: cfg.Media.Workers,
-		Timeout: cfg.Media.Timeout,
+		FFmpeg:         cfg.Media.FFmpeg,
+		FFprobe:        cfg.Media.FFprobe,
+		Workers:        cfg.Media.Workers,
+		Timeout:        cfg.Media.Timeout,
+		MaxVideoPixels: cfg.Media.MaxVideoPixels,
 	})
 	if err := mediaTools.Check(); err != nil {
 		log.Warn("media processing is unavailable until ffmpeg is installed", "error", err)
 	}
 
-	pipeline := attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools)
+	pipeline := attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools, media.ImageLimits(cfg.Media.Images))
 
 	attachmentUpload, err := server.NewAttachmentHandler(server.AttachmentConfig{
 		Verifier: verifier,

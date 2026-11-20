@@ -36,13 +36,14 @@ type Result struct {
 }
 
 type Pipeline struct {
-	store *Store
-	urls  URLBuilder
-	tools *media.Tools
+	store  *Store
+	urls   URLBuilder
+	tools  *media.Tools
+	limits media.ImageLimits
 }
 
-func NewPipeline(store *Store, urls URLBuilder, tools *media.Tools) *Pipeline {
-	return &Pipeline{store: store, urls: urls, tools: tools}
+func NewPipeline(store *Store, urls URLBuilder, tools *media.Tools, limits media.ImageLimits) *Pipeline {
+	return &Pipeline{store: store, urls: urls, tools: tools, limits: limits}
 }
 
 func (p *Pipeline) Media(ctx context.Context, userID uuid.UUID, path string, size int64) (Result, error) {
@@ -67,7 +68,7 @@ func (p *Pipeline) image(ctx context.Context, userID uuid.UUID, path string, siz
 		return Result{}, fmt.Errorf("attachment: read image: %w", err)
 	}
 
-	img, err := media.ProcessImage(raw)
+	img, err := media.ProcessImage(raw, p.limits)
 	if err != nil {
 		return Result{}, err
 	}

@@ -19,6 +19,8 @@ const (
 
 	MaxVoiceDuration = 15 * time.Minute
 
+	DefaultMaxVideoPixels = 36_000_000
+
 	VideoDemuxers = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi,ogg,mpegts"
 	VoiceDemuxers = "mov,mp4,m4a,3gp,matroska,webm,ogg,wav,mp3,aac,flac"
 	MP4Demuxer    = "mov"
@@ -30,15 +32,17 @@ type ToolsConfig struct {
 	FFmpeg  string
 	FFprobe string
 
-	Workers int
-	Timeout time.Duration
+	Workers        int
+	Timeout        time.Duration
+	MaxVideoPixels int64
 }
 
 type Tools struct {
-	ffmpeg  string
-	ffprobe string
-	timeout time.Duration
-	slots   chan struct{}
+	ffmpeg         string
+	ffprobe        string
+	timeout        time.Duration
+	maxVideoPixels int64
+	slots          chan struct{}
 }
 
 func NewTools(cfg ToolsConfig) *Tools {
@@ -50,11 +54,16 @@ func NewTools(cfg ToolsConfig) *Tools {
 	if timeout <= 0 {
 		timeout = 3 * time.Minute
 	}
+	maxVideoPixels := cfg.MaxVideoPixels
+	if maxVideoPixels <= 0 {
+		maxVideoPixels = DefaultMaxVideoPixels
+	}
 	return &Tools{
-		ffmpeg:  cfg.FFmpeg,
-		ffprobe: cfg.FFprobe,
-		timeout: timeout,
-		slots:   make(chan struct{}, workers),
+		ffmpeg:         cfg.FFmpeg,
+		ffprobe:        cfg.FFprobe,
+		timeout:        timeout,
+		maxVideoPixels: maxVideoPixels,
+		slots:          make(chan struct{}, workers),
 	}
 }
 
@@ -71,6 +80,7 @@ type Probe struct {
 	Format     string
 	Width      int
 	Height     int
+	Pixels     int64
 	Duration   time.Duration
 	HasVideo   bool
 	HasAudio   bool
@@ -146,6 +156,7 @@ func (t *Tools) Probe(ctx context.Context, path, demuxers string) (Probe, error)
 	for _, s := range parsed.Streams {
 		switch s.CodecType {
 		case "video":
+			probe.Pixels = max(probe.Pixels, int64(s.Width)*int64(s.Height))
 			if s.Disposition.AttachedPic == 1 || probe.HasVideo {
 				continue
 			}
@@ -160,6 +171,9 @@ func (t *Tools) Probe(ctx context.Context, path, demuxers string) (Probe, error)
 			}
 			probe.HasAudio = true
 		}
+	}
+	if probe.Pixels > t.maxVideoPixels {
+		return Probe{}, fmt.Errorf("%w: a %d pixel picture", ErrTooLarge, probe.Pixels)
 	}
 	return probe, nil
 }

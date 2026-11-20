@@ -556,6 +556,8 @@ func failureOf(err error) string {
 	switch {
 	case errors.Is(err, ErrHashMismatch):
 		return "hash_mismatch"
+	case errors.Is(err, media.ErrAnimationTooLarge):
+		return "animation_too_large"
 	case errors.Is(err, media.ErrTooLarge):
 		return "too_large"
 	case errors.Is(err, media.ErrUnsupported):

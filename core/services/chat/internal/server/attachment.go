@@ -141,6 +141,9 @@ func (h *AttachmentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *AttachmentHandler) fail(ctx context.Context, w http.ResponseWriter, mode UploadMode, err error) {
 	switch {
+	case errors.Is(err, media.ErrAnimationTooLarge):
+		h.log.InfoContext(ctx, "refused an animation over the limits", "as", mode, "error", err)
+		http.Error(w, "the animation has too many frames or is too large", http.StatusBadRequest)
 	case errors.Is(err, media.ErrTooLarge):
 		http.Error(w, "the file is too large", http.StatusRequestEntityTooLarge)
 	case errors.Is(err, media.ErrUnsupported):
