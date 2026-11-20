@@ -144,3 +144,22 @@ func TestFoldSkipsKnownRevisionsAndRejectsGaps(t *testing.T) {
 		t.Fatalf("diverged = %v, want ErrDiverged", err)
 	}
 }
+
+func TestSnapshotCarriesTheTournament(t *testing.T) {
+	r := session.NewRules(registry(t))
+	tournament := uuid.New()
+	game, change, err := r.StartTournament(uuid.New(), tictactoe.Key, tournament, uuid.New(), uuid.New(), time.Now().Truncate(time.Microsecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	game = session.Record(game, change)
+	event := roundTrip(t, game, change)
+	if event.Session.Tournament == nil || *event.Session.Tournament != tournament || !event.Session.Rated {
+		t.Fatalf("decoded session = %+v", event.Session)
+	}
+	plain := game
+	plain.Tournament = nil
+	if roundTrip(t, plain, change).Session.Tournament != nil {
+		t.Fatal("a casual game gained a tournament")
+	}
+}

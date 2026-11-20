@@ -44,6 +44,7 @@ type Session struct {
 	Resigned   bool
 	DrawOffer  *uuid.UUID
 	AgreedDraw bool
+	Tournament *uuid.UUID
 }
 
 func (s Session) HasPlayer(user uuid.UUID) bool {
@@ -86,12 +87,12 @@ func (s *Store) Replica() *Store {
 	return &Store{pool: s.replica, games: s.games}
 }
 
-const Columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw"
+const Columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw, tournament_id"
 
 func Scan(row pgx.Row) (Session, error) {
 	var s Session
 	var raw, clock []byte
-	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned, &s.DrawOffer, &s.AgreedDraw)
+	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned, &s.DrawOffer, &s.AgreedDraw, &s.Tournament)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}

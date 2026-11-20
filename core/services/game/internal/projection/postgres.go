@@ -515,14 +515,14 @@ func queueSession(rows *pgx.Batch, item *pending) error {
 		request = item.request
 	}
 	rows.Queue(`INSERT INTO game.sessions (id, game, creator_id, opponent_id, request_id, state, updated_at, revision, clock,
-			timed_out, rated, resigned, draw_offered_by, agreed_draw, partition)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+			timed_out, rated, resigned, draw_offered_by, agreed_draw, partition, tournament_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		ON CONFLICT (id) DO UPDATE SET opponent_id=EXCLUDED.opponent_id, state=EXCLUDED.state, updated_at=EXCLUDED.updated_at,
 			revision=EXCLUDED.revision, clock=EXCLUDED.clock, timed_out=EXCLUDED.timed_out, rated=EXCLUDED.rated,
 			resigned=EXCLUDED.resigned, draw_offered_by=EXCLUDED.draw_offered_by, agreed_draw=EXCLUDED.agreed_draw,
-			partition=EXCLUDED.partition
+			partition=EXCLUDED.partition, tournament_id=COALESCE(game.sessions.tournament_id, EXCLUDED.tournament_id)
 		WHERE game.sessions.revision < EXCLUDED.revision`,
 		game.ID, game.Game, game.Creator, game.Opponent, request, state, game.UpdatedAt, game.Revision, clock,
-		game.TimedOut, game.Rated, game.Resigned, game.DrawOffer, game.AgreedDraw, item.partition)
+		game.TimedOut, game.Rated, game.Resigned, game.DrawOffer, game.AgreedDraw, item.partition, game.Tournament)
 	return nil
 }

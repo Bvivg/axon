@@ -20,6 +20,7 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
@@ -58,6 +59,8 @@ var retryableProcedures = []string{
 	gamev1connect.GameServiceGetMatchProcedure,
 	gamev1connect.GameServiceGetRatingsProcedure,
 	analysisv1connect.AnalysisServiceGetAnalysisProcedure,
+	tournamentv1connect.TournamentServiceGetTournamentProcedure,
+	tournamentv1connect.TournamentServiceListTournamentsProcedure,
 	chatv1connect.ChatServiceListRoomsProcedure,
 	chatv1connect.ChatServiceGetRoomProcedure,
 	chatv1connect.ChatServiceListMessagesProcedure,
@@ -235,6 +238,7 @@ func run() error {
 
 	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
 	analysisProxy := proxy.NewAnalysis(upstream, cfg.AnalysisServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
+	tournamentProxy := proxy.NewTournament(upstream, cfg.TournamentServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded()))
 	gameSocket, err := wsproxy.New(wsproxy.Config{
 		SocketOptions: ws.Options{ReadLimit: 4096},
 		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
@@ -309,7 +313,7 @@ func run() error {
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
 	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, analysisProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, analysisProxy, tournamentProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         mtls.ServerProtocols(nil),
 	})
@@ -369,6 +373,7 @@ func publicHandler(
 	callsProxy callsv1connect.CallsServiceHandler,
 	gameProxy gamev1connect.GameServiceHandler,
 	analysisProxy analysisv1connect.AnalysisServiceHandler,
+	tournamentProxy tournamentv1connect.TournamentServiceHandler,
 	chatSocket http.Handler,
 	presenceSocket http.Handler,
 	gameSocket http.Handler,
@@ -390,6 +395,7 @@ func publicHandler(
 	mux.Handle(callsv1connect.NewCallsServiceHandler(callsProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
 	mux.Handle(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
 	mux.Handle(analysisv1connect.NewAnalysisServiceHandler(analysisProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
+	mux.Handle(tournamentv1connect.NewTournamentServiceHandler(tournamentProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(

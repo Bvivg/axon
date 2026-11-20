@@ -16,11 +16,11 @@ CREATE TEMP TABLE outbox_tables AS
 SELECT n.nspname AS schema_name, c.oid AS relid
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relname = 'outbox' AND c.relkind = 'r' AND n.nspname IN ('auth', 'chat', 'game', 'rating');
+WHERE c.relname = 'outbox' AND c.relkind = 'r' AND n.nspname IN ('auth', 'chat', 'game', 'rating', 'tournament');
 
 SELECT format('GRANT USAGE ON SCHEMA %I TO debezium', nspname)
 FROM pg_namespace
-WHERE nspname IN ('auth', 'chat', 'game', 'rating') \gexec
+WHERE nspname IN ('auth', 'chat', 'game', 'rating', 'tournament') \gexec
 
 SELECT format('GRANT SELECT ON TABLE %I.outbox TO debezium', schema_name)
 FROM outbox_tables \gexec

@@ -26,6 +26,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/route"
 	"github.com/bvivg/axon/core/services/game/internal/server"
 	"github.com/bvivg/axon/core/services/game/internal/session"
+	"github.com/bvivg/axon/core/services/game/internal/tournament"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/config"
@@ -80,6 +81,7 @@ func run() error {
 		Linger:            loader.DurationDefault("GAME_JOURNAL_LINGER", time.Millisecond),
 	}
 	ratingTopic := loader.StringDefault("GAME_RATING_TOPIC", rating.Topic)
+	tournamentTopics := loader.StringSlice("GAME_TOURNAMENT_TOPICS", []string{tournament.RoundStartedTopic, tournament.ForfeitTopic, tournament.CancelledTopic})
 	outboxRetention := loader.DurationDefault("GAME_OUTBOX_RETENTION", 24*time.Hour)
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
@@ -152,6 +154,12 @@ func run() error {
 	go handler.RunMatchmaking(ctx, log)
 	go func() { _ = cluster.NewProjector(kafka, model, log, observed).Run(ctx) }()
 	go func() { _ = rating.NewConsumer(kafka.Brokers, ratingTopic, store, log).Run(ctx) }()
+	go func() {
+		_ = tournament.NewConsumer(tournament.Config{
+			Brokers: kafka.Brokers, Topics: tournamentTopics, Games: handler, Cancellations: tournament.NewPostgres(db.primary.Pool),
+			Log: log, Commands: tournament.NewCounter(metrics.Registry()),
+		}).Run(ctx)
+	}()
 	go model.PruneOutbox(ctx, time.Hour, outboxRetention, log)
 	go reportActive(ctx, own, observed)
 	ownership := make(chan struct{})

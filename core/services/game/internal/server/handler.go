@@ -287,6 +287,9 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 		offer := item.DrawOffer.String()
 		out.DrawOfferUserId = &offer
 	}
+	if item.Tournament != nil {
+		out.TournamentId = proto.String(item.Tournament.String())
+	}
 	switch item.Game {
 	case tictactoe.Key:
 		out.TicTacToe = &gamev1.TicTacToeBoard{Cells: make([]gamev1.Mark, 9)}
