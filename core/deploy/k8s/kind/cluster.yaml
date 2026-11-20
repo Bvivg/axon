@@ -1,0 +1,24 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: axon
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 28080
+        listenAddress: 127.0.0.1
+      - containerPort: 30003
+        hostPort: 23003
+        listenAddress: 127.0.0.1
+      - containerPort: 30443
+        hostPort: 28443
+        listenAddress: 127.0.0.1
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: a
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: b
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: c
