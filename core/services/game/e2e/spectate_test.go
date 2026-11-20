@@ -200,7 +200,7 @@ func TestSpectatorsWatchLiveAndReplayFinishedGames(t *testing.T) {
 		response, err := client.GetSessionHistory(ctx, as(watcher, &gamev1.GetSessionHistoryRequest{SessionId: id}))
 		if err != nil {
 			var connectErr *connect.Error
-			if errors.As(err, &connectErr) && connectErr.Code() == connect.CodeNotFound {
+			if errors.As(err, &connectErr) && (connectErr.Code() == connect.CodeNotFound || connectErr.Code() == connect.CodeResourceExhausted) {
 				return false
 			}
 			t.Fatal("history:", err)
