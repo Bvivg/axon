@@ -113,8 +113,38 @@ struct LobbyView: View {
 private struct GameCard: View {
     let game: GameKind
     let model: LobbyViewModel
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
+    private var stacked: Bool {
+        #if os(iOS)
+        sizeClass == .compact
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
+        Group {
+            if stacked {
+                VStack(alignment: .leading, spacing: 10) {
+                    header
+                    actions
+                }
+            } else {
+                HStack(spacing: 12) {
+                    header
+                    Spacer(minLength: 8)
+                    actions
+                }
+            }
+        }
+        .disabled(model.busy != nil && model.busy != "match.\(game.rawValue)" && model.busy != "create.\(game.rawValue)")
+        .padding(.vertical, 4)
+    }
+
+    private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: game.symbol)
                 .font(.title2)
@@ -122,33 +152,39 @@ private struct GameCard: View {
                 .foregroundStyle(.tint)
             Text(game.title)
                 .font(.headline)
-            Spacer(minLength: 8)
+                .lineLimit(1)
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
             Button {
                 Task { await model.create(game) }
             } label: {
-                if model.busy == "create.\(game.rawValue)" {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Text("New")
-                }
+                label("New", busy: model.busy == "create.\(game.rawValue)")
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier(AccessibilityID.Lobby.create(game.rawValue))
             Button {
                 Task { await model.quickMatch(game) }
             } label: {
-                if model.busy == "match.\(game.rawValue)" {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Text("Quick match")
-                }
+                label("Quick match", busy: model.busy == "match.\(game.rawValue)")
             }
             .buttonStyle(.borderedProminent)
             .disabled(model.matching != nil)
             .accessibilityIdentifier(AccessibilityID.Lobby.quickMatch(game.rawValue))
         }
-        .disabled(model.busy != nil && model.busy != "match.\(game.rawValue)" && model.busy != "create.\(game.rawValue)")
-        .padding(.vertical, 4)
+    }
+
+    private func label(_ title: String, busy: Bool) -> some View {
+        Group {
+            if busy {
+                ProgressView().controlSize(.small)
+            } else {
+                Text(title).lineLimit(1)
+            }
+        }
+        .frame(maxWidth: stacked ? .infinity : nil)
     }
 }
 
