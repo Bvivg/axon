@@ -35,6 +35,8 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
+const movePartitionsAhead = 3
+
 func main() {
 	health.RunProbeIfRequested()
 	if err := run(); err != nil {
@@ -129,6 +131,7 @@ func run() error {
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
 	go routes.Run(ctx, pool.Pool, projection.OwnerChannel, log)
+	go model.MaintainMovePartitions(ctx, movePartitionsAhead, 24*time.Hour, log)
 	go handler.Watch(ctx, log)
 	go handler.RunMatchmaking(ctx, log)
 	go func() { _ = cluster.NewProjector(kafka, model, log, observed).Run(ctx) }()

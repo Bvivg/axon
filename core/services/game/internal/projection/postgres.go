@@ -193,8 +193,16 @@ type pending struct {
 	cancelled bool
 	notify    bool
 	settle    bool
-	moves     map[int]*session.MoveRecord
+	moves     map[int]played
+	undone    map[int]bool
 }
+
+type played struct {
+	session.MoveRecord
+	At time.Time
+}
+
+func playedAt(at time.Time) time.Time { return at.UTC().Truncate(time.Microsecond) }
 
 type batch struct {
 	model *Postgres
@@ -294,7 +302,7 @@ func (b *batch) item(ctx context.Context, id uuid.UUID, partition int32, reload 
 		return item, nil
 	}
 	if item == nil {
-		item = &pending{partition: partition, moves: map[int]*session.MoveRecord{}}
+		item = &pending{partition: partition, moves: map[int]played{}, undone: map[int]bool{}}
 		b.items[id] = item
 		b.order = append(b.order, id)
 		if game, ok := b.model.cached(id); ok {
@@ -345,10 +353,10 @@ func (b *batch) fold(ctx context.Context, partition int32, event journal.Event) 
 	item.exists, item.write = true, true
 	switch change.Fact {
 	case session.FactMoved:
-		move := *change.Move
-		item.moves[move.Ply] = &move
+		item.moves[change.Move.Ply] = played{MoveRecord: *change.Move, At: playedAt(change.At)}
 	case session.FactUndone:
-		item.moves[change.UndonePly] = nil
+		delete(item.moves, change.UndonePly)
+		item.undone[change.UndonePly] = true
 		item.notify = true
 	default:
 		item.notify = true
@@ -373,11 +381,13 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 	rows := &pgx.Batch{}
 	var dropSessions []uuid.UUID
 	var dropPlies []int32
+	var dropKeep []*time.Time
 	var sessions []uuid.UUID
 	var plies []int32
 	var players []uuid.UUID
 	var data []string
 	var clocks []*string
+	var times []time.Time
 	for _, id := range b.order {
 		item := b.items[id]
 		if item.notify {
@@ -393,11 +403,14 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 		if err := queueSession(rows, item); err != nil {
 			return nil, err
 		}
-		for ply, move := range item.moves {
-			if move == nil {
-				dropSessions, dropPlies = append(dropSessions, id), append(dropPlies, int32(ply))
-				continue
+		for ply := range item.undone {
+			var keep *time.Time
+			if move, ok := item.moves[ply]; ok {
+				keep = &move.At
 			}
+			dropSessions, dropPlies, dropKeep = append(dropSessions, id), append(dropPlies, int32(ply)), append(dropKeep, keep)
+		}
+		for ply, move := range item.moves {
 			var clock *string
 			if move.ClockBefore != nil {
 				raw, err := json.Marshal(move.ClockBefore)
@@ -408,7 +421,7 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 				clock = &value
 			}
 			sessions, plies, players = append(sessions, id), append(plies, int32(ply)), append(players, move.Player)
-			data, clocks = append(data, string(move.Data)), append(clocks, clock)
+			data, clocks, times = append(data, string(move.Data)), append(clocks, clock), append(times, move.At)
 		}
 	}
 	if len(cancelled) > 0 {
@@ -426,16 +439,16 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 		}
 	}
 	if len(dropSessions) > 0 {
-		if _, err := b.tx.Exec(ctx, `DELETE FROM game.moves m USING unnest($1::uuid[], $2::int[]) AS d(session_id, ply)
-			WHERE m.session_id = d.session_id AND m.ply = d.ply`, dropSessions, dropPlies); err != nil {
+		if _, err := b.tx.Exec(ctx, `DELETE FROM game.moves m USING unnest($1::uuid[], $2::int[], $3::timestamptz[]) AS d(session_id, ply, keep)
+			WHERE m.session_id = d.session_id AND m.ply = d.ply AND m.played_at IS DISTINCT FROM d.keep`, dropSessions, dropPlies, dropKeep); err != nil {
 			return nil, err
 		}
 	}
 	if len(sessions) > 0 {
-		if _, err := b.tx.Exec(ctx, `INSERT INTO game.moves (session_id, ply, player_id, data, clock_before)
-			SELECT s, p, pl, d::jsonb, c::jsonb FROM unnest($1::uuid[], $2::int[], $3::uuid[], $4::text[], $5::text[]) AS m(s, p, pl, d, c)
-			ON CONFLICT (session_id, ply) DO UPDATE SET player_id=EXCLUDED.player_id, data=EXCLUDED.data,
-				state_before=NULL, clock_before=EXCLUDED.clock_before`, sessions, plies, players, data, clocks); err != nil {
+		if _, err := b.tx.Exec(ctx, `INSERT INTO game.moves (session_id, ply, player_id, data, clock_before, played_at)
+			SELECT s, p, pl, d::jsonb, c::jsonb, t FROM unnest($1::uuid[], $2::int[], $3::uuid[], $4::text[], $5::text[], $6::timestamptz[]) AS m(s, p, pl, d, c, t)
+			ON CONFLICT (session_id, ply, played_at) DO UPDATE SET player_id=EXCLUDED.player_id, data=EXCLUDED.data,
+				state_before=NULL, clock_before=EXCLUDED.clock_before`, sessions, plies, players, data, clocks, times); err != nil {
 			return nil, err
 		}
 	}
