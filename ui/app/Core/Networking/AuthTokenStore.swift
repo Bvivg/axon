@@ -64,6 +64,10 @@ struct KeychainTokenStore: AuthTokenStore {
         self.account = account
     }
 
+    init(address: GatewayAddress) {
+        self.init(account: address.host)
+    }
+
     private var query: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
