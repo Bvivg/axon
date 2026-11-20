@@ -67,7 +67,7 @@ func load() (settings, error) {
 		noShow:        loader.DurationDefault("TOURNAMENT_NO_SHOW_TIMEOUT", orchestrator.DefaultNoShow),
 		sweep:         loader.DurationDefault("TOURNAMENT_SWEEP_INTERVAL", time.Second),
 		retention:     loader.DurationDefault("TOURNAMENT_OUTBOX_RETENTION", 24*time.Hour),
-		games:         loader.StringSlice("TOURNAMENT_GAMES", []string{"tictactoe", "chess", "quoridor"}),
+		games:         loader.StringSlice("TOURNAMENT_GAMES", []string{"tictactoe", "chess", "quoridor", "checkers"}),
 		authURL:       loader.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
 		jwksURL:       loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		jwksRefresh:   loader.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
