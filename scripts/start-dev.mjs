@@ -125,17 +125,10 @@ async function main() {
       const files = project ? project.ConfigFiles.split(",") : [join(root, "core/deploy/docker-compose.yml")];
       if (!files.includes(join(root, "core/deploy/docker-compose.yml"))) throw new Error("Another checkout owns the axon Compose project; stop it before starting this checkout");
       const compose = ["compose", "--project-name", "axon", "--project-directory", join(root, "core/deploy"), ...files.flatMap((file) => ["-f", file])];
-      await launch("infrastructure", "docker", [...compose, "up", "-d", "--wait", "--wait-timeout", "180", "--no-recreate", "postgres", "redis", "kafka", "kafka-2", "kafka-3", "minio"]).completed;
+      await launch("infrastructure", "docker", [...compose, "up", "-d", "--wait", "--wait-timeout", "180", "--no-recreate", "postgres", "redis", "kafka", "minio"]).completed;
       await launch("storage-init", "docker", [...compose, "run", "--rm", "--no-deps", "minio-init"]).completed;
       if (env.CALLS_SFU_ENABLED === "true" && !env.DEV_LIVEKIT_URL) {
-        const networkInfo = spawnSync("docker", ["inspect", "axon-postgres-1", "--format", "{{json .NetworkSettings.Networks}}"], { encoding: "utf8" });
-        if (networkInfo.status !== 0) throw new Error("Cannot locate Axon infrastructure network");
-        const network = Object.keys(JSON.parse(networkInfo.stdout))[0];
-        await launch("livekit", "docker", [...compose, "up", "-d", "--no-recreate", "livekit", "coturn"]).completed;
-        const inspect = spawnSync("docker", ["inspect", "axon-local-livekit-bridge", "--format", "{{.State.Running}}"], { encoding: "utf8" });
-        if (inspect.status !== 0) {
-          await launch("livekit-bridge", "docker", ["run", "-d", "--name", "axon-local-livekit-bridge", "--label", "com.axon.purpose=local-dev-infrastructure", "--network", network, "-p", "127.0.0.1:17880:17880", "--restart", "unless-stopped", "node:22-alpine", "node", "-e", 'const net=require("node:net");net.createServer(c=>{const u=net.connect(7880,"livekit");c.pipe(u);u.pipe(c);c.on("error",()=>u.destroy());u.on("error",()=>c.destroy());c.on("close",()=>u.destroy());u.on("close",()=>c.destroy());}).listen(17880,"0.0.0.0");']).completed;
-        } else if (inspect.stdout.trim() !== "true") await launch("livekit-bridge", "docker", ["start", "axon-local-livekit-bridge"]).completed;
+        await launch("livekit", "docker", [...compose, "up", "-d", "--no-recreate", "livekit", "coturn", "livekit-bridge"]).completed;
       }
     }
 

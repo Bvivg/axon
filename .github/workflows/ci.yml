@@ -141,6 +141,7 @@ jobs:
       - name: Validate compose files
         run: |
           docker compose -f core/deploy/docker-compose.yml config -q
+          docker compose -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.ha.yml config -q
           docker compose -f core/deploy/docker-compose.tools.yml config -q
 
           JWT_PRIVATE_KEY_DEV_1=placeholder \
