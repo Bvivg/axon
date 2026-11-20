@@ -15,7 +15,10 @@ import (
 
 const BearerPrefix = "axon.bearer."
 
+type Inspect func(ctx context.Context, payload []byte) ([]byte, func())
+
 type Handler struct {
+	inspect       Inspect
 	upstream      string
 	protocol      string
 	verifier      *authn.Verifier
@@ -36,6 +39,8 @@ type Config struct {
 	Origins []string
 
 	Logger *slog.Logger
+
+	Inspect Inspect
 }
 
 func New(cfg Config) (*Handler, error) {
@@ -54,6 +59,7 @@ func New(cfg Config) (*Handler, error) {
 
 	return &Handler{
 		socketOptions: cfg.SocketOptions,
+		inspect:       cfg.Inspect,
 		upstream:      cfg.Upstream,
 		protocol:      cfg.Protocol,
 		verifier:      cfg.Verifier,
@@ -119,11 +125,11 @@ func (h *Handler) join(ctx context.Context, client, upstream *ws.Conn) {
 	done := make(chan struct{}, 2)
 
 	go func() {
-		h.pipe(ctx, client, upstream)
+		h.pipe(ctx, client, upstream, h.inspect)
 		done <- struct{}{}
 	}()
 	go func() {
-		h.pipe(ctx, upstream, client)
+		h.pipe(ctx, upstream, client, nil)
 		done <- struct{}{}
 	}()
 
@@ -138,7 +144,7 @@ func (h *Handler) join(ctx context.Context, client, upstream *ws.Conn) {
 
 const closeGrace = 5 * time.Second
 
-func (h *Handler) pipe(ctx context.Context, from, to *ws.Conn) {
+func (h *Handler) pipe(ctx context.Context, from, to *ws.Conn, inspect Inspect) {
 	for {
 		payload, err := from.Read(ctx)
 		if err != nil {
@@ -147,8 +153,13 @@ func (h *Handler) pipe(ctx context.Context, from, to *ws.Conn) {
 			return
 		}
 
-		if err := to.Write(ctx, payload); err != nil {
-
+		done := func() {}
+		if inspect != nil {
+			payload, done = inspect(ctx, payload)
+		}
+		err = to.Write(ctx, payload)
+		done()
+		if err != nil {
 			_ = from.CloseNow()
 			return
 		}

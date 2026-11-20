@@ -18,6 +18,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/internalrpc"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 
 	"github.com/bvivg/axon/core/services/chat/internal/calls"
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
@@ -75,7 +76,7 @@ func New(cfg Config) (*Resolver, error) {
 	return &Resolver{
 		media: authv1connect.NewSessionControlServiceClient(cfg.HTTPClient, cfg.BaseURL),
 		client: authv1connect.NewAuthServiceClient(cfg.HTTPClient, cfg.BaseURL,
-			connect.WithInterceptors(middleware.NewCorrelationInterceptor()),
+			connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()),
 		),
 		timeout: timeout,
 		log:     cfg.Logger,

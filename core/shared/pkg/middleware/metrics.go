@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Metrics struct {
@@ -60,17 +61,27 @@ func (m *Metrics) Registry() *prometheus.Registry {
 }
 
 func (m *Metrics) Handler() http.Handler {
-	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{EnableOpenMetrics: true})
 }
 
 func (m *Metrics) Interceptor() connect.Interceptor {
 	return &metricsInterceptor{metrics: m}
 }
 
-func (m *Metrics) observe(procedure string, start time.Time, err error) {
+func (m *Metrics) observe(ctx context.Context, procedure string, start time.Time, err error) {
 	code := codeLabel(err)
 	m.requests.WithLabelValues(procedure, code).Inc()
-	m.duration.WithLabelValues(procedure, code).Observe(time.Since(start).Seconds())
+	Observe(ctx, m.duration.WithLabelValues(procedure, code), time.Since(start).Seconds())
+}
+
+func Observe(ctx context.Context, observer prometheus.Observer, value float64) {
+	if span := trace.SpanContextFromContext(ctx); span.IsValid() && span.IsSampled() {
+		if exemplar, ok := observer.(prometheus.ExemplarObserver); ok {
+			exemplar.ObserveWithExemplar(value, prometheus.Labels{"trace_id": span.TraceID().String()})
+			return
+		}
+	}
+	observer.Observe(value)
 }
 
 type metricsInterceptor struct {
@@ -94,7 +105,7 @@ func (i *metricsInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc
 
 		resp, err := next(ctx, req)
 
-		i.metrics.observe(procedure, start, err)
+		i.metrics.observe(ctx, procedure, start, err)
 		return resp, err
 	}
 }
@@ -113,7 +124,7 @@ func (i *metricsInterceptor) WrapStreamingHandler(next connect.StreamingHandlerF
 
 		err := next(ctx, conn)
 
-		i.metrics.observe(procedure, start, err)
+		i.metrics.observe(ctx, procedure, start, err)
 		return err
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"testing"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/bvivg/axon/core/shared/pkg/correlation"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 )
@@ -162,5 +164,21 @@ func TestParseFormat(t *testing.T) {
 				t.Fatalf("ParseFormat(%q) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTraceContextIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.New(logger.Options{Service: "svc", Output: &buf})
+	traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled}))
+	log.InfoContext(ctx, "hello")
+	var line map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+		t.Fatal(err)
+	}
+	if line[logger.FieldTraceID] != traceID.String() || line[logger.FieldSpanID] != spanID.String() {
+		t.Fatalf("trace fields missing: %v", line)
 	}
 }

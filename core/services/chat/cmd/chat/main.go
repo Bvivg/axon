@@ -26,6 +26,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 	"github.com/bvivg/axon/core/shared/pkg/revocation"
 	"github.com/bvivg/axon/core/shared/pkg/safehttp"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 
 	"github.com/bvivg/axon/core/services/chat/internal/attachment"
 	"github.com/bvivg/axon/core/services/chat/internal/calls"
@@ -70,6 +71,16 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	hostname, _ := os.Hostname()
+	shutdownTracing, err := telemetry.Setup(ctx, telemetry.FromEnv(cfg.Service, hostname))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(flush)
+	}()
 
 	log.InfoContext(ctx, "starting chat",
 		"version", version,
@@ -429,11 +440,12 @@ func publicHandler(
 	mux.Handle("POST "+server.AttachmentUploadPath, attachmentUpload)
 	uploadSessions.Register(mux)
 	if callHandler != nil {
-		mux.Handle(callsv1connect.NewCallsServiceHandler(callHandler, connect.WithInterceptors(middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log))))
+		mux.Handle(callsv1connect.NewCallsServiceHandler(callHandler, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log))))
 	}
 
 	mux.Handle(chatv1connect.NewChatServiceHandler(handler,
 		connect.WithInterceptors(
+			telemetry.Interceptor(),
 			middleware.NewCorrelationInterceptor(),
 			middleware.NewRecoveryInterceptor(log),
 			metrics.Interceptor(),
@@ -463,6 +475,7 @@ func adminHandler(
 	}
 	health.New(log, []health.Checker{pool, cache, mediaCheck}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
+	telemetry.Profiling(mux)
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/bvivg/axon/core/shared/pkg/correlation"
 )
 
@@ -16,6 +18,8 @@ const (
 	FieldLevel         = "level"
 	FieldService       = "service"
 	FieldCorrelationID = "correlation_id"
+	FieldTraceID       = "trace_id"
+	FieldSpanID        = "span_id"
 )
 
 type Format string
@@ -80,6 +84,9 @@ type contextHandler struct {
 func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	if id := correlation.FromContext(ctx); id != "" {
 		r.AddAttrs(slog.String(FieldCorrelationID, id))
+	}
+	if span := trace.SpanContextFromContext(ctx); span.IsValid() {
+		r.AddAttrs(slog.String(FieldTraceID, span.TraceID().String()), slog.String(FieldSpanID, span.SpanID().String()))
 	}
 	return h.Handler.Handle(ctx, r)
 }

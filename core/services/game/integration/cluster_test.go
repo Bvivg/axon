@@ -98,7 +98,7 @@ func TestOwnershipFailoverKeepsEveryAcceptedMove(t *testing.T) {
 		return n
 	}
 	project := func() *runner {
-		r := spawn(func(ctx context.Context) { _ = cluster.NewProjector(cfg, model, quiet).Run(ctx) })
+		r := spawn(func(ctx context.Context) { _ = cluster.NewProjector(cfg, model, quiet, nil).Run(ctx) })
 		t.Cleanup(r.stop)
 		return r
 	}

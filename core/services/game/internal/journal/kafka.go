@@ -9,6 +9,11 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
 type KafkaConfig struct {
@@ -88,15 +93,57 @@ func (k *Kafka) Append(ctx context.Context, partition int32, entry Entry) (int64
 	if err != nil {
 		return 0, err
 	}
+	ctx, span := tracer.Start(ctx, "journal.append", trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(attribute.String("messaging.destination.name", k.cfg.Topic), attribute.Int("messaging.destination.partition.id", int(partition))))
+	defer span.End()
 	record := &kgo.Record{Topic: k.cfg.Topic, Partition: partition, Value: raw}
 	if entry.Event != nil {
 		record.Key = entry.Event.Session.ID[:]
 	}
+	telemetry.Inject(ctx, Headers{record: record})
 	result := k.producer.ProduceSync(ctx, record)
 	if err := result.FirstErr(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "append failed")
 		return 0, err
 	}
+	span.SetAttributes(attribute.Int64("messaging.kafka.offset", result[0].Record.Offset))
 	return result[0].Record.Offset, nil
+}
+
+var tracer = telemetry.Tracer("axon/game/journal")
+
+type Headers struct{ record *kgo.Record }
+
+func (h Headers) Get(key string) string {
+	for _, header := range h.record.Headers {
+		if header.Key == key {
+			return string(header.Value)
+		}
+	}
+	return ""
+}
+
+func (h Headers) Set(key, value string) {
+	for i, header := range h.record.Headers {
+		if header.Key == key {
+			h.record.Headers[i].Value = []byte(value)
+			return
+		}
+	}
+	h.record.Headers = append(h.record.Headers, kgo.RecordHeader{Key: key, Value: []byte(value)})
+}
+
+func (h Headers) Keys() []string {
+	keys := make([]string, 0, len(h.record.Headers))
+	for _, header := range h.record.Headers {
+		keys = append(keys, header.Key)
+	}
+	return keys
+}
+
+func TraceOf(record *kgo.Record) trace.SpanContext {
+	return trace.SpanContextFromContext(telemetry.Extract(context.Background(), Headers{record: record}))
 }
 
 func (k *Kafka) End(ctx context.Context, partition int32) (int64, error) {

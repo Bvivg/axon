@@ -21,6 +21,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/attachmentproxy"
@@ -34,6 +35,7 @@ import (
 	"github.com/bvivg/axon/core/services/gateway/internal/proxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
 	"github.com/bvivg/axon/core/services/gateway/internal/wsproxy"
+	"github.com/bvivg/axon/core/services/gateway/internal/wstrace"
 )
 
 var version = "dev"
@@ -66,6 +68,16 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	hostname, _ := os.Hostname()
+	shutdownTracing, err := telemetry.Setup(ctx, telemetry.FromEnv(cfg.Service, hostname))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(flush)
+	}()
 
 	log.InfoContext(ctx, "starting gateway",
 		"version", version,
@@ -130,7 +142,7 @@ func run() error {
 	}
 
 	authClient := proxy.NewClient(upstream, cfg.AuthServiceURL,
-		connect.WithInterceptors(middleware.NewCorrelationInterceptor()),
+		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()),
 	)
 
 	authProxy, err := proxy.NewAuth(authClient)
@@ -139,7 +151,7 @@ func run() error {
 	}
 
 	chatClient := proxy.NewChatClient(upstream, cfg.ChatServiceURL,
-		connect.WithInterceptors(middleware.NewCorrelationInterceptor()),
+		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()),
 	)
 
 	chatSocket, err := wsproxy.New(wsproxy.Config{
@@ -154,10 +166,11 @@ func run() error {
 		return err
 	}
 
-	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(middleware.NewCorrelationInterceptor()))
+	gameProxy := proxy.NewGame(upstream, cfg.GameServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()))
 	gameSocket, err := wsproxy.New(wsproxy.Config{
 		SocketOptions: ws.Options{ReadLimit: 4096},
 		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
+		Inspect: wstrace.Game,
 	})
 	if err != nil {
 		return err
@@ -178,7 +191,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	callsProxy, err := proxy.NewCalls(upstream, cfg.ChatServiceURL, connect.WithInterceptors(middleware.NewCorrelationInterceptor()))
+	callsProxy, err := proxy.NewCalls(upstream, cfg.ChatServiceURL, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()))
 	if err != nil {
 		return err
 	}
@@ -302,11 +315,12 @@ func publicHandler(
 	mux.Handle("POST "+avatarUploadPath, avatarUpload)
 	mux.Handle("POST "+attachmentUploadPath, attachmentUpload)
 	uploadSessions.Register(mux, uploadSessionsPath)
-	mux.Handle(callsv1connect.NewCallsServiceHandler(callsProxy, connect.WithInterceptors(middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
-	mux.Handle(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
+	mux.Handle(callsv1connect.NewCallsServiceHandler(callsProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
+	mux.Handle(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
 
 	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(
+			telemetry.Interceptor(),
 			middleware.NewCorrelationInterceptor(),
 			middleware.NewRecoveryInterceptor(log),
 			metrics.Interceptor(),
@@ -323,6 +337,7 @@ func publicHandler(
 
 	mux.Handle(chatv1connect.NewChatServiceHandler(chatProxy,
 		connect.WithInterceptors(
+			telemetry.Interceptor(),
 			middleware.NewCorrelationInterceptor(),
 			middleware.NewRecoveryInterceptor(log),
 			metrics.Interceptor(),
@@ -346,6 +361,7 @@ func adminHandler(keys *authn.Cache, metrics *middleware.Metrics, log *slog.Logg
 
 	health.New(log, []health.Checker{jwksChecker{keys}}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
+	telemetry.Profiling(mux)
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
 }
