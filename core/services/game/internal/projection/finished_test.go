@@ -2,6 +2,7 @@ package projection_test
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/projection"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	eventsv1 "github.com/bvivg/axon/core/shared/gen/go/axon/events/v1"
@@ -75,6 +77,32 @@ func TestFinishedEvent(t *testing.T) {
 				t.Fatalf("payload = %v, want %v", event.Payload, want)
 			}
 		})
+	}
+}
+
+func TestFinishedEventCarriesChessMoves(t *testing.T) {
+	creator, opponent := uuid.New(), uuid.New()
+	players := []engine.PlayerID{engine.PlayerID(creator.String()), engine.PlayerID(opponent.String())}
+	state := chess.New().Init(players)
+	for ply, uci := range []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"} {
+		next, err := chess.New().ApplyMove(state, chess.NewMove(players[ply%2], ply, uci))
+		if err != nil {
+			t.Fatal(uci, err)
+		}
+		state = next
+	}
+	event, ok := projection.FinishedEvent(session.Session{ID: uuid.New(), Game: chess.Key, Creator: creator, Opponent: &opponent, State: state}, time.Now())
+	if !ok {
+		t.Fatal("a checkmate produced no event")
+	}
+	payload := event.Payload.(*eventsv1.GameFinished)
+	if want := []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"}; !slices.Equal(payload.GetMoves(), want) || payload.GetWinnerSeat() != 0 {
+		t.Fatalf("moves = %v, winner = %d", payload.GetMoves(), payload.GetWinnerSeat())
+	}
+	other, _ := projection.FinishedEvent(session.Session{ID: uuid.New(), Game: "tictactoe", Creator: creator, Opponent: &opponent,
+		State: engine.State{Game: "tictactoe", Status: engine.StatusDraw, Winner: engine.NoSeat, Data: []byte(`{"moves":["x"]}`)}}, time.Now())
+	if moves := other.Payload.(*eventsv1.GameFinished).GetMoves(); len(moves) != 0 {
+		t.Fatalf("a tic-tac-toe event carries moves %v", moves)
 	}
 }
 
