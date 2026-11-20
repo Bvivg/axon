@@ -150,6 +150,8 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		gamev1connect.GameServiceGetMatchProcedure:                  true,
 		gamev1connect.GameServiceGetRatingsProcedure:                true,
 		gamev1connect.GameServiceLeaveSessionProcedure:              true,
+		gamev1connect.GameServiceGetSessionHistoryProcedure:         true,
+		gamev1connect.GameServiceListLiveSessionsProcedure:          true,
 		callsv1connect.CallsServiceRegisterEndpointProcedure:        true,
 		callsv1connect.CallsServiceStartCallProcedure:               true,
 		callsv1connect.CallsServiceStartDirectCallProcedure:         true,

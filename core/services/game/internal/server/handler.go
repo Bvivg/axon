@@ -38,6 +38,7 @@ type Config struct {
 	Secure    bool
 	TestHooks bool
 	Metrics   *metrics.Game
+	Watchers  int
 }
 
 type Handler struct {
@@ -55,6 +56,7 @@ type Handler struct {
 	scheme   string
 	updates  updates
 	matches  updates
+	watchers *watchers
 }
 
 func New(cfg Config) *Handler {
@@ -68,11 +70,12 @@ func New(cfg Config) *Handler {
 	}
 	return &Handler{
 		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks, metrics: cfg.Metrics,
-		peers:   newPeers(client, scheme),
-		sockets: cfg.Sockets,
-		scheme:  scheme,
-		updates: newUpdates(),
-		matches: newUpdates(),
+		peers:    newPeers(client, scheme),
+		sockets:  cfg.Sockets,
+		scheme:   scheme,
+		updates:  newUpdates(),
+		matches:  newUpdates(),
+		watchers: newWatchers(cfg.Watchers),
 	}
 }
 
@@ -166,6 +169,7 @@ func (h *Handler) GetSession(ctx context.Context, req *connect.Request[gamev1.Ge
 		if err != nil {
 			return nil, err
 		}
+		state.Spectators = proto.Uint32(h.watchers.count(id))
 		return connect.NewResponse(&gamev1.GetSessionResponse{Session: state}), nil
 	}, gamev1connect.GameServiceClient.GetSession)
 }
