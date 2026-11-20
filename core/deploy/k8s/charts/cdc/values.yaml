@@ -1,6 +1,6 @@
 global: {}
 cdc: {}
-postgresImage: postgres:17-alpine
+postgresImage: ghcr.io/cloudnative-pg/postgresql:17.10-minimal-trixie
 curlImage: curlimages/curl:8.23.0
 connector:
   name: axon-outbox
