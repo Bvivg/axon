@@ -162,8 +162,11 @@ DoH проверен по HTTP/2 с проверкой CA: axon.test→192.168.2
 Сайт: [https://192.168.2.1:3443](https://192.168.2.1:3443). [Установить CA и проверить реальные устройства](/Users/bvivg/Developer/PetProjects/axon/docs/calls-safari-ios-runbook.md). Ключи не передавать: скачивается только публичный CA на3444. Проверено через отдельный Docker browser client с настоящим TLS trust, secure context, HttpOnly/Secure cookie с /api path, native call/playback/End.
 
 ```sh
-docker compose -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.calls-lan.yml up -d
+LAN_IP=192.168.2.1 LAN_SECRETS_DIR=.local/evidence/calls/LAN/.secrets node core/deploy/calls-lan-init.mjs
+AXON_LAN_IP=192.168.2.1 docker compose -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.calls-lan.yml up -d
 ```
+
+Генератор сохраняет CA, секрет TURN и пароль root MinIO (`minio-root.env`, случайный, не из репозитория), перевыпускает только серверный сертификат. Без `minio-root.env` overlay не стартует. Auth и Chat ходят в MinIO под своими пользователями `axon-avatars` и `axon-attachments` с политиками `avatars-bucket` и `attachments-bucket` только на свой бакет (`core/deploy/minio`), root остаётся у `minio` и `minio-init`. Через `/storage/` прокси пропускает только `GET`/`HEAD` публичных аватаров `/storage/avatars/<uuid>/<size>.jpg` без query и `Authorization`, S3 и admin API MinIO снаружи недоступны. HTTPS (443, 3443), CA (3444) и coturn публикуются только на `AXON_LAN_IP` (и 127.0.0.1 для HTTPS); для доступа по другому адресу, например через Tailscale, привязку добавляет локальный overlay.
 
 Этот запуск сохраняет основной AXON, PostgreSQL/MinIO data и обновлённый стек. Выключить Calls без удаления history: CALLS_ENABLED=false в LAN overlay и recreate Chat; публичные coturn/HTTPS можно остановить отдельно. Для возврата обычного dev web использовать только основной compose и пересоздать web/gateway/chat, данные и Calls миграции сохранять. Down migrations удаляют history и не являются штатным откатом.
 

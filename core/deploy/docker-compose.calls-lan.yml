@@ -37,6 +37,16 @@ services:
   migrate:
     env_file:
       - .env
+  minio:
+    env_file:
+      - ../../.local/evidence/calls/LAN/.secrets/minio-root.env
+    environment:
+      MINIO_ROOT_PASSWORD: !reset null
+  minio-init:
+    env_file:
+      - ../../.local/evidence/calls/LAN/.secrets/minio-root.env
+    environment:
+      MINIO_ROOT_PASSWORD: !reset null
   auth:
     environment:
       AVATARS_PUBLIC_URL: https://axon.test/storage
@@ -75,9 +85,11 @@ services:
       - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
     networks: [edge]
     ports:
-      - "443:3443"
-      - "3443:3443"
-      - "3444:3444"
+      - "127.0.0.1:443:3443"
+      - "${AXON_LAN_IP:-192.168.2.1}:443:3443"
+      - "127.0.0.1:3443:3443"
+      - "${AXON_LAN_IP:-192.168.2.1}:3443:3443"
+      - "${AXON_LAN_IP:-192.168.2.1}:3444:3444"
       - "127.0.0.1:3003:3003"
     depends_on:
       gateway:
@@ -95,7 +107,7 @@ services:
       - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
     networks: [media]
     ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
-      - "5349:5349/tcp"
-      - "49160-49220:49160-49220/udp"
+      - "${AXON_LAN_IP:-192.168.2.1}:3478:3478/udp"
+      - "${AXON_LAN_IP:-192.168.2.1}:3478:3478/tcp"
+      - "${AXON_LAN_IP:-192.168.2.1}:5349:5349/tcp"
+      - "${AXON_LAN_IP:-192.168.2.1}:49160-49220:49160-49220/udp"

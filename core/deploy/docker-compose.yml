@@ -94,17 +94,16 @@ services:
   minio-init:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     restart: "no"
-    entrypoint: ["sh", "-c"]
-    command:
-      - >
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
-        mc mb --ignore-existing local/avatars &&
-        mc anonymous set download local/avatars &&
-        mc mb --ignore-existing local/chat-attachments &&
-        mc anonymous set none local/chat-attachments
+    entrypoint: ["sh", "/minio/init.sh"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
+      AVATARS_ACCESS_KEY: ${AVATARS_ACCESS_KEY:-axon-avatars}
+      AVATARS_SECRET_KEY: ${AVATARS_SECRET_KEY:-axon-avatars-dev-secret}
+      ATTACHMENTS_ACCESS_KEY: ${ATTACHMENTS_ACCESS_KEY:-axon-attachments}
+      ATTACHMENTS_SECRET_KEY: ${ATTACHMENTS_SECRET_KEY:-axon-attachments-dev-secret}
+    volumes:
+      - ./minio:/minio:ro
     networks: [data]
     depends_on:
       minio:
@@ -129,6 +128,11 @@ services:
       METRICS_ADDR: ":9091"
       AVATARS_ENDPOINT: "minio:9000"
       AVATARS_PUBLIC_URL: ${AVATARS_PUBLIC_URL:-http://localhost:59000}
+      AVATARS_ACCESS_KEY: ${AVATARS_ACCESS_KEY:-axon-avatars}
+      AVATARS_SECRET_KEY: ${AVATARS_SECRET_KEY:-axon-avatars-dev-secret}
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_PASSWORD: ""
+      ATTACHMENTS_SECRET_KEY: ""
     ports:
       - "127.0.0.1:${AUTH_HOST_PORT:-8081}:8081"
       - "127.0.0.1:${AUTH_METRICS_HOST_PORT:-9091}:9091"
@@ -213,6 +217,11 @@ services:
 
       ATTACHMENTS_ENDPOINT: "minio:9000"
       ATTACHMENTS_PUBLIC_URL: ${ATTACHMENTS_PUBLIC_URL:-http://localhost:59000}
+      ATTACHMENTS_ACCESS_KEY: ${ATTACHMENTS_ACCESS_KEY:-axon-attachments}
+      ATTACHMENTS_SECRET_KEY: ${ATTACHMENTS_SECRET_KEY:-axon-attachments-dev-secret}
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_PASSWORD: ""
+      AVATARS_SECRET_KEY: ""
     ports:
       - "127.0.0.1:${CHAT_HOST_PORT:-8082}:8082"
       - "127.0.0.1:${CHAT_METRICS_HOST_PORT:-9092}:9092"
@@ -632,6 +641,10 @@ services:
       RATE_LIMIT_REDIS_PASSWORD: ${EDGE_REDIS_PASSWORD:-axon-edge}
 
       TRUSTED_PROXIES: "0"
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_PASSWORD: ""
+      AVATARS_SECRET_KEY: ""
+      ATTACHMENTS_SECRET_KEY: ""
     ports:
       - "127.0.0.1:${GATEWAY_HOST_PORT:-18080}:8080"
       - "127.0.0.1:${GATEWAY_METRICS_HOST_PORT:-19090}:9090"
