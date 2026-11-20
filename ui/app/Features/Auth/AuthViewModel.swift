@@ -6,7 +6,7 @@ import Observation
 final class AuthViewModel {
     enum Mode: String, CaseIterable, Identifiable {
         case login = "Sign in"
-        case register = "Create account"
+        case register = "Register"
 
         var id: String { rawValue }
     }
