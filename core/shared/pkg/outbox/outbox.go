@@ -43,7 +43,7 @@ func Write(ctx context.Context, tx Execer, table string, events ...Event) error 
 		if err != nil {
 			return fmt.Errorf("outbox: marshal %s: %w", event.Topic, err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO `+table+` (id, aggregatetype, aggregateid, type, payload) VALUES ($1, $2, $3, $4, $5)`,
+		if _, err := tx.Exec(ctx, `INSERT INTO `+table+` (id, aggregatetype, aggregateid, type, payload) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
 			event.ID, event.Topic, event.AggregateID, string(event.Payload.ProtoReflect().Descriptor().FullName()), payload); err != nil {
 			return fmt.Errorf("outbox: insert %s: %w", event.Topic, err)
 		}

@@ -37,7 +37,7 @@ func TestWriteInsertsOneRowPerEventInTheCallersTransaction(t *testing.T) {
 	if err := outbox.Write(context.Background(), r, "game.outbox", outbox.Event{ID: id, Topic: "game.finished.v1", AggregateID: "chess", Payload: finished}); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.calls) != 1 || !strings.HasPrefix(r.calls[0].sql, "INSERT INTO game.outbox ") {
+	if len(r.calls) != 1 || !strings.HasPrefix(r.calls[0].sql, "INSERT INTO game.outbox ") || !strings.HasSuffix(r.calls[0].sql, "ON CONFLICT (id) DO NOTHING") {
 		t.Fatal(r.calls)
 	}
 	args := r.calls[0].args
