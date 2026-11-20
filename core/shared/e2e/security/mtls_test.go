@@ -35,7 +35,7 @@ func env(t *testing.T, key, fallback string) string {
 func targets(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	for _, item := range strings.Split(env(t, "MTLS_TARGETS", "auth=auth:8081,chat=chat:8082,game=game:8083,rating=rating:8084,analysis=analysis:8085"), ",") {
+	for _, item := range strings.Split(env(t, "MTLS_TARGETS", "auth=auth:8081,chat=chat:8082,game=game:8083,rating=rating:8084,analysis=analysis:8085,tournament=tournament:8086"), ",") {
 		name, address, _ := strings.Cut(item, "=")
 		out[name] = address
 	}
@@ -85,6 +85,8 @@ func procedure(name string) string {
 		return "/axon.rating.v1.RatingService/GetLeaderboard"
 	case "analysis":
 		return "/axon.analysis.v1.AnalysisService/GetAnalysis"
+	case "tournament":
+		return "/axon.tournament.v1.TournamentService/ListTournaments"
 	default:
 		return "/axon.game.v1.GameService/ListSessions"
 	}

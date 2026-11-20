@@ -215,6 +215,15 @@ services:
       postgres:
         condition: service_healthy
 
+  tournament-migrate:
+    image: migrate/migrate:v4.20.1
+    volumes:
+      - ../services/tournament/migrations:/migrations:ro
+    command: ["-path=/migrations", "-database=postgres://tournament_service:tournament@postgres:5432/axon?sslmode=disable&search_path=tournament", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   cdc-setup:
     image: postgres:17-alpine
     restart: "no"
@@ -238,6 +247,8 @@ services:
       game-migrate:
         condition: service_completed_successfully
       rating-migrate:
+        condition: service_completed_successfully
+      tournament-migrate:
         condition: service_completed_successfully
 
   connect:
@@ -356,6 +367,39 @@ services:
       retries: 10
       start_period: 5s
 
+  tournament:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: runtime
+      args:
+        SERVICE: tournament
+    environment:
+      APP_ENV: test
+      POSTGRES_DSN: postgres://tournament_service:tournament@postgres:5432/axon?sslmode=disable&search_path=tournament
+      HTTP_ADDR: ":8086"
+      METRICS_ADDR: ":9096"
+      KAFKA_BROKERS: kafka:29092
+      AUTH_SERVICE_URL: http://auth:8081
+      JWKS_URL: http://auth:9091/.well-known/jwks.json
+      JWT_ISSUER: https://auth.axon.test
+      JWT_AUDIENCE: axon
+    depends_on:
+      tournament-migrate:
+        condition: service_completed_successfully
+      cdc-setup:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9096/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   kafka:
     image: confluentinc/confluent-local:7.5.0
     environment:
@@ -430,6 +474,7 @@ services:
       CHAT_SERVICE_URL: http://chat:8082
       GAME_SERVICE_URL: http://game:8083
       ANALYSIS_SERVICE_URL: http://analysis:8085
+      TOURNAMENT_SERVICE_URL: http://tournament:8086
       JWKS_URL: http://auth:9091/.well-known/jwks.json
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
@@ -504,6 +549,8 @@ services:
       rating:
         condition: service_healthy
       analysis:
+        condition: service_healthy
+      tournament:
         condition: service_healthy
 
 volumes:
