@@ -28,6 +28,8 @@ type Config struct {
 	OAuth       OAuthConfig
 	Avatar      AvatarConfig
 	InternalKey config.Secret
+
+	ClientIPPeers []string
 }
 
 type AvatarConfig struct {
@@ -86,6 +88,8 @@ func Load() (Config, error) {
 		Password:    loadPasswordParams(l),
 		OAuth:       loadOAuth(l),
 		Avatar:      loadAvatar(l),
+
+		ClientIPPeers: l.StringSlice("CLIENT_IP_TRUSTED_PEERS", []string{"gateway"}),
 	}
 	refuseDefaultAvatarSecret(l, cfg.Base, cfg.Avatar)
 
