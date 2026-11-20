@@ -46,10 +46,9 @@ function Position({ game, frame, previous }: { game: GameKey; frame: HistoryFram
   }
 }
 
-function notation(game: GameKey, frames: HistoryFrame[], at: number) {
-  if (game === GameKey.Chess) return frames[frames.length - 1]?.chess?.san.slice(0, at) ?? [];
-  if (game === GameKey.Quoridor) return frames[frames.length - 1]?.quoridor?.moves.slice(0, at) ?? [];
-  return [];
+function notation(game: GameKey, frames: HistoryFrame[]) {
+  if (game === GameKey.TicTacToe) return [];
+  return frames.slice(1).map(frame => frame.move ?? "");
 }
 
 export function GameReplay({ id, game }: { id: string; game: GameKey }) {
@@ -62,7 +61,7 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
   const profiles = usePublicProfiles(session?.playerIds ?? []);
   const names = (session?.playerIds ?? []).map(player => profileName(profiles.data?.get(player)));
   const step = (to: number) => setCursor(Math.max(0, Math.min(last, to)));
-  const analysed = game === GameKey.Chess && (session?.status === SessionStatus.WON || session?.status === SessionStatus.DRAW);
+  const analysed = game === GameKey.Chess && !!session?.rated && (session.status === SessionStatus.WON || session.status === SessionStatus.DRAW);
   const analysis = useAnalysis(id, analysed);
   const ready = analysis.data?.status === AnalysisStatus.READY ? analysis.data : undefined;
 
@@ -80,7 +79,8 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
 
   const code = ConnectError.from(history.error).code;
   const frame = frames[at];
-  const moves = notation(game, frames, at);
+  const played = notation(game, frames);
+  const moves = played.slice(0, at);
   const mover = frame?.playerId ? session?.playerIds.indexOf(frame.playerId) ?? -1 : -1;
   const result = session ? spectatorStatus(session, names, sides[game]) : "";
   const marks = ready ? moveMarks(ready.positions).slice(0, at) : undefined;
@@ -121,7 +121,7 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
             <aside className="flex min-w-0 flex-col gap-3 lg:pt-14">
               {result ? <p data-replay-result className="rounded-game-md border border-game-border bg-game-card px-3 py-2 text-sm font-medium">{result}</p> : null}
               {analysed ? <AnalysisPanel report={analysis.data} failed={analysis.isError} retry={() => void analysis.refetch()} at={at} onSelect={step}
-                san={frames[last]?.chess?.san ?? []} fens={frames.map(item => item.chess?.fen ?? "")} /> : null}
+                san={played} fens={frames.map(item => item.chess?.fen ?? "")} /> : null}
               {game !== GameKey.TicTacToe ? <MoveList san={moves} marks={marks} /> : null}
             </aside>
           </div>
