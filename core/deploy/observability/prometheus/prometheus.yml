@@ -40,6 +40,13 @@ scrape_configs:
         port: 8083
         refresh_interval: 15s
 
+  - job_name: rating
+    dns_sd_configs:
+      - names: ["rating"]
+        type: A
+        port: 9094
+        refresh_interval: 15s
+
   - job_name: postgres
     static_configs:
       - targets: ["postgres-exporter:9187"]

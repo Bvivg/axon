@@ -15,6 +15,7 @@ services:
       CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
       GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
       CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
+      RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
@@ -275,6 +276,72 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  postgres-schemas:
+    image: postgres:17-alpine
+    restart: "no"
+    entrypoint: ["sh", "/docker-entrypoint-initdb.d/01-schemas.sh"]
+    environment:
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-axon}
+      POSTGRES_USER: ${POSTGRES_USER:-axon}
+      POSTGRES_DB: ${POSTGRES_DB:-axon}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
+      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
+      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
+      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
+      RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  rating:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+      target: runtime
+      args:
+        SERVICE: rating
+    restart: unless-stopped
+    environment:
+      POSTGRES_DSN: ${RATING_POSTGRES_DSN:-postgres://rating_service:rating@postgres:5432/axon?sslmode=disable&search_path=rating}
+      HTTP_ADDR: ":8084"
+      METRICS_ADDR: ":9094"
+      KAFKA_BROKERS: "kafka:29092"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-axon}
+    networks: [app, data]
+    depends_on:
+      rating-migrate:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9094/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  rating-migrate:
+    image: migrate/migrate:v4.20.1
+    volumes:
+      - ../services/rating/migrations:/migrations:ro
+    entrypoint: ["sh", "-ec"]
+    command: ['exec migrate -path=/migrations -database "$$RATING_POSTGRES_DSN" up']
+    environment:
+      RATING_POSTGRES_DSN: ${RATING_POSTGRES_DSN:-postgres://rating_service:rating@postgres:5432/axon?sslmode=disable&search_path=rating}
+    networks: [data]
+    depends_on:
+      postgres-schemas:
+        condition: service_completed_successfully
 
   gateway:
     build:

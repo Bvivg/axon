@@ -185,6 +185,15 @@ services:
       postgres-replica:
         condition: service_healthy
 
+  rating:
+    environment:
+      KAFKA_BROKERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
+    depends_on:
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
   gateway:
     environment:
       TRUSTED_PROXIES: "1"
