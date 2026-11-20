@@ -78,6 +78,52 @@ services:
       kafka-3:
         condition: service_healthy
 
+  gateway:
+    environment:
+      TRUSTED_PROXIES: "1"
+      SHUTDOWN_DRAIN: 5s
+    ports: !reset []
+    deploy:
+      replicas: ${GATEWAY_REPLICAS:-2}
+
+  auth:
+    environment:
+      SHUTDOWN_DRAIN: 3s
+    ports: !reset []
+    deploy:
+      replicas: ${AUTH_REPLICAS:-2}
+
+  chat:
+    environment:
+      SHUTDOWN_DRAIN: 3s
+    ports: !reset []
+    deploy:
+      replicas: ${CHAT_REPLICAS:-2}
+
+  envoy:
+    image: envoyproxy/envoy:v1.34.1
+    restart: unless-stopped
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "warn"]
+    ports:
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-18080}:8080"
+      - "127.0.0.1:${ENVOY_ADMIN_HOST_PORT:-19901}:9901"
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    networks: [edge]
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9901 && printf \"GET /ready HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q LIVE <&3'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  web:
+    environment:
+      AXON_GATEWAY_RPC_URL: "http://envoy:8080"
+
 volumes:
   kafka-ha-1:
   kafka-ha-2:
