@@ -90,11 +90,11 @@ async function control(person: Awaited<ReturnType<typeof callPeers>>["a"], metho
 async function cleanup(pages: Page[], id: string) {
   for (const page of pages) await expect.poll(() => page.evaluate(() => {
     const e = window.axonMigrationEvidence;
-    return e.source.pc.connectionState === "closed" && [...e.source.tracks, ...e.candidates.flatMap(m => [...m.tracks])].every(t => t.readyState === "ended") && [...e.pcs].every(pc => pc.connectionState === "closed") && e.candidates.every(m => m.room.state === "disconnected");
+    return e.source.pc.connectionState === "closed" && [...e.source.tracks, ...e.candidates.flatMap(m => [...m.tracks])].every(t => t.readyState === "ended") && [...e.pcs].every(pc => pc.connectionState === "closed" || (pc.signalingState === "stable" && pc.iceConnectionState === "new" && !pc.localDescription && !pc.getTransceivers().length)) && e.candidates.every(m => m.room.state === "disconnected");
   })).toBe(true);
   await expect.poll(() => callSQL(`SELECT count(*) FROM chat.call_user_slots WHERE call_id='${id}'`)).toBe("0");
   await expect.poll(async () => ((await admin(pages[0], "ListRooms", {}, { roomList: true })).rooms ?? []).some((r: { name: string }) => r.name === `call_${id}`)).toBe(false);
-  return { slots: 0, roomPresent: false, clients: await Promise.all(pages.map(page => page.evaluate(() => { const e = window.axonMigrationEvidence; return { source: e.source.pc.connectionState, pcs: [...e.pcs].map(pc => pc.connectionState), tracks: [...e.source.tracks, ...e.candidates.flatMap(m => [...m.tracks])].map(t => ({ kind: t.kind, state: t.readyState })) }; }))) };
+  return { slots: 0, roomPresent: false, clients: await Promise.all(pages.map(page => page.evaluate(() => { const e = window.axonMigrationEvidence; return { source: e.source.pc.connectionState, pcs: [...e.pcs].map(pc => pc.connectionState + ":" + pc.signalingState + ":" + pc.iceConnectionState + ":" + pc.getTransceivers().length + ":" + (pc.localDescription ? "ld" : "-")), tracks: [...e.source.tracks, ...e.candidates.flatMap(m => [...m.tracks])].map(t => ({ kind: t.kind, state: t.readyState })) }; }))) };
 }
 async function record(name: string, pages: Page[], result: Record<string, unknown>) {
   result.timelines = await Promise.all(pages.map(page => page.evaluate(() => { window.axonMigrationEvidence.stop(); return window.axonMigrationEvidence.samples; }).catch(() => [])));
@@ -148,11 +148,11 @@ test("End during real SFU preparation fences the operation and stops both native
     firewall(sfuRules, true);
     const inputs = await peers.a.page.evaluate(async () => (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput" || d.kind === "videoinput").map(d => d.label).filter(Boolean));
     await peers.a.page.getByRole("button", { name: "Call devices", exact: true }).click();
-    for (const label of inputs) await expect(peers.a.page.getByRole("menuitem", { name: label, exact: true })).toBeEnabled();
+    for (const label of inputs) await expect(peers.a.page.getByRole("menuitemradio", { name: label, exact: true })).toBeEnabled();
     await control(peers.a, "RequestCallMigration", { callId: peers.original.id, generation: "1" });
     for (const page of peers.pages) await expect.poll(() => page.evaluate(() => window.axonMigrationEvidence.candidates.length)).toBe(1);
     for (const page of peers.pages) await expect.poll(() => page.evaluate(() => window.axonMigrationEvidence.pcs.size)).toBeGreaterThan(1);
-    for (const label of inputs) await expect(peers.a.page.getByRole("menuitem", { name: label, exact: true })).toBeDisabled();
+    for (const label of inputs) await expect(peers.a.page.getByRole("menuitemradio", { name: label, exact: true })).toBeDisabled();
     await peers.a.page.keyboard.press("Escape");
     await peers.a.page.getByRole("button", { name: "End call", exact: true }).click();
     result.cleanup = await cleanup(peers.pages, peers.original.id);

@@ -77,7 +77,7 @@ for (const route of ["direct-audio", "relay-tls-video"]) test(`UI call ${route},
     await peers.a.page.getByRole("button", { name: "Unmute microphone", exact: true }).click();
     if (route.includes("video")) {
       await peers.a.page.getByRole("button", { name: "Turn camera off", exact: true }).click();
-      expect(await peers.a.page.evaluate(() => window.axonCallManager!.snapshot().media!.local.getVideoTracks().every(t => !t.enabled))).toBe(true);
+      await expect.poll(() => peers.a.page.evaluate(() => window.axonCallManager!.snapshot().media!.local.getVideoTracks().every(t => !t.enabled))).toBe(true);
       await peers.a.page.getByRole("button", { name: "Turn camera on", exact: true }).click();
       const camera = await peers.a.page.evaluate(async () => (await navigator.mediaDevices.enumerateDevices()).find(d => d.kind === "videoinput")!.label);
       await peers.a.page.getByRole("button", { name: "Call devices", exact: true }).click();
@@ -86,7 +86,7 @@ for (const route of ["direct-audio", "relay-tls-video"]) test(`UI call ${route},
       result.cameraReplacement = true;
     }
     await peers.a.page.getByRole("link", { name: "Calls", exact: true }).first().click();
-    await expect(peers.a.page.getByRole("heading", { name: "Calls", exact: true })).toBeVisible();
+    await expect(peers.a.page.getByRole("complementary", { name: "Section sidebar", exact: true }).getByRole("heading", { name: "Calls", exact: true })).toBeVisible();
     await expect(peers.a.page.getByRole("button", { name: "Return to call", exact: true })).toBeVisible();
     expect((await stats(peers.a.page)).state).toBe(3);
     result.slotsBeforeEnd = Number(await callSQL(`SELECT count(*) FROM chat.call_user_slots WHERE call_id='${callID}'`)); expect(result.slotsBeforeEnd).toBe(2);
@@ -96,6 +96,7 @@ for (const route of ["direct-audio", "relay-tls-video"]) test(`UI call ${route},
     for (const value of result.cleanup as Awaited<ReturnType<typeof clean>>[]) { expect(value.connectionState).toBe("closed"); expect(value.tracks.every(t => t.readyState === "ended")).toBe(true); expect(value.outputElements).toBe(0); }
     await expect.poll(async () => Number(await callSQL(`SELECT count(*) FROM chat.call_user_slots WHERE call_id='${callID}'`))).toBe(0);
     result.slotsAfterEnd = 0; result.terminal = JSON.parse(await callSQL(`SELECT document FROM chat.calls WHERE id='${callID}'`));
+    await peers.a.page.getByRole("navigation", { name: "Call history", exact: true }).getByRole("link", { name: /^All calls/ }).click();
     const historyRow = peers.a.page.locator(`[data-call-id="${callID}"]`);
     await expect(historyRow).toContainText("Completed");
     await expect(historyRow.getByRole("link", { name: /^Open chat with/ })).toBeVisible();
@@ -109,7 +110,7 @@ for (const route of ["direct-audio", "relay-tls-video"]) test(`UI call ${route},
     expect(redial.roomId ?? "").toBe("");
     await expect(peers.b.page.getByRole("dialog", { name: "Incoming call", exact: true })).toBeVisible();
     await peers.b.page.getByRole("button", { name: "Decline", exact: true }).click();
-    await expect(peers.a.page.getByRole("status").filter({ hasText: "Call ended" })).toBeVisible();
+    await expect(peers.a.page.getByRole("status").filter({ hasText: "Call declined" })).toBeVisible();
     result.redialAndDecline = true; result.passed = true;
   } finally {
     for (const rule of rules) execFileSync("iptables", ["-D", "OUTPUT", ...rule]);
@@ -196,10 +197,11 @@ test("Busy attempt is recorded without disturbing an active call", async ({ brow
     await second.a.page.goto("http://localhost:3000/chat");
     await startChat(second.a.page, first.b, "Busy call fixture");
     await startCallFromChat(second.a.page, "Audio call");
-    await expect(second.a.page.getByRole("dialog", { name: "Call", exact: true }).getByRole("alert")).toContainText("already in a call");
+    await expect(second.a.page.getByRole("dialog", { name: "Could not start the call", exact: true }).getByRole("alert")).toContainText("already in a call");
     expect(Number(await callSQL(`SELECT count(*) FROM chat.calls WHERE caller_id='${second.a.userID}' AND state='ended' AND document->>'end_reason'='busy'`))).toBe(1);
     expect(Number(await callSQL(`SELECT count(*) FROM chat.call_user_slots WHERE call_id='${activeID}'`))).toBe(2);
     expect(await first.a.page.evaluate(() => window.axonCallManager!.snapshot().call!.state)).toBe(3);
+    await second.a.page.getByRole("dialog", { name: "Could not start the call", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click();
     await second.a.page.getByRole("link", { name: "Calls", exact: true }).first().click();
     await expect(second.a.page.getByText("Outgoing · Busy", { exact: true })).toBeVisible();
     await first.a.page.getByRole("button", { name: "End call", exact: true }).click();
