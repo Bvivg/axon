@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -21,25 +24,69 @@ const OwnerChannel = "game_owner_changed"
 type Postgres struct {
 	pool  *pgxpool.Pool
 	store *session.Store
+	rules session.Rules
+
+	mu    sync.Mutex
+	cache map[uuid.UUID]session.Session
 }
 
-func New(store *session.Store) *Postgres {
-	return &Postgres{pool: store.Pool(), store: store}
+const cacheLimit = 50_000
+
+func New(store *session.Store, rules session.Rules) *Postgres {
+	return &Postgres{pool: store.Pool(), store: store, rules: rules, cache: map[uuid.UUID]session.Session{}}
 }
 
-func (m *Postgres) Claim(ctx context.Context, partition int32, ownerID, address string) (int64, error) {
-	var generation int64
+func (m *Postgres) Forget() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.cache)
+}
+
+func (m *Postgres) Claim(ctx context.Context, partition int32, ownerID, address string, ttl time.Duration) (owner.Lease, error) {
+	var lease owner.Lease
 	err := pgx.BeginFunc(ctx, m.pool, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO game.owners (partition, owner_id, address, generation) VALUES ($1,$2,$3,1)
-			ON CONFLICT (partition) DO UPDATE SET owner_id=EXCLUDED.owner_id, address=EXCLUDED.address,
-				generation=game.owners.generation+1, updated_at=clock_timestamp()
-			RETURNING generation`, partition, ownerID, address).Scan(&generation); err != nil {
+		var waitMS int64
+		err := tx.QueryRow(ctx, `SELECT CASE WHEN owner_id = $2 THEN 0
+				ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (lease_until - clock_timestamp())) * 1000))::bigint END
+			FROM game.owners WHERE partition=$1 FOR UPDATE`, partition, ownerID).Scan(&waitMS)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		_, err := tx.Exec(ctx, `SELECT pg_notify($1,$2)`, OwnerChannel, fmt.Sprint(partition))
+		lease.Wait = time.Duration(waitMS) * time.Millisecond
+		if err := tx.QueryRow(ctx, `INSERT INTO game.owners (partition, owner_id, address, generation, lease_until)
+			VALUES ($1,$2,$3,1, clock_timestamp() + make_interval(secs => $4))
+			ON CONFLICT (partition) DO UPDATE SET owner_id=EXCLUDED.owner_id, address=EXCLUDED.address,
+				generation=game.owners.generation+1, lease_until=EXCLUDED.lease_until, updated_at=clock_timestamp()
+			RETURNING generation`, partition, ownerID, address, (lease.Wait + ttl).Seconds()).Scan(&lease.Generation); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `SELECT pg_notify($1,$2)`, OwnerChannel, fmt.Sprint(partition))
 		return err
 	})
-	return generation, err
+	return lease, err
+}
+
+func (m *Postgres) Renew(ctx context.Context, ownerID string, held map[int32]int64, ttl time.Duration) ([]int32, error) {
+	partitions := make([]int32, 0, len(held))
+	generations := make([]int64, 0, len(held))
+	for partition, generation := range held {
+		partitions = append(partitions, partition)
+		generations = append(generations, generation)
+	}
+	rows, err := m.pool.Query(ctx, `UPDATE game.owners o SET lease_until = clock_timestamp() + make_interval(secs => $4)
+		FROM unnest($2::smallint[], $3::bigint[]) AS h(partition, generation)
+		WHERE o.partition = h.partition AND o.generation = h.generation AND o.owner_id = $1
+		RETURNING o.partition`, ownerID, partitions, generations, ttl.Seconds())
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[int32])
+}
+
+func (m *Postgres) Release(ctx context.Context, ownerID string, partition int32, generation int64) error {
+	_, err := m.pool.Exec(ctx, `UPDATE game.owners SET lease_until = clock_timestamp()
+		WHERE partition=$1 AND generation=$2 AND owner_id=$3`, partition, generation, ownerID)
+	return err
 }
 
 func (m *Postgres) Projected(ctx context.Context, partition int32) (owner.Projection, error) {
@@ -137,62 +184,283 @@ func (m *Postgres) Owners(ctx context.Context) (map[int32]string, error) {
 	return out, rows.Err()
 }
 
-func (m *Postgres) Apply(ctx context.Context, partition int32, entries []journal.Entry) ([]uuid.UUID, error) {
-	var changed []uuid.UUID
-	err := pgx.BeginFunc(ctx, m.pool, func(tx pgx.Tx) error {
-		changed = changed[:0]
-		var next, generation int64
-		err := tx.QueryRow(ctx, `SELECT next_offset, claim_generation FROM game.projector_offsets WHERE partition=$1 FOR UPDATE`, partition).Scan(&next, &generation)
-		if errors.Is(err, pgx.ErrNoRows) {
-			if _, err := tx.Exec(ctx, `INSERT INTO game.projector_offsets (partition, next_offset) VALUES ($1,0)`, partition); err != nil {
-				return err
-			}
-		} else if err != nil {
-			return err
-		}
-		fence := journal.NewFence()
-		fence.Seed(partition, generation)
-		seen := map[uuid.UUID]bool{}
-		for _, entry := range entries {
-			if entry.Offset < next {
-				continue
-			}
-			next = entry.Offset + 1
-			if !fence.Admit(entry) {
-				continue
-			}
-			if err := m.apply(ctx, tx, partition, *entry.Event); err != nil {
-				return fmt.Errorf("projection: apply offset %d: %w", entry.Offset, err)
-			}
-			id := entry.Event.Session.ID
-			if !seen[id] {
-				seen[id] = true
-				changed = append(changed, id)
-			}
-		}
-		if _, err := tx.Exec(ctx, `UPDATE game.projector_offsets SET next_offset=$2, claim_generation=$3, updated_at=clock_timestamp() WHERE partition=$1`,
-			partition, next, fence.Generation(partition)); err != nil {
-			return err
-		}
-		for _, id := range changed {
-			if _, err := tx.Exec(ctx, `SELECT pg_notify($1,$2)`, session.ChangedChannel, id.String()); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	return changed, err
+type pending struct {
+	game      session.Session
+	exists    bool
+	partition int32
+	request   uuid.UUID
+	write     bool
+	cancelled bool
+	notify    bool
+	settle    bool
+	moves     map[int]*session.MoveRecord
 }
 
-func (m *Postgres) apply(ctx context.Context, tx pgx.Tx, partition int32, event journal.Event) error {
-	game, change := event.Session, event.Change
-	if change.Fact == session.FactCancelled {
-		if _, err := tx.Exec(ctx, `DELETE FROM game.moves WHERE session_id=$1`, game.ID); err != nil {
+type batch struct {
+	model *Postgres
+	tx    pgx.Tx
+	items map[uuid.UUID]*pending
+	order []uuid.UUID
+}
+
+func (m *Postgres) Apply(ctx context.Context, batches map[int32][]journal.Entry) ([]uuid.UUID, error) {
+	partitions := make([]int32, 0, len(batches))
+	for partition := range batches {
+		partitions = append(partitions, partition)
+	}
+	slices.Sort(partitions)
+	var work *batch
+	var notified []uuid.UUID
+	err := pgx.BeginFunc(ctx, m.pool, func(tx pgx.Tx) error {
+		work = &batch{model: m, tx: tx, items: map[uuid.UUID]*pending{}}
+		if _, err := tx.Exec(ctx, `SET LOCAL synchronous_commit = off`); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `DELETE FROM game.sessions WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM game.rating_changes WHERE session_id=$1)`, game.ID)
+		offsets := make([]int32, 0, len(partitions))
+		nexts := make([]int64, 0, len(partitions))
+		generations := make([]int64, 0, len(partitions))
+		for _, partition := range partitions {
+			next, generation, err := lockOffset(ctx, tx, partition)
+			if err != nil {
+				return err
+			}
+			fence := journal.NewFence()
+			fence.Seed(partition, generation)
+			for _, entry := range batches[partition] {
+				if entry.Offset < next {
+					continue
+				}
+				next = entry.Offset + 1
+				if !fence.Admit(entry) {
+					continue
+				}
+				if err := work.fold(ctx, partition, *entry.Event); err != nil {
+					return fmt.Errorf("projection: apply offset %d of partition %d: %w", entry.Offset, partition, err)
+				}
+			}
+			offsets, nexts, generations = append(offsets, partition), append(nexts, next), append(generations, fence.Generation(partition))
+		}
+		var err error
+		if notified, err = work.flush(ctx); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE game.projector_offsets o SET next_offset = n.next_offset, claim_generation = n.generation, updated_at = clock_timestamp()
+			FROM unnest($1::smallint[], $2::bigint[], $3::bigint[]) AS n(partition, next_offset, generation)
+			WHERE o.partition = n.partition`, offsets, nexts, generations)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	m.remember(work)
+	return notified, nil
+}
+
+func lockOffset(ctx context.Context, tx pgx.Tx, partition int32) (int64, int64, error) {
+	var next, generation int64
+	err := tx.QueryRow(ctx, `SELECT next_offset, claim_generation FROM game.projector_offsets WHERE partition=$1 FOR UPDATE`, partition).Scan(&next, &generation)
+	if errors.Is(err, pgx.ErrNoRows) {
+		_, err = tx.Exec(ctx, `INSERT INTO game.projector_offsets (partition, next_offset) VALUES ($1,0)`, partition)
+	}
+	return next, generation, err
+}
+
+func (m *Postgres) remember(work *batch) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.cache) > cacheLimit {
+		clear(m.cache)
+	}
+	for _, id := range work.order {
+		item := work.items[id]
+		if !item.exists || item.game.Opponent != nil && item.game.State.Over() {
+			delete(m.cache, id)
+			continue
+		}
+		m.cache[id] = item.game
+	}
+}
+
+func (m *Postgres) cached(id uuid.UUID) (session.Session, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	game, ok := m.cache[id]
+	return game, ok
+}
+
+func (b *batch) item(ctx context.Context, id uuid.UUID, partition int32, reload bool) (*pending, error) {
+	item := b.items[id]
+	if item != nil && !reload {
+		return item, nil
+	}
+	if item == nil {
+		item = &pending{partition: partition, moves: map[int]*session.MoveRecord{}}
+		b.items[id] = item
+		b.order = append(b.order, id)
+		if game, ok := b.model.cached(id); ok {
+			item.game, item.exists = game, true
+			return item, nil
+		}
+	}
+	game, err := session.Scan(b.tx.QueryRow(ctx, `SELECT `+session.Columns+` FROM game.sessions WHERE id=$1`, id))
+	switch {
+	case errors.Is(err, session.ErrNotFound):
+		item.game, item.exists = session.Session{}, false
+	case err != nil:
+		return nil, err
+	default:
+		item.game, item.exists = game, true
+	}
+	return item, nil
+}
+
+func (b *batch) fold(ctx context.Context, partition int32, event journal.Event) error {
+	id := event.Session.ID
+	item, err := b.item(ctx, id, partition, false)
+	if err != nil {
 		return err
 	}
+	folded, err := journal.Fold(b.model.rules, item.base(), event)
+	if errors.Is(err, journal.ErrGap) && !item.write {
+		if item, err = b.item(ctx, id, partition, true); err != nil {
+			return err
+		}
+		folded, err = journal.Fold(b.model.rules, item.base(), event)
+	}
+	if err != nil {
+		return err
+	}
+	if !folded.Applied {
+		return nil
+	}
+	change := folded.Change
+	item.game, item.partition = folded.Session, partition
+	if change.Request != uuid.Nil {
+		item.request = change.Request
+	}
+	if change.Fact == session.FactCancelled {
+		item.exists, item.cancelled, item.write, item.notify = false, true, false, true
+		return nil
+	}
+	item.exists, item.write = true, true
+	switch change.Fact {
+	case session.FactMoved:
+		move := *change.Move
+		item.moves[move.Ply] = &move
+	case session.FactUndone:
+		item.moves[change.UndonePly] = nil
+		item.notify = true
+	default:
+		item.notify = true
+	}
+	game := item.game
+	if game.Rated && game.Opponent != nil && game.State.Status != engine.StatusInProgress {
+		item.settle, item.notify = true, true
+	}
+	return nil
+}
+
+func (item *pending) base() *session.Session {
+	if !item.exists {
+		return nil
+	}
+	game := item.game
+	return &game
+}
+
+func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
+	var cancelled, notified []uuid.UUID
+	rows := &pgx.Batch{}
+	var dropSessions []uuid.UUID
+	var dropPlies []int32
+	var sessions []uuid.UUID
+	var plies []int32
+	var players []uuid.UUID
+	var data []string
+	var clocks []*string
+	for _, id := range b.order {
+		item := b.items[id]
+		if item.notify {
+			notified = append(notified, id)
+		}
+		if item.cancelled {
+			cancelled = append(cancelled, id)
+			continue
+		}
+		if !item.write {
+			continue
+		}
+		if err := queueSession(rows, item); err != nil {
+			return nil, err
+		}
+		for ply, move := range item.moves {
+			if move == nil {
+				dropSessions, dropPlies = append(dropSessions, id), append(dropPlies, int32(ply))
+				continue
+			}
+			var clock *string
+			if move.ClockBefore != nil {
+				raw, err := json.Marshal(move.ClockBefore)
+				if err != nil {
+					return nil, err
+				}
+				value := string(raw)
+				clock = &value
+			}
+			sessions, plies, players = append(sessions, id), append(plies, int32(ply)), append(players, move.Player)
+			data, clocks = append(data, string(move.Data)), append(clocks, clock)
+		}
+	}
+	if len(cancelled) > 0 {
+		if _, err := b.tx.Exec(ctx, `DELETE FROM game.moves WHERE session_id = ANY($1)`, cancelled); err != nil {
+			return nil, err
+		}
+		if _, err := b.tx.Exec(ctx, `DELETE FROM game.sessions s WHERE s.id = ANY($1)
+			AND NOT EXISTS (SELECT 1 FROM game.rating_changes r WHERE r.session_id = s.id)`, cancelled); err != nil {
+			return nil, err
+		}
+	}
+	if rows.Len() > 0 {
+		if err := b.tx.SendBatch(ctx, rows).Close(); err != nil {
+			return nil, err
+		}
+	}
+	if len(dropSessions) > 0 {
+		if _, err := b.tx.Exec(ctx, `DELETE FROM game.moves m USING unnest($1::uuid[], $2::int[]) AS d(session_id, ply)
+			WHERE m.session_id = d.session_id AND m.ply = d.ply`, dropSessions, dropPlies); err != nil {
+			return nil, err
+		}
+	}
+	if len(sessions) > 0 {
+		if _, err := b.tx.Exec(ctx, `INSERT INTO game.moves (session_id, ply, player_id, data, clock_before)
+			SELECT s, p, pl, d::jsonb, c::jsonb FROM unnest($1::uuid[], $2::int[], $3::uuid[], $4::text[], $5::text[]) AS m(s, p, pl, d, c)
+			ON CONFLICT (session_id, ply) DO UPDATE SET player_id=EXCLUDED.player_id, data=EXCLUDED.data,
+				state_before=NULL, clock_before=EXCLUDED.clock_before`, sessions, plies, players, data, clocks); err != nil {
+			return nil, err
+		}
+	}
+	for _, id := range b.order {
+		item := b.items[id]
+		if item.settle {
+			if err := b.model.store.Settle(ctx, b.tx, item.game); err != nil {
+				return nil, fmt.Errorf("settle rating: %w", err)
+			}
+		}
+	}
+	if len(notified) > 0 {
+		ids := make([]string, len(notified))
+		for i, id := range notified {
+			ids[i] = id.String()
+		}
+		if _, err := b.tx.Exec(ctx, `SELECT pg_notify($1, id) FROM unnest($2::text[]) AS id`, session.ChangedChannel, ids); err != nil {
+			return nil, err
+		}
+	}
+	return notified, nil
+}
+
+func queueSession(rows *pgx.Batch, item *pending) error {
+	game := item.game
 	var state, clock any
 	if game.Opponent != nil {
 		raw, err := json.Marshal(game.State)
@@ -209,10 +477,10 @@ func (m *Postgres) apply(ctx context.Context, tx pgx.Tx, partition int32, event 
 		clock = raw
 	}
 	request := game.ID
-	if change.Request != uuid.Nil {
-		request = change.Request
+	if item.request != uuid.Nil {
+		request = item.request
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO game.sessions (id, game, creator_id, opponent_id, request_id, state, updated_at, revision, clock,
+	rows.Queue(`INSERT INTO game.sessions (id, game, creator_id, opponent_id, request_id, state, updated_at, revision, clock,
 			timed_out, rated, resigned, draw_offered_by, agreed_draw, partition)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (id) DO UPDATE SET opponent_id=EXCLUDED.opponent_id, state=EXCLUDED.state, updated_at=EXCLUDED.updated_at,
@@ -221,34 +489,6 @@ func (m *Postgres) apply(ctx context.Context, tx pgx.Tx, partition int32, event 
 			partition=EXCLUDED.partition
 		WHERE game.sessions.revision < EXCLUDED.revision`,
 		game.ID, game.Game, game.Creator, game.Opponent, request, state, game.UpdatedAt, game.Revision, clock,
-		game.TimedOut, game.Rated, game.Resigned, game.DrawOffer, game.AgreedDraw, partition); err != nil {
-		return err
-	}
-	switch change.Fact {
-	case session.FactMoved:
-		before, err := json.Marshal(change.Move.StateBefore)
-		if err != nil {
-			return err
-		}
-		clockBefore, err := json.Marshal(change.Move.ClockBefore)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO game.moves (session_id, ply, player_id, data, state_before, clock_before) VALUES ($1,$2,$3,$4,$5,$6)
-			ON CONFLICT (session_id, ply) DO UPDATE SET player_id=EXCLUDED.player_id, data=EXCLUDED.data,
-				state_before=EXCLUDED.state_before, clock_before=EXCLUDED.clock_before`,
-			game.ID, change.Move.Ply, change.Move.Player, []byte(change.Move.Data), before, clockBefore); err != nil {
-			return err
-		}
-	case session.FactUndone:
-		if _, err := tx.Exec(ctx, `DELETE FROM game.moves WHERE session_id=$1 AND ply=$2`, game.ID, change.UndonePly); err != nil {
-			return err
-		}
-	}
-	if game.Rated && game.Opponent != nil && game.State.Status != engine.StatusInProgress {
-		if err := m.store.Settle(ctx, tx, game); err != nil {
-			return fmt.Errorf("settle rating: %w", err)
-		}
-	}
+		game.TimedOut, game.Rated, game.Resigned, game.DrawOffer, game.AgreedDraw, item.partition)
 	return nil
 }

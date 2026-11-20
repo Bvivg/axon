@@ -37,13 +37,15 @@ func Encode(entry Entry) ([]byte, error) {
 
 func encodeEvent(event Event) (*gamev1.SessionRecorded, error) {
 	game, change := event.Session, event.Change
-	snapshot, err := encodeSnapshot(game)
-	if err != nil {
-		return nil, err
-	}
 	out := &gamev1.SessionRecorded{
-		SessionId: game.ID.String(), Seq: game.Revision, Generation: event.Generation,
-		At: timestamppb.New(change.At), Snapshot: snapshot,
+		SessionId: game.ID.String(), Seq: game.Revision, Generation: event.Generation, At: timestamppb.New(change.At),
+	}
+	if change.Fact != session.FactMoved {
+		snapshot, err := encodeSnapshot(game)
+		if err != nil {
+			return nil, err
+		}
+		out.Snapshot = snapshot
 	}
 	if change.Actor != uuid.Nil {
 		out.ActorId = change.Actor.String()
@@ -61,16 +63,8 @@ func encodeEvent(event Event) (*gamev1.SessionRecorded, error) {
 		if change.Move == nil {
 			return nil, fmt.Errorf("%w: move without record", ErrMalformed)
 		}
-		before, err := json.Marshal(change.Move.StateBefore)
-		if err != nil {
-			return nil, err
-		}
-		clock, err := json.Marshal(change.Move.ClockBefore)
-		if err != nil {
-			return nil, err
-		}
 		out.Fact = &gamev1.SessionRecorded_Moved{Moved: &gamev1.MoveApplied{
-			Ply: uint32(change.Move.Ply), DataJson: change.Move.Data, StateBeforeJson: before, ClockBeforeJson: clock,
+			Ply: uint32(change.Move.Ply), DataJson: change.Move.Data, Outcome: encodeOutcome(game),
 		}}
 	case session.FactDrawOffered:
 		out.Fact = &gamev1.SessionRecorded_DrawOffered{DrawOffered: &gamev1.DrawOffered{}}
@@ -92,6 +86,22 @@ func encodeEvent(event Event) (*gamev1.SessionRecorded, error) {
 		return nil, fmt.Errorf("%w: unknown fact %d", ErrMalformed, change.Fact)
 	}
 	return out, nil
+}
+
+func encodeOutcome(game session.Session) *gamev1.MoveOutcome {
+	out := &gamev1.MoveOutcome{Status: string(game.State.Status), Turn: int32(game.State.Turn), Winner: int32(game.State.Winner)}
+	if game.Clock != nil {
+		out.RemainingMs = game.Clock.RemainingMS[:]
+	}
+	return out
+}
+
+func OutcomeOf(game session.Session) *Outcome {
+	out := &Outcome{Status: game.State.Status, Turn: game.State.Turn, Winner: game.State.Winner}
+	if game.Clock != nil {
+		out.Remaining = game.Clock.RemainingMS[:]
+	}
+	return out
 }
 
 func encodeSnapshot(game session.Session) (*gamev1.SessionSnapshot, error) {
@@ -144,13 +154,17 @@ func decodeEvent(in *gamev1.SessionRecorded) (Event, error) {
 	if err != nil {
 		return Event{}, fmt.Errorf("%w: session id: %w", ErrMalformed, err)
 	}
-	game, err := decodeSnapshot(id, in.Snapshot)
-	if err != nil {
-		return Event{}, err
+	game := session.Session{ID: id}
+	partial := in.Snapshot == nil
+	if !partial {
+		if game, err = decodeSnapshot(id, in.Snapshot); err != nil {
+			return Event{}, err
+		}
 	}
 	game.Revision = in.Seq
 	game.UpdatedAt = in.At.AsTime()
 	change := session.Change{At: in.At.AsTime()}
+	var outcome *Outcome
 	if in.ActorId != "" {
 		if change.Actor, err = uuid.Parse(in.ActorId); err != nil {
 			return Event{}, fmt.Errorf("%w: actor: %w", ErrMalformed, err)
@@ -169,13 +183,20 @@ func decodeEvent(in *gamev1.SessionRecorded) (Event, error) {
 	case *gamev1.SessionRecorded_Moved:
 		change.Fact = session.FactMoved
 		record := &session.MoveRecord{Ply: int(fact.Moved.Ply), Player: change.Actor, Data: fact.Moved.DataJson}
-		if err := json.Unmarshal(fact.Moved.StateBeforeJson, &record.StateBefore); err != nil {
-			return Event{}, fmt.Errorf("%w: state before: %w", ErrMalformed, err)
+		if len(fact.Moved.StateBeforeJson) > 0 {
+			if err := json.Unmarshal(fact.Moved.StateBeforeJson, &record.StateBefore); err != nil {
+				return Event{}, fmt.Errorf("%w: state before: %w", ErrMalformed, err)
+			}
 		}
-		if err := json.Unmarshal(fact.Moved.ClockBeforeJson, &record.ClockBefore); err != nil {
-			return Event{}, fmt.Errorf("%w: clock before: %w", ErrMalformed, err)
+		if len(fact.Moved.ClockBeforeJson) > 0 {
+			if err := json.Unmarshal(fact.Moved.ClockBeforeJson, &record.ClockBefore); err != nil {
+				return Event{}, fmt.Errorf("%w: clock before: %w", ErrMalformed, err)
+			}
 		}
 		change.Move = record
+		if recorded := fact.Moved.Outcome; recorded != nil {
+			outcome = &Outcome{Status: engine.Status(recorded.Status), Turn: int(recorded.Turn), Winner: int(recorded.Winner), Remaining: recorded.RemainingMs}
+		}
 	case *gamev1.SessionRecorded_DrawOffered:
 		change.Fact = session.FactDrawOffered
 	case *gamev1.SessionRecorded_DrawDeclined:
@@ -195,7 +216,10 @@ func decodeEvent(in *gamev1.SessionRecorded) (Event, error) {
 	default:
 		return Event{}, fmt.Errorf("%w: unknown fact", ErrMalformed)
 	}
-	return Event{Session: game, Change: change, Generation: in.Generation}, nil
+	if partial && change.Fact != session.FactMoved {
+		return Event{}, fmt.Errorf("%w: missing snapshot", ErrMalformed)
+	}
+	return Event{Session: game, Change: change, Generation: in.Generation, Partial: partial, Outcome: outcome}, nil
 }
 
 func decodeSnapshot(id uuid.UUID, in *gamev1.SessionSnapshot) (session.Session, error) {

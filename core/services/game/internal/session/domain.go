@@ -142,14 +142,29 @@ func (r Rules) Move(game Session, user uuid.UUID, ply int, kind engine.Key, data
 	if next, change := r.Expire(game, now); change.Recorded() {
 		return next, change, nil
 	}
-	beforeState, beforeClock := game.State, game.ClockAt(now)
-	move := engine.Move{Player: engine.PlayerID(user.String()), Ply: ply, Data: data}
-	game.State, err = rules.ApplyMove(game.State, move)
+	return play(rules, game, user, data, now)
+}
+
+func (r Rules) Redo(game Session, change Change) (Session, Change, error) {
+	if change.Fact != FactMoved || change.Move == nil {
+		return Session{}, Change{}, ErrNotReplayable
+	}
+	rules, err := r.games.Get(game.Game)
 	if err != nil {
 		return Session{}, Change{}, err
 	}
-	game.Clock, game.DrawOffer = beforeClock, nil
-	record := &MoveRecord{Ply: game.State.Ply, Player: user, Data: data, StateBefore: beforeState, ClockBefore: beforeClock}
+	return play(rules, game, change.Actor, change.Move.Data, change.At)
+}
+
+func play(rules engine.Game, game Session, user uuid.UUID, data json.RawMessage, now time.Time) (Session, Change, error) {
+	beforeState, beforeClock := game.State, game.ClockAt(now)
+	move := engine.Move{Player: engine.PlayerID(user.String()), Ply: beforeState.Ply, Data: data}
+	next, err := rules.ApplyMove(beforeState, move)
+	if err != nil {
+		return Session{}, Change{}, err
+	}
+	game.State, game.Clock, game.DrawOffer = next, beforeClock, nil
+	record := &MoveRecord{Ply: next.Ply, Player: user, Data: data, StateBefore: beforeState, ClockBefore: beforeClock}
 	return game, Change{Fact: FactMoved, Actor: user, Move: record, At: now}, nil
 }
 

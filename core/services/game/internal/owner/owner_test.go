@@ -371,3 +371,63 @@ func simulate(t *testing.T, seed uint64) {
 		}
 	}
 }
+
+func TestSuccessorWaitsForTheLeaseAndTheZombieStopsAcking(t *testing.T) {
+	c := newCluster(t, 1)
+	ctx := context.Background()
+	lease := 400 * time.Millisecond
+	zombie := c.leased(t, "a", nil, lease, 0)
+	game, x, o := joined(t, zombie)
+	game = play(t, zombie, game, x, 0)
+	started := time.Now()
+	successor := c.leased(t, "b", nil, lease, 0)
+	if waited := time.Since(started); waited < lease/2 {
+		t.Fatal("successor served before the previous lease expired", waited)
+	}
+	if _, err := zombie.Move(ctx, game.ID, o, game.State.Ply, tictactoe.Key, cell(8), &game.Revision); !errors.Is(err, owner.ErrNotOwner) {
+		t.Fatal("zombie acknowledged a move after its lease expired", err)
+	}
+	read, err := successor.Get(ctx, game.ID, o)
+	if err != nil || read.Revision != game.Revision {
+		t.Fatal(read, err)
+	}
+	play(t, successor, read, o, 4)
+}
+
+func TestRenewedLeaseKeepsServing(t *testing.T) {
+	c := newCluster(t, 1)
+	lease := 300 * time.Millisecond
+	node := c.leased(t, "a", nil, lease, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go node.KeepLeases(ctx)
+	game, x, _ := joined(t, node)
+	time.Sleep(3 * lease)
+	play(t, node, game, x, 0)
+}
+
+func TestLostLeaseRevokesThePartition(t *testing.T) {
+	c := newCluster(t, 1)
+	events := newRecorder()
+	lease := 300 * time.Millisecond
+	node := c.leased(t, "a", events, lease, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go node.KeepLeases(ctx)
+	game, x, _ := joined(t, node)
+	if _, err := c.model.Claim(ctx, 0, "b", "b:8080", lease); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * lease)
+	for node.Serving(0) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := node.Get(ctx, game.ID, x); !errors.Is(err, owner.ErrNotOwner) {
+		t.Fatal("owner kept serving a partition claimed by someone else", err)
+	}
+	events.mu.Lock()
+	defer events.mu.Unlock()
+	if events.moved[game.ID] != 1 {
+		t.Fatal("sockets were not moved off the lost partition")
+	}
+}

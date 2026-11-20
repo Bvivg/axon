@@ -66,7 +66,9 @@ func run() error {
 		Partitions:        int32(loader.IntDefault("GAME_JOURNAL_PARTITIONS", 24)),
 		ReplicationFactor: int16(loader.IntDefault("GAME_JOURNAL_REPLICATION", 1)),
 		MinInSync:         loader.IntDefault("GAME_JOURNAL_MIN_INSYNC", 1),
+		Linger:            loader.DurationDefault("GAME_JOURNAL_LINGER", time.Millisecond),
 	}
+	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
 	if err := loader.Err(); err != nil {
 		return err
@@ -98,17 +100,19 @@ func run() error {
 		}
 	}
 	store := session.NewStore(pool.Pool, games)
-	model := projection.New(store)
+	rules := session.NewRules(games)
+	model := projection.New(store, rules)
 	log = log.With("instance", instance)
 	journalLog, err := journal.NewKafka(ctx, kafka)
 	if err != nil {
 		return err
 	}
 	defer journalLog.Close()
-	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: session.NewRules(games), Now: time.Now})
+	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL})
 	routes := route.New(model.Owners)
 	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks})
 	own.Listen(handler)
+	go own.KeepLeases(ctx)
 	go routes.Run(ctx, pool.Pool, projection.OwnerChannel, log)
 	go handler.Watch(ctx, log)
 	go handler.RunMatchmaking(ctx, log)

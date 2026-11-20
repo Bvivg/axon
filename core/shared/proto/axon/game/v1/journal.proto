@@ -63,6 +63,14 @@ message MoveApplied {
   bytes data_json = 2;
   bytes state_before_json = 3;
   bytes clock_before_json = 4;
+  MoveOutcome outcome = 5;
+}
+
+message MoveOutcome {
+  string status = 1;
+  int32 turn = 2;
+  repeated int64 remaining_ms = 3;
+  int32 winner = 4;
 }
 
 message DrawOffered {}

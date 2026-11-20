@@ -18,6 +18,7 @@ type KafkaConfig struct {
 	Partitions        int32
 	ReplicationFactor int16
 	MinInSync         int
+	Linger            time.Duration
 }
 
 type Kafka struct {
@@ -35,7 +36,8 @@ func NewKafka(ctx context.Context, cfg KafkaConfig) (*Kafka, error) {
 		kgo.DefaultProduceTopic(cfg.Topic),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.ProducerLinger(0),
+		kgo.ProducerLinger(cfg.Linger),
+		kgo.ProducerBatchCompression(kgo.Lz4Compression(), kgo.NoCompression()),
 		kgo.ProduceRequestTimeout(10*time.Second),
 		kgo.RecordDeliveryTimeout(15*time.Second),
 	)
