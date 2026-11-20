@@ -285,6 +285,30 @@ func TestMatchedGameProjectsAndSettlesOnce(t *testing.T) {
 	e.project(t)
 	e.project(t)
 	e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_WIN, 0)
+	update := session.RatingUpdate{Session: game.ID, Game: tictactoe.Key, At: game.UpdatedAt, Players: []session.RatedPlayer{
+		{User: x, Before: 1200, After: 1362, Games: 1, Wins: 1},
+		{User: o, Before: 1200, After: 1038, Games: 1, Losses: 1},
+	}}
+	for range 2 {
+		if err := e.store.ApplyRatings(e.ctx, update); err != nil {
+			t.Fatal(err)
+		}
+	}
+	changes, err := e.store.Changes(e.ctx, []uuid.UUID{game.ID})
+	if err != nil || len(changes[game.ID]) != 2 {
+		t.Fatal("changes", changes, err)
+	}
+	for _, change := range changes[game.ID] {
+		if !change.At.Equal(game.UpdatedAt) || change.Before != 1200 || (change.User == x) != (change.After == 1362) {
+			t.Fatal("change", change)
+		}
+	}
+	if got := e.rating(t, tictactoe.Key, x); got.Rating != 1362 || got.Games != 1 || got.Wins != 1 {
+		t.Fatal("winner", got)
+	}
+	if got := e.rating(t, tictactoe.Key, o); got.Rating != 1038 || got.Games != 1 || got.Losses != 1 {
+		t.Fatal("loser", got)
+	}
 	var moves int
 	if err := e.pool.QueryRow(e.ctx, `SELECT count(*) FROM game.moves WHERE session_id=$1`, game.ID).Scan(&moves); err != nil || moves != 5 {
 		t.Fatal("moves", moves, err)
