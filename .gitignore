@@ -51,3 +51,4 @@ DerivedData/
 /.playwright-mcp/
 /ui/web/test-results/
 /ui/web/public/calls-sw.js
+/core/deploy/k8s/charts/*/charts/
