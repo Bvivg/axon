@@ -1,0 +1,84 @@
+x-kafka-ha-env: &kafka-ha-env
+  KAFKA_PROCESS_ROLES: "broker,controller"
+  KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093,2@kafka-2:29093,3@kafka-3:29093"
+  KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+  KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
+  KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+  KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+  CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
+
+services:
+  kafka:
+    environment:
+      <<: *kafka-ha-env
+    volumes:
+      - kafka-ha-1:/var/lib/kafka/data
+
+  kafka-2:
+    image: confluentinc/confluent-local:7.5.0
+    restart: unless-stopped
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:${KAFKA_2_HOST_PORT:-59093}"
+    ports:
+      - "127.0.0.1:${KAFKA_2_HOST_PORT:-59093}:9092"
+    volumes:
+      - type: tmpfs
+        target: /etc/kafka/secrets
+      - kafka-ha-2:/var/lib/kafka/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka-2:29092", "--list"]
+      interval: 10s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  kafka-3:
+    image: confluentinc/confluent-local:7.5.0
+    restart: unless-stopped
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-3:29092,PLAINTEXT_HOST://localhost:${KAFKA_3_HOST_PORT:-59094}"
+    ports:
+      - "127.0.0.1:${KAFKA_3_HOST_PORT:-59094}:9092"
+    volumes:
+      - type: tmpfs
+        target: /etc/kafka/secrets
+      - kafka-ha-3:/var/lib/kafka/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka-3:29092", "--list"]
+      interval: 10s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  game:
+    environment:
+      KAFKA_BROKERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
+      GAME_JOURNAL_REPLICATION: 3
+      GAME_JOURNAL_MIN_INSYNC: 2
+    deploy:
+      replicas: ${GAME_REPLICAS:-2}
+    depends_on:
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
+volumes:
+  kafka-ha-1:
+  kafka-ha-2:
+  kafka-ha-3:

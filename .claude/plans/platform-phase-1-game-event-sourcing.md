@@ -82,6 +82,7 @@ Postgres — read model, который строит проектор. Паде�
 - `core/services/game/migrations/000005_event_log.up.sql` — `game.owners`, `game.projector_offsets`,
   `game.sessions.partition`, `game.match_queue.started`.
 - `core/deploy/docker-compose.yml` — 3 брокера KRaft, `game` ×2; `docker-compose.web-e2e.yml` — 1 брокер, `game` ×2.
+  Позже (`deploy-network-zones.md`): 3 брокера и `game` ×2 вынесены в overlay `docker-compose.ha.yml`, базовый стек — 1 брокер, `game` ×1.
 
 ## Отклонения от замысла
 - Актор — ячейка с мьютексом и таймером, а не горутина с очередью: проще, тот же порядок команд.

@@ -64,8 +64,8 @@ func run() error {
 		Topic:             loader.StringDefault("GAME_JOURNAL_TOPIC", "game.session-events.v1"),
 		LeaseTopic:        loader.StringDefault("GAME_LEASE_TOPIC", "game.partition-leases.v1"),
 		Partitions:        int32(loader.IntDefault("GAME_JOURNAL_PARTITIONS", 24)),
-		ReplicationFactor: int16(loader.IntDefault("GAME_JOURNAL_REPLICATION", 3)),
-		MinInSync:         loader.IntDefault("GAME_JOURNAL_MIN_INSYNC", 2),
+		ReplicationFactor: int16(loader.IntDefault("GAME_JOURNAL_REPLICATION", 1)),
+		MinInSync:         loader.IntDefault("GAME_JOURNAL_MIN_INSYNC", 1),
 	}
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
 	if err := loader.Err(); err != nil {

@@ -8,6 +8,7 @@ services:
       - ./calls-dns.Corefile:/Corefile:ro
       - ../../.local/evidence/calls/LAN/.secrets/server.crt:/tls/server.crt:ro
       - ../../.local/evidence/calls/LAN/.secrets/server.key:/tls/server.key:ro
+    networks: [lan]
     ports:
       - "127.0.0.1:1053:53/udp"
       - "127.0.0.1:1053:53/tcp"
@@ -19,6 +20,7 @@ services:
     image: axon-calls-spike-playwright:local
     init: true
     shm_size: 512mb
+    networks: [lan]
     extra_hosts:
       - "axon.test:192.168.2.1"
     entrypoint: ["bash", "/calls-spike-run.sh"]
@@ -71,6 +73,7 @@ services:
       - ./calls-lan-proxy.mjs:/proxy.mjs:ro
       - ./calls-ios-dns.mobileconfig:/axon-dns.mobileconfig:ro
       - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
+    networks: [edge]
     ports:
       - "443:3443"
       - "3443:3443"
@@ -87,7 +90,10 @@ services:
     user: "0:0"
     command: ["-c", "/secrets/turnserver.conf"]
     volumes:
+      - type: tmpfs
+        target: /var/lib/coturn
       - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
+    networks: [media]
     ports:
       - "3478:3478/udp"
       - "3478:3478/tcp"

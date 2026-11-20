@@ -23,9 +23,20 @@ services:
     command: ["--config", "/secrets/livekit.yaml"]
     volumes:
       - ../../.local/evidence/calls/LAN-SFU/.secrets/livekit.yaml:/secrets/livekit.yaml:ro
+    networks: [media]
     ports:
       - "${AXON_LAN_IP:-192.168.2.1}:7881:7881/tcp"
       - "${AXON_LAN_IP:-192.168.2.1}:7882:7882/udp"
+  livekit-bridge:
+    profiles: ["dev"]
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ["node", "-e", "const net=require('node:net');net.createServer(c=>{const u=net.connect(7880,'livekit');c.pipe(u);u.pipe(c);c.on('error',()=>u.destroy());u.on('error',()=>c.destroy());c.on('close',()=>u.destroy());u.on('close',()=>c.destroy());}).listen(17880,'0.0.0.0');"]
+    ports:
+      - "127.0.0.1:17880:17880"
+    networks: [media]
+    depends_on:
+      - livekit
   calls-check:
     volumes:
       - ../../.local/evidence/calls/LAN-SFU/.secrets/media.env:/evidence-sfu/media.env:ro

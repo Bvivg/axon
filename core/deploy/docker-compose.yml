@@ -1,22 +1,5 @@
 name: axon
 
-x-kafka-env: &kafka-env
-  KAFKA_PROCESS_ROLES: "broker,controller"
-  KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093,2@kafka-2:29093,3@kafka-3:29093"
-  KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
-  KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
-  KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
-  KAFKA_MIN_INSYNC_REPLICAS: 2
-  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-  KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
-  CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
-
 services:
   postgres:
     image: postgres:17-alpine
@@ -38,6 +21,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [data]
     healthcheck:
 
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-axon} -d ${POSTGRES_DB:-axon}"]
@@ -55,6 +39,10 @@ services:
     command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-56379}:6379"
+    volumes:
+      - type: tmpfs
+        target: /data
+    networks: [data]
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
@@ -74,6 +62,7 @@ services:
       - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-59001}:9001"
     volumes:
       - minio-data:/data
+    networks: [edge, data]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
@@ -95,6 +84,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
+    networks: [data]
     depends_on:
       minio:
         condition: service_healthy
@@ -124,6 +114,7 @@ services:
     volumes:
 
       - ..:/src
+    networks: [edge, app, data]
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,45 +132,31 @@ services:
     image: confluentinc/confluent-local:7.5.0
     restart: unless-stopped
     environment:
-      <<: *kafka-env
       KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-59092}"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
     ports:
       - "127.0.0.1:${KAFKA_HOST_PORT:-59092}:9092"
+    volumes:
+      - type: tmpfs
+        target: /etc/kafka/secrets
+      - kafka-data:/var/lib/kafka/data
+    networks: [data]
     healthcheck:
       test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
-      interval: 10s
-      timeout: 15s
-      retries: 10
-      start_period: 30s
-
-  kafka-2:
-    image: confluentinc/confluent-local:7.5.0
-    restart: unless-stopped
-    environment:
-      <<: *kafka-env
-      KAFKA_NODE_ID: 2
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:${KAFKA_2_HOST_PORT:-59093}"
-    ports:
-      - "127.0.0.1:${KAFKA_2_HOST_PORT:-59093}:9092"
-    healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka-2:29092", "--list"]
-      interval: 10s
-      timeout: 15s
-      retries: 10
-      start_period: 30s
-
-  kafka-3:
-    image: confluentinc/confluent-local:7.5.0
-    restart: unless-stopped
-    environment:
-      <<: *kafka-env
-      KAFKA_NODE_ID: 3
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-3:29092,PLAINTEXT_HOST://localhost:${KAFKA_3_HOST_PORT:-59094}"
-    ports:
-      - "127.0.0.1:${KAFKA_3_HOST_PORT:-59094}:9092"
-    healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka-3:29092", "--list"]
       interval: 10s
       timeout: 15s
       retries: 10
@@ -214,6 +191,7 @@ services:
       - "127.0.0.1:${CHAT_METRICS_HOST_PORT:-9092}:9092"
     volumes:
       - ..:/src
+    networks: [app, data, media]
     depends_on:
       postgres:
         condition: service_healthy
@@ -247,22 +225,19 @@ services:
       JWKS_URL: "http://auth:9091/.well-known/jwks.json"
       JWT_ISSUER: ${JWT_ISSUER:-https://auth.axon.local}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-axon}
-      KAFKA_BROKERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
-      GAME_JOURNAL_REPLICATION: 3
-      GAME_JOURNAL_MIN_INSYNC: 2
+      KAFKA_BROKERS: "kafka:29092"
+      GAME_JOURNAL_REPLICATION: 1
+      GAME_JOURNAL_MIN_INSYNC: 1
       GAME_TEST_HOOKS: ${GAME_TEST_HOOKS:-false}
     deploy:
-      replicas: ${GAME_REPLICAS:-2}
+      replicas: ${GAME_REPLICAS:-1}
+    networks: [app, data]
     depends_on:
       game-migrate:
         condition: service_completed_successfully
       auth:
         condition: service_healthy
       kafka:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:8083/readyz"]
@@ -279,6 +254,7 @@ services:
     command: ['exec migrate -path=/migrations -database "$$GAME_POSTGRES_DSN" up']
     environment:
       GAME_POSTGRES_DSN: ${GAME_POSTGRES_DSN:-postgres://game_service:game@postgres:5432/axon?sslmode=disable&search_path=game}
+    networks: [data]
     depends_on:
       postgres:
         condition: service_healthy
@@ -308,6 +284,7 @@ services:
       - "127.0.0.1:${GATEWAY_METRICS_HOST_PORT:-19090}:9090"
     volumes:
       - ..:/src
+    networks: [edge, app, media]
     depends_on:
       auth:
         condition: service_healthy
@@ -342,6 +319,7 @@ services:
 
       - /app/node_modules
       - /app/.next
+    networks: [edge]
     depends_on:
       gateway:
         condition: service_healthy
@@ -351,6 +329,7 @@ services:
     profiles: ["tools"]
     volumes:
       - ../services/${MIGRATE_SERVICE:-auth}/migrations:/migrations:ro
+    networks: [data]
     depends_on:
       postgres:
         condition: service_healthy
@@ -358,3 +337,11 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  kafka-data:
+
+networks:
+  edge:
+  app:
+  data:
+  media:
+  lan:
