@@ -87,15 +87,15 @@ resources:
 rules:
   default: false
   custom:
-    - seriesQuery: 'game_active_sessions{namespace!="",pod!=""}'
+    - seriesQuery: 'game_partitions_owned{namespace!="",pod!=""}'
       resources:
         overrides:
           namespace: {resource: namespace}
           pod: {resource: pod}
       name:
-        matches: "^game_active_sessions$"
+        matches: "^game_partitions_owned$"
         as: game_active_sessions
-      metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+      metricsQuery: 'sum(game_active_sessions{<<.LabelMatchers>>}) by (<<.GroupBy>>) or sum(0 * <<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
 `)) }}
 ---
 {{ include "apps.application" (dict "name" "chaos-mesh" "namespace" "chaos-mesh" "wave" -2 "chart" $c.chaosMesh "values" (fromYaml `
