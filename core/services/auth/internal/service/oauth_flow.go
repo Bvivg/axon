@@ -128,6 +128,13 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		"private_email", profile.IsPrivateEmail,
 	)
 
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityLoginSucceeded,
+		UserID:  user.ID,
+		ActorID: user.ID,
+		Subject: id.String(),
+	})
+
 	return CompleteOAuthResult{
 		Result:   Result{User: s.attachRoles(ctx, user), Tokens: tokens},
 		Created:  created,

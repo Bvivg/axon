@@ -200,7 +200,7 @@ func (id *Identity) Transport(options ...TransportOption) *http.Transport {
 		option(&o)
 	}
 	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := cloneDefaultTransport()
 	transport.ForceAttemptHTTP2 = !o.http1Only
 	transport.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(address)
@@ -245,12 +245,19 @@ func Internal(id *Identity, options ...TransportOption) *http.Transport {
 	if id != nil {
 		return id.Transport(options...)
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := cloneDefaultTransport()
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	transport.Protocols = protocols
 	return transport
+}
+
+func cloneDefaultTransport() *http.Transport {
+	if base, ok := http.DefaultTransport.(*http.Transport); ok {
+		return base.Clone()
+	}
+	return &http.Transport{}
 }
 
 func ServerProtocols(id *Identity) *http.Protocols {

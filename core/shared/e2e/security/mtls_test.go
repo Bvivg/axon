@@ -173,9 +173,13 @@ func TestCertificatesAreRenewedWithoutRestarts(t *testing.T) {
 	}
 	address := targets(t)["auth"]
 	serial := func() string {
-		conn, err := tls.Dial("tcp", address, &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots(t), ServerName: "auth"})
+		raw, err := (&tls.Dialer{Config: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots(t), ServerName: "auth"}}).DialContext(t.Context(), "tcp", address)
 		if err != nil {
 			t.Fatal(err)
+		}
+		conn, ok := raw.(*tls.Conn)
+		if !ok {
+			t.Fatalf("dialer returned %T", raw)
 		}
 		defer func() { _ = conn.Close() }()
 		return conn.ConnectionState().PeerCertificates[0].SerialNumber.String()

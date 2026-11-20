@@ -177,11 +177,15 @@ func TestRenewedCertificateIsPickedUpWithoutRestart(t *testing.T) {
 	}
 	serials := map[string]bool{}
 	for range 2 {
-		conn, err := tls.Dial("tcp", srv.Listener.Addr().String(), &tls.Config{
+		raw, err := (&tls.Dialer{Config: &tls.Config{
 			MinVersion: tls.VersionTLS13, RootCAs: pool(ca), ServerName: "game", Certificates: []tls.Certificate{pair},
-		})
+		}}).DialContext(t.Context(), "tcp", srv.Listener.Addr().String())
 		if err != nil {
 			t.Fatal(err)
+		}
+		conn, ok := raw.(*tls.Conn)
+		if !ok {
+			t.Fatalf("dialer returned %T", raw)
 		}
 		serials[conn.ConnectionState().PeerCertificates[0].SerialNumber.String()] = true
 		_ = conn.Close()

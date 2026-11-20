@@ -79,8 +79,23 @@
   - auth предъявил продлённый сертификат без рестарта;
   - ротация под нагрузкой (интервал 45 с, lead 15 с, TTL токена 5 мин, 8 потоков, 3 минуты):
     81 310 вызовов `GetMe`, 0 отказов, 4 ключа подписи.
+- **Аудит**: auth пишет `SecurityEvent` (LOGIN_SUCCEEDED/FAILED, LOGGED_OUT(_EVERYWHERE),
+  SESSION_REVOKED, REFRESH_TOKEN_REUSED, ROLE_ASSIGNED/REVOKED) в `auth.audit.v1` через outbox фазы 2,
+  ключ — user_id или `anonymous`. Ни одно аудируемое изменение не идёт в транзакции репозитория
+  (одиночные UPDATE/INSERT, у неудачного входа изменения нет), поэтому событие — отдельная вставка
+  сразу после успешного изменения, под `WithoutCancel` с таймаутом 5 с. Ошибка записи не роняет
+  запрос: лог error, счётчик `auth_audit_write_failures_total` и алерт `AuthAuditWriteFailures`.
+  Для неудачного входа в событии только sha256 нормализованного email; оба пути отказа делают одну
+  вставку, время ответа не выдаёт, есть ли адрес. IP и User-Agent — через `server.DeviceInterceptor`.
+  Коннектор создаёт `auth.audit.v1`, `game.finished.v1`, `rating.changed.v1` с `retention.ms=-1`
+  (группа `forever`); на уже существующих топиках retention меняется разово `kafka-configs --alter`.
+  Стенд `axon-audit-check`: неверный и верный вход через gateway, отзыв сессии — 4 записи
+  декодируются в ожидаемые `SecurityEvent` с заголовками `event_id`/`event_type`; при сломанной
+  вставке в outbox логин отвечает как обычно, счётчик растёт.
 - **CI**: Trivy по образам auth/chat/gateway/game/rating — 0 исправимых HIGH/CRITICAL; SBOM (syft, SPDX)
   артефактом; на push в `main` — GHCR + `cosign sign` и `cosign attest` с SBOM (keyless).
-- Не проверено: публикация и подпись в GHCR (только на push в `main`); mTLS несовместим с
+- Не проверено: публикация и подпись в GHCR (только на push в `main`); OAuth, повторное
+  использование refresh-токена и смена ролей пишут аудит только в unit/integration-тестах, на стенде
+  не гонялись (`LogoutEverywhere` в RPC не выставлен); HA-overlay с аудитом проверен только `config -q`; mTLS несовместим с
   overlay SFU (вебхуки LiveKit на chat без сертификата) и с observability (Prometheus скрейпит
   game по 8083) — эти overlay с mTLS не объединялись.
