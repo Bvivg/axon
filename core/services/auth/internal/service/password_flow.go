@@ -85,7 +85,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 		if _, verifyErr := s.hasher.Verify(in.Password, s.dummyHash); verifyErr != nil {
 			return Result{}, fmt.Errorf("service: verify against placeholder hash: %w", verifyErr)
 		}
-		return Result{}, domain.ErrInvalidCredentials
+		return Result{}, s.loginFailed(ctx, uuid.Nil, email)
 	case err != nil:
 		return Result{}, err
 	}
@@ -97,7 +97,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 		if _, verifyErr := s.hasher.Verify(in.Password, s.dummyHash); verifyErr != nil {
 			return Result{}, fmt.Errorf("service: verify against placeholder hash: %w", verifyErr)
 		}
-		return Result{}, domain.ErrInvalidCredentials
+		return Result{}, s.loginFailed(ctx, user.ID, email)
 	case err != nil:
 		return Result{}, err
 	}
@@ -108,17 +108,25 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 		return Result{}, fmt.Errorf("service: verify password for user %s: %w", user.ID, err)
 	}
 	if !ok {
-		return Result{}, domain.ErrInvalidCredentials
+		return Result{}, s.loginFailed(ctx, user.ID, email)
 	}
 
 	s.rehashIfNeeded(ctx, user.ID, in.Password, credential.PasswordHash)
 
-	tokens, err := s.issueTokens(ctx, user, uuid.New(), in.Device)
+	familyID := uuid.New()
+	tokens, err := s.issueTokens(ctx, user, familyID, in.Device)
 	if err != nil {
 		return Result{}, err
 	}
 
 	s.log.InfoContext(ctx, "password sign-in", "user_id", user.ID)
+
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityLoginSucceeded,
+		UserID:  user.ID,
+		ActorID: user.ID,
+		Subject: familyID.String(),
+	})
 
 	return Result{User: s.attachRoles(ctx, user), Tokens: tokens}, nil
 }

@@ -68,3 +68,27 @@ message RatingChanged {
   repeated RatingChange changes = 5;
   google.protobuf.Timestamp changed_at = 6;
 }
+
+enum SecurityAction {
+  SECURITY_ACTION_UNSPECIFIED = 0;
+  SECURITY_ACTION_LOGIN_SUCCEEDED = 1;
+  SECURITY_ACTION_LOGIN_FAILED = 2;
+  SECURITY_ACTION_LOGGED_OUT = 3;
+  SECURITY_ACTION_LOGGED_OUT_EVERYWHERE = 4;
+  SECURITY_ACTION_SESSION_REVOKED = 5;
+  SECURITY_ACTION_REFRESH_TOKEN_REUSED = 6;
+  SECURITY_ACTION_ROLE_ASSIGNED = 7;
+  SECURITY_ACTION_ROLE_REVOKED = 8;
+}
+
+message SecurityEvent {
+  string event_id = 1;
+  SecurityAction action = 2;
+  string user_id = 3;
+  string actor_id = 4;
+  string subject = 5;
+  string client_ip = 6;
+  string user_agent = 7;
+  string email_sha256 = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+}

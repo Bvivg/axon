@@ -101,6 +101,12 @@ func (s *Service) revokeCompromisedFamily(ctx context.Context, t domain.RefreshT
 		"tokens_revoked", revoked,
 		"reason", reason,
 	)
+
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityRefreshTokenReused,
+		UserID:  t.UserID,
+		Subject: t.FamilyID.String(),
+	})
 }
 
 func (s *Service) Logout(ctx context.Context, presented string) error {
@@ -133,6 +139,13 @@ func (s *Service) Logout(ctx context.Context, presented string) error {
 		"tokens_revoked", revoked,
 	)
 
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityLoggedOut,
+		UserID:  stored.UserID,
+		ActorID: stored.UserID,
+		Subject: stored.FamilyID.String(),
+	})
+
 	s.publishFamilyRevocation(ctx, stored.FamilyID)
 
 	return nil
@@ -145,6 +158,12 @@ func (s *Service) LogoutEverywhere(ctx context.Context, userID uuid.UUID) error 
 	}
 
 	s.log.InfoContext(ctx, "signed out everywhere", "user_id", userID, "tokens_revoked", revoked)
+
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityLoggedOutEverywhere,
+		UserID:  userID,
+		ActorID: userID,
+	})
 
 	s.publishUserRevocation(ctx, userID)
 
