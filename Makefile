@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
 COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
-GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/...
+GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/... ./services/analysis/...
 
 -include core/deploy/.env
 
@@ -165,7 +165,7 @@ test-cover: ## Run unit tests with a coverage summary
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (testcontainers spins up Postgres)
-	cd core && go test -tags integration -count=1 ./services/auth/integration/... ./services/chat/integration/... ./services/game/integration/... ./shared/integration/...
+	cd core && go test -tags integration -count=1 ./services/auth/integration/... ./services/chat/integration/... ./services/game/integration/... ./services/analysis/integration/... ./shared/integration/...
 
 E2E_ENV_FILE := core/deploy/.env.e2e
 
@@ -246,7 +246,7 @@ web-check: web-lint web-typecheck web-test web-build ## Everything CI runs for t
 
 .PHONY: tidy
 tidy: ## Tidy every module in the workspace
-	@for module in shared services/auth services/chat services/gateway services/game services/rating; do \
+	@for module in shared services/auth services/chat services/gateway services/game services/rating services/analysis; do \
 		echo "tidy $$module"; \
 		(cd core/$$module && GOWORK=off go mod tidy) || exit 1; \
 	done

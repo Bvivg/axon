@@ -51,7 +51,7 @@ jobs:
         working-directory: core
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
-          for module in shared services/auth services/chat services/gateway services/game services/rating; do
+          for module in shared services/auth services/chat services/gateway services/game services/rating services/analysis; do
             (cd "$module" && govulncheck ./...)
           done
 
@@ -78,7 +78,7 @@ jobs:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: core
 
-          args: ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/...
+          args: ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/... ./services/analysis/...
 
   proto:
     name: Contracts
