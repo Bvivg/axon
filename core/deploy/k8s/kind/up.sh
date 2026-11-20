@@ -7,7 +7,7 @@ cluster=${KIND_CLUSTER:-axon}
 context=kind-$cluster
 revision=${ARGO_REVISION:-$(git -C "$root" rev-parse --abbrev-ref HEAD)}
 argocd_version=${ARGOCD_CHART_VERSION:-10.18.2}
-deadline=$((SECONDS + ${KIND_UP_TIMEOUT:-2700}))
+deadline=$((SECONDS + ${KIND_UP_TIMEOUT:-5400}))
 
 k() { kubectl --context "$context" "$@"; }
 
