@@ -84,6 +84,7 @@ func run() error {
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
+	spectatorLimit := loader.IntDefault("GAME_SPECTATOR_LIMIT", 200)
 	if err := loader.Err(); err != nil {
 		return err
 	}
@@ -141,7 +142,7 @@ func run() error {
 		peerTransport = identity.Transport(mtls.ServerName("game"))
 		sockets = &http.Client{Transport: identity.Transport(mtls.ServerName("game"), mtls.HTTP1Only())}
 	}
-	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed,
+	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed, Watchers: spectatorLimit,
 		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)

@@ -189,6 +189,16 @@ test-e2e-security: jwt-key ## mTLS and key-rotation e2e on the base stack with t
 	@trap '$(COMPOSE_SECURITY_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
 	$(COMPOSE_SECURITY_E2E) --profile e2e run --rm --build security-e2e
 
+COMPOSE_GAME_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55832 REDIS_HOST_PORT=56779 KAFKA_HOST_PORT=59492 MINIO_HOST_PORT=59400 \
+	MINIO_CONSOLE_HOST_PORT=59401 GATEWAY_HOST_PORT=18480 WEB_HOST_PORT=3403 AUTH_HOST_PORT=18481 AUTH_METRICS_HOST_PORT=19491 \
+	CHAT_HOST_PORT=18482 CHAT_METRICS_HOST_PORT=19492 GATEWAY_METRICS_HOST_PORT=19490 CONNECT_HOST_PORT=58283 REGISTRY_HOST_PORT=58281 \
+	docker compose -p axon-game-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.game-e2e.yml
+
+.PHONY: test-e2e-game
+test-e2e-game: jwt-key ## Spectator and replay e2e through the gateway on the base stack
+	@trap '$(COMPOSE_GAME_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	$(COMPOSE_GAME_E2E) --profile e2e run --rm --build game-e2e
+
 .PHONY: e2e-key
 e2e-key:
 	@touch $(E2E_ENV_FILE); \

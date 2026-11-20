@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
@@ -104,6 +105,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
+		state.Spectators = proto.Uint32(h.watchers.count(id))
 		return write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Session{Session: state}})
 	}
 	initial, err := h.owner.Get(ctx, id, user)
@@ -114,6 +116,20 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		_ = fail(moveError(err))
 		return
+	}
+	spectator := !initial.HasPlayer(user)
+	if spectator {
+		if !h.watchers.join(id) {
+			_ = fail(gamev1.SessionError_SESSION_ERROR_UNAVAILABLE)
+			return
+		}
+		h.metrics.Spectators(h.watchers.total())
+		defer func() {
+			h.watchers.leave(id)
+			h.metrics.Spectators(h.watchers.total())
+			h.updates.notify(id)
+		}()
+		h.updates.notify(id)
 	}
 	if push(initial, nil) != nil {
 		return
@@ -153,6 +169,12 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		case next := <-commands:
 			if next.limited {
 				if fail(gamev1.SessionError_SESSION_ERROR_RATE_LIMITED) != nil {
+					return
+				}
+				continue
+			}
+			if spectator {
+				if fail(gamev1.SessionError_SESSION_ERROR_SPECTATOR) != nil {
 					return
 				}
 				continue

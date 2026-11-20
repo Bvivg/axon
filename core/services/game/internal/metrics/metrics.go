@@ -25,6 +25,7 @@ type Game struct {
 	applyLatency   prometheus.Histogram
 	lagRecords     *prometheus.GaugeVec
 	lagSeconds     prometheus.Gauge
+	spectators     prometheus.Gauge
 }
 
 const (
@@ -58,9 +59,10 @@ func New(registry prometheus.Registerer) *Game {
 		applyLatency: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "game_projector_apply_duration_seconds", Help: "Projector transaction latency.", Buckets: latency}),
 		lagRecords:   prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "game_projector_lag_records", Help: "Journal records not yet projected, by partition."}, []string{"partition"}),
 		lagSeconds:   prometheus.NewGauge(prometheus.GaugeOpts{Name: "game_projector_lag_seconds", Help: "Age of the newest projected record when the projector is behind, zero when caught up."}),
+		spectators:   prometheus.NewGauge(prometheus.GaugeOpts{Name: "game_spectators", Help: "Spectator sockets watching games served by this owner."}),
 	}
 	registry.MustRegister(m.commands, m.commandLatency, m.moves, m.appendLatency, m.owned, m.claims, m.claimLatency,
-		m.revocations, m.renewals, m.active, m.projected, m.batchSize, m.applyLatency, m.lagRecords, m.lagSeconds)
+		m.revocations, m.renewals, m.active, m.projected, m.batchSize, m.applyLatency, m.lagRecords, m.lagSeconds, m.spectators)
 	return m
 }
 
@@ -146,5 +148,11 @@ func (m *Game) Lag(partition string, records int64) {
 func (m *Game) LagAge(age time.Duration) {
 	if m != nil {
 		m.lagSeconds.Set(max(age.Seconds(), 0))
+	}
+}
+
+func (m *Game) Spectators(watching int) {
+	if m != nil {
+		m.spectators.Set(float64(watching))
 	}
 }

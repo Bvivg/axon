@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,7 @@ type MoveRecord struct {
 	Data        json.RawMessage
 	StateBefore engine.State
 	ClockBefore *Clock
+	PlayedAt    time.Time
 }
 
 type Change struct {
@@ -115,7 +117,7 @@ func (r Rules) Expire(game Session, now time.Time) (Session, Change) {
 }
 
 func (r Rules) Get(game Session, user uuid.UUID, now time.Time) (Session, Change, error) {
-	if !game.HasPlayer(user) {
+	if !game.Watchable(user) {
 		return Session{}, Change{}, ErrNotFound
 	}
 	next, change := r.Expire(game, now)
@@ -256,6 +258,30 @@ func (r Rules) Replay(game Session, moves []MoveRecord) (engine.State, error) {
 		}
 	}
 	return state, nil
+}
+
+func (r Rules) Frames(game Session, moves []MoveRecord) ([]engine.State, error) {
+	state, err := r.games.NewState(game.Game, game.State.Players)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := r.games.Get(game.Game)
+	if err != nil {
+		return nil, err
+	}
+	frames := make([]engine.State, 0, len(moves)+1)
+	frames = append(frames, state)
+	for _, move := range moves {
+		if move.Ply != state.Ply+1 {
+			return nil, fmt.Errorf("%w: move %d follows position %d", ErrHistoryGap, move.Ply, state.Ply)
+		}
+		state, err = rules.ApplyMove(state, engine.Move{Player: engine.PlayerID(move.Player.String()), Ply: state.Ply, Data: move.Data})
+		if err != nil {
+			return nil, fmt.Errorf("session: replay move %d: %w", move.Ply, err)
+		}
+		frames = append(frames, state)
+	}
+	return frames, nil
 }
 
 func (r Rules) Leave(game Session, user uuid.UUID, now time.Time) (Session, Change, error) {

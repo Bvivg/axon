@@ -1,0 +1,39 @@
+services:
+  auth:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/readyz"]
+
+  chat:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/readyz"]
+
+  gateway:
+    environment:
+      RATE_LIMIT_PER_MINUTE: 100000
+      RATE_LIMIT_AUTH_PER_MINUTE: 3000
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9090/readyz"]
+
+  game-e2e:
+    image: golang:1.27.4-alpine
+    profiles: ["e2e"]
+    working_dir: /src/core/services/game
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      GOWORK: "off"
+      GOFLAGS: -mod=mod
+    volumes:
+      - ../..:/src
+      - game-e2e-go-mod:/go/pkg/mod
+      - game-e2e-go-build:/root/.cache/go-build
+    networks: [edge]
+    command: ["go", "test", "-tags", "e2e", "-count=1", "-v", "./e2e/..."]
+    depends_on:
+      gateway:
+        condition: service_healthy
+      game:
+        condition: service_healthy
+
+volumes:
+  game-e2e-go-mod:
+  game-e2e-go-build:
