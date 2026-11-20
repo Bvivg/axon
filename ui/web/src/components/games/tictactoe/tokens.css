@@ -21,6 +21,11 @@
   --color-chess-mark: rgb(52 36 140 / .38);
   --color-chess-last: rgb(242 189 100 / .5);
   --color-chess-check: light-dark(rgb(184 50 76 / .55), rgb(240 127 145 / .55));
+  --color-quoridor-cell: light-dark(#e9e5f8, #262b3b);
+  --color-quoridor-groove: light-dark(#d7d1f0, #161a26);
+  --color-quoridor-wall: light-dark(#98600a, #f2bd64);
+  --color-quoridor-wall-last: light-dark(#5945b9, #ad9ffc);
+  --color-quoridor-target: light-dark(rgb(89 69 185 / .35), rgb(173 159 252 / .4));
   --radius-game-sm: 9px;
   --radius-game-md: 12px;
   --radius-game-lg: 16px;

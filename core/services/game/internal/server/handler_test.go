@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
@@ -39,5 +40,31 @@ func TestWaitingResultClock(t *testing.T) {
 	out, err := present(session.Session{ID: uuid.New(), Creator: uuid.New(), UpdatedAt: time.Now()}, session.TimeLimitMS, nil)
 	if err != nil || out.Status != gamev1.SessionStatus_SESSION_STATUS_WAITING || out.Clock.GetXRemainingMs() != 300000 || out.Clock.GetORemainingMs() != 300000 {
 		t.Fatal(out, err)
+	}
+}
+
+func TestQuoridorBoard(t *testing.T) {
+	x, o := uuid.New(), uuid.New()
+	players := []engine.PlayerID{engine.PlayerID(x.String()), engine.PlayerID(o.String())}
+	game := quoridor.New()
+	state, err := game.ApplyMove(game.Init(players), quoridor.NewMove(players[0], 0, "e8h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := session.Session{ID: uuid.New(), Creator: x, Opponent: &o, Game: quoridor.Key, State: state, UpdatedAt: time.Now()}
+	out, err := present(item, session.TimeLimitMS, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	board := out.GetQuoridor()
+	if board.GetLastMove() != "e8h" || len(board.GetWalls()) != 1 || board.GetWallsLeft()[0] != 9 || board.GetPawns()[1] != "e9" || out.GetTurnUserId() != o.String() {
+		t.Fatal(board)
+	}
+	if len(board.GetLegalMoves()) == 0 || board.GetLegalMoves()[0] != "d9" {
+		t.Fatal(board.GetLegalMoves())
+	}
+	waiting, err := present(session.Session{ID: uuid.New(), Creator: x, Game: quoridor.Key, UpdatedAt: time.Now()}, session.TimeLimitMS, nil)
+	if err != nil || len(waiting.GetQuoridor().GetPawns()) != 2 {
+		t.Fatal(waiting, err)
 	}
 }

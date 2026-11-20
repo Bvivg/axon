@@ -14,6 +14,7 @@ import (
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
@@ -199,6 +200,8 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 		out.TicTacToe = &gamev1.TicTacToeBoard{Cells: make([]gamev1.Mark, 9)}
 	case chess.Key:
 		out.Chess = &gamev1.ChessBoard{Fen: chess.StartFEN}
+	case quoridor.Key:
+		out.Quoridor = &gamev1.QuoridorBoard{Pawns: []string{"e1", "e9"}, WallsLeft: []uint32{quoridor.WallsEach, quoridor.WallsEach}}
 	}
 	if item.Opponent == nil {
 		out.Clock = &gamev1.SessionClock{XRemainingMs: proto.Uint32(uint32(limit)), ORemainingMs: proto.Uint32(uint32(limit)), SampledAt: timestamppb.Now()}
@@ -276,6 +279,15 @@ func board(out *gamev1.Session, item session.Session) error {
 		out.Chess = &gamev1.ChessBoard{Fen: snap.FEN, San: snap.SAN, Check: snap.Check, LegalMoves: snap.Legal, End: chessEnds[snap.End]}
 		if snap.LastMove != "" {
 			out.Chess.LastMove = &snap.LastMove
+		}
+	case quoridor.Key:
+		snap, err := quoridor.View(item.State)
+		if err != nil {
+			return err
+		}
+		out.Quoridor = &gamev1.QuoridorBoard{Pawns: snap.Pawns, Walls: snap.Walls, WallsLeft: snap.Left, Moves: snap.Moves, LegalMoves: snap.Legal}
+		if snap.LastMove != "" {
+			out.Quoridor.LastMove = &snap.LastMove
 		}
 	}
 	return nil
