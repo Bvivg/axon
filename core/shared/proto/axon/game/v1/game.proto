@@ -43,6 +43,16 @@ message Session {
   ChessBoard chess = 16;
   optional string draw_offer_user_id = 17;
   optional bool agreed_draw = 18;
+  QuoridorBoard quoridor = 19;
+}
+
+message QuoridorBoard {
+  repeated string pawns = 1;
+  repeated string walls = 2;
+  repeated uint32 walls_left = 3;
+  repeated string moves = 4;
+  optional string last_move = 5;
+  repeated string legal_moves = 6;
 }
 
 message ChessBoard {
@@ -195,7 +205,14 @@ message SessionCommand {
     string subscribe_match = 4;
     ChessMove chess_move = 5;
     DrawCommand draw = 6;
+    QuoridorMove quoridor_move = 7;
   }
+}
+
+message QuoridorMove {
+  uint32 ply = 1;
+  string move = 2;
+  optional uint32 revision = 3;
 }
 
 message ChessMove {
