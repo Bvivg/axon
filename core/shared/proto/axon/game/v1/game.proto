@@ -47,6 +47,7 @@ message Session {
   optional bool agreed_draw = 18;
   QuoridorBoard quoridor = 19;
   optional uint32 spectators = 20;
+  optional string tournament_id = 21;
 }
 
 message QuoridorBoard {

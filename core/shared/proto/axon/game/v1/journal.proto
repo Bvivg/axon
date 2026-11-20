@@ -50,6 +50,7 @@ message SessionSnapshot {
   bool resigned = 8;
   optional string draw_offer_user_id = 9;
   bool agreed_draw = 10;
+  optional string tournament_id = 11;
 }
 
 message SessionCreated {

@@ -19,6 +19,8 @@ message GameFinished {
   google.protobuf.Timestamp finished_at = 7;
   bool rated = 8;
   repeated string moves = 9;
+  optional string tournament_id = 10;
+  optional uint32 plies = 11;
 }
 
 message ChatMessageSent {
@@ -92,4 +94,52 @@ message SecurityEvent {
   string user_agent = 7;
   string email_sha256 = 8;
   google.protobuf.Timestamp occurred_at = 9;
+}
+
+message TournamentPairing {
+  uint32 board = 1;
+  string session_id = 2;
+  repeated string players = 3;
+}
+
+message TournamentRoundStarted {
+  string event_id = 1;
+  string tournament_id = 2;
+  string game = 3;
+  uint32 round = 4;
+  repeated TournamentPairing pairings = 5;
+  google.protobuf.Timestamp started_at = 6;
+}
+
+message TournamentForfeit {
+  string event_id = 1;
+  string tournament_id = 2;
+  string game = 3;
+  uint32 round = 4;
+  TournamentPairing pairing = 5;
+  google.protobuf.Timestamp due_at = 6;
+}
+
+message TournamentCancelled {
+  string event_id = 1;
+  string tournament_id = 2;
+  bool started = 3;
+  repeated string session_ids = 4;
+  repeated string returned_players = 5;
+  google.protobuf.Timestamp cancelled_at = 6;
+}
+
+message TournamentStanding {
+  uint32 rank = 1;
+  string user_id = 2;
+  uint32 half_points = 3;
+}
+
+message TournamentFinished {
+  string event_id = 1;
+  string tournament_id = 2;
+  string game = 3;
+  string winner_id = 4;
+  repeated TournamentStanding standings = 5;
+  google.protobuf.Timestamp finished_at = 6;
 }
