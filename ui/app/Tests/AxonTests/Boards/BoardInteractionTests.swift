@@ -28,8 +28,8 @@ struct BoardInteractionTests {
         return window
     }
 
-    private func settle() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    private func settle(_ seconds: TimeInterval = 0.1) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
     }
 
     private func click(_ window: NSWindow, at point: CGPoint) throws {
@@ -97,6 +97,7 @@ struct BoardInteractionTests {
         let flipped = host(ChessBoardView(board: board, perspective: 1, interactive: true, onMove: { recorder.moves.append($0) }))
         try click(flipped, at: try point("a7", perspective: 1))
         try click(flipped, at: try point("b8", perspective: 1))
+        settle(0.6)
         let pickerButton = max(44, square * 1.05)
         let rowWidth = pickerButton * 5 + 6 * 4
         let knight = CGPoint(x: side / 2 - rowWidth / 2 + pickerButton * 3.5 + 6 * 3, y: side / 2)
