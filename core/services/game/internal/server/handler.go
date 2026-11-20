@@ -27,12 +27,13 @@ import (
 const Protocol = "axon.game.v1"
 
 type Config struct {
-	Store    *session.Store
-	Owner    *owner.Owner
-	Routes   *route.Table
-	Self     string
-	Verifier *authn.Verifier
-	Client   *http.Client
+	Store     *session.Store
+	Owner     *owner.Owner
+	Routes    *route.Table
+	Self      string
+	Verifier  *authn.Verifier
+	Client    *http.Client
+	TestHooks bool
 }
 
 type Handler struct {
@@ -43,6 +44,7 @@ type Handler struct {
 	routes   *route.Table
 	self     string
 	verifier *authn.Verifier
+	hooks    bool
 	peers    *peers
 	updates  updates
 	matches  updates
@@ -54,7 +56,7 @@ func New(cfg Config) *Handler {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
 	return &Handler{
-		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier,
+		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks,
 		peers:   newPeers(client),
 		updates: newUpdates(),
 		matches: newUpdates(),
@@ -66,6 +68,15 @@ func (h *Handler) Changed(id uuid.UUID) { h.updates.notify(id) }
 func (h *Handler) Moved(id uuid.UUID) { h.updates.move(id) }
 
 func (h *Handler) identity(headers http.Header) (uuid.UUID, authn.Claims, error) {
+	if h.hooks {
+		if raw := headers.Get(TestUserHeader); raw != "" {
+			user, err := uuid.Parse(raw)
+			if err != nil || user == uuid.Nil {
+				return uuid.Nil, authn.Claims{}, errors.New("invalid test user")
+			}
+			return user, authn.Claims{UserID: user, ExpiresAt: time.Now().Add(24 * time.Hour)}, nil
+		}
+	}
 	raw, err := authn.BearerToken(headers)
 	if err != nil {
 		return uuid.Nil, authn.Claims{}, err

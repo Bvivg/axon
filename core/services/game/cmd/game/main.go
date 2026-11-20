@@ -107,7 +107,7 @@ func run() error {
 	defer journalLog.Close()
 	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: session.NewRules(games), Now: time.Now})
 	routes := route.New(model.Owners)
-	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier})
+	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks})
 	own.Listen(handler)
 	go routes.Run(ctx, pool.Pool, projection.OwnerChannel, log)
 	go handler.Watch(ctx, log)

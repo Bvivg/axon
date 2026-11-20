@@ -110,6 +110,9 @@ func onOwner[Req, Res any](
 			forwarded := connect.NewRequest(req.Msg)
 			forwarded.Header().Set("Authorization", req.Header().Get("Authorization"))
 			forwarded.Header().Set(HopHeader, "1")
+			if user := req.Header().Get(TestUserHeader); user != "" && h.hooks {
+				forwarded.Header().Set(TestUserHeader, user)
+			}
 			res, err = remote(h.peers.game(address), ctx, forwarded)
 		}
 		if err == nil || !retriable(err) || hopped {
