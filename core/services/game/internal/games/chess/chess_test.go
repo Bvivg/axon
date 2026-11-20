@@ -3,6 +3,7 @@ package chess
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
@@ -166,5 +167,25 @@ func TestEngineContract(t *testing.T) {
 	}
 	if _, err := g.ApplyMove(s, NewMove(white, s.Ply, "e2e4")); !errors.Is(err, engine.ErrGameOver) {
 		t.Fatal(err)
+	}
+}
+
+func TestMovesReadsThePlayedUCIMoves(t *testing.T) {
+	s, err := play(t, New().Init([]engine.PlayerID{white, black}), "e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moves, err := Moves(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"}; !slices.Equal(moves, want) || !s.Over() {
+		t.Fatalf("Moves() = %v (over %v), want %v", moves, s.Over(), want)
+	}
+	if moves, err := Moves(New().Init([]engine.PlayerID{white, black})); err != nil || len(moves) != 0 {
+		t.Fatalf("Moves() of the start = %v, %v", moves, err)
+	}
+	if _, err := Moves(engine.State{Game: Key}); !errors.Is(err, engine.ErrStateMalformed) {
+		t.Fatalf("Moves() of an empty state = %v", err)
 	}
 }

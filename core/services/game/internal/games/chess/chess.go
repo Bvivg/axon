@@ -144,6 +144,14 @@ func (Game) IsTerminal(state engine.State) (bool, *engine.PlayerID) {
 	return state.Outcome()
 }
 
+func Moves(state engine.State) ([]string, error) {
+	var d data
+	if err := engine.DecodeState(state, &d); err != nil {
+		return nil, err
+	}
+	return d.Moves, nil
+}
+
 type Snapshot struct {
 	FEN      string
 	SAN      []string

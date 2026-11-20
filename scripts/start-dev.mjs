@@ -99,7 +99,7 @@ async function main() {
     for (const tool of ["go", "ffmpeg", "ffprobe", ...(env.AXON_DEV_INFRA === "external" ? [] : ["docker"])]) {
       if (spawnSync(tool, [tool === "docker" ? "--version" : tool === "go" ? "version" : "-version"], { stdio: "ignore" }).status !== 0) throw new Error(`Missing dependency: ${tool}`);
     }
-    const ports = { web: Number(env.DEV_WEB_PORT || 3000), gateway: Number(env.DEV_GATEWAY_PORT || 28080), auth: Number(env.DEV_AUTH_PORT || 28081), chat: Number(env.DEV_CHAT_PORT || 28082), game: Number(env.DEV_GAME_PORT || 28083), rating: Number(env.DEV_RATING_PORT || 28084), authAdmin: Number(env.DEV_AUTH_ADMIN_PORT || 29091), chatAdmin: Number(env.DEV_CHAT_ADMIN_PORT || 29092), gatewayAdmin: Number(env.DEV_GATEWAY_ADMIN_PORT || 29090), ratingAdmin: Number(env.DEV_RATING_ADMIN_PORT || 29094) };
+    const ports = { web: Number(env.DEV_WEB_PORT || 3000), gateway: Number(env.DEV_GATEWAY_PORT || 28080), auth: Number(env.DEV_AUTH_PORT || 28081), chat: Number(env.DEV_CHAT_PORT || 28082), game: Number(env.DEV_GAME_PORT || 28083), rating: Number(env.DEV_RATING_PORT || 28084), analysis: Number(env.DEV_ANALYSIS_PORT || 28085), authAdmin: Number(env.DEV_AUTH_ADMIN_PORT || 29091), chatAdmin: Number(env.DEV_CHAT_ADMIN_PORT || 29092), gatewayAdmin: Number(env.DEV_GATEWAY_ADMIN_PORT || 29090), ratingAdmin: Number(env.DEV_RATING_ADMIN_PORT || 29094), analysisAdmin: Number(env.DEV_ANALYSIS_ADMIN_PORT || 29095) };
     if (new Set(Object.values(ports)).size !== Object.values(ports).length) throw new Error("DEV_* ports must be distinct");
     for (const [name, port] of Object.entries(ports)) {
       if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid port for ${name}`);
@@ -154,7 +154,7 @@ async function main() {
       if (url.hostname === "postgres") { url.hostname = pgHost; url.port = env.POSTGRES_HOST_PORT; }
       return url.href;
     };
-    for (const service of ["auth", "chat", "game", "rating"]) {
+    for (const service of ["auth", "chat", "game", "rating", "analysis"]) {
       const dsn = env[`${service.toUpperCase()}_POSTGRES_DSN`];
       await launch(`migrate-${service}`, "go", ["run", "-tags", "postgres", "github.com/golang-migrate/migrate/v4/cmd/migrate@v4.20.1", "-path", join(root, `core/services/${service}/migrations`), "-database", localDSN(dsn), "up"], { cwd: runtime, env: { ...env, GOWORK: "off" } }).completed;
     }
@@ -167,6 +167,7 @@ async function main() {
       AUTH_SERVICE_URL: auth,
       CHAT_SERVICE_URL: `http://127.0.0.1:${ports.chat}`,
       GAME_SERVICE_URL: `http://127.0.0.1:${ports.game}`,
+      ANALYSIS_SERVICE_URL: `http://127.0.0.1:${ports.analysis}`,
       JWKS_URL: `http://127.0.0.1:${ports.authAdmin}/.well-known/jwks.json`,
       CORS_ALLOWED_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
       OAUTH_ALLOWED_RETURN_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
@@ -192,7 +193,10 @@ async function main() {
       }
       throw new Error(stopping ? "Startup interrupted" : `Readiness timeout: ${url}`);
     }
-    for (const service of ["auth", "chat", "game", "rating", "gateway"]) {
+    const stockfish = env.STOCKFISH_PATH || "stockfish";
+    const engine = spawnSync(stockfish, [], { input: "quit\n", stdio: ["pipe", "ignore", "ignore"], timeout: 5000 }).status === 0;
+    if (!engine) log("dev", `${stockfish} is not installed, so the analysis service stays off; set STOCKFISH_PATH in .env.local to run it`);
+    for (const service of ["auth", "chat", "game", "rating", ...(engine ? ["analysis"] : []), "gateway"]) {
       const serviceEnv = { ...common, HTTP_ADDR: `127.0.0.1:${ports[service]}`, METRICS_ADDR: `127.0.0.1:${ports[`${service}Admin`] || 0}` };
       if (service !== "gateway") serviceEnv.POSTGRES_DSN = localDSN(env[`${service.toUpperCase()}_POSTGRES_DSN`]);
       if (service === "game") serviceEnv.GAME_ADVERTISE_ADDR = `127.0.0.1:${ports.game}`;

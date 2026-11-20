@@ -1,0 +1,47 @@
+services:
+  auth:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/readyz"]
+
+  chat:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/readyz"]
+
+  gateway:
+    environment:
+      RATE_LIMIT_PER_MINUTE: 100000
+      RATE_LIMIT_AUTH_PER_MINUTE: 3000
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9090/readyz"]
+
+  analysis:
+    environment:
+      ANALYSIS_POSITION_TIMEOUT: 60s
+
+  analysis-e2e:
+    image: golang:1.27.4-alpine
+    working_dir: /src/core/services/analysis
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      ANALYSIS_METRICS_URL: http://analysis:9095/metrics
+      GOWORK: "off"
+      GOFLAGS: -mod=mod
+    volumes:
+      - ../..:/src
+      - analysis-e2e-go-mod:/go/pkg/mod
+      - analysis-e2e-go-build:/root/.cache/go-build
+    networks: [edge, app]
+    command: ["go", "test", "-tags", "e2e", "-count=1", "-v", "-timeout", "10m", "./e2e/..."]
+    depends_on:
+      gateway:
+        condition: service_healthy
+      game:
+        condition: service_healthy
+      analysis:
+        condition: service_healthy
+      cdc-connector:
+        condition: service_completed_successfully
+
+volumes:
+  analysis-e2e-go-mod:
+  analysis-e2e-go-build:

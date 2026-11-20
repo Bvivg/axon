@@ -3,6 +3,7 @@ package policy_test
 import (
 	"testing"
 
+	"github.com/bvivg/axon/core/shared/gen/go/axon/analysis/v1/analysisv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
@@ -152,6 +153,7 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		gamev1connect.GameServiceLeaveSessionProcedure:              true,
 		gamev1connect.GameServiceGetSessionHistoryProcedure:         true,
 		gamev1connect.GameServiceListLiveSessionsProcedure:          true,
+		analysisv1connect.AnalysisServiceGetAnalysisProcedure:       true,
 		callsv1connect.CallsServiceRegisterEndpointProcedure:        true,
 		callsv1connect.CallsServiceStartCallProcedure:               true,
 		callsv1connect.CallsServiceStartDirectCallProcedure:         true,

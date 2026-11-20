@@ -1,6 +1,12 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { markClass, type MoveMark } from "@/lib/games/analysis";
+import { cn } from "@/lib/utils";
 
-export function MoveList({ san }: { san: string[] }) {
+function Move({ san, mark }: { san?: string; mark?: MoveMark }) {
+  return <span data-move-mark={mark}>{san ?? ""}{mark ? <span className={cn("font-semibold", markClass(mark))}>{mark}</span> : null}</span>;
+}
+
+export function MoveList({ san, marks }: { san: string[]; marks?: (MoveMark | undefined)[] }) {
   const pairs = Array.from({ length: Math.ceil(san.length / 2) }, (_, index) => [san[index * 2], san[index * 2 + 1]] as const);
   return (
     <section aria-labelledby="chess-moves-title" className="flex min-h-0 flex-col rounded-game-md border border-game-border bg-game-card">
@@ -11,8 +17,8 @@ export function MoveList({ san }: { san: string[] }) {
             {pairs.map(([white, black], index) => (
               <li key={index} className="contents">
                 <span className="text-game-text2">{index + 1}.</span>
-                <span>{white}</span>
-                <span>{black ?? ""}</span>
+                <Move san={white} mark={marks?.[index * 2]} />
+                <Move san={black} mark={marks?.[index * 2 + 1]} />
               </li>
             ))}
           </ol>

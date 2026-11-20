@@ -190,6 +190,10 @@ services:
     environment:
       KAFKA_BROKERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
 
+  analysis:
+    environment:
+      KAFKA_BROKERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
+
   connect:
     environment:
       BOOTSTRAP_SERVERS: "kafka:29092,kafka-2:29092,kafka-3:29092"
