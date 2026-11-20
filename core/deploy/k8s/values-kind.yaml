@@ -40,8 +40,11 @@ gateway:
     nodePorts:
       http: 30080
   rateLimit:
-    perMinute: 100000
-    authPerMinute: 3000
+    perMinute: 600
+    authPerMinute: 60
+  trustedProxies: 1
+  extraCorsOrigins:
+    - http://localhost:3000
 
 rating:
   replicas: 2

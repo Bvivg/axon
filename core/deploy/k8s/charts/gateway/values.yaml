@@ -50,6 +50,8 @@ resources:
 rateLimit:
   perMinute: 120
   authPerMinute: 10
+trustedProxies: 0
+extraCorsOrigins: []
 fieldEnv: []
 secretEnv:
   RATE_LIMIT_REDIS_PASSWORD:
@@ -62,8 +64,8 @@ env:
   RATE_LIMIT_REDIS_ADDR: "{{ .Values.global.redis.edge }}"
   RATE_LIMIT_PER_MINUTE: "{{ .Values.rateLimit.perMinute }}"
   RATE_LIMIT_AUTH_PER_MINUTE: "{{ .Values.rateLimit.authPerMinute }}"
-  CORS_ALLOWED_ORIGINS: "{{ .Values.global.publicWebURL }}"
-  TRUSTED_PROXIES: "0"
+  CORS_ALLOWED_ORIGINS: "{{ .Values.global.publicWebURL }}{{ range .Values.extraCorsOrigins }},{{ . }}{{ end }}"
+  TRUSTED_PROXIES: "{{ .Values.trustedProxies }}"
   REFRESH_COOKIE_SECURE: "false"
   JWT_ISSUER: https://auth.axon.local
   JWT_AUDIENCE: axon
