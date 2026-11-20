@@ -1,0 +1,32 @@
+global:
+  imageTag: local
+  imagePullPolicy: Never
+  mtls:
+    enabled: true
+  kafka:
+    replication: 1
+    minInSync: 1
+  postgres:
+    readHost: axon-pg-rw
+
+infra:
+  postgres:
+    instances: 1
+  kafka:
+    replicas: 1
+    storage: 1Gi
+  redis:
+    replicas: 1
+    sentinel:
+      enabled: false
+  registry:
+    enabled: false
+
+cdc:
+  registry:
+    enabled: false
+
+gateway:
+  rateLimit:
+    perMinute: 6000
+    authPerMinute: 600
