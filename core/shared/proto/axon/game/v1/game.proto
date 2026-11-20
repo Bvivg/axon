@@ -14,6 +14,8 @@ service GameService {
   rpc GetMatch(GetMatchRequest) returns (GetMatchResponse);
   rpc GetRatings(GetRatingsRequest) returns (GetRatingsResponse);
   rpc LeaveSession(LeaveSessionRequest) returns (LeaveSessionResponse);
+  rpc GetSessionHistory(GetSessionHistoryRequest) returns (GetSessionHistoryResponse);
+  rpc ListLiveSessions(ListLiveSessionsRequest) returns (ListLiveSessionsResponse);
 }
 
 enum SessionStatus {
@@ -44,6 +46,7 @@ message Session {
   optional string draw_offer_user_id = 17;
   optional bool agreed_draw = 18;
   QuoridorBoard quoridor = 19;
+  optional uint32 spectators = 20;
 }
 
 message QuoridorBoard {
@@ -256,6 +259,7 @@ enum SessionError {
   SESSION_ERROR_ILLEGAL_MOVE = 9;
   SESSION_ERROR_NO_DRAW_OFFER = 10;
   SESSION_ERROR_RATE_LIMITED = 11;
+  SESSION_ERROR_SPECTATOR = 12;
 }
 
 message SessionEvent {
@@ -264,4 +268,30 @@ message SessionEvent {
     SessionError error = 2;
     MatchTicket match = 3;
   }
+}
+
+message GetSessionHistoryRequest {
+  string session_id = 1;
+}
+
+message GetSessionHistoryResponse {
+  Session session = 1;
+  repeated HistoryFrame frames = 2;
+}
+
+message HistoryFrame {
+  uint32 ply = 1;
+  optional string player_id = 2;
+  optional google.protobuf.Timestamp played_at = 3;
+  optional TicTacToeBoard tic_tac_toe = 4;
+  optional ChessBoard chess = 5;
+  optional QuoridorBoard quoridor = 6;
+}
+
+message ListLiveSessionsRequest {
+  optional string game = 1;
+}
+
+message ListLiveSessionsResponse {
+  repeated Session sessions = 1;
 }
