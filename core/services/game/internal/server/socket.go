@@ -15,6 +15,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
+	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
@@ -38,8 +39,10 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	invalidCommand := errors.New("invalid session command")
 
+	var frame []byte
 	read := func(readCtx context.Context) (*gamev1.SessionCommand, error) {
-		frame, err := conn.Read(readCtx)
+		var err error
+		frame, err = conn.Read(readCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -77,16 +80,33 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		_ = fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND)
 		return
 	}
+	moved := func() { _ = conn.Close(StatusMoved, "game moved") }
+	changed, gone, unsubscribe := h.updates.subscribe(id)
+	defer unsubscribe()
+	if !h.owner.Serves(id) {
+		if r.Header.Get(HopHeader) != "" {
+			moved()
+			return
+		}
+		h.relay(ctx, conn, id, r.Header.Get("Authorization"), frame)
+		return
+	}
 	push := func(item session.Session, err error) error {
+		if errors.Is(err, owner.ErrNotOwner) {
+			moved()
+			return err
+		}
 		state, err := h.view(ctx, item, err)
 		if err != nil {
 			return err
 		}
 		return write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Session{Session: state}})
 	}
-	changed, unsubscribe := h.updates.subscribe(id)
-	defer unsubscribe()
-	initial, err := h.store.Get(ctx, id, user)
+	initial, err := h.owner.Get(ctx, id, user)
+	if errors.Is(err, owner.ErrNotOwner) {
+		moved()
+		return
+	}
 	if err != nil {
 		_ = fail(moveError(err))
 		return
@@ -119,8 +139,11 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-gone:
+			moved()
+			return
 		case <-changed:
-			if push(h.store.Get(ctx, id, user)) != nil {
+			if push(h.owner.Get(ctx, id, user)) != nil {
 				return
 			}
 		case next := <-commands:
@@ -143,7 +166,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				data, _ := json.Marshal(tictactoe.Cell{Row: int(move.Cell) / tictactoe.Size, Col: int(move.Cell) % tictactoe.Size})
-				item, err = h.store.Move(ctx, id, user, int(move.Ply), tictactoe.Key, data, move.Revision)
+				item, err = h.owner.Move(ctx, id, user, int(move.Ply), tictactoe.Key, data, move.Revision)
 			case *gamev1.SessionCommand_ChessMove:
 				move := action.ChessMove
 				if move == nil || len(move.Uci) > 5 {
@@ -153,7 +176,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				data, _ := json.Marshal(chess.MoveData{UCI: move.Uci})
-				item, err = h.store.Move(ctx, id, user, int(move.Ply), chess.Key, data, move.Revision)
+				item, err = h.owner.Move(ctx, id, user, int(move.Ply), chess.Key, data, move.Revision)
 			case *gamev1.SessionCommand_QuoridorMove:
 				move := action.QuoridorMove
 				if move == nil || len(move.Move) > 3 {
@@ -163,7 +186,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				data, _ := json.Marshal(quoridor.MoveData{Move: move.Move})
-				item, err = h.store.Move(ctx, id, user, int(move.Ply), quoridor.Key, data, move.Revision)
+				item, err = h.owner.Move(ctx, id, user, int(move.Ply), quoridor.Key, data, move.Revision)
 			case *gamev1.SessionCommand_Draw:
 				drawAction, ok := drawActions[action.Draw.GetAction()]
 				if !ok {
@@ -172,7 +195,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					}
 					continue
 				}
-				item, err = h.store.Draw(ctx, id, user, drawAction)
+				item, err = h.owner.Draw(ctx, id, user, drawAction)
 			case *gamev1.SessionCommand_Undo:
 				if action.Undo == nil {
 					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
@@ -180,23 +203,88 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					}
 					continue
 				}
-				item, err = h.store.Undo(ctx, id, user, action.Undo.Revision)
+				item, err = h.owner.Undo(ctx, id, user, action.Undo.Revision)
 			default:
 				if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
 					return
 				}
 				continue
 			}
+			if errors.Is(err, owner.ErrNotOwner) {
+				moved()
+				return
+			}
 			if err != nil {
-				if fail(moveError(err)) != nil || push(h.store.Get(ctx, id, user)) != nil {
+				if fail(moveError(err)) != nil || push(h.owner.Get(ctx, id, user)) != nil {
 					return
 				}
 				continue
 			}
-			h.updates.notify(id)
 			if push(item, nil) != nil {
 				return
 			}
+		}
+	}
+}
+
+const StatusMoved ws.StatusCode = 4001
+
+func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, authorization string, first []byte) {
+	routing, cancel := context.WithTimeout(ctx, routeTimeout)
+	address, mine, err := h.ownerAddress(routing, id)
+	cancel()
+	if err != nil || mine {
+		_ = client.Close(StatusMoved, "game moved")
+		return
+	}
+	header := http.Header{}
+	header.Set("Authorization", authorization)
+	header.Set(HopHeader, "1")
+	upstream, err := ws.Dial(ctx, "ws://"+address+"/ws", ws.DialOptions{
+		Subprotocols: []string{Protocol},
+		Header:       header,
+		Options:      ws.Options{ReadLimit: ws.LargeMessageReadLimit},
+	})
+	if err != nil {
+		_ = client.Close(StatusMoved, "game moved")
+		return
+	}
+	defer func() { _ = upstream.CloseNow() }()
+	if upstream.Write(ctx, first) != nil {
+		_ = client.Close(StatusMoved, "game moved")
+		return
+	}
+	join(ctx, client, upstream)
+}
+
+func join(ctx context.Context, client, upstream *ws.Conn) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan struct{}, 2)
+	go func() { pipe(ctx, client, upstream); done <- struct{}{} }()
+	go func() { pipe(ctx, upstream, client); done <- struct{}{} }()
+	<-done
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+	}
+}
+
+func pipe(ctx context.Context, from, to *ws.Conn) {
+	for {
+		payload, err := from.Read(ctx)
+		if err != nil {
+			code, reason := ws.CloseCodeFor(err)
+			if status := ws.CloseStatus(err); status != -1 {
+				code, reason = status, ""
+			}
+			_ = to.Close(code, ws.TruncateReason(reason))
+			return
+		}
+		if err := to.Write(ctx, payload); err != nil {
+			_ = from.CloseNow()
+			return
 		}
 	}
 }
@@ -232,7 +320,7 @@ func moveError(err error) gamev1.SessionError {
 }
 
 func (h *Handler) watchMatch(ctx context.Context, cancel context.CancelFunc, conn *ws.Conn, user uuid.UUID, game engine.Key, write func(*gamev1.SessionEvent) error) {
-	changed, unsubscribe := h.matches.subscribe(user)
+	changed, _, unsubscribe := h.matches.subscribe(user)
 	defer unsubscribe()
 	go func() {
 		defer cancel()

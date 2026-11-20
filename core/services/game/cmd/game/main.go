@@ -8,15 +8,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
 
+	"github.com/bvivg/axon/core/services/game/internal/cluster"
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
+	"github.com/bvivg/axon/core/services/game/internal/journal"
+	"github.com/bvivg/axon/core/services/game/internal/owner"
+	"github.com/bvivg/axon/core/services/game/internal/projection"
+	"github.com/bvivg/axon/core/services/game/internal/route"
 	"github.com/bvivg/axon/core/services/game/internal/server"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
@@ -49,6 +55,19 @@ func run() error {
 		Issuer:   loader.StringDefault("JWT_ISSUER", "https://auth.axon.local"),
 		Audience: loader.StringDefault("JWT_AUDIENCE", "axon"),
 	}
+	hostname, _ := os.Hostname()
+	_, port, _ := strings.Cut(cfg.HTTPAddr, ":")
+	instance := loader.StringDefault("GAME_INSTANCE_ID", hostname)
+	advertise := loader.StringDefault("GAME_ADVERTISE_ADDR", hostname+":"+port)
+	kafka := journal.KafkaConfig{
+		Brokers:           loader.StringSlice("KAFKA_BROKERS", []string{"kafka:9092"}),
+		Topic:             loader.StringDefault("GAME_JOURNAL_TOPIC", "game.session-events.v1"),
+		LeaseTopic:        loader.StringDefault("GAME_LEASE_TOPIC", "game.partition-leases.v1"),
+		Partitions:        int32(loader.IntDefault("GAME_JOURNAL_PARTITIONS", 24)),
+		ReplicationFactor: int16(loader.IntDefault("GAME_JOURNAL_REPLICATION", 3)),
+		MinInSync:         loader.IntDefault("GAME_JOURNAL_MIN_INSYNC", 2),
+	}
+	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
 	if err := loader.Err(); err != nil {
 		return err
 	}
@@ -78,17 +97,40 @@ func run() error {
 			return err
 		}
 	}
-	handler := server.New(session.NewStore(pool.Pool, games), verifier)
+	store := session.NewStore(pool.Pool, games)
+	model := projection.New(store)
+	log = log.With("instance", instance)
+	journalLog, err := journal.NewKafka(ctx, kafka)
+	if err != nil {
+		return err
+	}
+	defer journalLog.Close()
+	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: session.NewRules(games), Now: time.Now})
+	routes := route.New(model.Owners)
+	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier})
+	own.Listen(handler)
+	go routes.Run(ctx, pool.Pool, projection.OwnerChannel, log)
 	go handler.Watch(ctx, log)
-	go handler.RunClocks(ctx, log)
 	go handler.RunMatchmaking(ctx, log)
+	go func() { _ = cluster.NewProjector(kafka, model, log).Run(ctx) }()
+	ownership := make(chan struct{})
+	go func() {
+		defer close(ownership)
+		_ = cluster.NewOwnership(kafka, own, log).Run(ctx)
+	}()
 	metrics := middleware.NewMetrics(cfg.Service)
 	mux := http.NewServeMux()
 	mux.Handle(gamev1connect.NewGameServiceHandler(handler, connect.WithInterceptors(
 		middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
+	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, connect.WithInterceptors(
+		middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(),
+	)))
 	mux.HandleFunc("GET /ws", handler.Socket)
-	health.New(log, []health.Checker{pool}).Register(mux)
+	if testHooks {
+		mux.HandleFunc("POST "+server.ClockHookPath, handler.AdjustClock)
+	}
+	health.New(log, []health.Checker{pool, journalLog}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux),
@@ -106,6 +148,7 @@ func run() error {
 	case <-ctx.Done():
 		shutdown, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
+		<-ownership
 		return srv.Shutdown(shutdown)
 	}
 }

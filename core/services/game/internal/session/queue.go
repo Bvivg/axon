@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -29,17 +28,18 @@ func (t Ticket) Window() int {
 	return matchmaking.Window(t.Now.Sub(t.JoinedAt), t.Wait)
 }
 
-const ticketQuery = `SELECT q.rating, q.joined_at, q.session_id, s.state->>'status', clock_timestamp()
+const ticketQuery = `SELECT q.rating, q.joined_at, q.session_id, q.started, s.state->>'status', clock_timestamp()
 	FROM game.match_queue q LEFT JOIN game.sessions s ON s.id = q.session_id
 	WHERE q.user_id=$1 AND q.game=$2`
 
 type queued struct {
-	ticket Ticket
-	status *string
+	ticket  Ticket
+	status  *string
+	started bool
 }
 
 func (q queued) finished() bool {
-	return q.ticket.Session != nil && (q.status == nil || *q.status != string(engine.StatusInProgress))
+	return q.ticket.Session != nil && q.status != nil && *q.status != string(engine.StatusInProgress)
 }
 
 func readTicket(ctx context.Context, tx pgx.Tx, user uuid.UUID, game engine.Key, lock bool) (queued, error) {
@@ -48,9 +48,12 @@ func readTicket(ctx context.Context, tx pgx.Tx, user uuid.UUID, game engine.Key,
 		query += " FOR UPDATE OF q"
 	}
 	item := queued{ticket: Ticket{User: user, Game: game}}
-	err := tx.QueryRow(ctx, query, user, game).Scan(&item.ticket.Rating, &item.ticket.JoinedAt, &item.ticket.Session, &item.status, &item.ticket.Now)
+	err := tx.QueryRow(ctx, query, user, game).Scan(&item.ticket.Rating, &item.ticket.JoinedAt, &item.ticket.Session, &item.started, &item.status, &item.ticket.Now)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return queued{}, ErrNotSearching
+	}
+	if !item.started {
+		item.ticket.Session = nil
 	}
 	return item, err
 }
@@ -147,7 +150,7 @@ func (s *Store) CancelMatch(ctx context.Context, user uuid.UUID, game engine.Key
 	})
 }
 
-func (s *Store) MatchRound(ctx context.Context) ([]Session, error) {
+func (s *Store) MatchRound(ctx context.Context) ([]Pairing, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -192,7 +195,7 @@ func (s *Store) MatchRound(ctx context.Context) ([]Session, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	var created []Session
+	var created []Pairing
 	for _, game := range order {
 		for _, pair := range matchmaking.Match(queues[game], now, wait) {
 			item, err := s.pairUp(ctx, tx, game, pair, now)
@@ -205,32 +208,55 @@ func (s *Store) MatchRound(ctx context.Context) ([]Session, error) {
 	return created, tx.Commit(ctx)
 }
 
-func (s *Store) pairUp(ctx context.Context, tx pgx.Tx, game engine.Key, pair matchmaking.Pair, now time.Time) (Session, error) {
-	creator, opponent := pair.First.User, pair.Second.User
-	state, err := s.games.NewState(game, []engine.PlayerID{engine.PlayerID(creator.String()), engine.PlayerID(opponent.String())})
+type Pairing struct {
+	ID       uuid.UUID
+	Game     engine.Key
+	Creator  uuid.UUID
+	Opponent uuid.UUID
+}
+
+func (s *Store) pairUp(ctx context.Context, tx pgx.Tx, game engine.Key, pair matchmaking.Pair, _ time.Time) (Pairing, error) {
+	item := Pairing{ID: uuid.New(), Game: game, Creator: pair.First.User, Opponent: pair.Second.User}
+	_, err := tx.Exec(ctx, `UPDATE game.match_queue SET session_id=$1, started=false WHERE game=$2 AND user_id = ANY($3)`, item.ID, game, []uuid.UUID{item.Creator, item.Opponent})
+	return item, err
+}
+
+func (s *Store) Pending(ctx context.Context) ([]Pairing, error) {
+	rows, err := s.pool.Query(ctx, `SELECT session_id, game, array_agg(user_id ORDER BY joined_at, user_id) FROM game.match_queue
+		WHERE session_id IS NOT NULL AND NOT started GROUP BY session_id, game`)
 	if err != nil {
-		return Session{}, err
+		return nil, err
 	}
-	stateRaw, err := json.Marshal(state)
+	defer rows.Close()
+	var pending []Pairing
+	for rows.Next() {
+		var item Pairing
+		var users []uuid.UUID
+		if err := rows.Scan(&item.ID, &item.Game, &users); err != nil {
+			return nil, err
+		}
+		if len(users) != 2 {
+			continue
+		}
+		item.Creator, item.Opponent = users[0], users[1]
+		pending = append(pending, item)
+	}
+	return pending, rows.Err()
+}
+
+func (s *Store) Started(ctx context.Context, item Pairing) error {
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return Session{}, err
+		return err
 	}
-	clockRaw, err := json.Marshal(s.NewClock(game, now))
-	if err != nil {
-		return Session{}, err
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `UPDATE game.match_queue SET started=true WHERE session_id=$1`, item.ID); err != nil {
+		return err
 	}
-	item, err := scan(tx.QueryRow(ctx, `INSERT INTO game.sessions (id, game, creator_id, opponent_id, request_id, state, clock, rated, revision)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,true,1) RETURNING `+columns, uuid.New(), game, creator, opponent, uuid.New(), stateRaw, clockRaw))
-	if err != nil {
-		return Session{}, err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE game.match_queue SET session_id=$1 WHERE game=$2 AND user_id = ANY($3)`, item.ID, game, []uuid.UUID{creator, opponent}); err != nil {
-		return Session{}, err
-	}
-	for _, user := range []uuid.UUID{creator, opponent} {
+	for _, user := range []uuid.UUID{item.Creator, item.Opponent} {
 		if _, err := tx.Exec(ctx, `SELECT pg_notify($1,$2)`, matchChannel, user.String()); err != nil {
-			return Session{}, err
+			return err
 		}
 	}
-	return item, nil
+	return tx.Commit(ctx)
 }

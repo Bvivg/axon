@@ -16,6 +16,8 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
+	"github.com/bvivg/axon/core/services/game/internal/owner"
+	"github.com/bvivg/axon/core/services/game/internal/route"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
@@ -24,21 +26,44 @@ import (
 
 const Protocol = "axon.game.v1"
 
+type Config struct {
+	Store    *session.Store
+	Owner    *owner.Owner
+	Routes   *route.Table
+	Self     string
+	Verifier *authn.Verifier
+	Client   *http.Client
+}
+
 type Handler struct {
 	gamev1connect.UnimplementedGameServiceHandler
+	gamev1connect.UnimplementedGameOwnerServiceHandler
 	store    *session.Store
+	owner    *owner.Owner
+	routes   *route.Table
+	self     string
 	verifier *authn.Verifier
+	peers    *peers
 	updates  updates
 	matches  updates
 }
 
-func New(store *session.Store, verifier *authn.Verifier) *Handler {
+func New(cfg Config) *Handler {
+	client := cfg.Client
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	return &Handler{
-		store: store, verifier: verifier,
-		updates: updates{sessions: make(map[uuid.UUID]map[chan struct{}]struct{})},
-		matches: updates{sessions: make(map[uuid.UUID]map[chan struct{}]struct{})},
+		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier,
+		peers:   newPeers(client),
+		updates: newUpdates(),
+		matches: newUpdates(),
 	}
 }
+
+func (h *Handler) Changed(id uuid.UUID) { h.updates.notify(id) }
+
+func (h *Handler) Moved(id uuid.UUID) { h.updates.move(id) }
 
 func (h *Handler) identity(headers http.Header) (uuid.UUID, authn.Claims, error) {
 	raw, err := authn.BearerToken(headers)
@@ -69,12 +94,18 @@ func (h *Handler) CreateSession(ctx context.Context, req *connect.Request[gamev1
 	if err != nil || request == uuid.Nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid request ID"))
 	}
-	item, err := h.store.Create(ctx, user, request, engine.Key(req.Msg.Game))
-	state, err := h.view(ctx, item, err)
-	if err != nil {
-		return nil, err
+	if _, err := h.store.Games().Get(engine.Key(req.Msg.Game)); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown game"))
 	}
-	return connect.NewResponse(&gamev1.CreateSessionResponse{Session: state}), nil
+	id := session.SessionID(user, request)
+	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.CreateSessionResponse], error) {
+		item, err := h.owner.Create(ctx, user, request, engine.Key(req.Msg.Game))
+		state, err := h.respond(ctx, item, err)
+		if err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&gamev1.CreateSessionResponse{Session: state}), nil
+	}, gamev1connect.GameServiceClient.CreateSession)
 }
 
 func (h *Handler) JoinSession(ctx context.Context, req *connect.Request[gamev1.JoinSessionRequest]) (*connect.Response[gamev1.JoinSessionResponse], error) {
@@ -86,13 +117,14 @@ func (h *Handler) JoinSession(ctx context.Context, req *connect.Request[gamev1.J
 	if err != nil {
 		return nil, err
 	}
-	item, err := h.store.Join(ctx, id, user)
-	state, err := h.view(ctx, item, err)
-	if err != nil {
-		return nil, err
-	}
-	h.updates.notify(id)
-	return connect.NewResponse(&gamev1.JoinSessionResponse{Session: state}), nil
+	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.JoinSessionResponse], error) {
+		item, err := h.owner.Join(ctx, id, user)
+		state, err := h.respond(ctx, item, err)
+		if err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&gamev1.JoinSessionResponse{Session: state}), nil
+	}, gamev1connect.GameServiceClient.JoinSession)
 }
 
 func (h *Handler) GetSession(ctx context.Context, req *connect.Request[gamev1.GetSessionRequest]) (*connect.Response[gamev1.GetSessionResponse], error) {
@@ -104,12 +136,36 @@ func (h *Handler) GetSession(ctx context.Context, req *connect.Request[gamev1.Ge
 	if err != nil {
 		return nil, err
 	}
-	item, err := h.store.Get(ctx, id, user)
-	state, err := h.view(ctx, item, err)
+	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.GetSessionResponse], error) {
+		item, err := h.owner.Get(ctx, id, user)
+		state, err := h.respond(ctx, item, err)
+		if err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&gamev1.GetSessionResponse{Session: state}), nil
+	}, gamev1connect.GameServiceClient.GetSession)
+}
+
+func (h *Handler) LeaveSession(ctx context.Context, req *connect.Request[gamev1.LeaveSessionRequest]) (*connect.Response[gamev1.LeaveSessionResponse], error) {
+	user, err := h.actor(req.Header())
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&gamev1.GetSessionResponse{Session: state}), nil
+	id, err := sessionID(req.Msg.SessionId)
+	if err != nil {
+		return nil, err
+	}
+	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.LeaveSessionResponse], error) {
+		item, cancelled, err := h.owner.Leave(ctx, id, user)
+		if cancelled && err == nil {
+			return connect.NewResponse(&gamev1.LeaveSessionResponse{Cancelled: true}), nil
+		}
+		state, err := h.respond(ctx, item, err)
+		if err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&gamev1.LeaveSessionResponse{Session: state}), nil
+	}, gamev1connect.GameServiceClient.LeaveSession)
 }
 
 func (h *Handler) ListSessions(ctx context.Context, req *connect.Request[gamev1.ListSessionsRequest]) (*connect.Response[gamev1.ListSessionsResponse], error) {
@@ -174,6 +230,13 @@ func (h *Handler) result(item session.Session, err error) (*gamev1.Session, erro
 	return present(item, h.store.TimeLimitMS(item.Game), err)
 }
 
+func (h *Handler) respond(ctx context.Context, item session.Session, err error) (*gamev1.Session, error) {
+	if errors.Is(err, owner.ErrNotOwner) {
+		return nil, errMoved
+	}
+	return h.view(ctx, item, err)
+}
+
 func present(item session.Session, limit int64, err error) (*gamev1.Session, error) {
 	switch {
 	case errors.Is(err, session.ErrNotFound):
@@ -226,28 +289,6 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 		out.Status = gamev1.SessionStatus_SESSION_STATUS_DRAW
 	}
 	return out, nil
-}
-
-func (h *Handler) LeaveSession(ctx context.Context, req *connect.Request[gamev1.LeaveSessionRequest]) (*connect.Response[gamev1.LeaveSessionResponse], error) {
-	user, err := h.actor(req.Header())
-	if err != nil {
-		return nil, err
-	}
-	id, err := sessionID(req.Msg.SessionId)
-	if err != nil {
-		return nil, err
-	}
-	item, cancelled, err := h.store.Leave(ctx, id, user)
-	if cancelled && err == nil {
-		h.updates.notify(id)
-		return connect.NewResponse(&gamev1.LeaveSessionResponse{Cancelled: true}), nil
-	}
-	state, err := h.view(ctx, item, err)
-	if err != nil {
-		return nil, err
-	}
-	h.updates.notify(id)
-	return connect.NewResponse(&gamev1.LeaveSessionResponse{Session: state}), nil
 }
 
 var chessEnds = map[chess.End]gamev1.ChessEnd{
