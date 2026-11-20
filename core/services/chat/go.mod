@@ -12,6 +12,7 @@ replace github.com/bvivg/axon/core/shared => ../../shared
 require (
 	connectrpc.com/connect v1.21.1
 	github.com/SherClockHolmes/webpush-go v1.4.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/andybalholm/brotli v1.2.7
 	github.com/bvivg/axon/core/shared v0.0.0-20261001044949-82e8b07ea469
 	github.com/disintegration/imaging v1.6.2
@@ -137,6 +138,7 @@ require (
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

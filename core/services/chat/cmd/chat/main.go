@@ -172,7 +172,11 @@ func run() error {
 		return err
 	}
 
-	bus, err := pubsub.NewRedis(cache, log)
+	bus, err := pubsub.NewRedis(cache, log,
+		pubsub.WithShards(cfg.Fanout.Shards),
+		pubsub.WithMaxLen(cfg.Fanout.MaxLen),
+		pubsub.WithBlock(cfg.Fanout.Block),
+	)
 	if err != nil {
 		return err
 	}
