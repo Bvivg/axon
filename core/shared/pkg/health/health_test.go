@@ -156,12 +156,12 @@ func TestDrainingFailsReadinessButNotLiveness(t *testing.T) {
 	h.Register(mux)
 	h.Drain()
 	ready := httptest.NewRecorder()
-	mux.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, health.PathReady, nil))
+	mux.ServeHTTP(ready, httptest.NewRequestWithContext(context.Background(), http.MethodGet, health.PathReady, nil))
 	if ready.Code != http.StatusServiceUnavailable {
 		t.Fatal("ready while draining", ready.Code)
 	}
 	live := httptest.NewRecorder()
-	mux.ServeHTTP(live, httptest.NewRequest(http.MethodGet, health.PathLive, nil))
+	mux.ServeHTTP(live, httptest.NewRequestWithContext(context.Background(), http.MethodGet, health.PathLive, nil))
 	if live.Code != http.StatusOK {
 		t.Fatal("liveness failed while draining", live.Code)
 	}

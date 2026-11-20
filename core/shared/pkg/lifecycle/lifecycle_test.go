@@ -18,7 +18,7 @@ func TestStopDrainsThenFinishesRequestsThenClosesStreams(t *testing.T) {
 	g := New(50*time.Millisecond, time.Second, health, nil)
 	var slept time.Duration
 	g.sleep = func(d time.Duration) { slept = d }
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestStopDrainsThenFinishesRequestsThenClosesStreams(t *testing.T) {
 	srv := g.Serve(&http.Server{Handler: mux, ReadHeaderTimeout: time.Second})
 	go func() { _ = srv.Serve(listener) }()
 	base := "http://" + listener.Addr().String()
-	stream, err := net.Dial("tcp", listener.Addr().String())
+	stream, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,8 @@ func TestStopDrainsThenFinishesRequestsThenClosesStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	go func() {
-		resp, err := http.Get(base + "/slow")
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, base+"/slow", nil)
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 		}
