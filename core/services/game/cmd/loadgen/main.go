@@ -42,6 +42,7 @@ type config struct {
 	pace        time.Duration
 	timeout     time.Duration
 	seed        uint64
+	redials     int
 }
 
 type stats struct {
@@ -53,6 +54,7 @@ type stats struct {
 	sent      atomic.Int64
 	done      atomic.Int64
 	failed    atomic.Int64
+	redials   atomic.Int64
 }
 
 type gameStats struct {
@@ -81,6 +83,7 @@ func main() {
 	flag.DurationVar(&cfg.pace, "pace", 260*time.Millisecond, "minimum gap between commands on one socket")
 	flag.DurationVar(&cfg.timeout, "timeout", 3*time.Minute, "per-match timeout")
 	flag.Uint64Var(&cfg.seed, "seed", 1, "random seed")
+	flag.IntVar(&cfg.redials, "redials", 20, "socket reconnects allowed per player and match")
 	flag.Parse()
 	if err := run(cfg); err != nil {
 		slog.Error("loadgen failed", "error", err)
@@ -218,7 +221,7 @@ func (st *stats) report(cfg config, elapsed time.Duration, results []result) err
 	}
 	summary := map[string]any{
 		"matches": st.done.Load(), "failed": st.failed.Load(), "elapsed_s": int(elapsed.Seconds()),
-		"moves": st.moves.Load(), "commands_sent": st.sent.Load(),
+		"moves": st.moves.Load(), "commands_sent": st.sent.Load(), "redials": st.redials.Load(),
 		"moves_per_sec": int(float64(st.moves.Load()) / elapsed.Seconds()), "matches_per_sec": float64(st.done.Load()) / elapsed.Seconds(),
 		"latency_ms": map[string]int64{"p50": q(0.5), "p95": q(0.95), "p99": q(0.99), "max": q(1)},
 		"by_game":    st.byGame, "errors": st.errors, "concurrency": cfg.concurrency,
@@ -233,10 +236,11 @@ func (st *stats) report(cfg config, elapsed time.Duration, results []result) err
 }
 
 type player struct {
-	id     uuid.UUID
-	conn   *ws.Conn
-	last   time.Time
-	header http.Header
+	id      uuid.UUID
+	conn    *ws.Conn
+	last    time.Time
+	header  http.Header
+	redials int
 }
 
 type update struct {
@@ -336,6 +340,21 @@ func play(ctx context.Context, cfg config, client gamev1connect.GameServiceClien
 			return res
 		}
 	}
+	redial := func(seat int) error {
+		p := players[seat]
+		_ = p.conn.CloseNow()
+		for attempt := 1; ; attempt++ {
+			p.redials++
+			st.redials.Add(1)
+			if err := sleepCtx(ctx, min(time.Duration(attempt)*100*time.Millisecond, time.Second)); err != nil {
+				return err
+			}
+			err := dial(seat)
+			if err == nil || p.redials >= cfg.redials {
+				return err
+			}
+		}
+	}
 	sentPly, sentAt := -1, time.Time{}
 	var resend <-chan time.Time
 	var latest *gamev1.Session
@@ -387,7 +406,10 @@ func play(ctx context.Context, cfg config, client gamev1connect.GameServiceClien
 			send()
 		case u := <-updates:
 			if u.err != nil {
-				if ctx.Err() == nil {
+				if ctx.Err() != nil {
+					continue
+				}
+				if players[u.seat].redials >= cfg.redials || redial(u.seat) != nil {
 					res.Error = "socket closed: " + strconv.Itoa(int(ws.CloseStatus(u.err)))
 					if latest != nil {
 						res.Moves = int(latest.Ply)
@@ -437,5 +459,16 @@ func play(ctx context.Context, cfg config, client gamev1connect.GameServiceClien
 				send()
 			}
 		}
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
