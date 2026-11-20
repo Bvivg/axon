@@ -9,8 +9,10 @@ import (
 func TestWatchersCountPerGameAndRespectTheLimit(t *testing.T) {
 	w := newWatchers(2)
 	first, second := uuid.New(), uuid.New()
-	if !w.join(first) || !w.join(first) {
-		t.Fatal("two spectators must fit under a limit of two")
+	for range 2 {
+		if !w.join(first) {
+			t.Fatal("two spectators must fit under a limit of two")
+		}
 	}
 	if w.join(first) {
 		t.Fatal("a third spectator joined a full game")
