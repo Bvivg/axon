@@ -42,7 +42,8 @@ func TestAnnounceUsesStableEventIDs(t *testing.T) {
 	if next.ID == round.ID {
 		t.Fatal("two rounds share an event id")
 	}
-	if orchestrator.TournamentID(a, b) != orchestrator.TournamentID(a, b) || orchestrator.TournamentID(a, b) == orchestrator.TournamentID(b, a) {
+	first, again := orchestrator.TournamentID(a, b), orchestrator.TournamentID(a, b)
+	if first != again || first == orchestrator.TournamentID(b, a) {
 		t.Fatal("tournament ids are not stable per creator and request")
 	}
 }

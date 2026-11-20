@@ -170,10 +170,6 @@ func (s *Postgres) Update(ctx context.Context, id uuid.UUID, mutate Mutation) (s
 	return out, nil
 }
 
-func same[T comparable](a, b *T) bool {
-	return a == nil && b == nil || a != nil && b != nil && *a == *b
-}
-
 func sameTime(a, b *time.Time) bool {
 	return a == nil && b == nil || a != nil && b != nil && a.Equal(*b)
 }
