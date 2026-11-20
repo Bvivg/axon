@@ -4,6 +4,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AnalysisPanel, EvalBar } from "@/components/games/chess/analysis";
 import { ChessBoard } from "@/components/games/chess/board";
 import { MoveList } from "@/components/games/chess/moves";
 import { Side } from "@/components/games/chess/pieces";
@@ -13,9 +14,12 @@ import { Board } from "@/components/games/tictactoe/board";
 import { spectatorStatus } from "@/components/games/watch";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { HistoryFrame } from "@/gen/axon/game/v1/game_pb";
+import { AnalysisStatus } from "@/gen/axon/analysis/v1/analysis_pb";
+import { SessionStatus, type HistoryFrame } from "@/gen/axon/game/v1/game_pb";
 import { profileName } from "@/lib/format";
+import { moveMarks } from "@/lib/games/analysis";
 import { GameKey, gameHref, games } from "@/lib/games/catalog";
+import { useAnalysis } from "@/lib/query/analysis";
 import { useSessionHistory } from "@/lib/query/games";
 import { usePublicProfiles } from "@/lib/query/people";
 
@@ -58,6 +62,9 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
   const profiles = usePublicProfiles(session?.playerIds ?? []);
   const names = (session?.playerIds ?? []).map(player => profileName(profiles.data?.get(player)));
   const step = (to: number) => setCursor(Math.max(0, Math.min(last, to)));
+  const analysed = game === GameKey.Chess && (session?.status === SessionStatus.WON || session?.status === SessionStatus.DRAW);
+  const analysis = useAnalysis(id, analysed);
+  const ready = analysis.data?.status === AnalysisStatus.READY ? analysis.data : undefined;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -76,6 +83,8 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
   const moves = notation(game, frames, at);
   const mover = frame?.playerId ? session?.playerIds.indexOf(frame.playerId) ?? -1 : -1;
   const result = session ? spectatorStatus(session, names, sides[game]) : "";
+  const marks = ready ? moveMarks(ready.positions).slice(0, at) : undefined;
+  const board = frame ? <Position game={game} frame={frame} previous={frames[at - 1]} /> : null;
 
   return (
     <ScrollArea className="min-h-0 flex-1 bg-game-workspace" viewportProps={{ className: "[&>div]:min-h-full" }}>
@@ -92,7 +101,7 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
             <section aria-labelledby="replay-title" className="grid min-w-0 gap-3">
               <ArenaHeader title={`${games[game].title} replay`} lobby={gameHref(id, game)}>{null}</ArenaHeader>
               <h2 id="replay-title" className="sr-only">Replay board</h2>
-              <div className="relative">{frame ? <Position game={game} frame={frame} previous={frames[at - 1]} /> : null}</div>
+              <div className="relative">{analysed && board ? <div className="flex items-stretch gap-2"><EvalBar position={ready?.positions[at]} /><div className="min-w-0 flex-1">{board}</div></div> : board}</div>
               <div className="grid gap-2 rounded-game-md border border-game-border bg-game-card p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p role="status" aria-live="polite" data-replay-ply={at} className="text-sm font-medium">
@@ -111,7 +120,9 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
             </section>
             <aside className="flex min-w-0 flex-col gap-3 lg:pt-14">
               {result ? <p data-replay-result className="rounded-game-md border border-game-border bg-game-card px-3 py-2 text-sm font-medium">{result}</p> : null}
-              {game !== GameKey.TicTacToe ? <MoveList san={moves} /> : null}
+              {analysed ? <AnalysisPanel report={analysis.data} failed={analysis.isError} retry={() => void analysis.refetch()} at={at} onSelect={step}
+                san={frames[last]?.chess?.san ?? []} fens={frames.map(item => item.chess?.fen ?? "")} /> : null}
+              {game !== GameKey.TicTacToe ? <MoveList san={moves} marks={marks} /> : null}
             </aside>
           </div>
         )}
