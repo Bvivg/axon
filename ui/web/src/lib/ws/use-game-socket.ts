@@ -9,6 +9,7 @@ import { refreshSession } from "@/lib/auth/refresh";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { apiBaseUrl } from "@/lib/connect/transport";
 import { bearerPrefix } from "@/lib/ws/protocol";
+import { traceparent } from "@/lib/ws/traceparent";
 
 const url = apiBaseUrl.replace(/^http/, "ws") + "/ws/game";
 const retryDelay = (attempt: number) => Math.min(1_000 * 2 ** attempt, 15_000);
@@ -27,7 +28,7 @@ const reasons: Partial<Record<SessionError, string>> = {
 };
 
 function command(action: MessageInitShape<typeof SessionCommandSchema>) {
-  return toJson(SessionCommandSchema, create(SessionCommandSchema, action));
+  return toJson(SessionCommandSchema, create(SessionCommandSchema, { ...action, traceparent: traceparent() }));
 }
 
 export function useGameSocket(initial: Session) {

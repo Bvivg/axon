@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  scrape_protocols: [OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText1.0.0, PrometheusText0.0.4]
+
+rule_files:
+  - rules.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:9090"]
+
+  - job_name: auth
+    static_configs:
+      - targets: ["auth:9091"]
+
+  - job_name: chat
+    static_configs:
+      - targets: ["chat:9092"]
+
+  - job_name: game
+    dns_sd_configs:
+      - names: ["game"]
+        type: A
+        port: 8083
+        refresh_interval: 15s
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]

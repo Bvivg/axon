@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -18,6 +21,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 )
 
@@ -156,6 +160,8 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 			command := next.command
 			var item session.Session
 			var err error
+			var name string
+			var run func(context.Context) (session.Session, error)
 			switch action := command.GetAction().(type) {
 			case *gamev1.SessionCommand_Move:
 				move := action.Move
@@ -166,7 +172,9 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				data, _ := json.Marshal(tictactoe.Cell{Row: int(move.Cell) / tictactoe.Size, Col: int(move.Cell) % tictactoe.Size})
-				item, err = h.owner.Move(ctx, id, user, int(move.Ply), tictactoe.Key, data, move.Revision)
+				name, run = "move", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Move(ctx, id, user, int(move.Ply), tictactoe.Key, data, move.Revision)
+				}
 			case *gamev1.SessionCommand_ChessMove:
 				move := action.ChessMove
 				if move == nil || len(move.Uci) > 5 {
@@ -176,7 +184,9 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				data, _ := json.Marshal(chess.MoveData{UCI: move.Uci})
-				item, err = h.owner.Move(ctx, id, user, int(move.Ply), chess.Key, data, move.Revision)
+				name, run = "move", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Move(ctx, id, user, int(move.Ply), chess.Key, data, move.Revision)
+				}
 			case *gamev1.SessionCommand_QuoridorMove:
 				move := action.QuoridorMove
 				if move == nil || len(move.Move) > 3 {
@@ -186,7 +196,9 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				data, _ := json.Marshal(quoridor.MoveData{Move: move.Move})
-				item, err = h.owner.Move(ctx, id, user, int(move.Ply), quoridor.Key, data, move.Revision)
+				name, run = "move", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Move(ctx, id, user, int(move.Ply), quoridor.Key, data, move.Revision)
+				}
 			case *gamev1.SessionCommand_Draw:
 				drawAction, ok := drawActions[action.Draw.GetAction()]
 				if !ok {
@@ -195,7 +207,9 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					}
 					continue
 				}
-				item, err = h.owner.Draw(ctx, id, user, drawAction)
+				name, run = "draw", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Draw(ctx, id, user, drawAction)
+				}
 			case *gamev1.SessionCommand_Undo:
 				if action.Undo == nil {
 					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
@@ -203,13 +217,16 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 					}
 					continue
 				}
-				item, err = h.owner.Undo(ctx, id, user, action.Undo.Revision)
+				name, run = "undo", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Undo(ctx, id, user, action.Undo.Revision)
+				}
 			default:
 				if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
 					return
 				}
 				continue
 			}
+			item, err = h.command(ctx, id, name, command.GetTraceparent(), run)
 			if errors.Is(err, owner.ErrNotOwner) {
 				moved()
 				return
@@ -226,6 +243,22 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+func (h *Handler) command(ctx context.Context, id uuid.UUID, name, traceparent string, run func(context.Context) (session.Session, error)) (session.Session, error) {
+	ctx, span := tracer.Start(telemetry.WithTraceparent(ctx, traceparent), "game.command "+name,
+		trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.String("game.session_id", id.String())))
+	defer span.End()
+	started := time.Now()
+	item, err := run(ctx)
+	h.metrics.Command(ctx, name, time.Since(started), err)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return item, err
+}
+
+var tracer = telemetry.Tracer("axon/game/server")
 
 const StatusMoved ws.StatusCode = 4001
 

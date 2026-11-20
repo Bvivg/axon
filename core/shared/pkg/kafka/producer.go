@@ -8,7 +8,10 @@ import (
 
 	kafkago "github.com/segmentio/kafka-go"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/bvivg/axon/core/shared/pkg/correlation"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
 type ProducerConfig struct {
@@ -88,6 +91,10 @@ func (p *Producer) Publish(ctx context.Context, msg Message) error {
 	}
 
 	ctx, id := correlation.Ensure(ctx)
+	ctx, span := telemetry.Tracer("axon/kafka").Start(ctx, "publish "+msg.Topic.String(), trace.WithSpanKind(trace.SpanKindProducer))
+	defer span.End()
+	msg.Headers = msg.Headers.clone()
+	telemetry.Inject(ctx, msg.Headers)
 
 	ctx, cancel := context.WithTimeout(ctx, p.writer.WriteTimeout)
 	defer cancel()

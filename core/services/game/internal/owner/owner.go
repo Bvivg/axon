@@ -13,6 +13,7 @@ import (
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/journal"
+	"github.com/bvivg/axon/core/services/game/internal/metrics"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 )
 
@@ -58,6 +59,7 @@ type Config struct {
 	Listener Listener
 	Now      func() time.Time
 	Lease    time.Duration
+	Metrics  *metrics.Game
 }
 
 type Owner struct {
@@ -137,12 +139,15 @@ func (o *Owner) Assign(ctx context.Context, partition int32) error {
 	p := &part{id: partition, cells: map[uuid.UUID]*cell{}}
 	o.parts[partition] = p
 	o.mu.Unlock()
+	started := time.Now()
 	if err := o.claim(ctx, p); err != nil {
 		o.mu.Lock()
 		delete(o.parts, partition)
 		o.mu.Unlock()
 		return fmt.Errorf("owner: claim partition %d: %w", partition, err)
 	}
+	o.cfg.Metrics.Claimed(time.Since(started))
+	o.cfg.Metrics.Owned(len(o.Owned()))
 	return nil
 }
 
@@ -303,6 +308,7 @@ func (o *Owner) renew(ctx context.Context) {
 	call, cancel := context.WithTimeout(ctx, o.cfg.Lease/3)
 	renewed, err := o.cfg.Model.Renew(call, o.cfg.ID, held, o.cfg.Lease)
 	cancel()
+	o.cfg.Metrics.Renewed(err)
 	kept := map[int32]bool{}
 	if err == nil {
 		for _, id := range renewed {
@@ -315,10 +321,14 @@ func (o *Owner) renew(ctx context.Context) {
 		if kept[id] && p.epoch == held[id] {
 			p.deadline = started.Add(o.leaseSpan())
 		}
-		lost := (err == nil && !kept[id]) || !p.leased(now, o.leaseSpan())
+		taken := err == nil && !kept[id]
+		expired := !p.leased(now, o.leaseSpan())
 		p.mu.Unlock()
-		if lost {
-			o.revoke(p)
+		switch {
+		case taken:
+			o.revoke(p, metrics.RevokedLeaseLost)
+		case expired:
+			o.revoke(p, metrics.RevokedLeaseExpiry)
 		}
 	}
 }
@@ -328,18 +338,21 @@ func (o *Owner) Revoke(partition int32) {
 	p := o.parts[partition]
 	o.mu.RUnlock()
 	if p != nil {
-		o.revoke(p)
+		o.revoke(p, metrics.RevokedByRebalance)
 	}
 }
 
-func (o *Owner) revoke(p *part) {
+func (o *Owner) revoke(p *part, reason string) {
 	o.mu.Lock()
 	if o.parts[p.id] != p {
 		o.mu.Unlock()
 		return
 	}
 	delete(o.parts, p.id)
+	owned := len(o.parts)
 	o.mu.Unlock()
+	o.cfg.Metrics.Revoked(reason)
+	o.cfg.Metrics.Owned(owned)
 	p.mu.Lock()
 	wasServing, epoch := p.serving, p.epoch
 	p.serving = false
@@ -364,6 +377,32 @@ func (o *Owner) revoke(p *part) {
 			o.cfg.Listener.Moved(id)
 		}
 	}
+}
+
+func (o *Owner) Active() map[string]int {
+	o.mu.RLock()
+	parts := make([]*part, 0, len(o.parts))
+	for _, p := range o.parts {
+		parts = append(parts, p)
+	}
+	o.mu.RUnlock()
+	out := map[string]int{}
+	for _, p := range parts {
+		p.mu.Lock()
+		cells := make([]*cell, 0, len(p.cells))
+		for _, c := range p.cells {
+			cells = append(cells, c)
+		}
+		p.mu.Unlock()
+		for _, c := range cells {
+			c.mu.Lock()
+			if c.exists && c.game.Opponent != nil && !c.game.State.Over() {
+				out[string(c.game.Game)]++
+			}
+			c.mu.Unlock()
+		}
+	}
+	return out
 }
 
 func (o *Owner) RevokeAll() {
@@ -421,12 +460,17 @@ func (o *Owner) do(ctx context.Context, id uuid.UUID, run step) (session.Session
 	if !o.leased(p, span) {
 		return session.Session{}, ErrNotOwner
 	}
+	appendStarted := time.Now()
 	if _, err := o.cfg.Log.Append(ctx, p.id, journal.Entry{Event: &journal.Event{Session: next, Change: change, Generation: epoch}}); err != nil {
 		return session.Session{}, fmt.Errorf("owner: append session event: %w", err)
 	}
+	o.cfg.Metrics.Appended(ctx, time.Since(appendStarted))
+	if change.Fact == session.FactMoved {
+		o.cfg.Metrics.Moved(string(next.Game))
+	}
 	if !o.leased(p, span) {
 		c.loaded = false
-		go o.revoke(p) //nolint:gosec
+		go o.revoke(p, metrics.RevokedLeaseExpiry) //nolint:gosec
 		return session.Session{}, ErrNotOwner
 	}
 	c.game = next

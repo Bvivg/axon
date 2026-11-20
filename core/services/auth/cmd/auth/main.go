@@ -22,6 +22,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 	"github.com/bvivg/axon/core/shared/pkg/revocation"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/config"
@@ -60,6 +61,16 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	hostname, _ := os.Hostname()
+	shutdownTracing, err := telemetry.Setup(ctx, telemetry.FromEnv(cfg.Service, hostname))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(flush)
+	}()
 
 	log.InfoContext(ctx, "starting auth service",
 		"version", version,
@@ -256,6 +267,7 @@ func adminHandler(
 
 	health.New(log, []health.Checker{pool, cache}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
+	telemetry.Profiling(mux)
 	mux.Handle("GET /.well-known/jwks.json", jwksHandler(cfg.JWT.Keys, log))
 
 	return middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux)
@@ -281,6 +293,7 @@ func jwksHandler(keys *jwt.KeySet, log *slog.Logger) http.Handler {
 
 func connectInterceptors(metrics *middleware.Metrics, log *slog.Logger) connect.HandlerOption {
 	return connect.WithInterceptors(
+		telemetry.Interceptor(),
 		middleware.NewCorrelationInterceptor(),
 		middleware.NewRecoveryInterceptor(log),
 		metrics.Interceptor(),

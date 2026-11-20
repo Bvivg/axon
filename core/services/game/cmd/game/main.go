@@ -20,6 +20,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/journal"
+	gamemetrics "github.com/bvivg/axon/core/services/game/internal/metrics"
 	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/projection"
 	"github.com/bvivg/axon/core/services/game/internal/route"
@@ -31,6 +32,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
 func main() {
@@ -75,6 +77,15 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing, err := telemetry.Setup(ctx, telemetry.FromEnv(cfg.Service, instance))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(flush)
+	}()
 	pool, err := postgres.Connect(ctx, db, log)
 	if err != nil {
 		return err
@@ -100,6 +111,8 @@ func run() error {
 		}
 	}
 	store := session.NewStore(pool.Pool, games)
+	metrics := middleware.NewMetrics(cfg.Service)
+	observed := gamemetrics.New(metrics.Registry())
 	rules := session.NewRules(games)
 	model := projection.New(store, rules)
 	log = log.With("instance", instance)
@@ -108,27 +121,28 @@ func run() error {
 		return err
 	}
 	defer journalLog.Close()
-	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL})
+	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL, Metrics: observed})
 	routes := route.New(model.Owners)
-	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks})
+	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed,
+		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(http.DefaultTransport)}})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
 	go routes.Run(ctx, pool.Pool, projection.OwnerChannel, log)
 	go handler.Watch(ctx, log)
 	go handler.RunMatchmaking(ctx, log)
-	go func() { _ = cluster.NewProjector(kafka, model, log).Run(ctx) }()
+	go func() { _ = cluster.NewProjector(kafka, model, log, observed).Run(ctx) }()
+	go reportActive(ctx, own, observed)
 	ownership := make(chan struct{})
 	go func() {
 		defer close(ownership)
 		_ = cluster.NewOwnership(kafka, own, log).Run(ctx)
 	}()
-	metrics := middleware.NewMetrics(cfg.Service)
 	mux := http.NewServeMux()
 	mux.Handle(gamev1connect.NewGameServiceHandler(handler, connect.WithInterceptors(
-		middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
+		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
 	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, connect.WithInterceptors(
-		middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(),
+		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(),
 	)))
 	mux.HandleFunc("GET /ws", handler.Socket)
 	if testHooks {
@@ -136,6 +150,7 @@ func run() error {
 	}
 	health.New(log, []health.Checker{pool, journalLog}).Register(mux)
 	mux.Handle("/metrics", metrics.Handler())
+	telemetry.Profiling(mux)
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -154,5 +169,18 @@ func run() error {
 		defer cancel()
 		<-ownership
 		return srv.Shutdown(shutdown)
+	}
+}
+
+func reportActive(ctx context.Context, own *owner.Owner, observed *gamemetrics.Game) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			observed.Active(own.Active())
+		}
 	}
 }

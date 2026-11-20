@@ -1,0 +1,63 @@
+groups:
+  - name: game-command-latency-slo
+    rules:
+      - record: game:command_latency_slo_errors:ratio_rate5m
+        expr: 1 - (sum(rate(game_command_duration_seconds_bucket{le="0.1"}[5m])) / sum(rate(game_command_duration_seconds_count[5m])))
+      - record: game:command_latency_slo_errors:ratio_rate30m
+        expr: 1 - (sum(rate(game_command_duration_seconds_bucket{le="0.1"}[30m])) / sum(rate(game_command_duration_seconds_count[30m])))
+      - record: game:command_latency_slo_errors:ratio_rate1h
+        expr: 1 - (sum(rate(game_command_duration_seconds_bucket{le="0.1"}[1h])) / sum(rate(game_command_duration_seconds_count[1h])))
+      - record: game:command_latency_slo_errors:ratio_rate6h
+        expr: 1 - (sum(rate(game_command_duration_seconds_bucket{le="0.1"}[6h])) / sum(rate(game_command_duration_seconds_count[6h])))
+
+      - alert: GameCommandLatencyBudgetFastBurn
+        expr: |
+          game:command_latency_slo_errors:ratio_rate1h > (14.4 * 0.01)
+          and
+          game:command_latency_slo_errors:ratio_rate5m > (14.4 * 0.01)
+        for: 2m
+        labels:
+          severity: page
+          slo: game-command-latency
+        annotations:
+          summary: Game commands burn the 100 ms latency budget 14.4x too fast
+          description: "{{ $value | humanizePercentage }} of game commands over the last 1h exceeded 100 ms (SLO: 99% within 100 ms)."
+
+      - alert: GameCommandLatencyBudgetSlowBurn
+        expr: |
+          game:command_latency_slo_errors:ratio_rate6h > (6 * 0.01)
+          and
+          game:command_latency_slo_errors:ratio_rate30m > (6 * 0.01)
+        for: 15m
+        labels:
+          severity: ticket
+          slo: game-command-latency
+        annotations:
+          summary: Game commands burn the 100 ms latency budget 6x too fast
+          description: "{{ $value | humanizePercentage }} of game commands over the last 6h exceeded 100 ms (SLO: 99% within 100 ms)."
+
+  - name: game-projector
+    rules:
+      - alert: GameProjectorLagHigh
+        expr: max(game_projector_lag_seconds) > 2
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Game projector lags behind the journal
+          description: "Projector lag is {{ $value | humanizeDuration }}."
+
+  - name: services
+    rules:
+      - alert: ServiceHighErrorRate
+        expr: |
+          sum by (service) (rate(rpc_requests_total{code!="ok"}[5m]))
+          /
+          sum by (service) (rate(rpc_requests_total[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $labels.service }} returns errors on more than 5% of RPCs"
+          description: "{{ $labels.service }} error ratio is {{ $value | humanizePercentage }}."

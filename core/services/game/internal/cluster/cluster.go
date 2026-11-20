@@ -3,14 +3,19 @@ package cluster
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/bvivg/axon/core/services/game/internal/journal"
+	"github.com/bvivg/axon/core/services/game/internal/metrics"
 	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/projection"
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
 const (
@@ -126,14 +131,51 @@ func (o *Ownership) reconcile(ctx context.Context) {
 	}
 }
 
-type Projector struct {
-	cfg   journal.KafkaConfig
-	model *projection.Postgres
-	log   *slog.Logger
+type tracedRecord struct {
+	span      trace.SpanContext
+	partition int32
+	offset    int64
 }
 
-func NewProjector(cfg journal.KafkaConfig, model *projection.Postgres, log *slog.Logger) *Projector {
-	return &Projector{cfg: cfg, model: model, log: log.With("component", "projector")}
+func (p *Projector) trace(ctx context.Context, traced []tracedRecord, started time.Time, records int) {
+	for _, record := range traced {
+		_, span := tracer.Start(trace.ContextWithRemoteSpanContext(ctx, record.span), "projector.apply",
+			trace.WithSpanKind(trace.SpanKindConsumer), trace.WithTimestamp(started),
+			trace.WithAttributes(attribute.Int("messaging.destination.partition.id", int(record.partition)),
+				attribute.Int64("messaging.kafka.offset", record.offset), attribute.Int("messaging.batch.message_count", records)))
+		span.End()
+	}
+}
+
+func (p *Projector) observeLag(fetches kgo.Fetches, newest time.Time) {
+	var behind int64
+	fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
+		n := len(partition.Records)
+		if n == 0 {
+			return
+		}
+		lag := partition.HighWatermark - partition.Records[n-1].Offset - 1
+		behind += max(lag, 0)
+		p.metrics.Lag(strconv.Itoa(int(partition.Partition)), lag)
+	})
+	if behind == 0 || newest.IsZero() {
+		p.metrics.LagAge(0)
+		return
+	}
+	p.metrics.LagAge(time.Since(newest))
+}
+
+type Projector struct {
+	cfg     journal.KafkaConfig
+	model   *projection.Postgres
+	log     *slog.Logger
+	metrics *metrics.Game
+}
+
+var tracer = telemetry.Tracer("axon/game/projector")
+
+func NewProjector(cfg journal.KafkaConfig, model *projection.Postgres, log *slog.Logger, observed *metrics.Game) *Projector {
+	return &Projector{cfg: cfg, model: model, log: log.With("component", "projector"), metrics: observed}
 }
 
 func (p *Projector) Run(ctx context.Context) error {
@@ -188,8 +230,19 @@ func (p *Projector) session(ctx context.Context) error {
 			client.AllowRebalance()
 			return failure
 		}
+		started := time.Now()
 		batches := map[int32][]journal.Entry{}
+		var traced []tracedRecord
+		var newest time.Time
+		records := 0
 		fetches.EachRecord(func(record *kgo.Record) {
+			records++
+			if record.Timestamp.After(newest) {
+				newest = record.Timestamp
+			}
+			if span := journal.TraceOf(record); span.IsValid() && span.IsSampled() {
+				traced = append(traced, tracedRecord{span: span, partition: record.Partition, offset: record.Offset})
+			}
 			entry, err := journal.Decode(record.Partition, record.Offset, record.Value)
 			if err != nil {
 				p.log.ErrorContext(ctx, "skipping malformed journal record", "partition", record.Partition, "offset", record.Offset, "error", err)
@@ -203,7 +256,10 @@ func (p *Projector) session(ctx context.Context) error {
 				client.AllowRebalance()
 				return err
 			}
+			p.metrics.Projected(ctx, records, time.Since(started))
+			p.trace(ctx, traced, started, records)
 		}
+		p.observeLag(fetches, newest)
 		client.AllowRebalance()
 	}
 	return nil

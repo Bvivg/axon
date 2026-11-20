@@ -9,6 +9,9 @@ import (
 	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
 type ConsumerConfig struct {
@@ -108,8 +111,11 @@ func (c *Consumer) Run(ctx context.Context, h Handler) error {
 
 		msg := fromKafka(raw)
 		msgCtx, _ := msg.Context(ctx)
+		msgCtx, span := telemetry.Tracer("axon/kafka").Start(telemetry.Extract(msgCtx, msg.Headers), "process "+msg.Topic.String(), trace.WithSpanKind(trace.SpanKindConsumer))
+		err = h(msgCtx, msg)
+		span.End()
 
-		if err := h(msgCtx, msg); err != nil {
+		if err != nil {
 			c.logger.ErrorContext(msgCtx, "handler failed, offset not committed",
 				"topic", msg.Topic.String(), "partition", msg.Partition, "offset", msg.Offset,
 				"error", err)

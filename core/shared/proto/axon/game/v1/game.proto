@@ -207,6 +207,7 @@ message SessionCommand {
     DrawCommand draw = 6;
     QuoridorMove quoridor_move = 7;
   }
+  optional string traceparent = 15;
 }
 
 message QuoridorMove {

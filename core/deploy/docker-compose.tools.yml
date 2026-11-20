@@ -33,6 +33,14 @@ services:
 
     command: ["golangci-lint", "run", "./shared/...", "./services/auth/...", "./services/chat/...", "./services/gateway/...", "./services/game/..."]
 
+  promtool:
+    image: prom/prometheus:v3.2.1
+    entrypoint: ["promtool"]
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace:ro
+    command: ["check", "config", "core/deploy/observability/prometheus/prometheus.yml"]
+
   node:
     image: node:22-alpine
     working_dir: /app

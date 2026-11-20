@@ -16,6 +16,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
+	"github.com/bvivg/axon/core/services/game/internal/metrics"
 	"github.com/bvivg/axon/core/services/game/internal/owner"
 	"github.com/bvivg/axon/core/services/game/internal/route"
 	"github.com/bvivg/axon/core/services/game/internal/session"
@@ -34,6 +35,7 @@ type Config struct {
 	Verifier  *authn.Verifier
 	Client    *http.Client
 	TestHooks bool
+	Metrics   *metrics.Game
 }
 
 type Handler struct {
@@ -41,6 +43,7 @@ type Handler struct {
 	gamev1connect.UnimplementedGameOwnerServiceHandler
 	store    *session.Store
 	owner    *owner.Owner
+	metrics  *metrics.Game
 	routes   *route.Table
 	self     string
 	verifier *authn.Verifier
@@ -56,7 +59,7 @@ func New(cfg Config) *Handler {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
 	return &Handler{
-		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks,
+		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks, metrics: cfg.Metrics,
 		peers:   newPeers(client),
 		updates: newUpdates(),
 		matches: newUpdates(),

@@ -20,6 +20,8 @@ var allowedHeaders = []string{
 	"X-Grpc-Web",
 	"X-User-Agent",
 	"X-Filename",
+	"Traceparent",
+	"Tracestate",
 }
 
 var exposedHeaders = []string{

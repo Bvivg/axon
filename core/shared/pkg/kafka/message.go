@@ -24,6 +24,16 @@ func (h Headers) Get(key string) string {
 	return ""
 }
 
+func (h Headers) Set(key, value string) { h[key] = value }
+
+func (h Headers) Keys() []string {
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (h Headers) clone() Headers {
 	out := make(Headers, len(h)+1)
 	for k, v := range h {
