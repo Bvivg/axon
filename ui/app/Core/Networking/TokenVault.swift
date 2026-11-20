@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 enum RefreshOutcome: Sendable, Equatable {
     case rotated(AuthTokens)
@@ -12,8 +13,9 @@ actor TokenVault {
     private let store: any AuthTokenStore
     private let now: @Sendable () -> Date
     private var tokens: AuthTokens?
-    private var refreshing: Task<RefreshOutcome, Never>?
-    private var refresher: Refresher?
+    private var refreshing: Task<String?, Never>?
+    private var epoch = 0
+    private nonisolated let refresher = Mutex<Refresher?>(nil)
     private let signOuts: AsyncStream<Void>.Continuation
     nonisolated let signedOut: AsyncStream<Void>
 
@@ -30,16 +32,20 @@ actor TokenVault {
 
     var refreshToken: String? { tokens?.refreshToken }
 
-    func setRefresher(_ refresher: @escaping Refresher) {
-        self.refresher = refresher
+    nonisolated func setRefresher(_ refresher: @escaping Refresher) {
+        self.refresher.withLock { $0 = refresher }
     }
 
     func store(_ tokens: AuthTokens) {
+        epoch += 1
+        refreshing = nil
         self.tokens = tokens
         try? store.save(tokens)
     }
 
     func clear() {
+        epoch += 1
+        refreshing = nil
         tokens = nil
         try? store.clear()
     }
@@ -55,27 +61,28 @@ actor TokenVault {
             return current
         }
         if let refreshing {
-            return accessToken(after: await refreshing.value)
+            return await refreshing.value
         }
-        guard let refreshToken = tokens?.refreshToken, let refresher else { return nil }
-        let task = Task { await refresher(refreshToken) }
+        guard let refreshToken = tokens?.refreshToken, let refresher = refresher.withLock({ $0 }) else { return nil }
+        let started = epoch
+        let task = Task { self.complete(await refresher(refreshToken), epoch: started) }
         refreshing = task
-        let outcome = await task.value
+        return await task.value
+    }
+
+    private func complete(_ outcome: RefreshOutcome, epoch started: Int) -> String? {
+        guard epoch == started else { return tokens?.accessToken }
         refreshing = nil
         switch outcome {
         case .rotated(let rotated):
             store(rotated)
+            return rotated.accessToken
         case .rejected:
             clear()
             signOuts.yield()
+            return nil
         case .unavailable:
-            break
+            return nil
         }
-        return accessToken(after: outcome)
-    }
-
-    private func accessToken(after outcome: RefreshOutcome) -> String? {
-        if case .rotated(let rotated) = outcome { return rotated.accessToken }
-        return nil
     }
 }
