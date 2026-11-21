@@ -1,6 +1,4 @@
 # Docs
 
-- `schema.jpg` — the data model sketch the services are built against.
-- `architecture.md` — diagram, decisions and the reasoning behind them. Written
-  once there is a working end-to-end path to describe rather than a plan to
-  restate.
+- [`archive/initial-concept.jpg`](archive/initial-concept.jpg) — the initial concept image, superseded.
+- [`archive/`](archive/) — historical audits, reviews and design snapshots, kept for history.

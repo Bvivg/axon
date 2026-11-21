@@ -250,7 +250,7 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await cell(page, 4).click();
     await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
     const reference = await person.context.newPage();
-    await reference.setContent(readFileSync(new URL("../../../docs/design/tictactoe.html", import.meta.url), "utf8"));
+    await reference.setContent(readFileSync(new URL("../../../docs/archive/design/tictactoe.html", import.meta.url), "utf8"));
     await reference.locator(".cell").nth(0).click();
     await reference.locator(".cell").nth(4).click();
     for (const theme of ["light", "dark"]) {
