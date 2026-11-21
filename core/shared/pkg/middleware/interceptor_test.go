@@ -279,3 +279,32 @@ func scrapeMetrics(t *testing.T, m *middleware.Metrics) string {
 	}
 	return rec.Body.String()
 }
+
+func TestCorrelationBehindTheHTTPMiddlewareIsSentOnce(t *testing.T) {
+	h := connect.NewUnaryHandler(procedure, echo, connect.WithInterceptors(middleware.NewCorrelationInterceptor()))
+	mux := http.NewServeMux()
+	mux.Handle(procedure, middleware.Correlation(h))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := connect.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](srv.Client(), srv.URL+procedure)
+
+	for name, inbound := range map[string]string{"generated": "", "adopted": inboundID} {
+		t.Run(name, func(t *testing.T) {
+			req := connect.NewRequest(wrapperspb.String("hi"))
+			if inbound != "" {
+				req.Header().Set(correlation.Header, inbound)
+			}
+			resp, err := client.CallUnary(context.Background(), req)
+			if err != nil {
+				t.Fatalf("CallUnary: %v", err)
+			}
+			values := resp.Header().Values(correlation.Header)
+			if len(values) != 1 {
+				t.Fatalf("response carries %d correlation headers %q, want 1", len(values), values)
+			}
+			if inbound != "" && values[0] != inbound {
+				t.Errorf("response header = %q, want %s", values[0], inbound)
+			}
+		})
+	}
+}

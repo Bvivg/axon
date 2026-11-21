@@ -31,7 +31,7 @@ for image in $images; do
       ;;
     web)
       docker build -q -f core/deploy/Dockerfile.web --target runtime \
-        --build-arg NEXT_PUBLIC_API_BASE_URL="$api_url" -t "axon/web:$tag" ui/web >/dev/null
+        --build-arg NEXT_PUBLIC_API_BASE_URL="$api_url" --build-arg NEXT_PUBLIC_OAUTH_PROVIDERS=fake -t "axon/web:$tag" ui/web >/dev/null
       ;;
     connect)
       docker build -q -f core/deploy/k8s/Dockerfile.connect -t "axon/connect:$tag" core/deploy/k8s >/dev/null
