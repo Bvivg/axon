@@ -214,3 +214,21 @@
 - На перегруженном хосте control plane kind нестабилен: kube-controller-manager и scheduler
   7 раз теряли лидерство, `kubectl apply` workflow однажды шёл 4,5 минуты; `make kind-load`
   всех образов занял 25 минут.
+
+## Дополнение (2026-11-21): analysis и tournament
+Фазы 7b и 7c появились после этой фазы, кластер их не разворачивал, а Job `postgres-schemas`
+падал: `01-schemas.sh` уже требовал `ANALYSIS_DB_PASSWORD` и `TOURNAMENT_DB_PASSWORD`.
+- Чарты `analysis` и `tournament` на `axon-service`, как у rating; волна 3 (после auth, до
+  gateway и CDC — публикации нужна `tournament.outbox`). В kind по 2 реплики, приложений 21.
+- Роли `analysis`/`tournament` — в `secrets-bootstrap` и managed roles CNPG; auth пускает
+  клиентов `analysis`, `tournament`; gateway получил `ANALYSIS_SERVICE_URL`/`TOURNAMENT_SERVICE_URL`.
+- analysis: образ flavor `runtime-analysis` (Stockfish) в `kind/images.sh`; 500m запрос и 2 CPU
+  лимит — по ядру на движок (`ANALYSIS_ENGINES=2`, `Threads 1`); в kind
+  `ANALYSIS_POSITION_TIMEOUT=60s`, как в тестовых стеках compose.
+- tournament: outbox в include list коннектора и в публикации приходит из общих
+  `outbox-connector.json`/`setup.sh`; `tournament.finished.v1` (`retention.ms=-1`) — из группы
+  `forever`; команды `round_started`/`forfeit`/`cancelled` — отдельные `KafkaTopic`, чтобы
+  группа `game-tournaments` подписывалась на существующие топики. Game дополнительного env не
+  требует: топики команд — значения по умолчанию, брокеры уже заданы.
+- Проверено: `make k8s-validate` — 199 манифестов, 0 ошибок (было 163). Живой `make kind-up`
+  не запускался; toolbox e2e и шаг `foreign-ca` на analysis/tournament не расширялись.
