@@ -36,16 +36,18 @@ type Result struct {
 }
 
 type Pipeline struct {
-	store *Store
-	urls  URLBuilder
-	tools *media.Tools
+	store  *Store
+	urls   URLBuilder
+	tools  *media.Tools
+	images *media.Images
 }
 
-func NewPipeline(store *Store, urls URLBuilder, tools *media.Tools) *Pipeline {
-	return &Pipeline{store: store, urls: urls, tools: tools}
+func NewPipeline(store *Store, urls URLBuilder, tools *media.Tools, images *media.Images) *Pipeline {
+	return &Pipeline{store: store, urls: urls, tools: tools, images: images}
 }
 
 func (p *Pipeline) Media(ctx context.Context, userID uuid.UUID, path string, size int64) (Result, error) {
+	ctx = media.WithOwner(ctx, userID.String())
 	head, err := readHead(path)
 	if err != nil {
 		return Result{}, err
@@ -62,12 +64,7 @@ func (p *Pipeline) image(ctx context.Context, userID uuid.UUID, path string, siz
 		return Result{}, media.ErrTooLarge
 	}
 
-	raw, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return Result{}, fmt.Errorf("attachment: read image: %w", err)
-	}
-
-	img, err := media.ProcessImage(raw)
+	img, err := p.images.ProcessFile(ctx, path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -164,6 +161,7 @@ func (p *Pipeline) video(ctx context.Context, userID uuid.UUID, path string) (Re
 }
 
 func (p *Pipeline) Voice(ctx context.Context, userID uuid.UUID, path string, size int64) (Result, error) {
+	ctx = media.WithOwner(ctx, userID.String())
 	if size > MaxVoiceBytes {
 		return Result{}, media.ErrTooLarge
 	}

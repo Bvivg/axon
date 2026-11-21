@@ -1,0 +1,58 @@
+global: {}
+name: tournament
+image: axon/tournament
+replicas: 1
+ports:
+  http: 8086
+  admin: 9096
+probes:
+  port: admin
+  livePath: /healthz
+  readyPath: /readyz
+database:
+  role: tournament
+migrations:
+  enabled: true
+  image: migrate/migrate:v4.20.1
+mtls:
+  enabled: true
+  allowedClients: gateway
+  duration: 1h
+  renewBefore: 20m
+  env:
+    AUTH_SERVICE_URL: https://auth:8081
+    JWKS_URL: https://auth:8081/.well-known/jwks.json
+  plainEnv:
+    AUTH_SERVICE_URL: http://auth:8081
+    JWKS_URL: http://auth:9091/.well-known/jwks.json
+service:
+  type: ClusterIP
+  nodePorts: {}
+hpa:
+  enabled: false
+pdb:
+  minAvailable: 1
+serviceMonitor:
+  enabled: true
+terminationGracePeriodSeconds: 30
+securityContext:
+  runAsUser: 65532
+writablePaths:
+  - /tmp
+resources:
+  requests:
+    cpu: 20m
+    memory: 48Mi
+  limits:
+    memory: 256Mi
+noShowTimeout: 2m
+fieldEnv: []
+secretEnv: {}
+env:
+  HTTP_ADDR: ":8086"
+  METRICS_ADDR: ":9096"
+  SHUTDOWN_DRAIN: 3s
+  KAFKA_BROKERS: "{{ .Values.global.kafka.brokers }}"
+  JWT_ISSUER: https://auth.axon.local
+  JWT_AUDIENCE: axon
+  TOURNAMENT_NO_SHOW_TIMEOUT: "{{ .Values.noShowTimeout }}"

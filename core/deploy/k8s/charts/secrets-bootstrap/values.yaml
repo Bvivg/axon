@@ -6,3 +6,5 @@ roles:
   - game
   - calling
   - rating
+  - analysis
+  - tournament

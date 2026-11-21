@@ -72,7 +72,7 @@ Axon уже работает как платформа общения с авт�
 - Скачивание поддерживает `HEAD` и `Range`; ответы помечаются `private, no-store`, `nosniff`, CSP sandbox.
 - Web преобразует старые attachment URL в защищённый маршрут. Миграция 17 добавляет GIN-индекс `files.object_keys`.
 
-Код: [media ACL](../../../core/services/chat/internal/repository/media.go), [download handler](../../../core/services/chat/internal/server/media.go), [gateway proxy](../../../core/services/gateway/internal/mediaproxy/proxy.go), [web URL mapping](../../../ui/web/src/lib/chat/media-url.ts), [миграция 17](../../../core/services/chat/migrations/000017_private_media.up.sql).
+Код: [media ACL](../../../../core/services/chat/internal/repository/media.go), [download handler](../../../../core/services/chat/internal/server/media.go), [gateway proxy](../../../../core/services/gateway/internal/mediaproxy/proxy.go), [web URL mapping](../../../../ui/web/src/lib/chat/media-url.ts), [миграция 17](../../../../core/services/chat/migrations/000017_private_media.up.sql).
 
 ### Проверка после исправления
 
@@ -100,7 +100,7 @@ Avatar pipeline скачивал URL, полученный от OAuth-прова
 
 ### Что теперь проверяется
 
-Общий [safehttp](../../../core/shared/pkg/safehttp/client.go) используется для push, call notifications и загрузки OAuth-аватара:
+Общий [safehttp](../../../../core/shared/pkg/safehttp/client.go) используется для push, call notifications и загрузки OAuth-аватара:
 
 1. Только HTTPS на стандартном порту 443; без userinfo, fragment и opaque URL.
 2. Запрет localhost, одночастных внутренних имён и заведомо непубличных IP.
@@ -204,7 +204,7 @@ Calls правильно остаётся модулем Chat в соответ�
 
 Теперь `open()` ждёт текущую initialization promise. Добавлен unit на stale endpoint + одновременное открытие socket; повторный вход в реальном браузере после исправления проходит.
 
-Код: [CallChannel](../../../ui/web/src/lib/calls/channel.ts), [регрессия гонки](../../../ui/web/src/lib/calls/channel.test.ts), [существующий login/chat E2E](../../../ui/web/e2e/chat.spec.ts).
+Код: [CallChannel](../../../../ui/web/src/lib/calls/channel.ts), [регрессия гонки](../../../../ui/web/src/lib/calls/channel.test.ts), [существующий login/chat E2E](../../../../ui/web/e2e/chat.spec.ts).
 
 ### Что подтверждено текущим live-прогоном
 
@@ -255,7 +255,7 @@ Calls правильно остаётся модулем Chat в соответ�
 - Mobile navigation targets имеют высоту не менее 44 px; theme/search controls — 40 px. Это измерение конкретных контролов, не заявление о полном аудите всех touch targets проекта.
 - Preview темы отражает реальные токены. Выбор Light/Dark/System работает нативными radio; стрелки меняют выбор, перезагрузка его сохраняет.
 
-Код: [tokens](../../../ui/web/src/app/globals.css), [navigation items](../../../ui/web/src/components/nav/items.ts), [sidebar](../../../ui/web/src/components/nav/app-sidebar.tsx), [tabbar](../../../ui/web/src/components/nav/tabbar.tsx), [appearance](../../../ui/web/src/components/profile/appearance.tsx).
+Код: [tokens](../../../../ui/web/src/app/globals.css), [navigation items](../../../../ui/web/src/components/nav/items.ts), [sidebar](../../../../ui/web/src/components/nav/app-sidebar.tsx), tabbar, [appearance](../../../../ui/web/src/components/profile/appearance.tsx).
 
 ### Контраст
 
@@ -289,7 +289,7 @@ Desktop, светлая тема:
 
 ### A. Надёжность межсервисных событий
 
-В [chat events publisher](../../../core/services/chat/internal/events/events.go) ошибка Kafka Publish логируется после создания сообщения. Нет доказанной общей транзакции Postgres → Kafka или persistent outbox для этого пути. При недоступности брокера сообщение может остаться в БД без соответствующего события для внешнего потребителя.
+В [chat events publisher](../../../../core/services/chat/internal/events/events.go) ошибка Kafka Publish логируется после создания сообщения. Нет доказанной общей транзакции Postgres → Kafka или persistent outbox для этого пути. При недоступности брокера сообщение может остаться в БД без соответствующего события для внешнего потребителя.
 
 Calls имеет собственную outbox-модель; её наличие не решает автоматически доставку обычного `chat.message`. Перед появлением потребителя, которому важна гарантированная доставка, нужен transactional outbox с idempotent consumer и тестом падения между commit и publish.
 
@@ -441,4 +441,4 @@ Cookie передаётся при обычной загрузке медиа с
 
 Из согласованной копии Postgres и двух бакетов MinIO восстановлен пустой изолированный Compose-проект. На стенде backup занял **14 с**, restore **12 с**. Дамп и архив составили **350 798 408 байт** без небольших файлов проверок. Сошлись **3 443 сообщения, 23 записи о файлах, 20 объектов аватаров и 69 вложений**. Совпали SHA-256 и медиа-метаданные шести объектов, а роль Chat прочитала восстановленные сообщения. Guard отклонил backup при запущенных сервисах записи и restore поверх уже существующего проекта. Это локальный замер, production RPO/RTO остаются открытыми.
 
-[Инструкция и скрипт](../../backup-restore.md) · [Результат прогона](evidence/backup-restore-local.log)
+[Инструкция и скрипт](../../../backup-restore.md) · [Результат прогона](evidence/backup-restore-local.log)
