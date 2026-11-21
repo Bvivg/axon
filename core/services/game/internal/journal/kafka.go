@@ -83,14 +83,35 @@ func (k *Kafka) ensureTopics(ctx context.Context) error {
 	if _, err := k.createTopic(ctx, k.cfg.LeaseTopic, shared); err != nil {
 		return err
 	}
-	details, err := k.admin.ListTopics(ctx, k.cfg.Topic)
-	if err != nil {
-		return err
+	return k.awaitPartitions(ctx)
+}
+
+const topicReadyTimeout = 10 * time.Second
+
+func (k *Kafka) awaitPartitions(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, topicReadyTimeout)
+	defer cancel()
+	got := 0
+	for {
+		details, err := k.admin.ListTopics(ctx, k.cfg.Topic)
+		if err == nil {
+			got = len(details[k.cfg.Topic].Partitions)
+			if got == int(k.cfg.Partitions) {
+				return nil
+			}
+			if got > 0 {
+				return fmt.Errorf("journal: topic %s has %d partitions, want %d", k.cfg.Topic, got, k.cfg.Partitions)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			if err != nil {
+				return fmt.Errorf("journal: list topic %s: %w", k.cfg.Topic, err)
+			}
+			return fmt.Errorf("journal: topic %s has %d partitions, want %d", k.cfg.Topic, got, k.cfg.Partitions)
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
-	if got := len(details[k.cfg.Topic].Partitions); got != int(k.cfg.Partitions) {
-		return fmt.Errorf("journal: topic %s has %d partitions, want %d", k.cfg.Topic, got, k.cfg.Partitions)
-	}
-	return nil
 }
 
 func (k *Kafka) createTopic(ctx context.Context, topic string, configs map[string]*string) (bool, error) {
