@@ -11,6 +11,7 @@ import (
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/session"
@@ -87,16 +88,27 @@ func (h *Handler) GetSessionHistory(ctx context.Context, req *connect.Request[ga
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not load the game history"))
 	}
+	response, err := h.history(ctx, game, moves, user)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(response), nil
+}
+
+func (h *Handler) history(ctx context.Context, game session.Session, moves []session.MoveRecord, viewer uuid.UUID) (*gamev1.GetSessionHistoryResponse, error) {
 	states, err := session.NewRules(h.store.Games()).Frames(game, moves)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("invalid saved game"))
 	}
-	state, err := h.view(ctx, game, nil)
+	state, err := h.view(ctx, game, viewer, nil)
 	if err != nil {
 		return nil, err
 	}
 	response := &gamev1.GetSessionHistoryResponse{Session: state, Frames: make([]*gamev1.HistoryFrame, 0, len(states))}
 	for i, position := range states {
+		if !game.State.Over() {
+			position = h.store.Games().View(position, engine.PlayerID(viewer.String()))
+		}
 		frame, err := historyFrame(game, position)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("invalid saved game"))
@@ -107,7 +119,7 @@ func (h *Handler) GetSessionHistory(ctx context.Context, req *connect.Request[ga
 		}
 		response.Frames = append(response.Frames, frame)
 	}
-	return connect.NewResponse(response), nil
+	return response, nil
 }
 
 func historyFrame(game session.Session, position engine.State) (*gamev1.HistoryFrame, error) {
@@ -128,12 +140,16 @@ func historyFrame(game session.Session, position engine.State) (*gamev1.HistoryF
 	case quoridor.Key:
 		frame.Quoridor = out.Quoridor
 		frame.Quoridor.LegalMoves = nil
+	case durak.Key:
+		frame.Durak = out.Durak
+		frame.Durak.LegalMoves = nil
 	}
 	return frame, nil
 }
 
 func (h *Handler) ListLiveSessions(ctx context.Context, req *connect.Request[gamev1.ListLiveSessionsRequest]) (*connect.Response[gamev1.ListLiveSessionsResponse], error) {
-	if _, err := h.actor(req.Header()); err != nil {
+	user, err := h.actor(req.Header())
+	if err != nil {
 		return nil, err
 	}
 	key := engine.Key(req.Msg.GetGame())
@@ -148,7 +164,7 @@ func (h *Handler) ListLiveSessions(ctx context.Context, req *connect.Request[gam
 	}
 	response := &gamev1.ListLiveSessionsResponse{Sessions: make([]*gamev1.Session, 0, len(items))}
 	for _, item := range items {
-		state, err := h.result(item, nil)
+		state, err := h.result(item, user, nil)
 		if err != nil {
 			return nil, err
 		}

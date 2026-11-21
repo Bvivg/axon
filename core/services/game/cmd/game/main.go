@@ -16,6 +16,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/cluster"
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/journal"
@@ -120,7 +121,7 @@ func run() error {
 		return err
 	}
 	games := engine.NewRegistry()
-	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition(), quoridor.Definition()} {
+	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition(), quoridor.Definition(), durak.Definition()} {
 		if err := games.Register(def); err != nil {
 			return err
 		}
