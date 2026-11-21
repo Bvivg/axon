@@ -1219,10 +1219,28 @@ func TestTypingPastTheBudgetIsDropped(t *testing.T) {
 		ac.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
 	}
 	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "done"})
+	typing, done := 0, false
+	for typing == 0 || !done {
+		switch got := bc.read(); got.Type {
+		case ws.TypeTyping:
+			typing++
+		case ws.TypeMessage:
+			done = done || got.Message.Body == "done"
+		}
+	}
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "end"})
+	for {
+		got := bc.read()
+		if got.Type == ws.TypeTyping {
+			typing++
+		}
+		if got.Type == ws.TypeMessage && got.Message.Body == "end" {
+			break
+		}
+	}
 
-	bc.expect(ws.TypeTyping)
-	if got := bc.expect(ws.TypeMessage); got.Message.Body != "done" {
-		t.Fatalf("bob got %+v after the first typing signal", got)
+	if typing != 1 {
+		t.Fatalf("bob got %d typing signals out of 5 sent with a budget of 1", typing)
 	}
 }
 
