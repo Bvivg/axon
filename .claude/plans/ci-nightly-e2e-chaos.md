@@ -21,7 +21,8 @@
   доигранная партия не совпала ход в ход или не завершена в read model; если доиграно меньше
   `-min-completed` (0,95) партий — иначе сломанный стенд дал бы зелёную сверку на нуле ходов.
 - **Нагрузчик** генерирует игроков из seed (`-players`) и несёт партии чемпионов в бинаре
-  (`legends.json`, `go:embed`), поэтому ему не нужны файлы из `.local`.
+  (`legends.json`, `go:embed`), поэтому ему не нужны файлы из `.local`. Копия legends и генератор
+  `users.json` в toolbox kind-хаоса (фаза 6) убраны — он берёт то же из нагрузчика.
 - **Overlay `docker-compose.loadgen.yml`**: game с `GAME_TEST_HOOKS` и `APP_ENV=test`, раннеры
   `loadgen` и `reconcile` (golang-образ, `go run`, профиль `load`), host-порты сняты `!reset`, чтобы
   стенд не конфликтовал с dev-стеком и e2e.
@@ -30,7 +31,10 @@
   `REPORT_DIR` (по умолчанию `.local/<mode>`). При ошибке сохраняет логи стека в `e2e-logs.txt`,
   на выходе `down -v`, если не `KEEP=1`.
   - `bench` (`axon-bench`, 1 game): параметры фазы 1b — 6000 матчей, 1000 параллельно, пауза 260 мс, seed 11.
-  - `chaos` (`axon-chaos`, base + chaos + loadgen, game ×2): 200 матчей, 10 параллельно; задержка
+  - Перед нагрузкой раннеры компилируются отдельным `go build`, иначе первые сбои приходятся на
+    компиляцию `go run`, а не на игру.
+  - `chaos` (`axon-chaos`, base + chaos + loadgen, game ×2): 200 матчей, 10 параллельно,
+    40 переподключений на игрока (передача партиций после `kill` занимает до ~15 с); задержка
     300 мс до Postgres на 15 с → graceful-рестарт game-1 → `docker kill` game-2 (новый шаг
     `scenario.sh kill`). Если нагрузка кончилась раньше последнего сбоя — прогон падает.
 - **`.github/workflows/nightly.yml`** (`schedule` + `workflow_dispatch`): матрица
@@ -47,7 +51,10 @@
 ## Файлы
 - `core/services/game/cmd/reconcile/{main,reconcile,reconcile_test}.go`
 - `core/services/game/cmd/loadgen/{main,scripts}.go`, `legends.json`
-- `core/deploy/docker-compose.loadgen.yml`, `core/deploy/loadgen.sh`, `core/deploy/chaos/scenario.sh`
+- `core/deploy/docker-compose.loadgen.yml`, `core/deploy/loadgen.sh`, `core/deploy/chaos/scenario.sh`,
+  `core/deploy/docker-compose.chaos.yml` (все Postgres-джобы ждут toxiproxy: под overlay `postgres` —
+  его алиас, и `auth-migrate` падал с `no such host`)
+- `core/deploy/k8s/toolbox/chaos-load.sh`, удалён `core/deploy/k8s/toolbox/legends.json`
 - `Makefile` (`bench`, `chaos`, `e2e-teardown`), `.github/workflows/{nightly,ci}.yml`
 
 ## Как проверяется
@@ -62,3 +69,15 @@
 ## Критерий готовности
 `make chaos` падает на потерянном подтверждённом ходе и зелёный на `main`, а nightly гоняет
 флагманские e2e и хаос без ручных шагов.
+
+## Результаты (2026-11-21, локально, Docker Desktop 10 ядер)
+| Прогон | Итог |
+|---|---|
+| `make chaos` (200 матчей, 10 параллельно) | 200/200 доиграно; подтверждено 6552 хода = журнал 6552 = read model 6552; потерь 0, расхождений 0; 151 с; `axon-chaos`, его тома и контейнеры удалены |
+| `make chaos`, 20 переподключений на игрока | 195/200, 5 × `socket closed: 4001` после `kill`; потерь 0 (6425 = 6425 = 6425) — отсюда 40 переподключений |
+| `make bench MATCHES=300 CONCURRENCY=100` | 0 сбоев, 10 216 ходов за 42 с, p50/p95/p99 2/20/70 мс; 10 216 = 10 216 = 10 216 |
+| `reconcile` после удаления одной строки `game.moves` | выход 1: `sessions_with_lost_moves` 1, `sessions_diverged` 1 |
+| `make test-e2e-game` как в nightly (`buf generate`, затем цель) | PASS, 42 с, стек удалён |
+
+Не проверено: сам workflow на GitHub Actions (первый прогон — после мержа, `workflow_dispatch`),
+остальные четыре цели матрицы локально, kind-хаос после замены legends (нужен кластер).

@@ -24,10 +24,12 @@ if [ "$mode" = chaos ]; then
 	matches=${MATCHES:-200}
 	concurrency=${CONCURRENCY:-10}
 	seed=${SEED:-21}
+	redials=${REDIALS:-40}
 else
 	matches=${MATCHES:-6000}
 	concurrency=${CONCURRENCY:-1000}
 	seed=${SEED:-11}
+	redials=${REDIALS:-20}
 fi
 pace=${PACE:-260ms}
 players=$((concurrency * 2))
@@ -77,10 +79,12 @@ faults() {
 
 step "building and starting the stack"
 "${stack[@]}" up -d --build --wait --wait-timeout 300 game
+step "compiling loadgen and reconcile"
+"${stack[@]}" run --rm -T --no-deps --entrypoint go loadgen build ./cmd/loadgen ./cmd/reconcile
 
 step "loadgen: $matches matches, $concurrency in flight, pace $pace, seed $seed"
 "${stack[@]}" run --rm -T loadgen -target http://game:8083 -players "$players" -matches "$matches" \
-	-concurrency "$concurrency" -pace "$pace" -seed "$seed" -out /results/results.json >"$reports/loadgen.json" &
+	-concurrency "$concurrency" -pace "$pace" -seed "$seed" -redials "$redials" -out /results/results.json >"$reports/loadgen.json" &
 load=$!
 
 if [ "$mode" = chaos ]; then
