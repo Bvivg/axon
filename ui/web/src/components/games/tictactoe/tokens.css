@@ -41,4 +41,24 @@
     from { stroke-dashoffset: 1; opacity: 0; }
     to { stroke-dashoffset: 0; opacity: 1; }
   }
+  --animate-game-pop: game-pop 240ms cubic-bezier(.2, .8, .25, 1.15) both;
+  @keyframes game-pop {
+    from { scale: .4; opacity: 0; }
+    to { scale: 1; opacity: 1; }
+  }
+  --animate-game-vanish: game-vanish 260ms ease-in both;
+  @keyframes game-vanish {
+    from { scale: 1; opacity: 1; }
+    to { scale: .7; opacity: 0; }
+  }
+  --animate-game-deal: game-deal 280ms cubic-bezier(.2, .8, .25, 1) both;
+  @keyframes game-deal {
+    from { translate: 0 -40%; scale: .85; opacity: 0; }
+    to { translate: 0 0; scale: 1; opacity: 1; }
+  }
+  --animate-game-rise: game-rise 280ms cubic-bezier(.2, .8, .25, 1) both;
+  @keyframes game-rise {
+    from { translate: 0 40%; scale: .85; opacity: 0; }
+    to { translate: 0 0; scale: 1; opacity: 1; }
+  }
 }

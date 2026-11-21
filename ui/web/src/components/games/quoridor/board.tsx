@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 
+import { slideThrough } from "@/lib/games/motion";
 import { cellAt, cellName, parseCell, parseWall, size, WallDir } from "@/lib/games/quoridor";
 import { cn } from "@/lib/utils";
+
+type Step = { from: string; to: string };
 
 const tracks = "repeat(8, minmax(0, 1fr) 1.9%) minmax(0, 1fr)";
 const last = size - 1;
@@ -11,7 +14,7 @@ const last = size - 1;
 export const seatNames = ["Violet", "Green"];
 
 export function Pawn({ seat, className }: { seat: number; className?: string }) {
-  return <span aria-hidden className={cn("block rounded-full border-2 border-game-card shadow-[0_1px_3px_rgb(0_0_0/.35)]", seat === 0 ? "bg-game-primary" : "bg-game-success", className)} />;
+  return <span aria-hidden data-pawn={seat} className={cn("block rounded-full border-2 border-game-card shadow-[0_1px_3px_rgb(0_0_0/.35)]", seat === 0 ? "bg-game-primary" : "bg-game-success", className)} />;
 }
 
 export function QuoridorBoard({ pawns, walls, seat, legal, lastMove, playable, onMove }: {
@@ -30,6 +33,18 @@ export function QuoridorBoard({ pawns, walls, seat, legal, lastMove, playable, o
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const allowed = new Set(playable ? legal : []);
   const pawnCells = pawns.map(name => parseCell(name));
+  const [placed, setPlaced] = useState(pawns);
+  const [steps, setSteps] = useState<Step[]>([]);
+  const board = useRef<HTMLDivElement>(null);
+  if (placed.join() !== pawns.join()) {
+    setSteps(pawns.flatMap((to, at) => placed[at] && placed[at] !== to ? [{ from: placed[at]!, to }] : []));
+    setPlaced(pawns);
+  }
+
+  useLayoutEffect(() => {
+    const cell = (name: string) => board.current?.querySelector(`[data-cell="${name}"]`);
+    for (const step of steps) slideThrough(cell(step.to)?.querySelector(":scope > [data-pawn]"), [cell(step.from), cell(step.to)]);
+  }, [steps]);
 
   const toReal = (dr: number, dc: number) => flipped ? cellAt(dr, last - dc) : cellAt(last - dr, dc);
   const toDisplay = (cell: number) => {
@@ -116,13 +131,13 @@ export function QuoridorBoard({ pawns, walls, seat, legal, lastMove, playable, o
   }).flat() : [];
 
   return (
-    <div role="group" aria-label="Quoridor board" onPointerLeave={() => setHover(undefined)}
+    <div ref={board} role="group" aria-label="Quoridor board" onPointerLeave={() => setHover(undefined)}
       className="grid aspect-square w-full touch-manipulation select-none rounded-game-md border border-game-border bg-quoridor-groove p-[1.6%]"
       style={{ gridTemplateColumns: tracks, gridTemplateRows: tracks }}>
       {cells}
       {walls.map(name => (
         <span key={name} aria-hidden data-placed-wall={name} style={wallStyle(name)}
-          className={cn("pointer-events-none z-[5] rounded-full", name === lastMove ? "bg-quoridor-wall-last" : "bg-quoridor-wall")} />
+          className={cn("pointer-events-none z-[5] rounded-full", name === lastMove ? "bg-quoridor-wall-last motion-safe:animate-game-pop" : "bg-quoridor-wall")} />
       ))}
       {hover && allowed.has(hover) ? <span aria-hidden style={wallStyle(hover)} className="pointer-events-none z-[5] rounded-full bg-quoridor-wall/55" /> : null}
       {slots}

@@ -63,13 +63,13 @@ const shapes: Record<PieceKind, (detail: string) => ReactNode> = {
   </>,
 };
 
-export function ChessPiece({ kind, side, className }: { kind: PieceKind; side: Side; className?: string }) {
+export function ChessPiece({ kind, side, className, live }: { kind: PieceKind; side: Side; className?: string; live?: boolean }) {
   const white = side === Side.White;
   const fill = white ? "var(--color-chess-piece-white)" : "var(--color-chess-piece-black)";
   const edge = "var(--color-chess-piece-black)";
   const detail = white ? "var(--color-chess-piece-black)" : "var(--color-chess-piece-white)";
   return (
-    <svg viewBox="0 0 100 100" aria-hidden className={cn("pointer-events-none select-none", className)} fill={fill} stroke={edge} strokeWidth="4" strokeLinejoin="round">
+    <svg viewBox="0 0 100 100" aria-hidden data-live={live || undefined} className={cn("pointer-events-none select-none", className)} fill={fill} stroke={edge} strokeWidth="4" strokeLinejoin="round">
       {shapes[kind](detail)}
     </svg>
   );
