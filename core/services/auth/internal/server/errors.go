@@ -95,6 +95,10 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 		return connect.NewError(connect.CodeFailedPrecondition,
 			errors.New("an account with this email already exists; sign in with your password, then connect this provider under Profile → Sessions"))
 
+	case errors.Is(err, domain.ErrOauthChallengeInvalid):
+		return connect.NewError(connect.CodeInvalidArgument,
+			errors.New("app_challenge must be an S256 PKCE challenge"))
+
 	case errors.Is(err, domain.ErrOauthReturnToNotAllowed):
 		return connect.NewError(connect.CodeInvalidArgument,
 			errors.New("return_to is not an allowed destination"))
