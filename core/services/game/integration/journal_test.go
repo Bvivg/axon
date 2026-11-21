@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -20,10 +21,12 @@ func TestJournalTopicIsKeptForever(t *testing.T) {
 	}
 	defer client.Close()
 	admin := kadm.NewClient(client)
-	if _, err := admin.CreateTopic(ctx, partitions, 1, nil, "game.session-events.defaults"); err != nil {
+	suffix := uuid.NewString()[:8]
+	fresh, defaults := "game.session-events.fresh-"+suffix, "game.session-events.defaults-"+suffix
+	if _, err := admin.CreateTopic(ctx, partitions, 1, nil, defaults); err != nil {
 		t.Fatal(err)
 	}
-	for _, topic := range []string{"game.session-events.fresh", "game.session-events.defaults"} {
+	for _, topic := range []string{fresh, defaults} {
 		log, err := journal.NewKafka(ctx, journal.KafkaConfig{Brokers: brokers, Topic: topic, LeaseTopic: topic + ".leases", Partitions: partitions, ReplicationFactor: 1})
 		if err != nil {
 			t.Fatal(topic, err)
