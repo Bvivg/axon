@@ -26,6 +26,12 @@
   --color-quoridor-wall: light-dark(#98600a, #f2bd64);
   --color-quoridor-wall-last: light-dark(#5945b9, #ad9ffc);
   --color-quoridor-target: light-dark(rgb(89 69 185 / .35), rgb(173 159 252 / .4));
+  --color-durak-felt: light-dark(#e9e5f8, #1d2131);
+  --color-durak-face: light-dark(#ffffff, #f6f4fd);
+  --color-durak-ink: #25283a;
+  --color-durak-red: #b8324c;
+  --color-durak-back: light-dark(#5945b9, #6a5bd0);
+  --color-durak-back-line: rgb(255 255 255 / .2);
   --radius-game-sm: 9px;
   --radius-game-md: 12px;
   --radius-game-lg: 16px;

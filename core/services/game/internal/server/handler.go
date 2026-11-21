@@ -15,6 +15,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/metrics"
@@ -150,7 +151,7 @@ func (h *Handler) CreateSession(ctx context.Context, req *connect.Request[gamev1
 	id := session.SessionID(user, request)
 	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.CreateSessionResponse], error) {
 		item, err := h.owner.Create(ctx, user, request, engine.Key(req.Msg.Game))
-		state, err := h.respond(ctx, item, err)
+		state, err := h.respond(ctx, item, user, err)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +170,7 @@ func (h *Handler) JoinSession(ctx context.Context, req *connect.Request[gamev1.J
 	}
 	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.JoinSessionResponse], error) {
 		item, err := h.owner.Join(ctx, id, user)
-		state, err := h.respond(ctx, item, err)
+		state, err := h.respond(ctx, item, user, err)
 		if err != nil {
 			return nil, err
 		}
@@ -188,7 +189,7 @@ func (h *Handler) GetSession(ctx context.Context, req *connect.Request[gamev1.Ge
 	}
 	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.GetSessionResponse], error) {
 		item, err := h.owner.Get(ctx, id, user)
-		state, err := h.respond(ctx, item, err)
+		state, err := h.respond(ctx, item, user, err)
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +212,7 @@ func (h *Handler) LeaveSession(ctx context.Context, req *connect.Request[gamev1.
 		if cancelled && err == nil {
 			return connect.NewResponse(&gamev1.LeaveSessionResponse{Cancelled: true}), nil
 		}
-		state, err := h.respond(ctx, item, err)
+		state, err := h.respond(ctx, item, user, err)
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +242,7 @@ func (h *Handler) ListSessions(ctx context.Context, req *connect.Request[gamev1.
 	}
 	response := &gamev1.ListSessionsResponse{}
 	for _, item := range items {
-		state, err := h.result(item, nil)
+		state, err := h.result(item, user, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -251,8 +252,8 @@ func (h *Handler) ListSessions(ctx context.Context, req *connect.Request[gamev1.
 	return connect.NewResponse(response), nil
 }
 
-func (h *Handler) view(ctx context.Context, item session.Session, err error) (*gamev1.Session, error) {
-	state, err := h.result(item, err)
+func (h *Handler) view(ctx context.Context, item session.Session, viewer uuid.UUID, err error) (*gamev1.Session, error) {
+	state, err := h.result(item, viewer, err)
 	if err != nil || !item.Rated || !item.State.Over() {
 		return state, err
 	}
@@ -278,15 +279,20 @@ func sessionID(raw string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func (h *Handler) result(item session.Session, err error) (*gamev1.Session, error) {
-	return present(item, h.store.TimeLimitMS(item.Game), err)
+func (h *Handler) result(item session.Session, viewer uuid.UUID, err error) (*gamev1.Session, error) {
+	return present(visible(h.store.Games(), item, viewer), h.store.TimeLimitMS(item.Game), err)
 }
 
-func (h *Handler) respond(ctx context.Context, item session.Session, err error) (*gamev1.Session, error) {
+func visible(games *engine.Registry, item session.Session, viewer uuid.UUID) session.Session {
+	item.State = games.View(item.State, engine.PlayerID(viewer.String()))
+	return item
+}
+
+func (h *Handler) respond(ctx context.Context, item session.Session, viewer uuid.UUID, err error) (*gamev1.Session, error) {
 	if errors.Is(err, owner.ErrNotOwner) {
 		return nil, errMoved
 	}
-	return h.view(ctx, item, err)
+	return h.view(ctx, item, viewer, err)
 }
 
 func present(item session.Session, limit int64, err error) (*gamev1.Session, error) {
@@ -323,6 +329,8 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 		out.Quoridor = &gamev1.QuoridorBoard{Pawns: []string{"e1", "e9"}, WallsLeft: []uint32{quoridor.WallsEach, quoridor.WallsEach}}
 	case checkers.Key:
 		out.Checkers = &gamev1.CheckersBoard{Squares: checkersSquares(checkers.NewBoard().String())}
+	case durak.Key:
+		out.Durak = &gamev1.DurakBoard{}
 	}
 	if item.Opponent == nil {
 		out.Clock = &gamev1.SessionClock{XRemainingMs: proto.Uint32(uint32(limit)), ORemainingMs: proto.Uint32(uint32(limit)), SampledAt: timestamppb.Now()}
@@ -394,6 +402,12 @@ func board(out *gamev1.Session, item session.Session) error {
 			return err
 		}
 		out.Checkers = checkersBoard(snap)
+	case durak.Key:
+		snap, err := durak.Describe(item.State)
+		if err != nil {
+			return err
+		}
+		out.Durak = durakBoard(snap)
 	}
 	return nil
 }

@@ -50,6 +50,7 @@ message Session {
   optional string tournament_id = 21;
   optional bool move_limit = 22;
   CheckersBoard checkers = 23;
+  DurakBoard durak = 24;
 }
 
 message CheckersBoard {
@@ -74,6 +75,38 @@ enum CheckersEnd {
   CHECKERS_END_NO_MOVES = 1;
   CHECKERS_END_FORTY_MOVES = 2;
   CHECKERS_END_MOVE_LIMIT = 3;
+}
+
+message DurakBoard {
+  repeated DurakHand hands = 1;
+  string trump = 2;
+  uint32 stock = 3;
+  repeated DurakPair table = 4;
+  uint32 discard = 5;
+  uint32 attacker_seat = 6;
+  bool taking = 7;
+  uint32 bout_limit = 8;
+  repeated string moves = 9;
+  optional string last_move = 10;
+  repeated string legal_moves = 11;
+  DurakEnd end = 12;
+}
+
+message DurakHand {
+  repeated string cards = 1;
+  uint32 count = 2;
+  bool hidden = 3;
+}
+
+message DurakPair {
+  string attack = 1;
+  optional string defense = 2;
+}
+
+enum DurakEnd {
+  DURAK_END_UNSPECIFIED = 0;
+  DURAK_END_DURAK = 1;
+  DURAK_END_DRAW = 2;
 }
 
 message QuoridorBoard {
@@ -237,6 +270,7 @@ message SessionCommand {
     DrawCommand draw = 6;
     QuoridorMove quoridor_move = 7;
     CheckersMove checkers_move = 8;
+    DurakMove durak_move = 9;
   }
   optional string traceparent = 15;
 }
@@ -248,6 +282,12 @@ message QuoridorMove {
 }
 
 message CheckersMove {
+  uint32 ply = 1;
+  string move = 2;
+  optional uint32 revision = 3;
+}
+
+message DurakMove {
   uint32 ply = 1;
   string move = 2;
   optional uint32 revision = 3;
@@ -322,6 +362,7 @@ message HistoryFrame {
   optional QuoridorBoard quoridor = 6;
   optional string move = 7;
   optional CheckersBoard checkers = 8;
+  optional DurakBoard durak = 9;
 }
 
 message ListLiveSessionsRequest {

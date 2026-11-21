@@ -14,6 +14,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/session"
@@ -109,7 +110,7 @@ func (h *Handler) GetSessionHistory(ctx context.Context, req *connect.Request[ga
 	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not load the game history"))
 	}
-	state, err := h.view(ctx, game, nil)
+	state, err := h.view(ctx, game, user, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +138,7 @@ func (h *Handler) history(ctx context.Context, user, id uuid.UUID) (session.Sess
 	if !game.Watchable(user) {
 		return session.Session{}, nil, session.ErrNotFound
 	}
-	frames, err := buildHistory(ctx, session.NewRules(h.store.Games()), game, moves, h.historyPlies)
+	frames, err := buildHistory(ctx, session.NewRules(h.store.Games()), game, moves, h.historyPlies, h.seen(game, user))
 	if err != nil {
 		return session.Session{}, nil, err
 	}
@@ -147,12 +148,24 @@ func (h *Handler) history(ctx context.Context, user, id uuid.UUID) (session.Sess
 	return game, frames, nil
 }
 
-func buildHistory(ctx context.Context, rules session.Rules, game session.Session, moves []session.MoveRecord, maxPlies int) ([]*gamev1.HistoryFrame, error) {
+func (h *Handler) seen(game session.Session, viewer uuid.UUID) func(engine.State) engine.State {
+	if game.State.Over() {
+		return nil
+	}
+	return func(position engine.State) engine.State {
+		return h.store.Games().View(position, engine.PlayerID(viewer.String()))
+	}
+}
+
+func buildHistory(ctx context.Context, rules session.Rules, game session.Session, moves []session.MoveRecord, maxPlies int, seen func(engine.State) engine.State) ([]*gamev1.HistoryFrame, error) {
 	if maxPlies > 0 && len(moves) > maxPlies {
 		return nil, fmt.Errorf("%w: %d plies, limit %d", errHistoryTooLong, len(moves), maxPlies)
 	}
 	frames := make([]*gamev1.HistoryFrame, 0, len(moves)+1)
 	err := rules.Frames(ctx, game, moves, func(position engine.State) error {
+		if seen != nil {
+			position = seen(position)
+		}
 		frame, err := historyFrame(game, position, len(frames) == len(moves))
 		if err != nil {
 			return err
@@ -204,6 +217,13 @@ func historyFrame(game session.Session, position engine.State, final bool) (*gam
 		frame.Move = frame.Checkers.LastMove
 		if !final {
 			frame.Checkers.Moves = nil
+		}
+	case durak.Key:
+		frame.Durak = out.Durak
+		frame.Durak.LegalMoves = nil
+		frame.Move = frame.Durak.LastMove
+		if !final {
+			frame.Durak.Moves = nil
 		}
 	}
 	return frame, nil

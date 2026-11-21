@@ -1,6 +1,6 @@
 "use client";
 
-import { BrickWall, ChessKnight, Circle, CircleDot, Gamepad2, Trophy, X } from "lucide-react";
+import { BrickWall, ChessKnight, Circle, CircleDot, Gamepad2, Spade, Trophy, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -56,10 +56,19 @@ export function CheckersIcon({ className = "size-8" }: { className?: string }) {
   );
 }
 
+export function DurakIcon({ className = "size-8" }: { className?: string }) {
+  return (
+    <span aria-hidden className={`flex items-center justify-center rounded-[10px] bg-accent text-signal ${className}`}>
+      <Spade className="size-[55%]" strokeWidth={2} />
+    </span>
+  );
+}
+
 export function GameIcon({ game, className }: { game: GameKey; className?: string }) {
   if (game === GameKey.Chess) return <ChessIcon className={className} />;
   if (game === GameKey.Quoridor) return <QuoridorIcon className={className} />;
   if (game === GameKey.Checkers) return <CheckersIcon className={className} />;
+  if (game === GameKey.Durak) return <DurakIcon className={className} />;
   return <TicTacToeIcon className={className} />;
 }
 
@@ -86,7 +95,8 @@ export function GamesSidebar() {
   const chessRating = useRatings(GameKey.Chess, me).data?.get(user?.id ?? "")?.rating;
   const quoridorRating = useRatings(GameKey.Quoridor, me).data?.get(user?.id ?? "")?.rating;
   const checkersRating = useRatings(GameKey.Checkers, me).data?.get(user?.id ?? "")?.rating;
-  const ratings: Record<GameKey, number | undefined> = { [GameKey.TicTacToe]: ticTacToeRating, [GameKey.Chess]: chessRating, [GameKey.Quoridor]: quoridorRating, [GameKey.Checkers]: checkersRating };
+  const durakRating = useRatings(GameKey.Durak, me).data?.get(user?.id ?? "")?.rating;
+  const ratings: Record<GameKey, number | undefined> = { [GameKey.TicTacToe]: ticTacToeRating, [GameKey.Chess]: chessRating, [GameKey.Quoridor]: quoridorRating, [GameKey.Checkers]: checkersRating, [GameKey.Durak]: durakRating };
   const sessions = useGameSessions();
   const active = (sessions.data ?? []).filter((game) => game.status === SessionStatus.WAITING || game.status === SessionStatus.PLAYING);
   const opponents = usePublicProfiles(active.flatMap((game) => game.playerIds.filter((id) => id !== user?.id))).data;
@@ -160,6 +170,7 @@ export function GamesCatalogue() {
             <Link href={lobbyHref(GameKey.Chess)} className={buttonVariants({ variant: "signal", className: "min-h-10" })}>Open Chess</Link>
             <Link href={lobbyHref(GameKey.Quoridor)} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Quoridor</Link>
             <Link href={lobbyHref(GameKey.Checkers)} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Checkers</Link>
+            <Link href={lobbyHref(GameKey.Durak)} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Durak</Link>
             <Link href={ticTacToeLobbyHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Tic-Tac-Toe</Link>
             <Link href={tournamentsHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Tournaments</Link>
           </div>
