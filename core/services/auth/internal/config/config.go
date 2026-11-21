@@ -32,6 +32,8 @@ type Config struct {
 	OAuth         OAuthConfig
 	Avatar        AvatarConfig
 	InternalKey   config.Secret
+
+	ClientIPPeers []string
 }
 
 type AvatarConfig struct {
@@ -93,7 +95,10 @@ func Load() (Config, error) {
 		LoginThrottle: loadLoginThrottle(l),
 		OAuth:         loadOAuth(l),
 		Avatar:        loadAvatar(l),
+
+		ClientIPPeers: l.StringSlice("CLIENT_IP_TRUSTED_PEERS", []string{"gateway"}),
 	}
+	refuseDefaultAvatarSecret(l, cfg.Base, cfg.Avatar)
 
 	if cfg.Postgres.SearchPath == "" {
 		cfg.Postgres.SearchPath = ServiceName
@@ -257,12 +262,16 @@ func loadAvatar(l *config.Loader) AvatarConfig {
 			QueueTimeout:  l.DurationDefault("AVATARS_QUEUE_TIMEOUT", defaults.QueueTimeout),
 		},
 		Endpoint:  l.StringDefault("AVATARS_ENDPOINT", "minio:9000"),
-		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
-		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),
+		AccessKey: l.StringDefault("AVATARS_ACCESS_KEY", l.StringDefault("MINIO_ROOT_USER", "axon")),
+		SecretKey: l.SecretDefault("AVATARS_SECRET_KEY", l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal()).Reveal(),
 		Bucket:    l.StringDefault("AVATARS_BUCKET", "avatars"),
 		UseSSL:    l.Bool("AVATARS_USE_SSL", false),
 		PublicURL: l.StringDefault("AVATARS_PUBLIC_URL", "http://localhost:59000"),
 	}
+}
+
+func refuseDefaultAvatarSecret(l *config.Loader, base config.Base, avatar AvatarConfig) {
+	base.RefuseDefaultSecret(l, "AVATARS_SECRET_KEY", avatar.SecretKey)
 }
 
 func loadPasswordParams(l *config.Loader) password.Params {

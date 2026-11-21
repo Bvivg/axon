@@ -156,8 +156,8 @@ func (id *Identity) ServerConfig() *tls.Config {
 }
 
 func Authorize(peer *x509.Certificate, allowed []string) error {
-	if len(allowed) == 0 {
-		return nil
+	if peer == nil || len(allowed) == 0 {
+		return fmt.Errorf("%w: no client identities are allowed", ErrClientNotAllowed)
 	}
 	names := append([]string{peer.Subject.CommonName}, peer.DNSNames...)
 	for _, name := range names {

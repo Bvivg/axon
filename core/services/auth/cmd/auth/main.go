@@ -282,6 +282,7 @@ func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, me
 		middleware.Correlation,
 		middleware.Recovery(log),
 		middleware.RequestLogger(log),
+		server.NewClientIPTrust(cfg.ClientIPPeers).Middleware,
 	)(mux)
 }
 

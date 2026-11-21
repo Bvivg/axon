@@ -6,18 +6,18 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-axon}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-axon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
       POSTGRES_DB: ${POSTGRES_DB:-axon}
 
       PGDATA: /var/lib/postgresql/data/pgdata
 
-      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
-      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
-      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
-      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
-      RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
-      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD:-analysis}
-      TOURNAMENT_DB_PASSWORD: ${TOURNAMENT_DB_PASSWORD:-tournament}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      TOURNAMENT_DB_PASSWORD: ${TOURNAMENT_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
     command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10", "-c", "max_slot_wal_keep_size=1GB"]
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"
@@ -38,7 +38,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-axon}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
 
     command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
     ports:
@@ -58,7 +58,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     environment:
-      EDGE_REDIS_PASSWORD: ${EDGE_REDIS_PASSWORD:-axon-edge}
+      EDGE_REDIS_PASSWORD: ${EDGE_REDIS_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
     command: ["sh", "-c", "exec redis-server --save '' --appendonly no --maxmemory 64mb --maxmemory-policy volatile-ttl --requirepass \"$$EDGE_REDIS_PASSWORD\""]
     volumes:
       - type: tmpfs
@@ -76,7 +76,7 @@ services:
     restart: unless-stopped
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
       - "127.0.0.1:${MINIO_HOST_PORT:-59000}:9000"
@@ -94,17 +94,16 @@ services:
   minio-init:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     restart: "no"
-    entrypoint: ["sh", "-c"]
-    command:
-      - >
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
-        mc mb --ignore-existing local/avatars &&
-        mc anonymous set download local/avatars &&
-        mc mb --ignore-existing local/chat-attachments &&
-        mc anonymous set none local/chat-attachments
+    entrypoint: ["sh", "/minio/init.sh"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-axon}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-axon12345}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      AVATARS_ACCESS_KEY: ${AVATARS_ACCESS_KEY:-axon-avatars}
+      AVATARS_SECRET_KEY: ${AVATARS_SECRET_KEY:-axon-avatars-dev-secret}
+      ATTACHMENTS_ACCESS_KEY: ${ATTACHMENTS_ACCESS_KEY:-axon-attachments}
+      ATTACHMENTS_SECRET_KEY: ${ATTACHMENTS_SECRET_KEY:-axon-attachments-dev-secret}
+    volumes:
+      - ./minio:/minio:ro
     networks: [data]
     depends_on:
       minio:
@@ -123,19 +122,24 @@ services:
       - .env
     environment:
 
-      POSTGRES_DSN: ${AUTH_POSTGRES_DSN}
+      POSTGRES_DSN: ${AUTH_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
       HTTP_ADDR: ":8081"
 
       METRICS_ADDR: ":9091"
       AVATARS_ENDPOINT: "minio:9000"
       AVATARS_PUBLIC_URL: ${AVATARS_PUBLIC_URL:-http://localhost:59000}
+      AVATARS_ACCESS_KEY: ${AVATARS_ACCESS_KEY:-axon-avatars}
+      AVATARS_SECRET_KEY: ${AVATARS_SECRET_KEY:-axon-avatars-dev-secret}
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_PASSWORD: ""
+      ATTACHMENTS_SECRET_KEY: ""
     ports:
       - "127.0.0.1:${AUTH_HOST_PORT:-8081}:8081"
       - "127.0.0.1:${AUTH_METRICS_HOST_PORT:-9091}:9091"
     volumes:
 
       - ..:/src
-    networks: [edge, app, data]
+    networks: [app, data]
     depends_on:
       postgres:
         condition: service_healthy
@@ -201,7 +205,7 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_DSN: ${CHAT_POSTGRES_DSN}
+      POSTGRES_DSN: ${CHAT_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
       HTTP_ADDR: ":8082"
       METRICS_ADDR: ":9092"
 
@@ -213,6 +217,11 @@ services:
 
       ATTACHMENTS_ENDPOINT: "minio:9000"
       ATTACHMENTS_PUBLIC_URL: ${ATTACHMENTS_PUBLIC_URL:-http://localhost:59000}
+      ATTACHMENTS_ACCESS_KEY: ${ATTACHMENTS_ACCESS_KEY:-axon-attachments}
+      ATTACHMENTS_SECRET_KEY: ${ATTACHMENTS_SECRET_KEY:-axon-attachments-dev-secret}
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_PASSWORD: ""
+      AVATARS_SECRET_KEY: ""
     ports:
       - "127.0.0.1:${CHAT_HOST_PORT:-8082}:8082"
       - "127.0.0.1:${CHAT_METRICS_HOST_PORT:-9092}:9092"
@@ -253,7 +262,8 @@ services:
         SERVICE: game
     restart: unless-stopped
     environment:
-      POSTGRES_DSN: ${GAME_POSTGRES_DSN:-postgres://game_service:game@postgres:5432/axon?sslmode=disable&search_path=game}
+      APP_ENV: ${APP_ENV:-development}
+      POSTGRES_DSN: ${GAME_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
       HTTP_ADDR: ":8083"
       JWKS_URL: "http://auth:9091/.well-known/jwks.json"
       JWT_ISSUER: ${JWT_ISSUER:-https://auth.axon.local}
@@ -262,6 +272,7 @@ services:
       GAME_JOURNAL_REPLICATION: 1
       GAME_JOURNAL_MIN_INSYNC: 1
       GAME_TEST_HOOKS: ${GAME_TEST_HOOKS:-false}
+      GAME_INTERNAL_KEY: ${GAME_INTERNAL_KEY:-axon-dev-game-owner-key-not-for-production}
     deploy:
       replicas: ${GAME_REPLICAS:-1}
     networks: [app, data]
@@ -288,7 +299,7 @@ services:
     entrypoint: ["sh", "-ec"]
     command: ['exec migrate -path=/migrations -database "$$GAME_POSTGRES_DSN" up']
     environment:
-      GAME_POSTGRES_DSN: ${GAME_POSTGRES_DSN:-postgres://game_service:game@postgres:5432/axon?sslmode=disable&search_path=game}
+      GAME_POSTGRES_DSN: ${GAME_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
     networks: [data]
     depends_on:
       postgres:
@@ -300,16 +311,16 @@ services:
     entrypoint: ["sh", "/docker-entrypoint-initdb.d/01-schemas.sh"]
     environment:
       PGHOST: postgres
-      PGPASSWORD: ${POSTGRES_PASSWORD:-axon}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
       POSTGRES_USER: ${POSTGRES_USER:-axon}
       POSTGRES_DB: ${POSTGRES_DB:-axon}
-      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth}
-      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
-      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:-game}
-      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:-calling}
-      RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:-rating}
-      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD:-analysis}
-      TOURNAMENT_DB_PASSWORD: ${TOURNAMENT_DB_PASSWORD:-tournament}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      CHAT_DB_PASSWORD: ${CHAT_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      GAME_DB_PASSWORD: ${GAME_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      CALLING_DB_PASSWORD: ${CALLING_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      RATING_DB_PASSWORD: ${RATING_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      ANALYSIS_DB_PASSWORD: ${ANALYSIS_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
+      TOURNAMENT_DB_PASSWORD: ${TOURNAMENT_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
     volumes:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
       - type: tmpfs
@@ -328,12 +339,13 @@ services:
         SERVICE: rating
     restart: unless-stopped
     environment:
-      POSTGRES_DSN: ${RATING_POSTGRES_DSN:-postgres://rating_service:rating@postgres:5432/axon?sslmode=disable&search_path=rating}
+      APP_ENV: ${APP_ENV:-development}
+      POSTGRES_DSN: ${RATING_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
       HTTP_ADDR: ":8084"
       METRICS_ADDR: ":9094"
       KAFKA_BROKERS: "kafka:29092"
       REDIS_ADDR: "redis:6379"
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-axon}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
     networks: [app, data]
     depends_on:
       rating-migrate:
@@ -358,7 +370,7 @@ services:
     entrypoint: ["sh", "-ec"]
     command: ['exec migrate -path=/migrations -database "$$RATING_POSTGRES_DSN" up']
     environment:
-      RATING_POSTGRES_DSN: ${RATING_POSTGRES_DSN:-postgres://rating_service:rating@postgres:5432/axon?sslmode=disable&search_path=rating}
+      RATING_POSTGRES_DSN: ${RATING_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
     networks: [data]
     depends_on:
       postgres-schemas:
@@ -374,7 +386,8 @@ services:
         RUNTIME_FLAVOR: analysis
     restart: unless-stopped
     environment:
-      POSTGRES_DSN: ${ANALYSIS_POSTGRES_DSN:-postgres://analysis_service:analysis@postgres:5432/axon?sslmode=disable&search_path=analysis}
+      APP_ENV: ${APP_ENV:-development}
+      POSTGRES_DSN: ${ANALYSIS_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
       HTTP_ADDR: ":8085"
       METRICS_ADDR: ":9095"
       KAFKA_BROKERS: "kafka:29092"
@@ -407,7 +420,7 @@ services:
     entrypoint: ["sh", "-ec"]
     command: ['exec migrate -path=/migrations -database "$$ANALYSIS_POSTGRES_DSN" up']
     environment:
-      ANALYSIS_POSTGRES_DSN: ${ANALYSIS_POSTGRES_DSN:-postgres://analysis_service:analysis@postgres:5432/axon?sslmode=disable&search_path=analysis}
+      ANALYSIS_POSTGRES_DSN: ${ANALYSIS_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
     networks: [data]
     depends_on:
       postgres-schemas:
@@ -422,7 +435,8 @@ services:
         SERVICE: tournament
     restart: unless-stopped
     environment:
-      POSTGRES_DSN: ${TOURNAMENT_POSTGRES_DSN:-postgres://tournament_service:tournament@postgres:5432/axon?sslmode=disable&search_path=tournament}
+      APP_ENV: ${APP_ENV:-development}
+      POSTGRES_DSN: ${TOURNAMENT_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
       HTTP_ADDR: ":8086"
       METRICS_ADDR: ":9096"
       KAFKA_BROKERS: "kafka:29092"
@@ -455,7 +469,7 @@ services:
     entrypoint: ["sh", "-ec"]
     command: ['exec migrate -path=/migrations -database "$$TOURNAMENT_POSTGRES_DSN" up']
     environment:
-      TOURNAMENT_POSTGRES_DSN: ${TOURNAMENT_POSTGRES_DSN:-postgres://tournament_service:tournament@postgres:5432/axon?sslmode=disable&search_path=tournament}
+      TOURNAMENT_POSTGRES_DSN: ${TOURNAMENT_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
     networks: [data]
     depends_on:
       postgres-schemas:
@@ -468,7 +482,7 @@ services:
     entrypoint: ["sh", "-ec"]
     command: ['exec migrate -path=/migrations -database "$$AUTH_POSTGRES_DSN" up']
     environment:
-      AUTH_POSTGRES_DSN: ${AUTH_POSTGRES_DSN:-postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth}
+      AUTH_POSTGRES_DSN: ${AUTH_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
     networks: [data]
     depends_on:
       postgres:
@@ -481,7 +495,7 @@ services:
     entrypoint: ["sh", "-ec"]
     command: ['exec migrate -path=/migrations -database "$$CHAT_POSTGRES_DSN" up']
     environment:
-      CHAT_POSTGRES_DSN: ${CHAT_POSTGRES_DSN:-postgres://chat_service:chat@postgres:5432/axon?sslmode=disable&search_path=chat}
+      CHAT_POSTGRES_DSN: ${CHAT_POSTGRES_DSN:?missing in core/deploy/.env, copy it from .env.example}
     networks: [data]
     depends_on:
       postgres:
@@ -494,9 +508,9 @@ services:
     environment:
       PGHOST: postgres
       PGUSER: ${POSTGRES_USER:-axon}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-axon}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
       PGDATABASE: ${POSTGRES_DB:-axon}
-      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD:-debezium}
+      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
       CDC_PUBLICATION: axon_outbox
     volumes:
       - ./cdc:/cdc:ro
@@ -539,7 +553,7 @@ services:
       CDC_DATABASE_HOST: postgres
       CDC_DATABASE_PORT: 5432
       CDC_DATABASE_NAME: ${POSTGRES_DB:-axon}
-      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD:-debezium}
+      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
     ports:
       - "127.0.0.1:${CONNECT_HOST_PORT:-58083}:8083"
     volumes:
@@ -629,9 +643,13 @@ services:
 
       JWKS_URL: "http://auth:9091/.well-known/jwks.json"
       RATE_LIMIT_REDIS_ADDR: "edge-redis:6379"
-      RATE_LIMIT_REDIS_PASSWORD: ${EDGE_REDIS_PASSWORD:-axon-edge}
+      RATE_LIMIT_REDIS_PASSWORD: ${EDGE_REDIS_PASSWORD:?missing in core/deploy/.env, copy it from .env.example}
 
       TRUSTED_PROXIES: "0"
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_PASSWORD: ""
+      AVATARS_SECRET_KEY: ""
+      ATTACHMENTS_SECRET_KEY: ""
     ports:
       - "127.0.0.1:${GATEWAY_HOST_PORT:-18080}:8080"
       - "127.0.0.1:${GATEWAY_METRICS_HOST_PORT:-19090}:9090"

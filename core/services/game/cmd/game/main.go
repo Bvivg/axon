@@ -85,7 +85,7 @@ func run() error {
 	outboxRetention := loader.DurationDefault("GAME_OUTBOX_RETENTION", 24*time.Hour)
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
-	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
+	testHooks, ownerKey := loadControls(loader, cfg.Environment)
 	spectatorLimit := loader.IntDefault("GAME_SPECTATOR_LIMIT", 200)
 	chessGame, quoridorGame := chess.Definition(), quoridor.Definition()
 	chessGame.MaxPlies = loader.IntDefault("GAME_CHESS_MAX_PLIES", chess.MaxPlies)
@@ -153,7 +153,7 @@ func run() error {
 		peerTransport = identity.Transport(mtls.ServerName("game"))
 		sockets = &http.Client{Transport: identity.Transport(mtls.ServerName("game"), mtls.HTTP1Only())}
 	}
-	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed, Watchers: spectatorLimit,
+	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed, Watchers: spectatorLimit, OwnerKey: ownerKey,
 		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil, History: history, MatchSockets: matchSockets})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
@@ -197,7 +197,7 @@ func run() error {
 	telemetry.Profiling(admin)
 	graceful := lifecycle.New(drain, cfg.ShutdownTimeout, checks, log)
 	srv := graceful.Serve(&http.Server{
-		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux),
+		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log), handler.GuardOwner)(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	})
 	if identity != nil {
