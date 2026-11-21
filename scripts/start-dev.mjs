@@ -130,6 +130,7 @@ async function main() {
       if (!files.includes(join(root, "core/deploy/docker-compose.yml"))) throw new Error("Another checkout owns the axon Compose project; stop it before starting this checkout");
       const compose = ["compose", "--project-name", "axon", "--project-directory", join(root, "core/deploy"), ...files.flatMap((file) => ["-f", file])];
       await launch("infrastructure", "docker", [...compose, "up", "-d", "--wait", "--wait-timeout", "180", "--no-recreate", "postgres", "redis", "kafka", "minio"]).completed;
+      await launch("topics", "docker", [...compose, "run", "--rm", "--no-deps", "kafka-topics"]).completed;
       await launch("storage-init", "docker", [...compose, "run", "--rm", "--no-deps", "minio-init"]).completed;
       await launch("schemas", "docker", [...compose, "run", "--rm", "--no-deps", "postgres-schemas"]).completed;
       if (env.CALLS_SFU_ENABLED === "true" && !env.DEV_LIVEKIT_URL) {

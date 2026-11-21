@@ -171,7 +171,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
@@ -188,6 +188,26 @@ services:
       timeout: 15s
       retries: 10
       start_period: 30s
+
+  kafka-topics:
+    image: confluentinc/confluent-local:7.5.0
+    restart: "no"
+    entrypoint: ["sh", "/kafka/topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_JVM_PERFORMANCE_OPTS: "-XX:TieredStopAtLevel=1 -XX:+UseSerialGC"
+      GAME_JOURNAL_REPLICATION: 1
+      GAME_JOURNAL_MIN_INSYNC: 1
+    volumes:
+      - ./kafka:/kafka:ro
+      - type: tmpfs
+        target: /etc/kafka/secrets
+      - type: tmpfs
+        target: /var/lib/kafka/data
+    networks: [data]
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   chat:
     build:
@@ -232,8 +252,8 @@ services:
       auth:
         condition: service_healthy
 
-      kafka:
-        condition: service_healthy
+      kafka-topics:
+        condition: service_completed_successfully
 
       minio-init:
         condition: service_completed_successfully
@@ -272,8 +292,8 @@ services:
         condition: service_completed_successfully
       auth:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
+      kafka-topics:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:8083/readyz"]
       interval: 3s
@@ -551,8 +571,8 @@ services:
         target: /kafka/logs
     networks: [data]
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-topics:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8083/health"]
       interval: 5s
