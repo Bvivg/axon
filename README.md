@@ -73,10 +73,11 @@ Needs Docker with Compose v2, `make` and `bash`. Code generation, key generation
 and every service run in containers.
 
 ```sh
-make proto && ./startup.sh
+./startup.sh
 ```
 
-`make proto` generates the contracts the images compile against; `startup.sh`
+`startup.sh` runs `make proto`, which regenerates the contract code only when
+the contracts changed (`make up` and `npm run start:dev` do the same), then
 creates `core/deploy/.env`, a development signing key, and starts the whole
 stack. The web client is at `http://localhost:3003`, the gateway at
 `http://localhost:18080`; create an account on the sign-up page.

@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -192,5 +193,30 @@ func TestThrottlingIsPerCaller(t *testing.T) {
 
 	if _, err := quiet.login(acct.email, testPassword); err != nil {
 		t.Fatalf("a second caller was throttled by someone else's traffic: %v", err)
+	}
+}
+
+func TestRepeatedFailedSignInsLockOnlyThatAccount(t *testing.T) {
+	c := newCaller(t)
+	target := c.register(t)
+	bystander := c.register(t)
+
+	for i := range 5 {
+		if _, err := newCaller(t).login(target.email, "not-the-password"); connect.CodeOf(err) != connect.CodeUnauthenticated {
+			t.Fatalf("failure #%d: code = %v, want unauthenticated", i+1, connect.CodeOf(err))
+		}
+	}
+
+	_, err := newCaller(t).login(target.email, testPassword)
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("code = %v, want resource_exhausted for a locked account even with the right password", connect.CodeOf(err))
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) || connectErr.Meta().Get("Retry-After") == "" {
+		t.Errorf("the lock does not say when to retry: %v", err)
+	}
+
+	if _, err := newCaller(t).login(bystander.email, testPassword); err != nil {
+		t.Errorf("another account was locked too: %v", err)
 	}
 }

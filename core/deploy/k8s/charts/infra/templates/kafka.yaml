@@ -80,6 +80,8 @@ spec:
   replicas: {{ $r }}
   config:
     min.insync.replicas: {{ $isr }}
+    retention.ms: -1
+    cleanup.policy: delete
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic

@@ -42,6 +42,7 @@ type Config struct {
 	Watchers     int
 	History      HistoryLimits
 	MatchSockets int
+	OwnerKey     string
 }
 
 type HistoryLimits struct {
@@ -66,6 +67,7 @@ type Handler struct {
 	updates  updates
 	matches  updates
 	watchers *watchers
+	ownerKey string
 
 	historyPlies int
 	historyBytes int
@@ -84,12 +86,13 @@ func New(cfg Config) *Handler {
 	}
 	h := &Handler{
 		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks, metrics: cfg.Metrics,
-		peers:    newPeers(client, scheme),
+		peers:    newPeers(client, scheme, cfg.OwnerKey),
 		sockets:  cfg.Sockets,
 		scheme:   scheme,
 		updates:  newUpdates(),
 		matches:  newUpdates(),
 		watchers: newWatchers(cfg.Watchers),
+		ownerKey: cfg.OwnerKey,
 
 		historyPlies: cfg.History.Plies,
 		historyBytes: cfg.History.Bytes,

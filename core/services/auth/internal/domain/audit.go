@@ -20,6 +20,7 @@ const (
 	SecurityRefreshTokenReused  SecurityAction = "refresh_token_reused"
 	SecurityRoleAssigned        SecurityAction = "role_assigned"
 	SecurityRoleRevoked         SecurityAction = "role_revoked"
+	SecurityEmailChanged        SecurityAction = "email_changed"
 )
 
 type SecurityEvent struct {

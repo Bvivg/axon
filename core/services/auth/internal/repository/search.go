@@ -16,15 +16,14 @@ func (r *Repository) SearchUsers(ctx context.Context, query string, excludeUserI
 		WITH matches AS (
 		SELECT ` + userColumns + `,
 			CASE
-				WHEN $1 = '' OR email = lower($1) OR lower(display_name) = lower($1) OR username = $4 THEN 0
+				WHEN lower(display_name) = lower($1) OR username = $4 THEN 0
 				WHEN display_name ILIKE $6 OR nickname ILIKE $6 OR ($4 <> '' AND username LIKE $7) THEN 1
 				ELSE 2
 			END AS search_rank,
 			lower(display_name) COLLATE "C" AS search_name
 		FROM users
 		WHERE id != $2 AND (
-			$1 = '' OR email = lower($1)
-			OR display_name ILIKE $3
+			display_name ILIKE $3
 			OR nickname ILIKE $3
 			OR ($4 <> '' AND username LIKE $5)
 		))

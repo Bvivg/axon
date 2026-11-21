@@ -42,7 +42,10 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Result, error
 		}
 	}
 
-	hash, err := s.hasher.Hash(in.Password)
+	hash, err := s.hashPassword(ctx, in.Password)
+	if errors.Is(err, domain.ErrPasswordHashingBusy) {
+		return Result{}, err
+	}
 	if err != nil {
 		return Result{}, fmt.Errorf("service: hash password: %w", err)
 	}
@@ -77,15 +80,20 @@ type LoginInput struct {
 
 func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 	email := domain.NormalizeEmail(in.Email)
+	account := domain.EmailSHA256(email)
+
+	if err := s.checkLoginThrottle(ctx, account); err != nil {
+		return Result{}, err
+	}
 
 	user, err := s.store.UserByEmail(ctx, email)
 	switch {
 	case errors.Is(err, domain.ErrUserNotFound):
 
-		if _, verifyErr := s.hasher.Verify(in.Password, s.dummyHash); verifyErr != nil {
-			return Result{}, fmt.Errorf("service: verify against placeholder hash: %w", verifyErr)
+		if err := s.verifyPlaceholder(ctx, in.Password); err != nil {
+			return Result{}, err
 		}
-		return Result{}, s.loginFailed(ctx, uuid.Nil, email)
+		return Result{}, s.passwordLoginFailed(ctx, uuid.Nil, email, account)
 	case err != nil:
 		return Result{}, err
 	}
@@ -94,23 +102,27 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 	switch {
 	case errors.Is(err, domain.ErrNoPassword):
 
-		if _, verifyErr := s.hasher.Verify(in.Password, s.dummyHash); verifyErr != nil {
-			return Result{}, fmt.Errorf("service: verify against placeholder hash: %w", verifyErr)
+		if err := s.verifyPlaceholder(ctx, in.Password); err != nil {
+			return Result{}, err
 		}
-		return Result{}, s.loginFailed(ctx, user.ID, email)
+		return Result{}, s.passwordLoginFailed(ctx, user.ID, email, account)
 	case err != nil:
 		return Result{}, err
 	}
 
-	ok, err := s.hasher.Verify(in.Password, credential.PasswordHash)
+	ok, err := s.verifyPassword(ctx, in.Password, credential.PasswordHash)
+	if errors.Is(err, domain.ErrPasswordHashingBusy) {
+		return Result{}, err
+	}
 	if err != nil {
 
 		return Result{}, fmt.Errorf("service: verify password for user %s: %w", user.ID, err)
 	}
 	if !ok {
-		return Result{}, s.loginFailed(ctx, user.ID, email)
+		return Result{}, s.passwordLoginFailed(ctx, user.ID, email, account)
 	}
 
+	s.noteLoginSuccess(ctx, account)
 	s.rehashIfNeeded(ctx, user.ID, in.Password, credential.PasswordHash)
 
 	familyID := uuid.New()
@@ -131,12 +143,28 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 	return Result{User: s.attachRoles(ctx, user), Tokens: tokens}, nil
 }
 
+func (s *Service) verifyPlaceholder(ctx context.Context, plaintext string) error {
+	_, err := s.verifyPassword(ctx, plaintext, s.dummyHash)
+	if errors.Is(err, domain.ErrPasswordHashingBusy) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("service: verify against placeholder hash: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) passwordLoginFailed(ctx context.Context, userID uuid.UUID, email, account string) error {
+	s.noteLoginFailure(ctx, userID, account)
+	return s.loginFailed(ctx, userID, email)
+}
+
 func (s *Service) rehashIfNeeded(ctx context.Context, userID uuid.UUID, plaintext, stored string) {
 	if !s.hasher.NeedsRehash(stored) {
 		return
 	}
 
-	upgraded, err := s.hasher.Hash(plaintext)
+	upgraded, err := s.hashPassword(ctx, plaintext)
 	if err != nil {
 		s.log.WarnContext(ctx, "could not re-hash password", "user_id", userID, "error", err)
 		return
