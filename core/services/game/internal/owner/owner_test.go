@@ -431,3 +431,70 @@ func TestLostLeaseRevokesThePartition(t *testing.T) {
 		t.Fatal("sockets were not moved off the lost partition")
 	}
 }
+
+func TestLostAppendAckRecoversThePersistedRecord(t *testing.T) {
+	c := newCluster(t, 1)
+	node := c.node(t, "a", nil, 0)
+	ctx := context.Background()
+	game, x, o := joined(t, node)
+	lost := errors.New("ack lost")
+	c.log.LoseAcksWith(func(int32) error { return lost })
+	if _, err := node.Move(ctx, game.ID, x, game.State.Ply, tictactoe.Key, cell(0), &game.Revision); !errors.Is(err, lost) {
+		t.Fatal(err)
+	}
+	c.log.LoseAcksWith(nil)
+	read, err := node.Get(ctx, game.ID, o)
+	if err != nil || read.Revision != game.Revision+1 || read.State.Ply != 1 {
+		t.Fatal("owner served a state behind the journal", read.Revision, read.State.Ply, err)
+	}
+	if _, err := node.Move(ctx, game.ID, x, game.State.Ply, tictactoe.Key, cell(4), &game.Revision); !errors.Is(err, engine.ErrStaleMove) {
+		t.Fatal("stale move accepted after a lost ack", err)
+	}
+	next := play(t, node, read, o, 4)
+	c.model.project(t)
+	projected, err := c.model.Load(ctx, game.ID)
+	if err != nil || projected.Revision != next.Revision || string(projected.State.Data) != string(next.State.Data) {
+		t.Fatal("projection diverged from the owner", projected.Revision, next.Revision, err)
+	}
+}
+
+func TestLostAckOnCreateDoesNotCreateTwice(t *testing.T) {
+	c := newCluster(t, 1)
+	node := c.node(t, "a", nil, 0)
+	ctx := context.Background()
+	user, request := uuid.New(), uuid.New()
+	c.log.LoseAcksWith(func(int32) error { return errors.New("ack lost") })
+	if _, err := node.Create(ctx, user, request, tictactoe.Key); err == nil {
+		t.Fatal("lost ack reported success")
+	}
+	c.log.LoseAcksWith(nil)
+	again, err := node.Create(ctx, user, request, tictactoe.Key)
+	if err != nil || again.Revision != 1 {
+		t.Fatal(again, err)
+	}
+	end, _ := c.log.End(ctx, 0)
+	created := 0
+	_ = c.log.Read(ctx, 0, 0, end, func(entry journal.Entry) error {
+		if entry.Event != nil && entry.Event.Session.ID == again.ID {
+			created++
+		}
+		return nil
+	})
+	if created != 1 {
+		t.Fatal("session created twice", created)
+	}
+}
+
+func TestCancelledCallerDoesNotAbortTheAppend(t *testing.T) {
+	c := newCluster(t, 1)
+	node := c.node(t, "a", nil, 0)
+	game, x, o := joined(t, node)
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	moved, err := node.Move(gone, game.ID, x, game.State.Ply, tictactoe.Key, cell(0), &game.Revision)
+	if err != nil || moved.Revision != game.Revision+1 {
+		t.Fatal("append followed the caller's context", err)
+	}
+	play(t, node, moved, o, 4)
+	c.model.project(t)
+}

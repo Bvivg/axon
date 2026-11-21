@@ -32,7 +32,10 @@ type Lease struct {
 	Wait       time.Duration
 }
 
-const historyDepth = 4
+const (
+	historyDepth         = 4
+	defaultAppendTimeout = 15 * time.Second
+)
 
 type ReadModel interface {
 	Claim(ctx context.Context, partition int32, owner, address string, ttl time.Duration) (Lease, error)
@@ -60,6 +63,8 @@ type Config struct {
 	Now      func() time.Time
 	Lease    time.Duration
 	Metrics  *metrics.Game
+
+	AppendTimeout time.Duration
 }
 
 type Owner struct {
@@ -81,6 +86,7 @@ type part struct {
 type cell struct {
 	mu      sync.Mutex
 	loaded  bool
+	stale   bool
 	exists  bool
 	game    session.Session
 	history map[int]session.MoveRecord
@@ -93,6 +99,9 @@ func New(cfg Config) *Owner {
 		clock = time.Now
 	}
 	cfg.Now = func() time.Time { return clock().Truncate(time.Microsecond) }
+	if cfg.AppendTimeout <= 0 {
+		cfg.AppendTimeout = defaultAppendTimeout
+	}
 	return &Owner{cfg: cfg, parts: map[int32]*part{}}
 }
 
@@ -439,15 +448,9 @@ func (o *Owner) do(ctx context.Context, id uuid.UUID, run step) (session.Session
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.loaded {
-		game, err := o.cfg.Model.Load(ctx, id)
-		switch {
-		case errors.Is(err, session.ErrNotFound):
-		case err != nil:
+		if err := o.load(ctx, p, epoch, id, c); err != nil {
 			return session.Session{}, err
-		default:
-			c.game, c.exists = game, true
 		}
-		c.loaded = true
 	}
 	next, change, err := run(c, o.cfg.Now())
 	if err != nil {
@@ -461,7 +464,8 @@ func (o *Owner) do(ctx context.Context, id uuid.UUID, run step) (session.Session
 		return session.Session{}, ErrNotOwner
 	}
 	appendStarted := time.Now()
-	if _, err := o.cfg.Log.Append(ctx, p.id, journal.Entry{Event: &journal.Event{Session: next, Change: change, Generation: epoch}}); err != nil {
+	if _, err := o.append(ctx, p.id, journal.Entry{Event: &journal.Event{Session: next, Change: change, Generation: epoch}}); err != nil {
+		c.loaded, c.stale = false, true
 		return session.Session{}, fmt.Errorf("owner: append session event: %w", err)
 	}
 	o.cfg.Metrics.Appended(ctx, time.Since(appendStarted))
@@ -481,6 +485,70 @@ func (o *Owner) do(ctx context.Context, id uuid.UUID, run step) (session.Session
 		o.cfg.Listener.Changed(id)
 	}
 	return next, nil
+}
+
+func (o *Owner) append(ctx context.Context, partition int32, entry journal.Entry) (int64, error) {
+	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), o.cfg.AppendTimeout)
+	defer cancel()
+	return o.cfg.Log.Append(detached, partition, entry)
+}
+
+func (o *Owner) load(ctx context.Context, p *part, epoch int64, id uuid.UUID, c *cell) error {
+	if c.stale {
+		return o.recover(ctx, p, epoch, id, c)
+	}
+	game, err := o.cfg.Model.Load(ctx, id)
+	switch {
+	case errors.Is(err, session.ErrNotFound):
+		c.game, c.exists = session.Session{}, false
+	case err != nil:
+		return err
+	default:
+		c.game, c.exists = game, true
+	}
+	c.loaded = true
+	return nil
+}
+
+func (o *Owner) recover(ctx context.Context, p *part, epoch int64, id uuid.UUID, c *cell) error {
+	ctx, cancel := context.WithTimeout(ctx, o.cfg.AppendTimeout)
+	defer cancel()
+	projected, err := o.cfg.Model.Projected(ctx, p.id)
+	if err != nil {
+		return fmt.Errorf("owner: recover %s: %w", id, err)
+	}
+	game, err := o.cfg.Model.Load(ctx, id)
+	switch {
+	case errors.Is(err, session.ErrNotFound):
+		c.game, c.exists = session.Session{}, false
+	case err != nil:
+		return fmt.Errorf("owner: recover %s: %w", id, err)
+	default:
+		c.game, c.exists = game, true
+	}
+	if !o.leased(p, o.leaseSpan()) {
+		return ErrNotOwner
+	}
+	now := o.cfg.Now()
+	barrier, err := o.append(ctx, p.id, journal.Entry{Claim: &journal.Claim{Generation: epoch, Owner: o.cfg.ID, At: now}})
+	if err != nil {
+		return fmt.Errorf("owner: recover %s: append barrier: %w", id, err)
+	}
+	fence := journal.NewFence()
+	fence.Seed(p.id, projected.Generation)
+	cells := map[uuid.UUID]*cell{id: c}
+	err = o.cfg.Log.Read(ctx, p.id, projected.Offset, barrier, func(entry journal.Entry) error {
+		if !fence.Admit(entry) || entry.Event.Session.ID != id {
+			return nil
+		}
+		return o.absorb(ctx, cells, *entry.Event)
+	})
+	if err != nil {
+		return fmt.Errorf("owner: recover %s: read journal: %w", id, err)
+	}
+	c.loaded, c.stale = true, false
+	o.schedule(id, c)
+	return nil
 }
 
 func (o *Owner) leased(p *part, span time.Duration) bool {
