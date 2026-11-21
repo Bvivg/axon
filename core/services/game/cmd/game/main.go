@@ -35,6 +35,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -183,10 +184,10 @@ func run() error {
 		_ = cluster.NewOwnership(kafka, own, log).Run(ctx)
 	}()
 	mux := http.NewServeMux()
-	mux.Handle(gamev1connect.NewGameServiceHandler(handler, connect.WithInterceptors(
+	mux.Handle(gamev1connect.NewGameServiceHandler(handler, rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
-	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, connect.WithInterceptors(
+	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(),
 	)))
 	mux.HandleFunc("GET /ws", handler.Socket)

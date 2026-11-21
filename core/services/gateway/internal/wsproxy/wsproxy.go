@@ -4,13 +4,21 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/correlation"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
+
+	"github.com/bvivg/axon/core/services/gateway/internal/guard"
+	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
 )
 
 const BearerPrefix = "axon.bearer."
@@ -26,6 +34,8 @@ type Handler struct {
 	log           *slog.Logger
 	socketOptions ws.Options
 	client        *http.Client
+	limiter       *ratelimit.Limiter
+	open          *openSockets
 }
 
 type Config struct {
@@ -44,6 +54,10 @@ type Config struct {
 	Inspect Inspect
 
 	HTTPClient *http.Client
+
+	Limiter *ratelimit.Limiter
+
+	MaxPerUser int
 }
 
 func New(cfg Config) (*Handler, error) {
@@ -69,6 +83,8 @@ func New(cfg Config) (*Handler, error) {
 		origins:       cfg.Origins,
 		log:           cfg.Logger,
 		client:        cfg.HTTPClient,
+		limiter:       cfg.Limiter,
+		open:          &openSockets{limit: cfg.MaxPerUser, count: map[uuid.UUID]int{}},
 	}, nil
 }
 
@@ -76,15 +92,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	token := bearerFrom(r.Header)
-	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	claims, err := h.verifier.Verify(token)
+	if err != nil {
+		if h.admit(w, "ip:"+ratelimit.Subject(guard.ClientIPFromContext(ctx))) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		}
 		return
 	}
-
-	if _, err := h.verifier.Verify(token); err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !h.admit(w, "user:"+claims.UserID.String()) {
 		return
 	}
+	release, ok := h.open.acquire(claims.UserID)
+	if !ok {
+		http.Error(w, "too many open connections", http.StatusTooManyRequests)
+		return
+	}
+	defer release()
 
 	options := h.socketOptions
 	options.Logger = h.log
@@ -121,6 +144,43 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"upstream", h.upstream, "correlation_id", correlation.FromContext(ctx))
 
 	h.join(ctx, client, upstream)
+}
+
+func (h *Handler) admit(w http.ResponseWriter, subject string) bool {
+	if h.limiter == nil {
+		return true
+	}
+	allowed, retryAfter := h.limiter.AllowWithRetry(subject)
+	if !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(retryAfter.Seconds())))))
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+	}
+	return allowed
+}
+
+type openSockets struct {
+	limit int
+	mu    sync.Mutex
+	count map[uuid.UUID]int
+}
+
+func (o *openSockets) acquire(user uuid.UUID) (func(), bool) {
+	if o.limit <= 0 {
+		return func() {}, true
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.count[user] >= o.limit {
+		return nil, false
+	}
+	o.count[user]++
+	return sync.OnceFunc(func() {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		if o.count[user]--; o.count[user] <= 0 {
+			delete(o.count, user)
+		}
+	}), true
 }
 
 func (h *Handler) join(ctx context.Context, client, upstream *ws.Conn) {

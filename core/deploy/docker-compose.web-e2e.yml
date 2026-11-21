@@ -171,6 +171,7 @@ services:
 
       CHAT_VAPID_PUBLIC_KEY: ${CHAT_VAPID_PUBLIC_KEY:-}
       CHAT_VAPID_PRIVATE_KEY: ${CHAT_VAPID_PRIVATE_KEY:-}
+      CHAT_WS_SEND_BURST: 500
 
     depends_on:
       migrate-chat:
@@ -514,6 +515,8 @@ services:
 
         NEXT_PUBLIC_API_BASE_URL: http://gateway.axon.test:8080
         NEXT_PUBLIC_OAUTH_PROVIDERS: fake
+    environment:
+      AVATARS_PUBLIC_URL: http://minio:9000
     restart: "no"
     networks:
       default:
