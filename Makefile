@@ -281,6 +281,20 @@ test-rating-e2e: jwt-key ## Rated quick matches through gateway, CDC and rating,
 	@trap '$(COMPOSE_RATING_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
 	core/deploy/rating-e2e.sh $(COMPOSE_RATING_E2E)
 
+COMPOSE_BENCH := env BUILD_TARGET=runtime docker compose -p axon-bench \
+	-f core/deploy/docker-compose.yml -f core/deploy/docker-compose.loadgen.yml --profile load
+
+.PHONY: bench
+bench: jwt-key ## Loadgen against a one-off game stack, then reconcile (MATCHES, CONCURRENCY, PACE, SEED, KEEP=1)
+	@core/deploy/loadgen.sh bench $(COMPOSE_BENCH)
+
+COMPOSE_CHAOS := env BUILD_TARGET=runtime GAME_REPLICAS=2 TOXIPROXY_HOST_PORT=18974 docker compose -p axon-chaos \
+	-f core/deploy/docker-compose.yml -f core/deploy/docker-compose.chaos.yml -f core/deploy/docker-compose.loadgen.yml --profile load
+
+.PHONY: chaos
+chaos: jwt-key ## Loadgen through Postgres latency, a game restart and a game kill; fails on any lost confirmed move (MATCHES, CONCURRENCY, KEEP=1)
+	@core/deploy/loadgen.sh chaos $(COMPOSE_CHAOS)
+
 COMPOSE_WEB_E2E := docker compose -f core/deploy/docker-compose.web-e2e.yml
 
 .PHONY: test-web-e2e
