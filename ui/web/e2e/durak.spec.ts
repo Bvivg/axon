@@ -149,3 +149,35 @@ test("two players play durak to the end and never see each other's hand", async 
     await watcher.context.close();
   }
 });
+
+test("quick match pairs two durak players and resignation moves the rating", async ({ browser, baseURL }) => {
+  test.setTimeout(90_000);
+  const origin = new URL(baseURL!).origin;
+  const a = await person(browser, origin, "Rated Alpha");
+  const b = await person(browser, origin, "Rated Bravo");
+  try {
+    for (const who of [a, b]) {
+      await who.page.goto(origin + "/games/durak");
+      await expect(who.page.getByTestId("my-rating")).toHaveText("1200");
+      await who.page.getByRole("button", { name: "Start a game", exact: true }).click();
+      await who.page.getByRole("button", { name: /Quick match/ }).click();
+    }
+    await expect(a.page).toHaveURL(/\/games\/durak\/[0-9a-f-]+$/, { timeout: 20_000 });
+    await expect(b.page).toHaveURL(a.page.url(), { timeout: 20_000 });
+    const first = await turnOf(a, b);
+    const second = first === a ? b : a;
+    await first!.page.locator("[data-hand-card][data-legal]").first().click();
+    await expect(status(second.page)).toContainText("Your move · defend");
+    await second.page.getByRole("button", { name: "Resign", exact: true }).click();
+    await second.page.getByRole("button", { name: "Resign", exact: true }).click();
+    await expect(status(first!.page)).toHaveText("You won · Resignation");
+    await expect(second.page.locator("[data-rating-delta]")).toHaveText(/^Resignation · Rating −\d+$/, { timeout: 30_000 });
+    await second.page.getByRole("button", { name: "View board" }).click();
+    await second.page.getByRole("link", { name: "Back to lobby" }).first().click();
+    await expect(second.page.getByTestId("my-rating")).not.toHaveText("1200");
+    for (const who of [a, b]) expectNothingLeaked(who);
+  } finally {
+    await a.context.close();
+    await b.context.close();
+  }
+});
