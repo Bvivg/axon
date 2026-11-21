@@ -5,7 +5,7 @@ root=$(cd "$(dirname "$0")/../../../.." && pwd)
 cluster=${KIND_CLUSTER:-axon}
 tag=${IMAGE_TAG:-local}
 api_url=${WEB_API_BASE_URL:-http://localhost:28080}
-images=${IMAGES:-auth chat game gateway rating web connect toolbox}
+images=${IMAGES:-auth chat game gateway rating analysis tournament web connect toolbox}
 
 cd "$root"
 
@@ -21,7 +21,11 @@ for image in $images; do
       docker build -q -f core/deploy/Dockerfile.service --target runtime \
         --build-arg SERVICE=chat --build-arg RUNTIME_FLAVOR=media -t "axon/chat:$tag" core >/dev/null
       ;;
-    auth | game | gateway | rating)
+    analysis)
+      docker build -q -f core/deploy/Dockerfile.service --target runtime \
+        --build-arg SERVICE=analysis --build-arg RUNTIME_FLAVOR=analysis -t "axon/analysis:$tag" core >/dev/null
+      ;;
+    auth | game | gateway | rating | tournament)
       docker build -q -f core/deploy/Dockerfile.service --target runtime \
         --build-arg SERVICE="$image" -t "axon/$image:$tag" core >/dev/null
       ;;
