@@ -170,6 +170,42 @@ struct BoardSnapshotTests {
         }
     }
 
+    @Test func rendersCheckers() throws {
+        let selection = [31, 22].compactMap(CheckersSquare.init(number:))
+        var crowned = CheckersFixtures.doubleKings
+        crowned.legalMoves = []
+        for side in Self.sides {
+            for scheme in Self.schemes {
+                _ = try Self.write(
+                    CheckersBoardView(
+                        board: CheckersFixtures.doubleKings,
+                        perspective: 0,
+                        interactive: true,
+                        selection: selection,
+                        onMove: { _ in }
+                    ),
+                    name: "checkers-capture",
+                    size: CGSize(width: side, height: side),
+                    scheme: scheme
+                )
+                _ = try Self.write(
+                    CheckersBoardView(board: crowned, perspective: 1, interactive: false, onMove: { _ in }),
+                    name: "checkers-white",
+                    size: CGSize(width: side, height: side),
+                    scheme: scheme
+                )
+            }
+        }
+        for scheme in Self.schemes {
+            _ = try Self.write(
+                CheckersBoardView(board: CheckersFixtures.opening, perspective: 0, interactive: true, onMove: { _ in }),
+                name: "checkers-opening",
+                size: CGSize(width: 402, height: 402),
+                scheme: scheme
+            )
+        }
+    }
+
     @Test func rendersClocksAndMoves() throws {
         let now = Date()
         for scheme in Self.schemes {
@@ -183,6 +219,7 @@ struct BoardSnapshotTests {
                     HStack(alignment: .top, spacing: 12) {
                         MoveListContent(moves: Self.checkedChess(interactive: false).san, highlightedPly: 13, layout: .pairs)
                         MoveListContent(moves: Array(Self.midGameQuoridor().moves.prefix(7)), highlightedPly: 5, layout: .plain)
+                        MoveListContent(moves: Array(CheckersFixtures.doubleKings.moves.suffix(7)), highlightedPly: 7, layout: .pairs)
                     }
                     MoveListContent(moves: [], highlightedPly: nil, layout: .pairs)
                     Spacer(minLength: 0)

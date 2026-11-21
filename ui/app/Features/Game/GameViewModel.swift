@@ -55,7 +55,10 @@ final class GameViewModel {
         return SessionStatusText.headline(session, me: me)
     }
 
-    var detailText: String? { session.flatMap(SessionStatusText.detail) }
+    var detailText: String? {
+        guard let session else { return nil }
+        return SessionStatusText.detail(session) ?? SessionStatusText.hint(session, me: me)
+    }
 
     var canJoin: Bool {
         guard let session else { return false }
@@ -97,6 +100,7 @@ final class GameViewModel {
         switch session.kind {
         case .chess: return session.chess.san
         case .quoridor: return session.quoridor.moves
+        case .checkers: return session.checkers.moves
         case .ticTacToe: return []
         }
     }
@@ -316,6 +320,17 @@ extension GameViewModel {
         await send(command)
     }
 
+    func checkersMove(_ move: String) async {
+        guard let session, isMyTurn else { return }
+        var command = SessionCommand()
+        command.checkersMove = Axon_Game_V1_CheckersMove.with {
+            $0.ply = session.ply
+            $0.move = move
+            if session.hasRevision { $0.revision = session.revision }
+        }
+        await send(command)
+    }
+
     func draw(_ action: DrawAction) async {
         var command = SessionCommand()
         command.draw = Axon_Game_V1_DrawCommand.with { $0.action = action }
@@ -323,10 +338,11 @@ extension GameViewModel {
     }
 
     func play(_ move: String) async {
-        if kind == .chess {
-            await chessMove(move)
-        } else {
-            await quoridorMove(move)
+        switch kind {
+        case .chess: await chessMove(move)
+        case .quoridor: await quoridorMove(move)
+        case .checkers: await checkersMove(move)
+        case .ticTacToe: break
         }
     }
 

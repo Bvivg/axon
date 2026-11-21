@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 import Testing
 @testable import Axon
 
@@ -34,6 +37,27 @@ struct MoveListTests {
     @Test func picksLayoutByGame() {
         #expect(MoveListLayout(.chess) == .pairs)
         #expect(MoveListLayout(.quoridor) == .plain)
+        #expect(MoveListLayout(.checkers) == .pairs)
+        #expect(MoveListLayout(.ticTacToe) == .plain)
+    }
+}
+
+struct GameKindTests {
+    @Test(arguments: GameKind.allCases)
+    func everyGameHasTwoSeatsAndASymbol(kind: GameKind) {
+        #expect(kind.seatNames.count == 2)
+        #expect(GameKind(game: kind.rawValue) == kind)
+        #if canImport(AppKit)
+        #expect(NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil) != nil)
+        #endif
+    }
+
+    @Test func checkersIsAPlayableGame() {
+        #expect(GameKind(rawValue: "checkers") == .checkers)
+        #expect(GameKind.checkers.seatNames == ["Black", "White"])
+        #expect(GameKind.checkers.supportsDrawOffers)
+        #expect(!GameKind.quoridor.supportsDrawOffers)
+        #expect(GameKind(game: "durak") == .ticTacToe)
     }
 }
 

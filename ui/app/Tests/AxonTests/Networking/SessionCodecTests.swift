@@ -35,6 +35,14 @@ struct SessionCodecTests {
         return .quoridorMove(move)
     }
 
+    static func checkers(ply: UInt32, move text: String, revision: UInt32?) -> SessionCommand.OneOf_Action {
+        var move = Axon_Game_V1_CheckersMove()
+        move.ply = ply
+        move.move = text
+        if let revision { move.revision = revision }
+        return .checkersMove(move)
+    }
+
     static func draw(_ action: DrawAction) -> SessionCommand.OneOf_Action {
         var draw = Axon_Game_V1_DrawCommand()
         draw.action = action
@@ -59,6 +67,9 @@ struct SessionCodecTests {
         (command(chess(ply: 2, uci: "e7e8q", revision: 9)), #"{"chessMove":{"ply":2,"uci":"e7e8q","revision":9}}"#),
         (command(quoridor(ply: 5, move: "e3h", revision: nil)), #"{"quoridorMove":{"ply":5,"move":"e3h"}}"#),
         (command(quoridor(ply: 6, move: "d4", revision: 11)), #"{"quoridorMove":{"ply":6,"move":"d4","revision":11}}"#),
+        (SessionCodec.subscribe(.match(.checkers)), #"{"subscribeMatch":"checkers"}"#),
+        (command(checkers(ply: 4, move: "22x15x6", revision: 9)), #"{"checkersMove":{"ply":4,"move":"22x15x6","revision":9}}"#),
+        (command(checkers(ply: 0, move: "11-15", revision: nil)), #"{"checkersMove":{"move":"11-15"}}"#),
         (command(draw(.offer)), #"{"draw":{"action":"DRAW_ACTION_OFFER"}}"#),
         (command(draw(.accept)), #"{"draw":{"action":"DRAW_ACTION_ACCEPT"}}"#),
         (command(draw(.decline)), #"{"draw":{"action":"DRAW_ACTION_DECLINE"}}"#),

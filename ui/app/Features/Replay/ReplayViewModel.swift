@@ -46,6 +46,7 @@ final class ReplayViewModel {
         switch session.kind {
         case .chess: return session.chess.san
         case .quoridor: return session.quoridor.moves
+        case .checkers: return session.checkers.moves
         case .ticTacToe: return []
         }
     }
