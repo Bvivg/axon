@@ -16,7 +16,7 @@ migrations:
   image: migrate/migrate:v4.20.1
 mtls:
   enabled: true
-  allowedClients: gateway,chat,game
+  allowedClients: gateway,chat,game,analysis,tournament
   duration: 1h
   renewBefore: 20m
   env: {}

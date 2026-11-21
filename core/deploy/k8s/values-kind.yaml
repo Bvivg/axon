@@ -50,6 +50,13 @@ gateway:
 rating:
   replicas: 2
 
+analysis:
+  replicas: 2
+  positionTimeout: 60s
+
+tournament:
+  replicas: 2
+
 web:
   service:
     type: NodePort

@@ -1,0 +1,6 @@
+dependencies:
+- name: axon-service
+  repository: file://../axon-service
+  version: 0.1.0
+digest: sha256:aa309d28b9b6a4bc248eaf0a11eb82ba7f1482d89218e7f051e0234f5d5c4d56
+generated: "2026-11-21T06:17:02.974883+06:00"
