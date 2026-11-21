@@ -84,6 +84,8 @@ func run() error {
 	tournamentTopics := loader.StringSlice("GAME_TOURNAMENT_TOPICS", []string{tournament.RoundStartedTopic, tournament.ForfeitTopic, tournament.CancelledTopic})
 	outboxRetention := loader.DurationDefault("GAME_OUTBOX_RETENTION", 24*time.Hour)
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
+	finishedTTL := loader.DurationDefault("GAME_FINISHED_TTL", 2*time.Minute)
+	appendTimeout := loader.DurationDefault("GAME_APPEND_TIMEOUT", 15*time.Second)
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks, ownerKey := loadControls(loader, cfg.Environment)
 	spectatorLimit := loader.IntDefault("GAME_SPECTATOR_LIMIT", 200)
@@ -145,7 +147,8 @@ func run() error {
 		return err
 	}
 	defer journalLog.Close()
-	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL, Metrics: observed})
+	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL, Metrics: observed,
+		AppendTimeout: appendTimeout, FinishedTTL: finishedTTL})
 	routes := route.New(model.Owners)
 	peerTransport := http.DefaultTransport
 	var sockets *http.Client
@@ -157,6 +160,7 @@ func run() error {
 		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil, History: history, MatchSockets: matchSockets})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
+	go own.KeepEvicting(ctx)
 	go routes.Run(ctx, db.listen, projection.OwnerChannel, log)
 	go model.MaintainMovePartitions(ctx, movePartitionsAhead, 24*time.Hour, log)
 	go handler.Watch(ctx, log)
