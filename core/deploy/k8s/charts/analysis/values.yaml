@@ -1,0 +1,62 @@
+global: {}
+name: analysis
+image: axon/analysis
+replicas: 1
+ports:
+  http: 8085
+  admin: 9095
+probes:
+  port: admin
+  livePath: /healthz
+  readyPath: /readyz
+database:
+  role: analysis
+migrations:
+  enabled: true
+  image: migrate/migrate:v4.20.1
+mtls:
+  enabled: true
+  allowedClients: gateway
+  duration: 1h
+  renewBefore: 20m
+  env:
+    JWKS_URL: https://auth:8081/.well-known/jwks.json
+  plainEnv:
+    JWKS_URL: http://auth:9091/.well-known/jwks.json
+service:
+  type: ClusterIP
+  nodePorts: {}
+hpa:
+  enabled: false
+pdb:
+  minAvailable: 1
+serviceMonitor:
+  enabled: true
+terminationGracePeriodSeconds: 30
+securityContext:
+  runAsUser: 65532
+writablePaths:
+  - /tmp
+resources:
+  requests:
+    cpu: 500m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 768Mi
+engines: 2
+depth: 12
+positionTimeout: 10s
+fieldEnv: []
+secretEnv: {}
+env:
+  HTTP_ADDR: ":8085"
+  METRICS_ADDR: ":9095"
+  SHUTDOWN_DRAIN: 3s
+  KAFKA_BROKERS: "{{ .Values.global.kafka.brokers }}"
+  JWT_ISSUER: https://auth.axon.local
+  JWT_AUDIENCE: axon
+  STOCKFISH_PATH: /usr/games/stockfish
+  ANALYSIS_ENGINES: "{{ .Values.engines }}"
+  ANALYSIS_DEPTH: "{{ .Values.depth }}"
+  ANALYSIS_POSITION_TIMEOUT: "{{ .Values.positionTimeout }}"

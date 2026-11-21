@@ -31,7 +31,7 @@ sed -e "s|targetRevision: main|targetRevision: $revision|" -e "s|revision: main|
   "$root/core/deploy/k8s/argocd/root.yaml" | k apply -f - >/dev/null
 echo "root application points at $revision"
 
-expected=${KIND_EXPECTED_APPS:-19}
+expected=${KIND_EXPECTED_APPS:-21}
 last=""
 while :; do
   report=$(k -n argocd get applications.argoproj.io -o json | jq -r '
