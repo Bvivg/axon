@@ -5,7 +5,9 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -20,15 +22,28 @@ func TestJournalTopicIsKeptForever(t *testing.T) {
 	}
 	defer client.Close()
 	admin := kadm.NewClient(client)
-	if _, err := admin.CreateTopic(ctx, partitions, 1, nil, "game.session-events.defaults"); err != nil {
+	suffix := uuid.NewString()[:8]
+	fresh, defaults := "game.session-events.fresh-"+suffix, "game.session-events.defaults-"+suffix
+	if _, err := admin.CreateTopic(ctx, partitions, 1, nil, defaults); err != nil {
 		t.Fatal(err)
 	}
-	for _, topic := range []string{"game.session-events.fresh", "game.session-events.defaults"} {
+	for _, topic := range []string{fresh, defaults} {
 		log, err := journal.NewKafka(ctx, journal.KafkaConfig{Brokers: brokers, Topic: topic, LeaseTopic: topic + ".leases", Partitions: partitions, ReplicationFactor: 1})
 		if err != nil {
 			t.Fatal(topic, err)
 		}
 		log.Close()
+		retention, policy := journalRetention(ctx, t, admin, topic)
+		if retention != "-1" || policy != "delete" {
+			t.Fatal(topic, "journal retention", retention, policy)
+		}
+	}
+}
+
+func journalRetention(ctx context.Context, t *testing.T, admin *kadm.Client, topic string) (string, string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
 		described, err := admin.DescribeTopicConfigs(ctx, topic)
 		if err != nil {
 			t.Fatal(err)
@@ -43,8 +58,9 @@ func TestJournalTopicIsKeptForever(t *testing.T) {
 				got[config.Key] = *config.Value
 			}
 		}
-		if got["retention.ms"] != "-1" || got["cleanup.policy"] != "delete" {
-			t.Fatal(topic, "journal retention", got["retention.ms"], got["cleanup.policy"])
+		if got["retention.ms"] == "-1" && got["cleanup.policy"] == "delete" || time.Now().After(deadline) {
+			return got["retention.ms"], got["cleanup.policy"]
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

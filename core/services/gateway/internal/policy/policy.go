@@ -7,6 +7,7 @@ const (
 
 	TierSensitive
 	TierSearch
+	TierRenewal
 )
 
 type Rule struct {
@@ -66,7 +67,7 @@ var procedures = map[string]Rule{
 	"/axon.auth.v1.AuthService/StartOAuth":    {Public: true, Tier: TierSensitive},
 	"/axon.auth.v1.AuthService/CompleteOAuth": {Public: true, Tier: TierSensitive},
 
-	"/axon.auth.v1.AuthService/RefreshToken": {Public: true, Tier: TierSensitive},
+	"/axon.auth.v1.AuthService/RefreshToken": {Public: true, Tier: TierRenewal},
 
 	"/axon.auth.v1.AuthService/Logout": {Public: true, Tier: TierStandard},
 

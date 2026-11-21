@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
-	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 
@@ -29,9 +29,15 @@ func ClientIPFromContext(ctx context.Context) string {
 	return ip
 }
 
-func ClientIPMiddleware(trustedProxies int) func(http.Handler) http.Handler {
+func ClientIPMiddleware(trustedProxies int, log *slog.Logger) func(http.Handler) http.Handler {
+	var warned sync.Once
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if trustedProxies == 0 && r.Header.Get(ratelimit.ForwardedForHeader) != "" {
+				warned.Do(func() {
+					log.WarnContext(r.Context(), "a request carries X-Forwarded-For while TRUSTED_PROXIES is 0: if a proxy fronts the gateway, every client shares its address and rate-limit bucket")
+				})
+			}
 			ip := ratelimit.ClientIP(r, trustedProxies)
 			next.ServeHTTP(w, r.WithContext(WithClientIP(r.Context(), ip)))
 		})
@@ -46,8 +52,6 @@ type Interceptor struct {
 	network   *ratelimit.Limiter
 	log       *slog.Logger
 }
-
-const DeviceHeader = "X-Axon-Device"
 
 var _ connect.Interceptor = (*Interceptor)(nil)
 
@@ -119,18 +123,23 @@ func (i *Interceptor) apply(ctx context.Context, procedure string, headers http.
 		return ctx, err
 	}
 
+	anonymous := strings.HasPrefix(subject, anonymousPrefix)
 	limiter := i.standard
-	if rule.Tier == policy.TierSensitive {
+	switch rule.Tier {
+	case policy.TierSensitive:
 		limiter = i.sensitive
-	}
-
-	if rule.Tier == policy.TierSearch {
+	case policy.TierSearch:
 		limiter = i.search
+	case policy.TierRenewal:
+		limiter = i.sensitive
+		if anonymous && i.network != nil {
+			limiter = i.network
+		}
 	}
 
 	allowed, retryAfter := limiter.AllowWithRetry(subject)
-	if allowed && i.network != nil && rule.Tier == policy.TierSensitive && strings.HasPrefix(subject, "ip:") {
-		allowed, retryAfter = i.network.AllowWithRetry("ip:" + ClientIPFromContext(ctx))
+	if allowed && anonymous && i.network != nil && rule.Tier == policy.TierSensitive {
+		allowed, retryAfter = i.network.AllowWithRetry(subject)
 	}
 	if !allowed {
 		i.log.WarnContext(ctx, "rate limit exceeded",
@@ -155,7 +164,7 @@ func (i *Interceptor) authenticate(ctx context.Context, rule policy.Rule, header
 				errors.New("no access token"))
 		}
 
-		return ctx, anonymous(ctx, headers), nil
+		return ctx, anonymousSubject(ctx), nil
 
 	case err != nil:
 
@@ -169,18 +178,16 @@ func (i *Interceptor) authenticate(ctx context.Context, rule policy.Rule, header
 			return ctx, "", translateTokenError(err)
 		}
 
-		return ctx, anonymous(ctx, headers), nil
+		return ctx, anonymousSubject(ctx), nil
 	}
 
 	return authn.WithClaims(ctx, claims), "user:" + claims.UserID.String(), nil
 }
 
-func anonymous(ctx context.Context, headers http.Header) string {
-	subject := "ip:" + ClientIPFromContext(ctx)
-	if device, err := uuid.Parse(headers.Get(DeviceHeader)); err == nil && device != uuid.Nil {
-		subject += ":device:" + device.String()
-	}
-	return subject
+const anonymousPrefix = "ip:"
+
+func anonymousSubject(ctx context.Context) string {
+	return anonymousPrefix + ratelimit.Subject(ClientIPFromContext(ctx))
 }
 
 func translateTokenError(err error) error {

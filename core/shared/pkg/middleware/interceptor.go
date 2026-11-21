@@ -27,10 +27,10 @@ func (i *CorrelationInterceptor) WrapUnary(next connect.UnaryFunc) connect.Unary
 			return next(ctx, req)
 		}
 
-		ctx, id := correlation.Ensure(correlation.WithID(ctx, req.Header().Get(correlation.Header)))
+		ctx, id := correlation.Ensure(correlation.WithID(ctx, correlation.FromHeader(req.Header().Get(correlation.Header))))
 
 		resp, err := next(ctx, req)
-		if resp != nil {
+		if resp != nil && !correlation.Echoed(ctx) {
 			resp.Header().Set(correlation.Header, id)
 		}
 		return resp, err
@@ -48,8 +48,10 @@ func (i *CorrelationInterceptor) WrapStreamingClient(next connect.StreamingClien
 
 func (i *CorrelationInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		ctx, id := correlation.Ensure(correlation.WithID(ctx, conn.RequestHeader().Get(correlation.Header)))
-		conn.ResponseHeader().Set(correlation.Header, id)
+		ctx, id := correlation.Ensure(correlation.WithID(ctx, correlation.FromHeader(conn.RequestHeader().Get(correlation.Header))))
+		if !correlation.Echoed(ctx) {
+			conn.ResponseHeader().Set(correlation.Header, id)
+		}
 		return next(ctx, conn)
 	}
 }

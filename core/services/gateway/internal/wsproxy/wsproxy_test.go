@@ -17,6 +17,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 
+	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
 	"github.com/bvivg/axon/core/services/gateway/internal/wsproxy"
 )
 
@@ -83,9 +84,20 @@ type harness struct {
 	proxy    *httptest.Server
 	upstream *upstreamService
 	sign     func(t *testing.T, ttl time.Duration) string
+	signFor  func(t *testing.T, user uuid.UUID) string
+}
+
+type limits struct {
+	upgrades   int
+	maxPerUser int
 }
 
 func newHarness(t *testing.T) *harness {
+	t.Helper()
+	return newLimitedHarness(t, limits{})
+}
+
+func newLimitedHarness(t *testing.T, l limits) *harness {
 	t.Helper()
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -104,12 +116,19 @@ func newHarness(t *testing.T) *harness {
 
 	upstream := newUpstream(t)
 
+	var limiter *ratelimit.Limiter
+	if l.upgrades > 0 {
+		limiter = ratelimit.New(ratelimit.Config{PerMinute: l.upgrades, Burst: l.upgrades})
+	}
+
 	handler, err := wsproxy.New(wsproxy.Config{
-		Upstream: upstream.socketURL(),
-		Protocol: testProtocol,
-		Verifier: verifier,
-		Origins:  []string{testOrigin},
-		Logger:   logger.Discard(),
+		Upstream:   upstream.socketURL(),
+		Protocol:   testProtocol,
+		Verifier:   verifier,
+		Origins:    []string{testOrigin},
+		Logger:     logger.Discard(),
+		Limiter:    limiter,
+		MaxPerUser: l.maxPerUser,
 	})
 	if err != nil {
 		t.Fatalf("wsproxy.New: %v", err)
@@ -123,9 +142,29 @@ func newHarness(t *testing.T) *harness {
 		upstream: upstream,
 		sign: func(t *testing.T, ttl time.Duration) string {
 			t.Helper()
-			return signToken(t, key, ttl)
+			return signToken(t, key, uuid.New(), ttl)
+		},
+		signFor: func(t *testing.T, user uuid.UUID) string {
+			t.Helper()
+			return signToken(t, key, user, time.Hour)
 		},
 	}
+}
+
+func (h *harness) upgradeStatus(t *testing.T, token string) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, h.proxy.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", testOrigin)
+	req.Header.Set("Sec-WebSocket-Protocol", testProtocol+", "+wsproxy.BearerPrefix+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
 }
 
 func (h *harness) dial(t *testing.T, token string) (*ws.Conn, error) {
@@ -311,12 +350,12 @@ func (s staticKeys) PublicKey(keyID string) (*rsa.PublicKey, bool) {
 	return s.key, true
 }
 
-func signToken(t *testing.T, key *rsa.PrivateKey, ttl time.Duration) string {
+func signToken(t *testing.T, key *rsa.PrivateKey, user uuid.UUID, ttl time.Duration) string {
 	t.Helper()
 
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"sub": uuid.NewString(),
+		"sub": user.String(),
 		"iss": testIssuer,
 		"aud": testAudience,
 		"jti": uuid.NewString(),
@@ -330,4 +369,72 @@ func signToken(t *testing.T, key *rsa.PrivateKey, ttl time.Duration) string {
 		t.Fatalf("sign token: %v", err)
 	}
 	return signed
+}
+
+func TestUpgradesArePacedPerUser(t *testing.T) {
+	h := newLimitedHarness(t, limits{upgrades: 2})
+	user := uuid.New()
+
+	for i := range 2 {
+		if status := h.upgradeStatus(t, h.signFor(t, user)); status == http.StatusTooManyRequests {
+			t.Fatalf("upgrade %d inside the budget was refused", i+1)
+		}
+	}
+	if status := h.upgradeStatus(t, h.signFor(t, user)); status != http.StatusTooManyRequests {
+		t.Fatalf("a third upgrade inside the window: got %d, want 429", status)
+	}
+	if status := h.upgradeStatus(t, h.signFor(t, uuid.New())); status == http.StatusTooManyRequests {
+		t.Fatal("another user was throttled by the first one's upgrades")
+	}
+}
+
+func TestFailedUpgradesSpendTheAddressBudget(t *testing.T) {
+	h := newLimitedHarness(t, limits{upgrades: 2})
+
+	for range 2 {
+		if status := h.upgradeStatus(t, "forged"); status != http.StatusUnauthorized {
+			t.Fatalf("a forged token: got %d, want 401", status)
+		}
+	}
+	if status := h.upgradeStatus(t, "forged"); status != http.StatusTooManyRequests {
+		t.Fatalf("token guessing past the budget: got %d, want 429", status)
+	}
+}
+
+func TestOpenSocketsPerUserAreCapped(t *testing.T) {
+	h := newLimitedHarness(t, limits{maxPerUser: 2})
+	user := uuid.New()
+
+	var open []*ws.Conn
+	for i := range 2 {
+		conn, err := h.dial(t, h.signFor(t, user))
+		if err != nil {
+			t.Fatalf("socket %d inside the cap was refused: %v", i+1, err)
+		}
+		open = append(open, conn)
+	}
+	if conn, err := h.dial(t, h.signFor(t, user)); err == nil {
+		_ = conn.CloseNow()
+		t.Fatal("a third concurrent socket was accepted")
+	}
+	if conn, err := h.dial(t, h.signFor(t, uuid.New())); err != nil {
+		t.Fatalf("another user was refused: %v", err)
+	} else {
+		_ = conn.CloseNow()
+	}
+
+	_ = open[0].Close(ws.StatusNormalClosure, "done")
+	deadline := time.Now().Add(readTimeout)
+	for {
+		conn, err := h.dial(t, h.signFor(t, user))
+		if err == nil {
+			_ = conn.CloseNow()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("closing a socket never freed its slot")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = open[1].CloseNow()
 }
