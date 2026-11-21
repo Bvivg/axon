@@ -7,8 +7,9 @@ and e2e runs.
 
 [![CI](https://github.com/Bvivg/axon/actions/workflows/ci.yml/badge.svg)](https://github.com/Bvivg/axon/actions/workflows/ci.yml)
 
-Chess, Quoridor and tic-tac-toe online with matchmaking, spectators, replay and
-tournaments; chat with media and search; 1:1 and group calls. Seven Go services
+Chess, checkers, Quoridor, Durak and tic-tac-toe online with matchmaking,
+spectators, replay and tournaments; chat with media and search; 1:1 and group
+calls. Seven Go services
 behind one Connect gateway, a Next.js web client, Docker Compose and a kind +
 Argo CD Kubernetes setup.
 
@@ -38,6 +39,12 @@ Argo CD Kubernetes setup.
   load, 50 rated games were each counted exactly once and the rating rebuilt from
   the topic matched live state
   ([phase 2](.claude/plans/platform-phase-2-outbox-cdc.md)).
+- **Hidden information in an event-sourced game.** Durak's deck order comes from
+  a `crypto/rand` seed recorded in the journal, so replay and compaction deal the
+  same cards. The state is projected per viewer at every boundary: socket,
+  `GetSession`, lists, history and spectating. A negative test per boundary
+  checks that a live opponent's hand never leaves the service
+  ([Durak](.claude/plans/game-durak.md)).
 - **Zero-downtime security mechanics.** JWT signing keys rotate on their own:
   81,310 authenticated calls during rotation, 0 rejections; 1-hour mTLS
   certificates with per-service allow-lists
@@ -48,7 +55,7 @@ Argo CD Kubernetes setup.
 ```mermaid
 flowchart TB
   web["Web client<br/>Next.js"] -->|"Connect, WebSocket"| gw["gateway"]
-  app["SwiftUI app<br/>in review"] -.-> gw
+  app["SwiftUI app<br/>iOS and macOS"] --> gw
   gw --> auth["auth"]
   gw --> chat["chat and calls"]
   gw --> game["game owners"]
@@ -115,7 +122,7 @@ run. Benchmark tables and invocations: [docs/benchmarks.md](docs/benchmarks.md).
 | `gateway` | Trust boundary: Connect and WebSocket proxy, local JWT checks through JWKS, CORS, GCRA rate limits, refresh cookie | edge Redis for rate limits | — | — |
 | `auth` | Password and OAuth sign-in, refresh rotation with reuse detection, roles, rotating JWKS | Postgres `auth`, Redis | — | `auth.user.registered.v1`, `auth.audit.v1` |
 | `chat` | Rooms, messages, media, search, push; the Calls module ([ADR-1](docs/calls.md)) | Postgres `chat`, Redis, MinIO | — | `chat.message.v1`, `call.ended.v1` |
-| `game` | Chess, Quoridor, tic-tac-toe; partition owners, journal, projector, matchmaking, spectators, replay | Kafka `game.session-events.v1` and `game.partition-leases.v1`; Postgres `game` read model | `rating.changed.v1`, `tournament.round_started.v1`, `tournament.forfeit.v1`, `tournament.cancelled.v1` | `game.finished.v1` |
+| `game` | Chess, checkers, Quoridor, Durak, tic-tac-toe; partition owners, journal, projector, matchmaking, spectators, replay | Kafka `game.session-events.v1` and `game.partition-leases.v1`; Postgres `game` read model | `rating.changed.v1`, `tournament.round_started.v1`, `tournament.forfeit.v1`, `tournament.cancelled.v1` | `game.finished.v1` |
 | `rating` | Glicko-2 ratings, leaderboard, rebuild from the topic | Postgres `rating`, Redis | `game.finished.v1` | `rating.changed.v1` |
 | `analysis` | Stockfish review of finished chess games | Postgres `analysis` | `game.finished.v1` | — |
 | `tournament` | Single-elimination and Swiss tournaments as a saga | Postgres `tournament` | `game.finished.v1`, `rating.changed.v1` | `tournament.round_started.v1`, `tournament.forfeit.v1`, `tournament.cancelled.v1`, `tournament.finished.v1` |
@@ -154,13 +161,12 @@ example keeping Calls inside Chat.
 ## Status
 
 Done: auth and gateway, chat, calls (1:1 P2P, groups on LiveKit, P2P-to-SFU
-migration), chess, Quoridor and tic-tac-toe, and the platform phases 1–7c:
-event sourcing, performance, outbox and CDC, scaling and resilience,
-observability, security, Kubernetes and GitOps, spectators and replay, Stockfish
-analysis, tournaments. See the [roadmap](.claude/plans/roadmap.md).
-
-In review: the native iOS/macOS client in SwiftUI,
-[PR #25](https://github.com/Bvivg/axon/pull/25).
+migration), chess, checkers, Quoridor, Durak and tic-tac-toe, the platform
+phases 1–7c (event sourcing, performance, outbox and CDC, scaling and
+resilience, observability, security, Kubernetes and GitOps, spectators and
+replay, Stockfish analysis, tournaments) and the native iOS/macOS client in
+SwiftUI ([phase 7d](.claude/plans/platform-phase-7d-swiftui.md)). See the
+[roadmap](.claude/plans/roadmap.md).
 
 Known gaps, as recorded in the plans:
 
@@ -177,8 +183,9 @@ Known gaps, as recorded in the plans:
   exposed through the gateway
   ([phase 7c](.claude/plans/platform-phase-7c-tournaments.md),
   [phase 2](.claude/plans/platform-phase-2-outbox-cdc.md)).
-- The game journal topic keeps the broker's default retention in Compose, so the
-  Postgres read model is the long-term record of finished games.
+- The SwiftUI app plays chess, checkers, Quoridor and tic-tac-toe, and hides
+  Durak; it has no calls. Durak is excluded from tournaments
+  ([Durak](.claude/plans/game-durak.md)).
 - Calls were not checked behind an external NAT or with push delivery, and
   Safari on iOS has only a partial manual check
   ([roadmap](.claude/plans/roadmap.md), [calls](docs/calls.md)).
