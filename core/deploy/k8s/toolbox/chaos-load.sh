@@ -11,22 +11,13 @@ topic=${GAME_JOURNAL_TOPIC:-game.session-events.v1}
 target=${LOAD_TARGET:-http://127.0.0.1:18083}
 mkdir -p "$work"
 
-{
-  printf '['
-  for i in $(seq 1 $((concurrency * 2))); do
-    [ "$i" -gt 1 ] && printf ','
-    printf '"%s"' "$(cat /proc/sys/kernel/random/uuid)"
-  done
-  printf ']'
-} >"$work/users.json"
-
 for _ in $(seq 1 60); do
   curl -s -o /dev/null "$target/" && break
   sleep 1
 done
 
 echo "$(date +%T) load started: $matches matches, $concurrency in flight"
-loadgen -target "$target" -users "$work/users.json" -legends /opt/axon/toolbox/legends.json \
+loadgen -target "$target" -players $((concurrency * 2)) \
   -out "$work/results.json" -matches "$matches" -concurrency "$concurrency" -pace "$pace" -seed "$seed" \
   >"$work/run.log" 2>&1 || true
 echo "$(date +%T) load finished"
