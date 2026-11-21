@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
@@ -21,7 +22,7 @@ import (
 func registry(t *testing.T) *engine.Registry {
 	t.Helper()
 	games := engine.NewRegistry()
-	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition(), quoridor.Definition(), durak.Definition()} {
+	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition(), quoridor.Definition(), checkers.Definition(), durak.Definition()} {
 		if err := games.Register(def); err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +55,7 @@ func same(t *testing.T, want, got session.Session) {
 func TestFoldReplaysRandomGamesExactly(t *testing.T) {
 	games := registry(t)
 	rules := session.NewRules(games)
-	for _, key := range []engine.Key{tictactoe.Key, chess.Key, quoridor.Key, durak.Key} {
+	for _, key := range []engine.Key{tictactoe.Key, chess.Key, quoridor.Key, checkers.Key, durak.Key} {
 		for seed := range uint64(12) {
 			rng := rand.New(rand.NewPCG(seed, uint64(len(key))))
 			creator, opponent := uuid.New(), uuid.New()

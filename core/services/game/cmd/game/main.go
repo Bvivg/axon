@@ -15,6 +15,7 @@ import (
 
 	"github.com/bvivg/axon/core/services/game/internal/cluster"
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
@@ -94,6 +95,8 @@ func run() error {
 	chessGame, quoridorGame, durakGame := chess.Definition(), quoridor.Definition(), durak.Definition()
 	chessGame.MaxPlies = loader.IntDefault("GAME_CHESS_MAX_PLIES", chess.MaxPlies)
 	quoridorGame.MaxPlies = loader.IntDefault("GAME_QUORIDOR_MAX_PLIES", quoridor.MaxPlies)
+	checkersGame := checkers.Definition()
+	checkersGame.MaxPlies = loader.IntDefault("GAME_CHECKERS_MAX_PLIES", checkers.MaxPlies)
 	durakGame.MaxPlies = loader.IntDefault("GAME_DURAK_MAX_PLIES", durak.MaxPlies)
 	history := server.HistoryLimits{
 		Plies:   loader.IntDefault("GAME_HISTORY_MAX_PLIES", server.DefaultHistoryPlies),
@@ -134,7 +137,7 @@ func run() error {
 		return err
 	}
 	games := engine.NewRegistry()
-	for _, def := range []engine.Definition{tictactoe.Definition(), chessGame, quoridorGame, durakGame} {
+	for _, def := range []engine.Definition{tictactoe.Definition(), chessGame, quoridorGame, checkersGame, durakGame} {
 		if err := games.Register(def); err != nil {
 			return err
 		}

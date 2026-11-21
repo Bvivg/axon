@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
 	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
@@ -209,6 +210,13 @@ func historyFrame(game session.Session, position engine.State, final bool) (*gam
 		frame.Move = frame.Quoridor.LastMove
 		if !final {
 			frame.Quoridor.Moves = nil
+		}
+	case checkers.Key:
+		frame.Checkers = out.Checkers
+		frame.Checkers.LegalMoves = nil
+		frame.Move = frame.Checkers.LastMove
+		if !final {
+			frame.Checkers.Moves = nil
 		}
 	case durak.Key:
 		frame.Durak = out.Durak

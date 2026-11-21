@@ -2,6 +2,7 @@ export enum GameKey {
   TicTacToe = "tictactoe",
   Chess = "chess",
   Quoridor = "quoridor",
+  Checkers = "checkers",
   Durak = "durak",
 }
 
@@ -11,6 +12,7 @@ export const games: Record<GameKey, GameInfo> = {
   [GameKey.TicTacToe]: { title: "Tic-Tac-Toe", slug: "tic-tac-toe" },
   [GameKey.Chess]: { title: "Chess", slug: "chess" },
   [GameKey.Quoridor]: { title: "Quoridor", slug: "quoridor" },
+  [GameKey.Checkers]: { title: "Checkers", slug: "checkers" },
   [GameKey.Durak]: { title: "Durak", slug: "durak" },
 };
 

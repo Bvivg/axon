@@ -4,6 +4,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { CheckersBoard, seatNames as checkersSeats } from "@/components/games/checkers/board";
 import { AnalysisPanel, EvalBar } from "@/components/games/chess/analysis";
 import { DurakTable, seatNames as durakSeats } from "@/components/games/durak/board";
 import { DurakMoves } from "@/components/games/durak/moves";
@@ -20,6 +21,7 @@ import { AnalysisStatus } from "@/gen/axon/analysis/v1/analysis_pb";
 import { SessionStatus, type HistoryFrame } from "@/gen/axon/game/v1/game_pb";
 import { profileName } from "@/lib/format";
 import { moveMarks } from "@/lib/games/analysis";
+import { boardFrom } from "@/lib/games/checkers";
 import { GameKey, gameHref, games } from "@/lib/games/catalog";
 import { useAnalysis } from "@/lib/query/analysis";
 import { useSessionHistory } from "@/lib/query/games";
@@ -29,6 +31,7 @@ const sides: Record<GameKey, string[]> = {
   [GameKey.TicTacToe]: ["X", "O"],
   [GameKey.Chess]: ["White", "Black"],
   [GameKey.Quoridor]: [...seatNames],
+  [GameKey.Checkers]: [...checkersSeats],
   [GameKey.Durak]: [...durakSeats],
 };
 
@@ -44,6 +47,8 @@ function Position({ game, frame, previous }: { game: GameKey; frame: HistoryFram
       return <ChessBoard fen={frame.chess?.fen ?? ""} orientation={Side.White} legal={[]} lastMove={frame.chess?.lastMove} check={frame.chess?.check ?? false} playable={false} onMove={() => undefined} />;
     case GameKey.Quoridor:
       return <QuoridorBoard pawns={frame.quoridor?.pawns ?? ["e1", "e9"]} walls={frame.quoridor?.walls ?? []} seat={0} legal={[]} lastMove={frame.quoridor?.lastMove} playable={false} onMove={() => undefined} />;
+    case GameKey.Checkers:
+      return <CheckersBoard squares={boardFrom(frame.checkers?.squares)} seat={1} legal={[]} lastMove={frame.checkers?.lastMove} playable={false} onMove={() => undefined} />;
     case GameKey.Durak:
       return <DurakTable view={frame.durak} seat={0} legal={[]} playable={false} onMove={() => undefined} />;
     default:
