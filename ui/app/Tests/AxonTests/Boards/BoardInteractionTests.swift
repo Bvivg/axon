@@ -142,6 +142,50 @@ struct BoardInteractionTests {
         window.close()
         #expect(recorder.moves == ["c2h", "d4"])
     }
+
+    @Test func playsCheckersMovesAndMultiJumpsByTapping() throws {
+        let recorder = MoveRecorder()
+        let square = side / 8
+        func point(_ number: Int, perspective: Int) throws -> CGPoint {
+            let display = try CheckersFixtures.square(number).display(perspective: perspective)
+            return CGPoint(x: (CGFloat(display.col) + 0.5) * square, y: (CGFloat(display.row) + 0.5) * square)
+        }
+        let captures = host(CheckersBoardView(
+            board: CheckersFixtures.doubleKings,
+            perspective: 0,
+            interactive: true,
+            onMove: { recorder.moves.append($0) }
+        ))
+        for number in [31, 22, 13, 14, 23] {
+            try click(captures, at: try point(number, perspective: 0))
+        }
+        captures.close()
+        #expect(recorder.moves == ["31x22x13", "14x21x30x23"])
+
+        let opening = host(CheckersBoardView(
+            board: CheckersFixtures.opening,
+            perspective: 1,
+            interactive: true,
+            onMove: { recorder.moves.append($0) }
+        ))
+        for number in [22, 11, 11, 10, 15] {
+            try click(opening, at: try point(number, perspective: 1))
+        }
+        opening.close()
+        #expect(recorder.moves == ["31x22x13", "14x21x30x23", "10-15"])
+
+        let idle = host(CheckersBoardView(
+            board: CheckersFixtures.opening,
+            perspective: 0,
+            interactive: false,
+            onMove: { recorder.moves.append($0) }
+        ))
+        for number in [11, 15] {
+            try click(idle, at: try point(number, perspective: 0))
+        }
+        idle.close()
+        #expect(recorder.moves.count == 3)
+    }
 }
 
 @MainActor

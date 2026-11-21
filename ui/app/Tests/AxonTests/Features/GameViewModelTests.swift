@@ -163,6 +163,29 @@ struct GameViewModelTests {
         #expect(quoridorChannel.sent.first?.quoridorMove.move == "e2")
     }
 
+    @Test func checkersMovesUseTheirCommandAndShowHints() async throws {
+        var session = GameFixtures.session(game: .checkers, revision: 3)
+        session.checkers = CheckersFixtures.doubleKings
+        let harness = await started(session)
+        let model = harness.model
+        #expect(model.moves == CheckersFixtures.doubleKings.moves)
+        #expect(model.detailText == "You must capture")
+        #expect(model.canOfferDraw)
+        #expect(!model.canUndo)
+        await model.play("31x22x29")
+        let sent = try #require(harness.channel.sent.first)
+        #expect(sent.checkersMove.move == "31x22x29")
+        #expect(sent.checkersMove.ply == 3)
+        #expect(sent.checkersMove.revision == 3)
+        #expect(model.pending)
+        var quiet = GameFixtures.session(game: .checkers, turn: GameFixtures.rival, revision: 4)
+        quiet.checkers = CheckersFixtures.doubleKings
+        harness.channel.emit(.session(quiet))
+        #expect(await eventually { !model.pending })
+        #expect(model.detailText == nil)
+        #expect(model.statusText == "Opponent's turn")
+    }
+
     @Test func cancellingAWaitingGameLeavesTheScreen() async {
         let harness15 = await started(GameFixtures.session(players: [GameFixtures.me], status: .waiting, turn: nil))
         let model = harness15.model
@@ -203,7 +226,7 @@ struct GameViewModelTests {
     @Test func unsupportedGamesShowAnErrorAndStayOffline() async {
         let world = FakeWorld()
         var session = GameFixtures.session()
-        session.game = "checkers"
+        session.game = "durak"
         world.game.sessions[session.id] = session
         let model = GameViewModel(sessionID: session.id, me: GameFixtures.me, services: world.services)
         await model.start()

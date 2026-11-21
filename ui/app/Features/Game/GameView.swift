@@ -95,6 +95,7 @@ enum SeatStyle {
         switch kind {
         case .quoridor: seat == 0 ? .purple : .green
         case .chess: Color(white: seat == 0 ? 0.92 : 0.15)
+        case .checkers: Color(white: seat == 0 ? 0.15 : 0.92)
         case .ticTacToe: seat == 0 ? .blue : .orange
         }
     }

@@ -39,9 +39,9 @@ struct LobbyViewModelTests {
     @Test func hidesGamesTheAppCannotShow() async {
         let world = FakeWorld()
         var unknown = GameFixtures.session(id: "u", updated: 9)
-        unknown.game = "checkers"
+        unknown.game = "durak"
         var watched = GameFixtures.session(id: "w", players: [GameFixtures.rival, GameFixtures.third], updated: 8)
-        watched.game = "checkers"
+        watched.game = "durak"
         world.game.mine = [unknown, GameFixtures.session(id: "a", updated: 1)]
         world.game.live = [watched]
         let (model, _) = lobby(world)
@@ -205,12 +205,42 @@ struct ReplayViewModelTests {
         let fake = FakeGame()
         var history = SessionHistory()
         history.session = GameFixtures.session(status: .won, turn: nil, winner: GameFixtures.me)
-        history.session.game = "checkers"
+        history.session.game = "durak"
         fake.historyResult = history
         let model = ReplayViewModel(sessionID: GameFixtures.sessionID, game: fake)
         await model.load()
         #expect(model.error == GameViewModel.unsupportedGame)
         #expect(model.frame == nil)
+    }
+
+    @Test func replaysCheckersWithItsMovesAndResult() async throws {
+        let fake = FakeGame()
+        var session = GameFixtures.session(game: .checkers, status: .won, turn: nil, winner: GameFixtures.me, revision: 2)
+        session.checkers = CheckersFixtures.board(
+            "bbbb.bbbb..w..........B.........",
+            moves: ["9-14", "23-18"],
+            last: "23-18"
+        )
+        session.checkers.end = .noMoves
+        let frames = (0...2).map { ply in
+            HistoryFrame.with {
+                $0.ply = UInt32(ply)
+                $0.checkers = CheckersFixtures.board("bbbbbbbbbbbb........wwwwwwwwwwww", moves: Array(session.checkers.moves.prefix(ply)))
+            }
+        }
+        fake.historyResult = SessionHistory.with {
+            $0.session = session
+            $0.frames = frames
+        }
+        let model = ReplayViewModel(sessionID: GameFixtures.sessionID, game: fake)
+        await model.load()
+        #expect(model.kind == .checkers)
+        #expect(model.moves == ["9-14", "23-18"])
+        #expect(model.resultText == "Black won by blockade")
+        #expect(model.positionText == "Move 2 of 2")
+        model.first()
+        #expect(model.frame?.checkers.moves.isEmpty == true)
+        #expect(MoveListLayout(model.kind) == .pairs)
     }
 
     @Test func missingReplayShowsAnError() async {
@@ -231,6 +261,8 @@ struct SessionStatusTextTests {
         (GameFixtures.session(), GameFixtures.third, "X to move"),
         (GameFixtures.session(game: .chess, status: .won, turn: nil, winner: GameFixtures.rival), GameFixtures.third, "Black won"),
         (GameFixtures.session(game: .quoridor, turn: GameFixtures.rival), GameFixtures.third, "Green to move"),
+        (GameFixtures.session(game: .checkers, turn: GameFixtures.rival), GameFixtures.third, "White to move"),
+        (GameFixtures.session(game: .checkers, status: .won, turn: nil, winner: GameFixtures.me), GameFixtures.third, "Black won"),
     ])
     func headlines(session: Session, me: String, text: String) {
         #expect(SessionStatusText.headline(session, me: me) == text)
@@ -247,6 +279,34 @@ struct SessionStatusTextTests {
         capped.moveLimit = true
         #expect(SessionStatusText.detail(capped) == "move limit reached")
         #expect(SessionStatusText.detail(GameFixtures.session()) == nil)
+    }
+
+    @Test(arguments: [
+        (CheckersEnd.noMoves, SessionStatus.won, "bbbb.bbbb..w..........B.........", String?.some("by blockade")),
+        (.noMoves, .won, "bbbb.bbbb.............B.........", "by capturing every piece"),
+        (.fortyMoves, .draw, "....B..........................W", "forty-move rule"),
+        (.moveLimit, .draw, "....B..........................W", "move limit"),
+        (.unspecified, .won, "bbbbbbbbbbbb........wwwwwwwwwwww", nil),
+    ])
+    func checkersDetailsExplainTheEnding(end: CheckersEnd, status: SessionStatus, squares: String, text: String?) {
+        var session = GameFixtures.session(game: .checkers, status: status, turn: nil, winner: status == .won ? GameFixtures.me : nil)
+        session.checkers = CheckersFixtures.board(squares)
+        session.checkers.end = end
+        #expect(SessionStatusText.detail(session) == text)
+        session.agreedDraw = true
+        #expect(SessionStatusText.detail(session) == "by agreement")
+    }
+
+    @Test func checkersHintsAtMandatoryCaptureOnlyOnYourTurn() {
+        var session = GameFixtures.session(game: .checkers)
+        session.checkers = CheckersFixtures.doubleKings
+        #expect(SessionStatusText.hint(session, me: GameFixtures.me) == "You must capture")
+        #expect(SessionStatusText.hint(session, me: GameFixtures.rival) == nil)
+        session.checkers = CheckersFixtures.opening
+        #expect(SessionStatusText.hint(session, me: GameFixtures.me) == nil)
+        var chess = GameFixtures.session(game: .chess)
+        chess.checkers = CheckersFixtures.doubleKings
+        #expect(SessionStatusText.hint(chess, me: GameFixtures.me) == nil)
     }
 }
 

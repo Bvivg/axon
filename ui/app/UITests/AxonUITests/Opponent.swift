@@ -216,6 +216,26 @@ actor GameSocket {
         return position
     }
 
+    func checkersMove(_ text: String, ply: UInt32, revision: UInt32?) async throws {
+        var move = Axon_Game_V1_CheckersMove()
+        move.ply = ply
+        move.move = text
+        if let revision {
+            move.revision = revision
+        }
+        var command = GameSessionCommand()
+        command.checkersMove = move
+        try await send(command)
+    }
+
+    @discardableResult
+    func play(checkers move: String, atPly ply: UInt32, timeout: Duration = .seconds(20)) async throws -> GameSession {
+        let matched = try await session(atPly: ply, timeout: timeout)
+        let position = latest.flatMap { $0.ply == ply ? $0 : nil } ?? matched
+        try await checkersMove(move, ply: ply, revision: position.hasRevision ? position.revision : nil)
+        return position
+    }
+
     func session(atPly ply: UInt32, timeout: Duration = .seconds(20)) async throws -> GameSession {
         try await nextSession("ply \(ply)", timeout: timeout) { $0.ply == ply }
     }

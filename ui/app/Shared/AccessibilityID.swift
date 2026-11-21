@@ -52,6 +52,7 @@ enum AccessibilityID {
         static func chessSquare(_ square: String) -> String { "chess.square.\(square)" }
         static func quoridorCell(_ cell: String) -> String { "quoridor.cell.\(cell)" }
         static func quoridorWall(_ wall: String) -> String { "quoridor.wall.\(wall)" }
+        static func checkersSquare(_ number: Int) -> String { "checkers.square.\(number)" }
     }
 
     enum Replay {

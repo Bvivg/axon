@@ -32,8 +32,32 @@ enum SessionStatusText {
         if session.hasResigned, session.resigned { return "by resignation" }
         if session.hasAgreedDraw, session.agreedDraw { return "by agreement" }
         if session.hasMoveLimit, session.moveLimit { return "move limit reached" }
-        guard session.kind == .chess, session.hasChess else { return nil }
-        return chessEndings[session.chess.end]
+        switch session.kind {
+        case .chess: return session.hasChess ? chessEndings[session.chess.end] : nil
+        case .checkers: return session.hasCheckers ? checkersEnding(session) : nil
+        case .ticTacToe, .quoridor: return nil
+        }
+    }
+
+    static func hint(_ session: Session, me: String) -> String? {
+        guard session.kind == .checkers, session.status == .playing, session.turnUserID == me,
+              session.checkers.legalMoves.contains(where: { CheckersMove(notation: $0)?.jump == true })
+        else { return nil }
+        return "You must capture"
+    }
+
+    private static func checkersEnding(_ session: Session) -> String? {
+        switch session.checkers.end {
+        case .noMoves:
+            guard session.status == .won,
+                  let winner = session.playerIds.firstIndex(of: session.winnerUserID),
+                  let loser = CheckersSide(rawValue: 1 - winner)
+            else { return "no moves left" }
+            return CheckersPosition(session.checkers.squares).count(loser) == 0 ? "by capturing every piece" : "by blockade"
+        case .fortyMoves: return "forty-move rule"
+        case .moveLimit: return "move limit"
+        default: return nil
+        }
     }
 
     private static let chessEndings: [ChessEnd: String] = [

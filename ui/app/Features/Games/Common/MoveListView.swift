@@ -5,7 +5,7 @@ enum MoveListLayout: Sendable, Equatable {
     case plain
 
     init(_ kind: GameKind) {
-        self = kind == .chess ? .pairs : .plain
+        self = kind == .chess || kind == .checkers ? .pairs : .plain
     }
 }
 

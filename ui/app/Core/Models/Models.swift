@@ -18,11 +18,15 @@ typealias DrawAction = Axon_Game_V1_DrawAction
 typealias TicTacToeBoardState = Axon_Game_V1_TicTacToeBoard
 typealias ChessBoardState = Axon_Game_V1_ChessBoard
 typealias QuoridorBoardState = Axon_Game_V1_QuoridorBoard
+typealias CheckersBoardState = Axon_Game_V1_CheckersBoard
+typealias CheckersPieceCode = Axon_Game_V1_CheckersPiece
+typealias CheckersEnd = Axon_Game_V1_CheckersEnd
 
 enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
     case ticTacToe = "tictactoe"
     case chess
     case quoridor
+    case checkers
 
     var id: String { rawValue }
 
@@ -35,6 +39,7 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .ticTacToe: "Tic-Tac-Toe"
         case .chess: "Chess"
         case .quoridor: "Quoridor"
+        case .checkers: "Checkers"
         }
     }
 
@@ -43,6 +48,7 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .ticTacToe: "number"
         case .chess: "crown"
         case .quoridor: "square.grid.3x3.middle.filled"
+        case .checkers: "checkerboard.rectangle"
         }
     }
 
@@ -51,17 +57,18 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .ticTacToe: ["X", "O"]
         case .chess: ["White", "Black"]
         case .quoridor: ["Violet", "Green"]
+        case .checkers: ["Black", "White"]
         }
     }
 
     var defaultClock: Duration {
         switch self {
         case .ticTacToe: .seconds(300)
-        case .chess, .quoridor: .seconds(600)
+        case .chess, .quoridor, .checkers: .seconds(600)
         }
     }
 
-    var supportsDrawOffers: Bool { self == .chess }
+    var supportsDrawOffers: Bool { self == .chess || self == .checkers }
 }
 
 extension Session {
