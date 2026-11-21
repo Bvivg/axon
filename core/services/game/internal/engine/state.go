@@ -27,6 +27,8 @@ type State struct {
 
 	Winner int `json:"winner"`
 
+	Seed uint64 `json:"seed,omitempty,string"`
+
 	Data json.RawMessage `json:"data"`
 }
 

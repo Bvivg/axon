@@ -80,23 +80,68 @@ func (r *Registry) Keys() []Key {
 }
 
 func (r *Registry) NewState(key Key, players []PlayerID) (State, error) {
-	def, err := r.Definition(key)
+	def, err := r.roster(key, players)
 	if err != nil {
 		return State{}, err
 	}
+	if _, seeded := def.Game.(Seeded); seeded {
+		return State{}, fmt.Errorf("%w: %q", ErrSeedRequired, key)
+	}
+	return def.Game.Init(players), nil
+}
+
+func (r *Registry) NewSeededState(key Key, players []PlayerID, seed uint64) (State, error) {
+	def, err := r.roster(key, players)
+	if err != nil {
+		return State{}, err
+	}
+	game, seeded := def.Game.(Seeded)
+	if !seeded {
+		return def.Game.Init(players), nil
+	}
+	state := game.InitSeeded(players, seed)
+	state.Seed = seed
+	return state, nil
+}
+
+func (r *Registry) Hidden(key Key) bool {
+	def, ok := r.definitions[key]
+	if !ok {
+		return false
+	}
+	_, hidden := def.Game.(Viewer)
+	return hidden
+}
+
+func (r *Registry) View(state State, viewer PlayerID) State {
+	state.Seed = 0
+	def, ok := r.definitions[state.Game]
+	if !ok {
+		return state
+	}
+	if game, hidden := def.Game.(Viewer); hidden {
+		return game.View(state, viewer)
+	}
+	return state
+}
+
+func (r *Registry) roster(key Key, players []PlayerID) (Definition, error) {
+	def, err := r.Definition(key)
+	if err != nil {
+		return Definition{}, err
+	}
 
 	if len(players) < def.MinPlayers || len(players) > def.MaxPlayers {
-		return State{}, fmt.Errorf("%w: %q takes %d..%d, got %d",
+		return Definition{}, fmt.Errorf("%w: %q takes %d..%d, got %d",
 			ErrPlayerCount, key, def.MinPlayers, def.MaxPlayers, len(players))
 	}
 
 	seen := make(map[PlayerID]struct{}, len(players))
 	for _, player := range players {
 		if _, duplicate := seen[player]; duplicate {
-			return State{}, fmt.Errorf("%w: %q", ErrDuplicatePlayer, player)
+			return Definition{}, fmt.Errorf("%w: %q", ErrDuplicatePlayer, player)
 		}
 		seen[player] = struct{}{}
 	}
-
-	return def.Game.Init(players), nil
+	return def, nil
 }
