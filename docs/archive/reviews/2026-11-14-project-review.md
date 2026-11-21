@@ -25,4 +25,4 @@
 
 **Границы проверки.** Локальный Compose без production-нагрузки. Chromium вместо Safari/iOS/Android. Внешние OAuth/Push и удалённый CI не проверены. Go source scan Chat заменён проверкой бинарника. SwiftUI и четыре игры ещё не реализованы.
 
-[Основания, детали и границы](2026-11-14/appendices.md) · [Очищенные доказательства](2026-11-14/evidence/README.md) · [План коммитов](2026-11-14/commit-plan.md) · [Backup/restore](../backup-restore.md)
+[Основания, детали и границы](2026-11-14/appendices.md) · [Очищенные доказательства](2026-11-14/evidence/README.md) · [План коммитов](2026-11-14/commit-plan.md) · [Backup/restore](../../backup-restore.md)

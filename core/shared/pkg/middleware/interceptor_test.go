@@ -47,17 +47,17 @@ func TestCorrelationInterceptorAdoptsInboundHeader(t *testing.T) {
 	}, middleware.NewCorrelationInterceptor())
 
 	req := connect.NewRequest(wrapperspb.String("hi"))
-	req.Header().Set(correlation.Header, "corr-inbound")
+	req.Header().Set(correlation.Header, inboundID)
 
 	resp, err := client.CallUnary(context.Background(), req)
 	if err != nil {
 		t.Fatalf("CallUnary: %v", err)
 	}
 
-	if seen != "corr-inbound" {
-		t.Errorf("handler saw correlation ID %q, want corr-inbound", seen)
+	if seen != inboundID {
+		t.Errorf("handler saw correlation ID %q, want %s", seen, inboundID)
 	}
-	if got := resp.Header().Get(correlation.Header); got != "corr-inbound" {
+	if got := resp.Header().Get(correlation.Header); got != inboundID {
 		t.Errorf("response header = %q, want corr-inbound", got)
 	}
 }
@@ -137,6 +137,28 @@ func TestRecoveryInterceptorMapsPanicToInternal(t *testing.T) {
 	}
 }
 
+func TestCorrelationInterceptorReplacesAForgedInboundID(t *testing.T) {
+	var seen string
+	client := newClient(t, func(ctx context.Context, req *connect.Request[wrapperspb.StringValue]) (*connect.Response[wrapperspb.StringValue], error) {
+		seen = correlation.FromContext(ctx)
+		return echo(ctx, req)
+	}, middleware.NewCorrelationInterceptor())
+
+	req := connect.NewRequest(wrapperspb.String("hi"))
+	req.Header().Set(correlation.Header, strings.Repeat("y", 4096))
+
+	resp, err := client.CallUnary(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CallUnary: %v", err)
+	}
+	if !correlation.Valid(seen) {
+		t.Fatalf("handler adopted the forged ID %.40q", seen)
+	}
+	if got := resp.Header().Get(correlation.Header); got != seen {
+		t.Fatalf("response echoed %.40q, want the generated %q", got, seen)
+	}
+}
+
 func TestLoggingInterceptorRecordsSuccess(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(logger.Options{Service: "test", Output: &buf})
@@ -144,14 +166,14 @@ func TestLoggingInterceptorRecordsSuccess(t *testing.T) {
 	client := newClient(t, echo, middleware.NewCorrelationInterceptor(), middleware.NewLoggingInterceptor(log))
 
 	req := connect.NewRequest(wrapperspb.String("hi"))
-	req.Header().Set(correlation.Header, "corr-log")
+	req.Header().Set(correlation.Header, inboundID)
 
 	if _, err := client.CallUnary(context.Background(), req); err != nil {
 		t.Fatalf("CallUnary: %v", err)
 	}
 
 	line := buf.String()
-	for _, want := range []string{`"code":"ok"`, `"correlation_id":"corr-log"`, `"duration_ms"`, procedure} {
+	for _, want := range []string{`"code":"ok"`, `"correlation_id":"` + inboundID + `"`, `"duration_ms"`, procedure} {
 		if !strings.Contains(line, want) {
 			t.Errorf("log line missing %s: %s", want, line)
 		}
@@ -256,4 +278,33 @@ func scrapeMetrics(t *testing.T, m *middleware.Metrics) string {
 		t.Fatalf("metrics handler status = %d, want 200", rec.Code)
 	}
 	return rec.Body.String()
+}
+
+func TestCorrelationBehindTheHTTPMiddlewareIsSentOnce(t *testing.T) {
+	h := connect.NewUnaryHandler(procedure, echo, connect.WithInterceptors(middleware.NewCorrelationInterceptor()))
+	mux := http.NewServeMux()
+	mux.Handle(procedure, middleware.Correlation(h))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := connect.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](srv.Client(), srv.URL+procedure)
+
+	for name, inbound := range map[string]string{"generated": "", "adopted": inboundID} {
+		t.Run(name, func(t *testing.T) {
+			req := connect.NewRequest(wrapperspb.String("hi"))
+			if inbound != "" {
+				req.Header().Set(correlation.Header, inbound)
+			}
+			resp, err := client.CallUnary(context.Background(), req)
+			if err != nil {
+				t.Fatalf("CallUnary: %v", err)
+			}
+			values := resp.Header().Values(correlation.Header)
+			if len(values) != 1 {
+				t.Fatalf("response carries %d correlation headers %q, want 1", len(values), values)
+			}
+			if inbound != "" && values[0] != inbound {
+				t.Errorf("response header = %q, want %s", values[0], inbound)
+			}
+		})
+	}
 }

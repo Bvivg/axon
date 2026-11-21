@@ -35,7 +35,7 @@ func Accept(w http.ResponseWriter, r *http.Request, opts AcceptOptions) (*Conn, 
 
 	id := correlation.FromContext(r.Context())
 	if id == "" {
-		id = r.Header.Get(correlation.Header)
+		id = correlation.FromHeader(r.Header.Get(correlation.Header))
 	}
 
 	return newConn(raw, opts.Options, id), nil

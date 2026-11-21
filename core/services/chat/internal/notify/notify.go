@@ -42,6 +42,9 @@ type Config struct {
 	Presence Presence
 	Sender   Sender
 	Logger   *slog.Logger
+
+	PerSenderPerMinute int
+	PerSenderBurst     int
 }
 
 type Notifier struct {
@@ -50,6 +53,7 @@ type Notifier struct {
 	sender   Sender
 	log      *slog.Logger
 	queue    chan domain.Message
+	budget   *senderBudget
 }
 
 func New(cfg Config) (*Notifier, error) {
@@ -69,6 +73,7 @@ func New(cfg Config) (*Notifier, error) {
 		sender:   cfg.Sender,
 		log:      cfg.Logger,
 		queue:    make(chan domain.Message, queueDepth),
+		budget:   newSenderBudget(cfg.PerSenderPerMinute, cfg.PerSenderBurst, nil),
 	}, nil
 }
 
@@ -138,6 +143,7 @@ func (n *Notifier) Notify(ctx context.Context, m domain.Message) error {
 			away = append(away, id)
 		}
 	}
+	away = n.budget.allow(m.AuthorID, away)
 	if len(away) == 0 {
 		return nil
 	}

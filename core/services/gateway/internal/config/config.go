@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ type Config struct {
 	CORS          CORSConfig
 	RateLimit     RateLimitConfig
 	RefreshCookie RefreshCookieConfig
+	HTTP          HTTPConfig
 
 	UpstreamTimeout time.Duration
 	UploadTimeout   time.Duration
@@ -82,8 +84,24 @@ type RateLimitConfig struct {
 
 	UploadPartsPerMinute int
 
+	SocketsPerMinute int
+
+	SocketsPerUser int
+
 	TrustedProxies int
 }
+
+type HTTPConfig struct {
+	MaxBodyBytes int64
+
+	ReadTimeout time.Duration
+
+	IdleTimeout time.Duration
+
+	MaxListItems int
+}
+
+const maxTrustedProxies = 8
 
 type RefreshCookieConfig struct {
 	Secure bool
@@ -119,7 +137,15 @@ func Load() (Config, error) {
 			UploadsPerMinute:   l.IntDefault("RATE_LIMIT_UPLOADS_PER_MINUTE", 60),
 
 			UploadPartsPerMinute: l.IntDefault("RATE_LIMIT_UPLOAD_PARTS_PER_MINUTE", 600),
+			SocketsPerMinute:     l.IntDefault("RATE_LIMIT_SOCKETS_PER_MINUTE", 60),
+			SocketsPerUser:       l.IntDefault("WS_MAX_CONNECTIONS_PER_USER", 16),
 			TrustedProxies:       l.IntDefault("TRUSTED_PROXIES", 0),
+		},
+		HTTP: HTTPConfig{
+			MaxBodyBytes: int64(l.IntDefault("HTTP_MAX_BODY_BYTES", 1<<20)),
+			ReadTimeout:  l.DurationDefault("HTTP_READ_TIMEOUT", 30*time.Second),
+			IdleTimeout:  l.DurationDefault("HTTP_IDLE_TIMEOUT", 2*time.Minute),
+			MaxListItems: l.IntDefault("RPC_MAX_LIST_ITEMS", 100),
 		},
 	}
 
@@ -154,9 +180,20 @@ func (c Config) validate() error {
 		}
 	}
 
+	if c.RateLimit.TrustedProxies < 0 || c.RateLimit.TrustedProxies > maxTrustedProxies {
+		return fmt.Errorf("config: TRUSTED_PROXIES is the number of proxies in front of the gateway that append to X-Forwarded-For, 0 to %d, got %d", maxTrustedProxies, c.RateLimit.TrustedProxies)
+	}
+
+	if c.HTTP.MaxBodyBytes <= 0 {
+		return errors.New("config: HTTP_MAX_BODY_BYTES must be positive")
+	}
+
 	if c.Environment.IsProduction() {
-		if c.RateLimit.SearchPerMinute <= 0 || c.RateLimit.StandardPerMinute <= 0 || c.RateLimit.SensitivePerMinute <= 0 {
+		if c.RateLimit.SearchPerMinute <= 0 || c.RateLimit.StandardPerMinute <= 0 || c.RateLimit.SensitivePerMinute <= 0 || c.RateLimit.SocketsPerMinute <= 0 || c.RateLimit.SocketsPerUser <= 0 {
 			return errors.New("config: rate limits must be positive in production")
+		}
+		if c.HTTP.ReadTimeout <= 0 || c.HTTP.IdleTimeout <= 0 || c.HTTP.MaxListItems <= 0 {
+			return errors.New("config: HTTP_READ_TIMEOUT, HTTP_IDLE_TIMEOUT and RPC_MAX_LIST_ITEMS must be positive in production")
 		}
 	}
 

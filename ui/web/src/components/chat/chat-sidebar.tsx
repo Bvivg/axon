@@ -18,6 +18,7 @@ import { ListColumnHeader } from "@/components/ui/list-column";
 import { useSession } from "@/lib/auth/session";
 import { isRoomAt, openChat, useChatAddress } from "@/lib/chat/address";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
+import { peopleQueryHint } from "@/lib/people-search";
 import { useSearchUsers } from "@/lib/query/people";
 
 export function ChatSidebar() {
@@ -89,7 +90,7 @@ function ChatSearch({ query, onDone }: { query: string; onDone: () => void }) {
       search={search}
       loading={loading}
       rooms={rooms}
-      empty="No chats or people found."
+      empty={search.tooShort ? peopleQueryHint : "No chats or people found."}
       sections={[
         { label: "Matching chats", title: "Chats", rows: chats.map((entry) => ({
           id: entry.room.id,

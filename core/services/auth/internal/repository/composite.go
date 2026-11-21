@@ -76,6 +76,28 @@ func (r *Repository) RotateRefreshToken(ctx context.Context, spentID uuid.UUID, 
 	return won, nil
 }
 
+func (r *Repository) UpdateProfileRevokingOtherSessions(
+	ctx context.Context, id uuid.UUID, u domain.ProfileUpdate, keepFamilyID uuid.UUID, at time.Time,
+) (domain.User, []uuid.UUID, error) {
+	var (
+		updated domain.User
+		revoked []uuid.UUID
+	)
+
+	err := r.InTx(ctx, func(tx *Repository) error {
+		var err error
+		if updated, err = tx.UpdateProfile(ctx, id, u); err != nil {
+			return err
+		}
+		revoked, err = tx.RevokeOtherFamiliesForUser(ctx, id, keepFamilyID, at)
+		return err
+	})
+	if err != nil {
+		return domain.User{}, nil, err
+	}
+	return updated, revoked, nil
+}
+
 func (r *Repository) SetPasswordAndRevokeSessions(ctx context.Context, userID uuid.UUID, passwordHash string, at time.Time) error {
 	return r.InTx(ctx, func(tx *Repository) error {
 		if err := tx.SetCredential(ctx, userID, passwordHash); err != nil {

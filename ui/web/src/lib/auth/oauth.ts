@@ -18,7 +18,7 @@ export const providerLabels: Record<string, string> = {
 };
 
 export function enabledProviders(): string[] {
-  const configured = process.env.NEXT_PUBLIC_OAUTH_PROVIDERS ?? "fake";
+  const configured = process.env.NEXT_PUBLIC_OAUTH_PROVIDERS ?? "";
   return configured
     .split(",")
     .map((name) => name.trim().toLowerCase())

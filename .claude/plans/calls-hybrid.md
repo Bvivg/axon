@@ -1,13 +1,13 @@
 # AXON — гибридные звонки: план по рубежам
 
-Статус 2026-11-10: **Рубежи 1, 2 и отдельно разрешённый Рубеж 3 закрыты по Docker media evidence**. Основной [https://axon.test](https://axon.test) работает: schema16 clean, migration включена, probe0, slots0/nonterminal0. Рубеж3: native8/8, SFU6/6, UI7/7, WS5/5,19race integration, настоящий refresh/reconnect/logout308462ms; trusted main LAN migration, группа и финальный P2P/diagnostic404 пройдены. При полном искусственном обрыве P2P пауза декодированного audio составила9,6–9,7s; бесшовность не заявляется. push: не проверен; внешние NAT не проверены; physical Safari/iOS не проверены. [Evidence3](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R3-final/README.md), [evidence2](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R2-final/README.md).
+Статус 2026-11-10: **Рубежи 1, 2 и отдельно разрешённый Рубеж 3 закрыты по Docker media evidence**. Основной [https://axon.test](https://axon.test) работает: schema16 clean, migration включена, probe0, slots0/nonterminal0. Рубеж3: native8/8, SFU6/6, UI7/7, WS5/5,19race integration, настоящий refresh/reconnect/logout308462ms; trusted main LAN migration, группа и финальный P2P/diagnostic404 пройдены. При полном искусственном обрыве P2P пауза декодированного audio составила9,6–9,7s; бесшовность не заявляется. push: не проверен; внешние NAT не проверены; physical Safari/iOS не проверены. Evidence3, evidence2.
 Остановки после1.1 и1.3 соблюдены; владелец затем разрешил1.4–1.5 сообщением «дальше тогда работай». Выполнены Calls UI/media/history/push code, финальные проверки и ранее запрошенный основной LAN-запуск.
 
-Evidence1.3: [README](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R1-ws/README.md), [native stats и DB states](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R1-ws/result.json). Прогресс Рубежа2 — в §6; утверждённый дизайн Рубежа3 — в §9, текущие проверки — в PROGRESS.md.
+Evidence1.3: README, native stats и DB states. Прогресс Рубежа2 — в §6; утверждённый дизайн Рубежа3 — в §9, текущие проверки — в PROGRESS.md.
 
 LAN-запуск выполнен через Docker: https://192.168.2.1:3443, дополнительный HTTPS SAN10.80.10.122. Trusted CA/bootstrap3444, TURN3478/5349+ограниченный relay range. Реальный основной shipping web проверен двумя browser contexts из отдельного Docker клиента: login/refresh/cookie path, native call/playback/End. Физические устройства друга и внешние NAT не проверены; доверие CA устанавливается вручную по docs/calls-safari-ios-runbook.md.
 
-Этот документ заменяет порядок реализации и ADR-5/этап 7 прежнего [graph-first аудита](/Users/bvivg/.codex/visualizations/2026/11/02/01a19cf8-7e1a-7971-a1ea-044058ea38c4/axon-calls-graph-first-audit.md). Источник фактов — актуальный working tree, включая незакоммиченные изменения и уже выполненное обновление стека. Граф остаётся картой поиска: отсутствие ребра через интерфейс или Redis не доказывает отсутствие runtime-цепочки.
+Этот документ заменяет порядок реализации и ADR-5/этап 7 прежнего graph-first аудита. Источник фактов — актуальный working tree, включая незакоммиченные изменения и уже выполненное обновление стека. Граф остаётся картой поиска: отсутствие ребра через интерфейс или Redis не доказывает отсутствие runtime-цепочки.
 
 Первоначальный APPROVE разрешал только Рубеж1 с указанными остановками; затем владелец отдельно разрешил весь Рубеж2 и2026-11-04 отдельно Рубеж3. Существующие изменения working tree и обновление стека сохраняются, ветка feature/hybrid-calls. Commit/push/PR запрещены. Каждый рубеж закрывается только после реальных медиа-доказательств.
 
@@ -28,7 +28,7 @@ LAN-запуск выполнен через Docker: https://192.168.2.1:3443, �
 
 ### Явное отступление от документации
 
-[roadmap.md](/Users/bvivg/Developer/PetProjects/axon/.claude/plans/roadmap.md) в этапе 5, [CLAUDE.md](/Users/bvivg/Developer/PetProjects/axon/CLAUDE.md) в стеке/дереве сервисов и [infra.md](/Users/bvivg/Developer/PetProjects/axon/.claude/rules/infra.md) описывают отдельный calling-сервис — тонкий LiveKit-оркестратор. Решением владельца это **заменено модулем звонков внутри Chat**. Отдельный контейнер LiveKit остаётся медиа-инфраструктурой, не бизнес-сервисом. Пустая/зарезервированная схема calling не используется и не удаляется.
+[roadmap.md](roadmap.md) в этапе 5, [CLAUDE.md](../../CLAUDE.md) в стеке/дереве сервисов и [infra.md](../rules/infra.md) описывают отдельный calling-сервис — тонкий LiveKit-оркестратор. Решением владельца это **заменено модулем звонков внутри Chat**. Отдельный контейнер LiveKit остаётся медиа-инфраструктурой, не бизнес-сервисом. Пустая/зарезервированная схема calling не используется и не удаляется.
 
 В1.2 синхронизированы roadmap.md, CLAUDE.md, infra.md и архитектурная часть AGENTS.md: старый roadmap этап помечен заменённым, Calls описан внутри Chat. Старые иллюстративные деревья не означают разрешение отдельного calling-сервиса.
 
@@ -50,7 +50,7 @@ LAN-запуск выполнен через Docker: https://192.168.2.1:3443, �
 | Frontend доставка | useRoomActivitySocket направляет call_event в typed channel до legacy parser; SDP не буферизуется на отключённом WS. ACK после consumer, replay batches100. | Browser проверяет state/SDP/ICE/resync; diagnostic probe/spike закрыты ранним404 guard приflag0. Main UI содержит P2P и группы. |
 | UI/уведомления | Direct-header Audio/Video call, incoming/active/end overlay, controls/devices, virtual history. Calls push durable claim/receipt/TTL+ACK; worker refresh/GetCall перед уведомлением. | Camera replacement/mute проверены native в Docker; реальный desktop screen picker/physical output и Web Push не проверены. |
 | Данные/инфраструктура | Calls proto19publicRPC +private admission; migration13 с6таблицами,14push metadata,15transports/receipts/relations/FK. | Main schema15clean; LiveKit private7880, LAN7881TCP/7882UDP, actual3partySFU/room removal/slots0 доказаны. |
-| Тесты | [Playwright config](/Users/bvivg/Developer/PetProjects/axon/ui/web/playwright.config.ts): Chromium, workers=1, retries=0, test timeout 30 s, expect 10 s, native fake media device, microphone permission. | Fake device — источник для настоящего WebRTC, не mock RTCPeerConnection. Базовый config не покрывает Firefox; в1.1 он проверен отдельным calls-spike config. WebKit/Safari/iOS hardware не проверены. |
+| Тесты | [Playwright config](../../ui/web/playwright.config.ts): Chromium, workers=1, retries=0, test timeout 30 s, expect 10 s, native fake media device, microphone permission. | Fake device — источник для настоящего WebRTC, не mock RTCPeerConnection. Базовый config не покрывает Firefox; в1.1 он проверен отдельным calls-spike config. WebKit/Safari/iOS hardware не проверены. |
 
 При первоначальной подготовке плана был доступен Docker: read-only <code>docker compose ls --format json</code> вернул axon running(8) и axon-graphify running(1). Тогда ничего не перезапускалось; после APPROVE перезапущен только AXON по правилу смены ветки. Исходные вложение/аудит/репозиторий доступны. Для редактирования плана дополнительные логины и токены не нужны.
 
@@ -93,7 +93,7 @@ Outbox хранит бизнес-события, не SDP/ICE, токены, с�
 
 ### Единый пакет доказательств
 
-Для каждого гейта создать отдельную папку <code>/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/&lt;gate&gt;/</code>: COMMANDS.txt с точными командами/exit codes/версией образов, redacted logs, result.json, Playwright trace при ошибке. Evidence не складывать в репозиторий с токенами или персональными данными.
+Для каждого гейта создать отдельную папку <code>.local/evidence/calls/&lt;gate&gt;/</code>: COMMANDS.txt с точными командами/exit codes/версией образов, redacted logs, result.json, Playwright trace при ошибке. Evidence не складывать в репозиторий с токенами или персональными данными.
 
 | Что фиксируем | Условие прохода |
 |---|---|
@@ -132,9 +132,9 @@ Loopback secure context: runner может разделять network namespace 
 
 Запуски: audio direct, audio forced relay (iceTransportPolicy=relay), video direct/relay, TURN TCP/TLS на 5349 при блокировке UDP. Тестовый CA доверяется только disposable browser/container; ключи не уходят в приложение. Проверить selected pair, RTP/audio delta, permission denial/no device, ICE failure, End и повторный capture после cleanup. Начать с Chromium, затем реального Firefox в Docker; если не работает в одном, записать расхождение, а не применять browser-specific mock. WebKit engine в контейнере не считается Safari/iOS hardware.
 
-Гейт 1.1: артефакты <code>/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R1-spike/</code>, direct и relay реально передают media, все треки ended. Если это не доказано, основной backend Calls не разрабатывать до выяснения причины.
+Гейт 1.1: артефакты <code>.local/evidence/calls/R1-spike/</code>, direct и relay реально передают media, все треки ended. Если это не доказано, основной backend Calls не разрабатывать до выяснения причины.
 
-Фактически выполнено 2026-11-03: **21/21 PASS** в Chromium156.0.8078.4 и Firefox157.0, Playwright1.64.1, timeout30s/expect10s/retries0. Audio/video direct, forced relay UDP3478/TCP3478/TLS5349; для TLS UDP к TURN заблокирован настоящим iptables. Выбранная пара взята из transport.selectedCandidatePairId, растут RTP/audio energy/video frames. После End все сохранённые track refs ended, PC/AudioContext closed; повторный capture проходит. Нужны default route в Docker bridge, PulseAudio null sink и явный CA import в каждый NSS-профиль Firefox, без отключения TLS validation. Пары одного движка; Chromium↔Firefox, hardware и внешние NAT не проверены. Permission denial — Chromium, отсутствующий device ID — оба движка. В историческом1.1 Room/DB participants/slots=N/A, backend тогда отсутствовал; бизнес-состояния подтверждены следующим1.3. [Evidence](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R1-spike/README.md), [полные stats](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R1-spike/result.json). Остановка1.1 выполнена, последующее разрешение1.2–1.3 получено.
+Фактически выполнено 2026-11-03: **21/21 PASS** в Chromium156.0.8078.4 и Firefox157.0, Playwright1.64.1, timeout30s/expect10s/retries0. Audio/video direct, forced relay UDP3478/TCP3478/TLS5349; для TLS UDP к TURN заблокирован настоящим iptables. Выбранная пара взята из transport.selectedCandidatePairId, растут RTP/audio energy/video frames. После End все сохранённые track refs ended, PC/AudioContext closed; повторный capture проходит. Нужны default route в Docker bridge, PulseAudio null sink и явный CA import в каждый NSS-профиль Firefox, без отключения TLS validation. Пары одного движка; Chromium↔Firefox, hardware и внешние NAT не проверены. Permission denial — Chromium, отсутствующий device ID — оба движка. В историческом1.1 Room/DB participants/slots=N/A, backend тогда отсутствовал; бизнес-состояния подтверждены следующим1.3. Evidence, полные stats. Остановка1.1 выполнена, последующее разрешение1.2–1.3 получено.
 
 **1.2. Контракты, данные, endpoints, FSM.**
 
@@ -150,9 +150,9 @@ Loopback secure context: runner может разделять network namespace 
 
 Фактически выполнено1.2–1.3:12RPC в axon.calls.v1, миграция000013 и6таблиц, endpoints/FSM/slots/requests/outbox/ACK/history/TURN REST внутри Chat; typed gateway proxy и nonvisual CallChannel в существующем activity WS. Регистрация endpoint, active family, connection/epoch fencing и subscription-ready/overflow реализованы. Calls по default выключен; основной dev и его миграции не менялись.
 
-**Гейт1.3:5/5 browser tests PASS за28.9s.** Chromium156.0.8078.4: native direct audio и relay/TLS video через настоящий RPC→PostgreSQL→outbox→Redis→WS, двусторонние RTP/audio/video deltas, выбранная ICE pair, ACTIVE/ENDED participants, все12 сохранённых tracks ended, SQL slots2→0 и история. Отдельно unacked replay/epoch1→2/stale refusal; реальный Logout→socket close/403; реальный Redis outage→commit двух событий→retry после restart→доставка обоим. Go race internal/integration6 cases, gateway contract catalogue, lint/Buf/TypeScript/ESLint — PASS. SQL up/down/up6→0→6 с ROLLBACK — PASS. [Evidence](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R1-ws/README.md).
+**Гейт1.3:5/5 browser tests PASS за28.9s.** Chromium156.0.8078.4: native direct audio и relay/TLS video через настоящий RPC→PostgreSQL→outbox→Redis→WS, двусторонние RTP/audio/video deltas, выбранная ICE pair, ACTIVE/ENDED participants, все12 сохранённых tracks ended, SQL slots2→0 и история. Отдельно unacked replay/epoch1→2/stale refusal; реальный Logout→socket close/403; реальный Redis outage→commit двух событий→retry после restart→доставка обоим. Go race internal/integration6 cases, gateway contract catalogue, lint/Buf/TypeScript/ESLint — PASS. SQL up/down/up6→0→6 с ROLLBACK — PASS. Evidence.
 
-Остановка после1.3 снята владельцем. **1.4–1.5 выполнены:** UI7/7, WS5/5, LAN1/1; Go race/integration/linters/types и69web unit PASS. Итог: [.local/evidence/calls/R1-final/README.md](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R1-final/README.md).
+Остановка после1.3 снята владельцем. **1.4–1.5 выполнены:** UI7/7, WS5/5, LAN1/1; Go race/integration/linters/types и69web unit PASS. Итог: `.local/evidence/calls/R1-final/README.md`.
 
 **1.4. P2P, UI, история, push.**
 
@@ -174,26 +174,26 @@ Cleanup ACK максимум 3 s; при недоступном endpoint сер�
 
 | Существующие | Изменение после APPROVE |
 |---|---|
-| [Chat main](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/cmd/chat/main.go), [config](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/config/config.go), [server](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/server/handler.go) | Wiring Calls, lifecycle workers, TURN settings/health, public Connect registration. Не добавлять новый Go service. |
-| [ws/handler.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/ws/handler.go), [ws/protocol.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/ws/protocol.go), [pubsub.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/pubsub/pubsub.go), [redis.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/pubsub/redis.go) | Capability/endpoint handshake, адресные calls, ACK/resync, subscribe-ready и bounded overflow. |
-| [repository.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/repository/repository.go), [identity.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/identity/identity.go), [events.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/events/events.go), [webpush.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/notify/webpush.go) | Транзакционные adapters, active family check, бизнес-события и TTL-aware push sender; message flow не ослаблять. |
-| [gateway main](/Users/bvivg/Developer/PetProjects/axon/core/services/gateway/cmd/gateway/main.go), [policy.go](/Users/bvivg/Developer/PetProjects/axon/core/services/gateway/internal/policy/policy.go), [wsproxy.go](/Users/bvivg/Developer/PetProjects/axon/core/services/gateway/internal/wsproxy/wsproxy.go) | Calls RPC allowlist, WS budget/forwarding только при доказанной необходимости, ACL/rate/origin tests. |
-| [app-shell.tsx](/Users/bvivg/Developer/PetProjects/axon/ui/web/src/components/nav/app-shell.tsx), [chat-activity.tsx](/Users/bvivg/Developer/PetProjects/axon/ui/web/src/components/chat/chat-activity.tsx), [use-room-activity-socket.ts](/Users/bvivg/Developer/PetProjects/axon/ui/web/src/lib/ws/use-room-activity-socket.ts), [protocol.ts](/Users/bvivg/Developer/PetProjects/axon/ui/web/src/lib/ws/protocol.ts) | Глобальный lifecycle/канал Calls; не создавать параллельный call socket. |
-| [clients.ts](/Users/bvivg/Developer/PetProjects/axon/ui/web/src/lib/connect/clients.ts), [chat-room-view.tsx](/Users/bvivg/Developer/PetProjects/axon/ui/web/src/components/chat/chat-room-view.tsx), [calls/page.tsx](/Users/bvivg/Developer/PetProjects/axon/ui/web/src/app/(app)/calls/page.tsx), [sw.js](/Users/bvivg/Developer/PetProjects/axon/ui/web/public/sw.js) | Calls client, действия звонка, история, push deep link/state recheck. |
-| [docker-compose.yml](/Users/bvivg/Developer/PetProjects/axon/core/deploy/docker-compose.yml), [Dockerfile.web](/Users/bvivg/Developer/PetProjects/axon/core/deploy/Dockerfile.web), [.env.example](/Users/bvivg/Developer/PetProjects/axon/core/deploy/.env.example), [Makefile](/Users/bvivg/Developer/PetProjects/axon/Makefile), [CI](/Users/bvivg/Developer/PetProjects/axon/.github/workflows/ci.yml) | Coturn opt-in profile, disposable browser fixtures/команды и calls jobs. Существующие версии/сервисы обновлённого стека не откатывать. Основной dev stack не перезапускать ради spike. |
+| [Chat main](../../core/services/chat/cmd/chat/main.go), [config](../../core/services/chat/internal/config/config.go), [server](../../core/services/chat/internal/server/handler.go) | Wiring Calls, lifecycle workers, TURN settings/health, public Connect registration. Не добавлять новый Go service. |
+| [ws/handler.go](../../core/services/chat/internal/ws/handler.go), [ws/protocol.go](../../core/services/chat/internal/ws/protocol.go), [pubsub.go](../../core/services/chat/internal/pubsub/pubsub.go), [redis.go](../../core/services/chat/internal/pubsub/redis.go) | Capability/endpoint handshake, адресные calls, ACK/resync, subscribe-ready и bounded overflow. |
+| [repository.go](../../core/services/chat/internal/repository/repository.go), [identity.go](../../core/services/chat/internal/identity/identity.go), [events.go](../../core/services/chat/internal/events/events.go), [webpush.go](../../core/services/chat/internal/notify/webpush.go) | Транзакционные adapters, active family check, бизнес-события и TTL-aware push sender; message flow не ослаблять. |
+| [gateway main](../../core/services/gateway/cmd/gateway/main.go), [policy.go](../../core/services/gateway/internal/policy/policy.go), [wsproxy.go](../../core/services/gateway/internal/wsproxy/wsproxy.go) | Calls RPC allowlist, WS budget/forwarding только при доказанной необходимости, ACL/rate/origin tests. |
+| [app-shell.tsx](../../ui/web/src/components/nav/app-shell.tsx), [chat-activity.tsx](../../ui/web/src/components/chat/chat-activity.tsx), [use-room-activity-socket.ts](../../ui/web/src/lib/ws/use-room-activity-socket.ts), [protocol.ts](../../ui/web/src/lib/ws/protocol.ts) | Глобальный lifecycle/канал Calls; не создавать параллельный call socket. |
+| [clients.ts](../../ui/web/src/lib/connect/clients.ts), [chat-room-view.tsx](../../ui/web/src/components/chat/chat-room-view.tsx), calls/page.tsx/calls/page.tsx), [sw.js](../../ui/web/public/sw.js) | Calls client, действия звонка, история, push deep link/state recheck. |
+| [docker-compose.yml](../../core/deploy/docker-compose.yml), [Dockerfile.web](../../core/deploy/Dockerfile.web), [.env.example](../../core/deploy/.env.example), [Makefile](../../Makefile), [CI](../../.github/workflows/ci.yml) | Coturn opt-in profile, disposable browser fixtures/команды и calls jobs. Существующие версии/сервисы обновлённого стека не откатывать. Основной dev stack не перезапускать ради spike. |
 
 Новые:
 
-- <code>/Users/bvivg/Developer/PetProjects/axon/core/shared/proto/axon/calls/v1/calls.proto</code>; штатная генерация в <code>/Users/bvivg/Developer/PetProjects/axon/core/shared/gen/go/axon/calls/v1/</code> и <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/src/gen/axon/calls/v1/</code>, generated code вручную не менять.
-- Созданы <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/calls/domain.go</code>, <code>store.go</code>, <code>service.go</code>, <code>proto.go</code> и meaningful unit tests. FSM в domain.go, worker/TURN в service.go; пустые state/worker/turn scaffolds не создавались.
-- Созданы <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/repository/calls.go</code>, <code>calls_jobs.go</code>, <code>calls_binding.go</code>; server/calls.go, ws/calls.go, pubsub/calls.go, gateway/internal/proxy/calls.go. Notify/calls.go ещё не создан.
-- <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/migrations/000013_calls.up.sql</code> и <code>000013_calls.down.sql</code>.
-- Созданы <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/src/lib/calls/channel.ts</code>, manager.ts, p2p.ts и query/calls.ts. Device/screen lifecycle находится в PeerMedia, отдельного пустого media-devices.ts нет. Gated /calls/probe остаётся nonvisual диагностикой для нижнего WS gate.
-- Созданы <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/src/components/calls/call-provider.tsx</code>, call-overlay.tsx, call-buttons.tsx и call-history.tsx. Controls/devices внутри overlay; новый UI/state framework не добавлен.
-- <code>/Users/bvivg/Developer/PetProjects/axon/core/deploy/coturn.local.conf</code>, <code>/Users/bvivg/Developer/PetProjects/axon/core/deploy/docker-compose.calls-spike.yml</code>, <code>/Users/bvivg/Developer/PetProjects/axon/core/deploy/docker-compose.calls-e2e.yml</code>. Overlay наследует shipping web-e2e stand, ограничивает ports/credentials только своим project name.
-- <code>/Users/bvivg/Developer/PetProjects/axon/core/deploy/Dockerfile.calls-test</code>: disposable Go test image на текущей обновлённой версии Go с C toolchain и CGO для -race. Обычный tools go сейчас Alpine без compiler; его нельзя считать готовым race runner. Глобальный tools image/обновление стека ради этого не переделывать.
-- Созданы <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/e2e/calls-media-spike.spec.ts</code>, calls-permissions-spike.spec.ts, calls-spike-support.ts, calls-spike-init.mjs/report.mjs; calls-ws.spec.ts, calls-ws-support.ts, calls-ws-report.mjs и playwright.calls-ws.config.ts. Настоящие DB integration: <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/integration/calls_test.go</code>. UI/recovery tests полного1.5 появятся после продолжения.
-- <code>/Users/bvivg/Developer/PetProjects/axon/docs/calls.md</code>, <code>/Users/bvivg/Developer/PetProjects/axon/docs/calls-safari-ios-runbook.md</code>. Синхронизация трёх конфликтующих документов — как в §1.
+- <code>core/shared/proto/axon/calls/v1/calls.proto</code>; штатная генерация в <code>core/shared/gen/go/axon/calls/v1/</code> и <code>ui/web/src/gen/axon/calls/v1/</code>, generated code вручную не менять.
+- Созданы <code>core/services/chat/internal/calls/domain.go</code>, <code>store.go</code>, <code>service.go</code>, <code>proto.go</code> и meaningful unit tests. FSM в domain.go, worker/TURN в service.go; пустые state/worker/turn scaffolds не создавались.
+- Созданы <code>core/services/chat/internal/repository/calls.go</code>, <code>calls_jobs.go</code>, <code>calls_binding.go</code>; server/calls.go, ws/calls.go, pubsub/calls.go, gateway/internal/proxy/calls.go. Notify/calls.go ещё не создан.
+- <code>core/services/chat/migrations/000013_calls.up.sql</code> и <code>000013_calls.down.sql</code>.
+- Созданы <code>ui/web/src/lib/calls/channel.ts</code>, manager.ts, p2p.ts и query/calls.ts. Device/screen lifecycle находится в PeerMedia, отдельного пустого media-devices.ts нет. Gated /calls/probe остаётся nonvisual диагностикой для нижнего WS gate.
+- Созданы <code>ui/web/src/components/calls/call-provider.tsx</code>, call-overlay.tsx, call-buttons.tsx и call-history.tsx. Controls/devices внутри overlay; новый UI/state framework не добавлен.
+- <code>core/deploy/coturn.local.conf</code>, <code>core/deploy/docker-compose.calls-spike.yml</code>, <code>core/deploy/docker-compose.calls-e2e.yml</code>. Overlay наследует shipping web-e2e stand, ограничивает ports/credentials только своим project name.
+- <code>core/deploy/Dockerfile.calls-test</code>: disposable Go test image на текущей обновлённой версии Go с C toolchain и CGO для -race. Обычный tools go сейчас Alpine без compiler; его нельзя считать готовым race runner. Глобальный tools image/обновление стека ради этого не переделывать.
+- Созданы <code>ui/web/e2e/calls-media-spike.spec.ts</code>, calls-permissions-spike.spec.ts, calls-spike-support.ts, calls-spike-init.mjs/report.mjs; calls-ws.spec.ts, calls-ws-support.ts, calls-ws-report.mjs и playwright.calls-ws.config.ts. Настоящие DB integration: <code>core/services/chat/integration/calls_test.go</code>. UI/recovery tests полного1.5 появятся после продолжения.
+- <code>docs/calls.md</code>, <code>docs/calls-safari-ios-runbook.md</code>. Синхронизация трёх конфликтующих документов — как в §1.
 
 ### Приёмка и команды
 
@@ -251,20 +251,20 @@ Revoke→removal199ms; поздний join после уже выполненн�
 
 Новые файлы **только spike**:
 
-- <code>/Users/bvivg/Developer/PetProjects/axon/core/services/gateway/internal/livekitproxy/proxy.go</code> и <code>proxy_test.go</code>; wiring в существующих gateway main/config/policy.
-- <code>/Users/bvivg/Developer/PetProjects/axon/core/shared/proto/axon/calls/v1/internal.proto</code> с private CheckMediaAdmission, <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/server/calls_media.go</code>, <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/calls/admission.go</code>.
-- <code>/Users/bvivg/Developer/PetProjects/axon/core/deploy/livekit.local.yaml</code>, расширение calls-e2e overlay только своим livekit service/ports/private secrets.
-- <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/e2e/calls-admission.spec.ts</code>, <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/scripts/calls-admission-refresh.mjs</code>. Если SDK нужен page bundle — закрытый test-only probe в <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/src/app/(app)/calls/spike/page.tsx</code>, недоступный вне E2E flag; это не новый пользовательский экран.
+- <code>core/services/gateway/internal/livekitproxy/proxy.go</code> и <code>proxy_test.go</code>; wiring в существующих gateway main/config/policy.
+- <code>core/shared/proto/axon/calls/v1/internal.proto</code> с private CheckMediaAdmission, <code>core/services/chat/internal/server/calls_media.go</code>, <code>core/services/chat/internal/calls/admission.go</code>.
+- <code>core/deploy/livekit.local.yaml</code>, расширение calls-e2e overlay только своим livekit service/ports/private secrets.
+- <code>ui/web/e2e/calls-admission.spec.ts</code>, <code>ui/web/scripts/calls-admission-refresh.mjs</code>. Если SDK нужен page bundle — закрытый test-only probe в <code>ui/web/src/app/(app)/calls/spike/page.tsx</code>, недоступный вне E2E flag; это не новый пользовательский экран.
 - Lockfiles/chat go.mod меняются только ради настоящих SDK; не повторять завершённый stack upgrade.
 
 Планируемые Docker-команды (пока файлов/services нет):
 
 ~~~sh
-docker compose -p axon-calls-e2e -f /Users/bvivg/Developer/PetProjects/axon/core/deploy/docker-compose.calls-e2e.yml run --rm playwright npx playwright test e2e/calls-admission.spec.ts
-docker compose -p axon-calls-e2e -f /Users/bvivg/Developer/PetProjects/axon/core/deploy/docker-compose.calls-e2e.yml run --rm playwright node scripts/calls-admission-refresh.mjs
+docker compose -p axon-calls-e2e -f core/deploy/docker-compose.calls-e2e.yml run --rm playwright npx playwright test e2e/calls-admission.spec.ts
+docker compose -p axon-calls-e2e -f core/deploy/docker-compose.calls-e2e.yml run --rm playwright node scripts/calls-admission-refresh.mjs
 ~~~
 
-Пакет <code>/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R2-admission/</code> содержит allow/deny matrix для каждой URL/операции, packet/media stats, refresh claims/timestamps, фактическое окно revoke→removal, отсутствие публичного API bypass.
+Пакет <code>.local/evidence/calls/R2-admission/</code> содержит allow/deny matrix для каждой URL/операции, packet/media stats, refresh claims/timestamps, фактическое окно revoke→removal, отсутствие публичного API bypass.
 
 **Если схема не работает — остановить Рубеж 2 до групп/fallback.** Предложить владельцу альтернативу: короткий TTL выдаваемого JWT (начальный кандидат 120 s), запрет новой выдачи после revoke, RemoveParticipant и durable retry/reconciliation. Отдельно показать остаточный риск:
 
@@ -289,21 +289,21 @@ Calls создаёт комнату/opaque participant identities и огран�
 
 | Файлы | Назначение |
 |---|---|
-| <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/calls/livekit.go</code>, <code>groups.go</code>, <code>fallback.go</code>, <code>webhooks.go</code> в том же каталоге | SDK adapter, новые group operations, последовательный fallback, verified webhook/reconcile. |
-| <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/repository/call_transports.go</code>, <code>call_webhooks.go</code>; существующие calls.go/calls_jobs.go и [room.go](/Users/bvivg/Developer/PetProjects/axon/core/services/chat/internal/repository/room.go) | SFU attempts/dedup, атомарные ACL/revoke и replacement slots. |
-| <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/migrations/000015_calls_sfu.up.sql</code>, <code>000015_calls_sfu.down.sql</code> | Две таблицы + additive relations/constraints; проверить номер перед началом. |
+| <code>core/services/chat/internal/calls/livekit.go</code>, <code>groups.go</code>, <code>fallback.go</code>, <code>webhooks.go</code> в том же каталоге | SDK adapter, новые group operations, последовательный fallback, verified webhook/reconcile. |
+| <code>core/services/chat/internal/repository/call_transports.go</code>, <code>call_webhooks.go</code>; существующие calls.go/calls_jobs.go и [room.go](../../core/services/chat/internal/repository/room.go) | SFU attempts/dedup, атомарные ACL/revoke и replacement slots. |
+| <code>core/services/chat/migrations/000015_calls_sfu.up.sql</code>, <code>000015_calls_sfu.down.sql</code> | Две таблицы + additive relations/constraints; проверить номер перед началом. |
 | Ранее созданные calls.proto/internal.proto, Chat Calls handler/main/config и gateway proxy | Group APIs, webhook route, безопасный public signaling/private API. |
-| <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/src/lib/calls/livekit.ts</code>, <code>media-kind.ts</code>, <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/src/components/calls/remote-media.tsx</code>; manager/provider/overlay/history и src/proxy.ts | SDK lazy import, per-participant outputs, текущий UI kit; раннее закрытие diagnostic routes. Room не дублирует владельца audio/capture. |
-| <code>/Users/bvivg/Developer/PetProjects/axon/ui/web/e2e/calls-sfu.spec.ts</code>, <code>calls-lan.spec.ts</code>, <code>calls-sfu-report.mjs</code>, <code>/Users/bvivg/Developer/PetProjects/axon/core/services/chat/integration/calls_groups_test.go</code> | Единый6-case native SFU suite, trusted LAN, real PostgreSQL ACL/slots/receipt/migration tests. |
+| <code>ui/web/src/lib/calls/livekit.ts</code>, <code>media-kind.ts</code>, <code>ui/web/src/components/calls/remote-media.tsx</code>; manager/provider/overlay/history и src/proxy.ts | SDK lazy import, per-participant outputs, текущий UI kit; раннее закрытие diagnostic routes. Room не дублирует владельца audio/capture. |
+| <code>ui/web/e2e/calls-sfu.spec.ts</code>, <code>calls-lan.spec.ts</code>, <code>calls-sfu-report.mjs</code>, <code>core/services/chat/integration/calls_groups_test.go</code> | Единый6-case native SFU suite, trusted LAN, real PostgreSQL ACL/slots/receipt/migration tests. |
 | Ранее созданные calls Compose, docs/calls.md, Safari/iOS runbook, scoped CI jobs | Pins/ports, эксплуатация и реальные evidence paths. Нет production overlay. |
 
 ### Приёмка, stop, rollback
 
-Пакет <code>/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R2-final/</code>: реальные 3 участника, audio/video counters растут у всех, действительный selected pair и room participants; invite/busy/decline/leave/remove/logout/reconnect/refresh; replacement и fallback по §7–8 без параллельных transport tracks; End удаляет participants/room, все треки ended, slots=0. Повторы/потеря webhook/private API failure не возвращают terminal call в ACTIVE. Проверки §4 и подходящие Go/web regression повторяются.
+Пакет <code>.local/evidence/calls/R2-final/</code>: реальные 3 участника, audio/video counters растут у всех, действительный selected pair и room participants; invite/busy/decline/leave/remove/logout/reconnect/refresh; replacement и fallback по §7–8 без параллельных transport tracks; End удаляет participants/room, все треки ended, slots=0. Повторы/потеря webhook/private API failure не возвращают terminal call в ACTIVE. Проверки §4 и подходящие Go/web regression повторяются.
 
 ~~~sh
-bash /Users/bvivg/Developer/PetProjects/axon/core/deploy/calls-sfu-e2e.sh
-CALLS_VERIFY_REFRESH=1 bash /Users/bvivg/Developer/PetProjects/axon/core/deploy/calls-sfu-e2e.sh
+bash core/deploy/calls-sfu-e2e.sh
+CALLS_VERIFY_REFRESH=1 bash core/deploy/calls-sfu-e2e.sh
 ~~~
 
 **Остановить:** любой admission bypass/непроверенный refreshed JWT, непонятное окно revocation, SFU недоступен по настоящему media path, overlap старых/новых треков, несогласованные slots/ACL, недоказанный cleanup. Не переходить в optional migration ради исправления.
@@ -352,7 +352,7 @@ CALLS_VERIFY_REFRESH=1 bash /Users/bvivg/Developer/PetProjects/axon/core/deploy/
 
 **Данные:** additive000016_call_migrations: endpoint supports_migration и отдельный audit/coordinator call_migrations. Existing calls.document хранит canonical FSM/transport serial/operation/peer fences. Source/target attempts используют call_transports; outbox и audit фиксируются в той же SQL transaction. call_events не добавляется; destructive down с историей запрещён.
 
-**Приёмка:** дополнительно к §4 — один business call, реальные RTP/energy/video до и после, timeline gates без двойного audio, stale fencing, timeout/commit/rollback/revoke/resume races, сохранённые native track/PC refs, slots0/room gone после End. Параллельная подготовка одобрена владельцем; её звуковой output выключен. Browser timeline измеряет gates, а не акустику физического устройства. Пакет <code>/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R3-final/</code>; reproduction `bash core/deploy/calls-migration-e2e.sh`, `CALLS_VERIFY_REFRESH=1` для actual server refresh после handoff.
+**Приёмка:** дополнительно к §4 — один business call, реальные RTP/energy/video до и после, timeline gates без двойного audio, stale fencing, timeout/commit/rollback/revoke/resume races, сохранённые native track/PC refs, slots0/room gone после End. Параллельная подготовка одобрена владельцем; её звуковой output выключен. Browser timeline измеряет gates, а не акустику физического устройства. Пакет <code>.local/evidence/calls/R3-final/</code>; reproduction `bash core/deploy/calls-migration-e2e.sh`, `CALLS_VERIFY_REFRESH=1` для actual server refresh после handoff.
 
 **Остановка:** отсутствие отдельного APPROVE, недоказанный admission/ownership, неустранимое дублирование audio, потеря ACL или неопределённый commit. **Откат:** выключить только migration capability; возвращаться к проверенному поведению Рубежа 2 — новый group call с разрывом и sequential preconnect fallback. Не пытаться самовольно resurrect terminal transport. Данные/история сохраняются.
 
@@ -378,7 +378,7 @@ WS outage выявил лишнюю зависимость авторизаци�
 
 На основном доверенном https://axon.test сохранены Call ID/StartedAt; selected ICE P2P host/host UDP, SFU prflx/host UDP. Двусторонние audio RX/energy/video растут до и после handoff. Два server participants → room gone;16сохранённых native tracks ended,4PC closed, slots0/nonterminal0, незавершённых операций0. Timeline не обнаружил одновременных включённых audio paths. Пауза между последним ростом P2P audio и первым декодированным SFU audio9,7031/9,6289s, sampling100ms; включает native ICE detection и подготовку после полного network drop, физическая акустика не измерялась.
 
-Основной3-party SFU gate9,6s и финальный P2P/login/refresh/End/actual diagnostic404 gate7,0s пройдены на shipping image. Первый финальный вход получил429 из-за общего NAT IP тестов: дождались штатного окна и повторили, limits120general/min и10auth/min сохранены. Main12services running, schema16 clean, probe0, LiveKit7880 private, media192.168.2.1:7881TCP/7882UDP. [Команды, raw stats и hashes](/Users/bvivg/Developer/PetProjects/axon/.local/evidence/calls/R3-final/README.md). Физический iPhone, внешние NAT и push остаются непроверенными.
+Основной3-party SFU gate9,6s и финальный P2P/login/refresh/End/actual diagnostic404 gate7,0s пройдены на shipping image. Первый финальный вход получил429 из-за общего NAT IP тестов: дождались штатного окна и повторили, limits120general/min и10auth/min сохранены. Main12services running, schema16 clean, probe0, LiveKit7880 private, media192.168.2.1:7881TCP/7882UDP. Команды, raw stats и hashes. Физический iPhone, внешние NAT и push остаются непроверенными.
 
 ## 10. Урезанный инфраструктурный объём
 

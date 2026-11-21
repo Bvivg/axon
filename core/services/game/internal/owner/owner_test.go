@@ -431,3 +431,178 @@ func TestLostLeaseRevokesThePartition(t *testing.T) {
 		t.Fatal("sockets were not moved off the lost partition")
 	}
 }
+
+func TestLostAppendAckRecoversThePersistedRecord(t *testing.T) {
+	c := newCluster(t, 1)
+	node := c.node(t, "a", nil, 0)
+	ctx := context.Background()
+	game, x, o := joined(t, node)
+	lost := errors.New("ack lost")
+	c.log.LoseAcksWith(func(int32) error { return lost })
+	if _, err := node.Move(ctx, game.ID, x, game.State.Ply, tictactoe.Key, cell(0), &game.Revision); !errors.Is(err, lost) {
+		t.Fatal(err)
+	}
+	c.log.LoseAcksWith(nil)
+	read, err := node.Get(ctx, game.ID, o)
+	if err != nil || read.Revision != game.Revision+1 || read.State.Ply != 1 {
+		t.Fatal("owner served a state behind the journal", read.Revision, read.State.Ply, err)
+	}
+	if _, err := node.Move(ctx, game.ID, x, game.State.Ply, tictactoe.Key, cell(4), &game.Revision); !errors.Is(err, engine.ErrStaleMove) {
+		t.Fatal("stale move accepted after a lost ack", err)
+	}
+	next := play(t, node, read, o, 4)
+	c.model.project(t)
+	projected, err := c.model.Load(ctx, game.ID)
+	if err != nil || projected.Revision != next.Revision || string(projected.State.Data) != string(next.State.Data) {
+		t.Fatal("projection diverged from the owner", projected.Revision, next.Revision, err)
+	}
+}
+
+func TestLostAckOnCreateDoesNotCreateTwice(t *testing.T) {
+	c := newCluster(t, 1)
+	node := c.node(t, "a", nil, 0)
+	ctx := context.Background()
+	user, request := uuid.New(), uuid.New()
+	c.log.LoseAcksWith(func(int32) error { return errors.New("ack lost") })
+	if _, err := node.Create(ctx, user, request, tictactoe.Key); err == nil {
+		t.Fatal("lost ack reported success")
+	}
+	c.log.LoseAcksWith(nil)
+	again, err := node.Create(ctx, user, request, tictactoe.Key)
+	if err != nil || again.Revision != 1 {
+		t.Fatal(again, err)
+	}
+	end, _ := c.log.End(ctx, 0)
+	created := 0
+	_ = c.log.Read(ctx, 0, 0, end, func(entry journal.Entry) error {
+		if entry.Event != nil && entry.Event.Session.ID == again.ID {
+			created++
+		}
+		return nil
+	})
+	if created != 1 {
+		t.Fatal("session created twice", created)
+	}
+}
+
+func TestCancelledCallerDoesNotAbortTheAppend(t *testing.T) {
+	c := newCluster(t, 1)
+	node := c.node(t, "a", nil, 0)
+	game, x, o := joined(t, node)
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	moved, err := node.Move(gone, game.ID, x, game.State.Ply, tictactoe.Key, cell(0), &game.Revision)
+	if err != nil || moved.Revision != game.Revision+1 {
+		t.Fatal("append followed the caller's context", err)
+	}
+	play(t, node, moved, o, 4)
+	c.model.project(t)
+}
+
+func TestUnknownSessionsLeaveNoResidentCells(t *testing.T) {
+	c := newCluster(t, 4)
+	node := c.node(t, "a", nil, all(4)...)
+	ctx := context.Background()
+	game, x, _ := joined(t, node)
+	for range 50 {
+		id := uuid.New()
+		if _, err := node.Get(ctx, id, x); !errors.Is(err, session.ErrNotFound) {
+			t.Fatal(err)
+		}
+		if _, err := node.Move(ctx, id, x, 0, tictactoe.Key, cell(0), nil); !errors.Is(err, session.ErrNotFound) {
+			t.Fatal(err)
+		}
+		if _, err := node.Abort(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if resident := node.Resident(); resident != 1 {
+		t.Fatal("unknown sessions stayed resident", resident)
+	}
+	if _, err := node.Get(ctx, game.ID, x); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFinishedCellsAreEvictedOnceProjected(t *testing.T) {
+	c := newCluster(t, 1)
+	c.ttl = time.Minute
+	at := time.Now()
+	c.now = func() time.Time { return at }
+	node := c.node(t, "a", nil, 0)
+	ctx := context.Background()
+	game, x, o := joined(t, node)
+	waiting, err := node.Create(ctx, uuid.New(), uuid.New(), tictactoe.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ply, square := range []int{0, 3, 1, 4, 2} {
+		user := x
+		if ply%2 == 1 {
+			user = o
+		}
+		game = play(t, node, game, user, square)
+	}
+	if !game.State.Over() || node.Resident() != 2 {
+		t.Fatal("game not finished", node.Resident())
+	}
+	if evicted := node.Evict(ctx); evicted != 0 {
+		t.Fatal("evicted before the ttl", evicted)
+	}
+	at = at.Add(2 * time.Minute)
+	if evicted := node.Evict(ctx); evicted != 0 {
+		t.Fatal("evicted a finished game the read model does not have yet", evicted)
+	}
+	c.model.project(t)
+	if evicted := node.Evict(ctx); evicted != 1 || node.Resident() != 1 {
+		t.Fatal("finished game stayed resident", evicted, node.Resident())
+	}
+	read, err := node.Get(ctx, game.ID, x)
+	if err != nil || read.Revision != game.Revision || !read.State.Over() {
+		t.Fatal(read, err)
+	}
+	undone, err := node.Undo(ctx, game.ID, x, &read.Revision)
+	if err != nil || undone.State.Over() {
+		t.Fatal("finished game cannot be resumed after eviction", err)
+	}
+	at = at.Add(time.Hour)
+	if evicted := node.Evict(ctx); evicted != 0 {
+		t.Fatal("evicted a game in progress", evicted)
+	}
+	if _, err := node.Get(ctx, waiting.ID, waiting.Creator); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCancelledCellsAreEvictedOnceProjected(t *testing.T) {
+	c := newCluster(t, 1)
+	c.ttl = time.Minute
+	at := time.Now()
+	c.now = func() time.Time { return at }
+	node := c.node(t, "a", nil, 0)
+	ctx := context.Background()
+	user := uuid.New()
+	game, err := node.Create(ctx, user, uuid.New(), tictactoe.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.model.project(t)
+	if _, cancelled, err := node.Leave(ctx, game.ID, user); err != nil || !cancelled {
+		t.Fatal(cancelled, err)
+	}
+	at = at.Add(2 * time.Minute)
+	if evicted := node.Evict(ctx); evicted != 0 {
+		t.Fatal("evicted a cancellation the read model has not seen", evicted)
+	}
+	if _, err := node.Get(ctx, game.ID, user); !errors.Is(err, session.ErrNotFound) {
+		t.Fatal("cancelled game came back", err)
+	}
+	c.model.project(t)
+	at = at.Add(2 * time.Minute)
+	if evicted := node.Evict(ctx); evicted != 1 || node.Resident() != 0 {
+		t.Fatal(evicted, node.Resident())
+	}
+	if _, err := node.Get(ctx, game.ID, user); !errors.Is(err, session.ErrNotFound) {
+		t.Fatal("cancelled game came back after eviction", err)
+	}
+}

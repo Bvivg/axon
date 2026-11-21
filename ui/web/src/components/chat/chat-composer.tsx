@@ -20,6 +20,7 @@ import { describe } from "@/lib/errors";
 import { initials, profileName } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useCreateGroup } from "@/lib/query/chat";
+import { peopleQueryHint } from "@/lib/people-search";
 import { useSearchUsers } from "@/lib/query/people";
 
 enum Step {
@@ -149,7 +150,7 @@ export function ChatComposer({ onDone }: { onDone: () => void }) {
             label="People directory"
             search={search}
             loading={loading}
-            empty="No people found."
+            empty={search.tooShort ? peopleQueryHint : "No people found."}
             sections={[{ label: "Available people", title: "People", rows: people.map((person) => ({
               id: person.id,
               height: 56,

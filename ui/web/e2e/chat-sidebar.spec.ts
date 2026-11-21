@@ -56,7 +56,7 @@ test("inline search keeps the conversation open, deduplicates contacts and opens
   await expect(ada.page).toHaveURL(chatAt(grace.username));
   await list.getByRole("button", { name: "Clear search" }).click();
   await expect(search).toHaveValue("");
-  await expect(list.getByRole("region", { name: "Matching people" })).toBeVisible();
+  await expect(list.getByRole("status")).toHaveText("Type at least 2 characters to find people.");
 
   await search.fill("no_such_person_987654321");
   await expect(list.getByRole("status")).toHaveText("No chats or people found.");
@@ -91,7 +91,7 @@ test("mobile search and group creation use the chat column and preserve the sele
   await ada.page.getByRole("link", { name: "Back to chats", exact: true }).click();
   await list.getByRole("button", { name: "New chat" }).click();
   await list.getByRole("button", { name: "Create group" }).click();
-  await list.getByLabel("Search people").fill(grace.email);
+  await list.getByLabel("Search people").fill(`@${grace.username}`);
   await list.getByRole("button", { name: /Grace Mobile/ }).click();
   await list.getByRole("button", { name: "Next · 1" }).click();
   await list.getByLabel("Group name").fill("Mobile group");
@@ -99,7 +99,7 @@ test("mobile search and group creation use the chat column and preserve the sele
   await expect(list.getByRole("button", { name: "Create group" })).toBeDisabled();
   await list.getByRole("button", { name: "Back", exact: true }).click();
   await expect(list.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
-  await list.getByLabel("Search people").fill(grace.email);
+  await list.getByLabel("Search people").fill(`@${grace.username}`);
   await list.getByRole("button", { name: /Grace Mobile/ }).click();
   await list.getByRole("button", { name: "Next · 1" }).click();
   await expect(list.getByLabel("Group name")).toHaveValue("Mobile group");

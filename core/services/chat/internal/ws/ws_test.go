@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -252,9 +253,14 @@ func (f *fakeRooms) change(messageID, userID uuid.UUID, apply func(*domain.Messa
 	return domain.Message{}, domain.ErrMessageNotFound
 }
 
-type fakeNames struct{}
+type fakeNames struct{ calls *atomic.Int64 }
 
-func (fakeNames) DisplayName(context.Context, string) string { return "" }
+func (f fakeNames) DisplayName(context.Context, string) string {
+	if f.calls != nil {
+		f.calls.Add(1)
+	}
+	return "Alice"
+}
 
 type fakePresence struct {
 	mu       sync.Mutex
@@ -308,6 +314,7 @@ func (f *fakePresence) waitWatched(t *testing.T, userID string) {
 
 type harness struct {
 	server   *httptest.Server
+	names    *atomic.Int64
 	rooms    *fakeRooms
 	bus      pubsub.Bus
 	signals  pubsub.SignalBus
@@ -330,6 +337,16 @@ func newHarness(t *testing.T) *harness {
 }
 
 func newHarnessWithBus(t *testing.T, busOf func(*pubsub.Memory) pubsub.Bus) *harness {
+	t.Helper()
+	return build(t, busOf, ws.FrameLimits{})
+}
+
+func newLimitedHarness(t *testing.T, limits ws.FrameLimits) *harness {
+	t.Helper()
+	return build(t, func(m *pubsub.Memory) pubsub.Bus { return m }, limits)
+}
+
+func build(t *testing.T, busOf func(*pubsub.Memory) pubsub.Bus, limits ws.FrameLimits) *harness {
 	t.Helper()
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -355,6 +372,7 @@ func newHarnessWithBus(t *testing.T, busOf func(*pubsub.Memory) pubsub.Bus) *har
 	rooms := newFakeRooms()
 	bus := pubsub.NewMemory()
 	presence := newFakePresence()
+	names := new(atomic.Int64)
 
 	handler, err := ws.New(ws.Config{
 		Service:     rooms,
@@ -362,9 +380,10 @@ func newHarnessWithBus(t *testing.T, busOf func(*pubsub.Memory) pubsub.Bus) *har
 		Bus:         busOf(bus),
 		Signals:     bus,
 		UserSignals: bus,
-		Names:       fakeNames{},
+		Names:       fakeNames{calls: names},
 		Presence:    presence,
 		Logger:      logger.Discard(),
+		Limits:      limits,
 	})
 	if err != nil {
 		t.Fatalf("ws.New: %v", err)
@@ -375,6 +394,7 @@ func newHarnessWithBus(t *testing.T, busOf func(*pubsub.Memory) pubsub.Bus) *har
 
 	return &harness{
 		server:   server,
+		names:    names,
 		rooms:    rooms,
 		bus:      bus,
 		signals:  bus,
@@ -1141,4 +1161,110 @@ func signToken(
 		t.Fatalf("sign token: %v", err)
 	}
 	return signed
+}
+
+func TestSendingFasterThanTheBudgetIsRefused(t *testing.T) {
+	h := newLimitedHarness(t, ws.FrameLimits{Send: ws.Rate{PerMinute: 1, Burst: 3}})
+	roomID, alice := uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	ac := h.connect(t, alice)
+
+	for i := range 3 {
+		ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), ClientID: fmt.Sprintf("c%d", i), Body: "hi"})
+		ac.expect(ws.TypeAck)
+	}
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), ClientID: "c3", Body: "one too many"})
+
+	refusal := ac.expect(ws.TypeError)
+	if refusal.Code != ws.ErrorRateLimited || refusal.ClientID != "c3" {
+		t.Fatalf("got %+v, want a rate_limited refusal for c3", refusal)
+	}
+	if h.rooms.sends != 3 {
+		t.Fatalf("the service stored %d messages, want 3", h.rooms.sends)
+	}
+}
+
+func TestDirectMessagesShareTheBudgetAndResolveTheNameOnce(t *testing.T) {
+	h := newLimitedHarness(t, ws.FrameLimits{Send: ws.Rate{PerMinute: 1, Burst: 2}})
+	alice, bob := uuid.New(), uuid.New()
+	ac := h.connect(t, alice)
+
+	for i := range 2 {
+		ac.send(ws.Inbound{Type: ws.TypeSend, ToUserID: bob.String(), ClientID: fmt.Sprintf("d%d", i), Body: "spam"})
+		ac.expect(ws.TypeAck)
+		ac.expect(ws.TypeRoomAdded)
+	}
+	ac.send(ws.Inbound{Type: ws.TypeSend, ToUserID: bob.String(), ClientID: "d2", Body: "spam"})
+
+	if refusal := ac.expect(ws.TypeError); refusal.Code != ws.ErrorRateLimited {
+		t.Fatalf("got %+v, want rate_limited", refusal)
+	}
+	if calls := h.names.Load(); calls != 1 {
+		t.Fatalf("the sender's display name was resolved %d times, want once per socket", calls)
+	}
+}
+
+func TestTypingPastTheBudgetIsDropped(t *testing.T) {
+	h := newLimitedHarness(t, ws.FrameLimits{Typing: ws.Rate{PerMinute: 1, Burst: 1}})
+	roomID, alice, bob := uuid.New(), uuid.New(), uuid.New()
+	h.rooms.join(roomID, alice)
+	h.rooms.join(roomID, bob)
+	ac, bc := h.connect(t, alice), h.connect(t, bob)
+	for _, c := range []*client{ac, bc} {
+		c.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+		c.expect(ws.TypeSubscribed)
+	}
+
+	for range 5 {
+		ac.send(ws.Inbound{Type: ws.TypeTyping, RoomID: roomID.String()})
+	}
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "done"})
+	typing, done := 0, false
+	for typing == 0 || !done {
+		switch got := bc.read(); got.Type {
+		case ws.TypeTyping:
+			typing++
+		case ws.TypeMessage:
+			done = done || got.Message.Body == "done"
+		}
+	}
+	ac.send(ws.Inbound{Type: ws.TypeSend, RoomID: roomID.String(), Body: "end"})
+	for {
+		got := bc.read()
+		if got.Type == ws.TypeTyping {
+			typing++
+		}
+		if got.Type == ws.TypeMessage && got.Message.Body == "end" {
+			break
+		}
+	}
+
+	if typing != 1 {
+		t.Fatalf("bob got %d typing signals out of 5 sent with a budget of 1", typing)
+	}
+}
+
+func TestNewSubscriptionsArePaced(t *testing.T) {
+	h := newLimitedHarness(t, ws.FrameLimits{Subscribe: ws.Rate{PerMinute: 600, Burst: 1}})
+	alice := uuid.New()
+	rooms := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
+	for _, roomID := range rooms {
+		h.rooms.join(roomID, alice)
+	}
+	ac := h.connect(t, alice)
+
+	ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: rooms[0].String()})
+	ac.expect(ws.TypeSubscribed)
+	for range 5 {
+		ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: rooms[0].String()})
+	}
+	started := time.Now()
+	for _, roomID := range rooms[1:] {
+		ac.send(ws.Inbound{Type: ws.TypeSubscribe, RoomID: roomID.String()})
+		ac.expect(ws.TypeSubscribed)
+	}
+
+	if took := time.Since(started); took < 150*time.Millisecond {
+		t.Fatalf("two new subscriptions at 10/s took %v, they were not paced", took)
+	}
 }

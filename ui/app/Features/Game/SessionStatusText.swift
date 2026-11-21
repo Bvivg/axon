@@ -31,6 +31,7 @@ enum SessionStatusText {
         if session.hasTimedOut, session.timedOut { return "on time" }
         if session.hasResigned, session.resigned { return "by resignation" }
         if session.hasAgreedDraw, session.agreedDraw { return "by agreement" }
+        if session.hasMoveLimit, session.moveLimit { return "move limit reached" }
         switch session.kind {
         case .chess: return session.hasChess ? chessEndings[session.chess.end] : nil
         case .checkers: return session.hasCheckers ? checkersEnding(session) : nil

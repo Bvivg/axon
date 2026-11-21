@@ -90,6 +90,37 @@ func (r *Repository) RevokeAllForUser(ctx context.Context, userID uuid.UUID, at 
 	return tag.RowsAffected(), nil
 }
 
+func (r *Repository) RevokeOtherFamiliesForUser(ctx context.Context, userID, keepFamilyID uuid.UUID, at time.Time) ([]uuid.UUID, error) {
+	const query = `
+		UPDATE refresh_tokens
+		SET revoked_at = $3
+		WHERE user_id = $1 AND family_id <> $2 AND revoked_at IS NULL
+		RETURNING family_id`
+
+	rows, err := r.q.Query(ctx, query, userID, keepFamilyID, at)
+	if err != nil {
+		return nil, fmt.Errorf("repository: revoke other refresh token families: %w", err)
+	}
+	defer rows.Close()
+
+	seen := make(map[uuid.UUID]bool)
+	var families []uuid.UUID
+	for rows.Next() {
+		var family uuid.UUID
+		if err := rows.Scan(&family); err != nil {
+			return nil, fmt.Errorf("repository: revoke other refresh token families: %w", err)
+		}
+		if !seen[family] {
+			seen[family] = true
+			families = append(families, family)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: revoke other refresh token families: %w", err)
+	}
+	return families, nil
+}
+
 func (r *Repository) Sessions(ctx context.Context, userID uuid.UUID, at time.Time) ([]domain.Session, error) {
 	const query = `
 		SELECT DISTINCT ON (family_id)

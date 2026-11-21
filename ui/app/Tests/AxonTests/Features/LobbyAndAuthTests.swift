@@ -275,6 +275,9 @@ struct SessionStatusTextTests {
         var mate = GameFixtures.session(game: .chess, status: .won, turn: nil, winner: GameFixtures.me)
         mate.chess.end = .checkmate
         #expect(SessionStatusText.detail(mate) == "by checkmate")
+        var capped = GameFixtures.session(game: .quoridor, status: .draw, turn: nil)
+        capped.moveLimit = true
+        #expect(SessionStatusText.detail(capped) == "move limit reached")
         #expect(SessionStatusText.detail(GameFixtures.session()) == nil)
     }
 

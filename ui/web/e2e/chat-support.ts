@@ -35,7 +35,7 @@ export async function startChat(page: Page, contact: Contact, first: string): Pr
   await page.getByRole("button", { name: "New chat" }).click();
 
   const composer = chatList(page).getByRole("region", { name: "New conversation" });
-  await composer.getByLabel("Search people").fill(contact.email);
+  await composer.getByLabel("Search people").fill(`@${contact.username}`);
   await composer.getByRole("button", { name: contact.name }).click();
 
   await expect(page).toHaveURL(chatAt(contact.username));

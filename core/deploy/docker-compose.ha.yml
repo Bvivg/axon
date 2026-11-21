@@ -11,7 +11,7 @@ x-kafka-ha-env: &kafka-ha-env
   KAFKA_DEFAULT_REPLICATION_FACTOR: 3
   KAFKA_MIN_INSYNC_REPLICAS: 2
   KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
   KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
   KAFKA_LOG_DIRS: /var/lib/kafka/data
   CLUSTER_ID: "oQ9-PJtSTRiPaixLHZDn9Q"
@@ -165,6 +165,17 @@ services:
       retries: 10
       start_period: 30s
 
+  kafka-topics:
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:29092,kafka-2:29092,kafka-3:29092"
+      GAME_JOURNAL_REPLICATION: 3
+      GAME_JOURNAL_MIN_INSYNC: 2
+    depends_on:
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
   game:
     environment:
       POSTGRES_DSN: ${GAME_POOLED_POSTGRES_DSN:-postgres://game_service:${GAME_DB_PASSWORD:-game}@pgbouncer:6432/axon?sslmode=disable}
@@ -221,7 +232,6 @@ services:
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "warn"]
     ports:
       - "127.0.0.1:${GATEWAY_HOST_PORT:-18080}:8080"
-      - "127.0.0.1:${ENVOY_ADMIN_HOST_PORT:-19901}:9901"
     volumes:
       - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     networks: [edge]

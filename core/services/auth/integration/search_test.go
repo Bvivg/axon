@@ -15,7 +15,7 @@ import (
 const searchTestHash = "$argon2id$v=19$m=65536,t=3,p=2$c29tZXNhbHQ$aGFzaA"
 
 func TestSearchUsersKeysetPagination(t *testing.T) {
-	for _, query := range []string{"", "page"} {
+	for _, query := range []string{"pa", "page"} {
 		t.Run(query, func(t *testing.T) {
 			repo := newRepo(t)
 			caller := uuid.New()
@@ -68,7 +68,7 @@ func TestSearchUsersKeysetPagination(t *testing.T) {
 	}
 }
 
-func TestSearchUsersMatchesByEmail(t *testing.T) {
+func TestSearchUsersDoesNotConfirmAnExactEmail(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
 
@@ -95,8 +95,8 @@ func TestSearchUsersMatchesByEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchUsers: %v", err)
 	}
-	if len(found) != 1 || found[0].ID != target.ID {
-		t.Fatalf("found = %v, want exactly %s", found, target.ID)
+	if len(found) != 0 {
+		t.Fatalf("found = %v, want no account confirmed by its address", found)
 	}
 }
 
@@ -137,15 +137,16 @@ func TestSearchUsersExcludesTheCaller(t *testing.T) {
 	ctx := t.Context()
 
 	caller, err := repo.CreateUserWithPassword(ctx, domain.User{
-		ID:       uuid.New(),
-		Username: newUsername(),
-		Email:    "search-self-" + uuid.NewString() + "@axon.test",
+		ID:          uuid.New(),
+		Username:    newUsername(),
+		Email:       "search-self-" + uuid.NewString() + "@axon.test",
+		DisplayName: "Searching Myself",
 	}, searchTestHash)
 	if err != nil {
 		t.Fatalf("create caller: %v", err)
 	}
 
-	found, err := repo.SearchUsers(ctx, caller.Email, caller.ID, 20, nil)
+	found, err := repo.SearchUsers(ctx, caller.DisplayName, caller.ID, 20, nil)
 	if err != nil {
 		t.Fatalf("SearchUsers: %v", err)
 	}

@@ -171,6 +171,7 @@ services:
 
       CHAT_VAPID_PUBLIC_KEY: ${CHAT_VAPID_PUBLIC_KEY:-}
       CHAT_VAPID_PRIVATE_KEY: ${CHAT_VAPID_PRIVATE_KEY:-}
+      CHAT_WS_SEND_BURST: 500
 
     depends_on:
       migrate-chat:
@@ -440,6 +441,7 @@ services:
       KAFKA_BROKERS: kafka:29092
       GAME_JOURNAL_REPLICATION: 1
       GAME_JOURNAL_MIN_INSYNC: 1
+      GAME_INTERNAL_KEY: web-e2e-game-owner-key-0123456789abcdef
     deploy:
       replicas: 2
     depends_on:
@@ -513,6 +515,8 @@ services:
 
         NEXT_PUBLIC_API_BASE_URL: http://gateway.axon.test:8080
         NEXT_PUBLIC_OAUTH_PROVIDERS: fake
+    environment:
+      AVATARS_PUBLIC_URL: http://minio:9000
     restart: "no"
     networks:
       default:
@@ -540,7 +544,7 @@ services:
       GATEWAY_URL: http://gateway.axon.test:8080
       OAUTH_FAKE_AUTHORIZE_URL: http://auth.axon.test:8081/oauth/fake/authorize
     volumes:
-      - ../../docs/design:/docs/design:ro
+      - ../../docs/archive/design:/docs/archive/design:ro
     depends_on:
       web:
         condition: service_healthy

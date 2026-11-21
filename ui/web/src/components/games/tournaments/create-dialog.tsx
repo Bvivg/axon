@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Field, Label } from "@/components/ui/label";
 import { TournamentFormat } from "@/gen/axon/tournament/v1/tournament_pb";
-import { GameKey, gameKeys, games } from "@/lib/games/catalog";
+import { GameKey, games, tournamentGameKeys } from "@/lib/games/catalog";
 import { tournamentFormatLabel, tournamentHref, useCreateTournament } from "@/lib/query/tournaments";
 import { cn } from "@/lib/utils";
 
@@ -93,7 +93,7 @@ export function CreateTournamentDialog() {
               <Label htmlFor="tournament-name">Name</Label>
               <Input id="tournament-name" value={name} maxLength={64} autoComplete="off" onChange={event => setName(event.target.value)} />
             </Field>
-            <Choice label="Game" options={gameKeys} value={game} onChange={setGame} render={key => games[key].title} />
+            <Choice label="Game" options={tournamentGameKeys} value={game} onChange={setGame} render={key => games[key].title} />
             <Choice label="Format" options={formats} value={format} onChange={setFormat} render={tournamentFormatLabel} />
             <Choice label="Players" options={capacities} value={capacity} onChange={setCapacity} render={String} />
             {format === TournamentFormat.SWISS ? (

@@ -88,8 +88,8 @@ func TestFinishedEvent(t *testing.T) {
 	}
 }
 
-func TestFinishedEventCarriesChessMoves(t *testing.T) {
-	creator, opponent := uuid.New(), uuid.New()
+func scholarsMate(t *testing.T, creator, opponent uuid.UUID) engine.State {
+	t.Helper()
 	players := []engine.PlayerID{engine.PlayerID(creator.String()), engine.PlayerID(opponent.String())}
 	state := chess.New().Init(players)
 	for ply, uci := range []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"} {
@@ -99,18 +99,52 @@ func TestFinishedEventCarriesChessMoves(t *testing.T) {
 		}
 		state = next
 	}
-	event, ok := projection.FinishedEvent(session.Session{ID: uuid.New(), Game: chess.Key, Creator: creator, Opponent: &opponent, State: state}, time.Now())
+	return state
+}
+
+func TestFinishedEventLeavesTheMovesToTheAnalysisRequest(t *testing.T) {
+	creator, opponent := uuid.New(), uuid.New()
+	event, ok := projection.FinishedEvent(session.Session{ID: uuid.New(), Game: chess.Key, Creator: creator, Opponent: &opponent, Rated: true, State: scholarsMate(t, creator, opponent)}, time.Now())
 	if !ok {
 		t.Fatal("a checkmate produced no event")
 	}
-	payload := event.Payload.(*eventsv1.GameFinished)
-	if want := []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"}; !slices.Equal(payload.GetMoves(), want) || payload.GetWinnerSeat() != 0 {
-		t.Fatalf("moves = %v, winner = %d", payload.GetMoves(), payload.GetWinnerSeat())
+	if payload := event.Payload.(*eventsv1.GameFinished); len(payload.GetMoves()) != 0 || payload.GetWinnerSeat() != 0 || event.AggregateID != "chess" {
+		t.Fatalf("finished event = key %q, moves %v, winner %d", event.AggregateID, payload.GetMoves(), payload.GetWinnerSeat())
 	}
-	other, _ := projection.FinishedEvent(session.Session{ID: uuid.New(), Game: "tictactoe", Creator: creator, Opponent: &opponent,
-		State: engine.State{Game: "tictactoe", Status: engine.StatusDraw, Winner: engine.NoSeat, Data: []byte(`{"moves":["x"]}`)}}, time.Now())
-	if moves := other.Payload.(*eventsv1.GameFinished).GetMoves(); len(moves) != 0 {
-		t.Fatalf("a tic-tac-toe event carries moves %v", moves)
+}
+
+func TestAnalysisIsRequestedForRatedChessGamesOnly(t *testing.T) {
+	creator, opponent := uuid.New(), uuid.New()
+	at := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+	mate := scholarsMate(t, creator, opponent)
+	rated := session.Session{ID: uuid.New(), Game: chess.Key, Creator: creator, Opponent: &opponent, Rated: true, State: mate}
+	event, ok := projection.AnalysisEvent(rated, at)
+	if !ok {
+		t.Fatal("a rated checkmate requested no analysis")
+	}
+	payload := event.Payload.(*eventsv1.GameFinished)
+	if event.Topic != "game.analysis_requested.v1" || event.AggregateID != rated.ID.String() || event.ID != projection.AnalysisEventID(rated.ID) ||
+		payload.GetEventId() != event.ID.String() || payload.GetSessionId() != rated.ID.String() || !payload.GetRated() || payload.GetGame() != "chess" {
+		t.Fatalf("analysis request = %+v / %v", event, payload)
+	}
+	if want := []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"}; !slices.Equal(payload.GetMoves(), want) || !payload.GetFinishedAt().AsTime().Equal(at) {
+		t.Fatalf("moves = %v, finished at %v", payload.GetMoves(), payload.GetFinishedAt().AsTime())
+	}
+	if projection.AnalysisEventID(rated.ID) == projection.FinishedEventID(rated.ID) {
+		t.Fatal("the analysis request reuses the finished event id")
+	}
+	casual := rated
+	casual.Rated = false
+	playing := rated
+	playing.State = chess.New().Init(mate.Players)
+	resigned := rated
+	resigned.State = chess.New().Init(mate.Players).Finish(1)
+	tictactoe := session.Session{ID: uuid.New(), Game: "tictactoe", Creator: creator, Opponent: &opponent, Rated: true,
+		State: engine.State{Game: "tictactoe", Status: engine.StatusDraw, Winner: engine.NoSeat, Data: []byte(`{}`)}}
+	for name, game := range map[string]session.Session{"casual": casual, "in progress": playing, "no moves": resigned, "tic-tac-toe": tictactoe} {
+		if _, ok := projection.AnalysisEvent(game, at); ok {
+			t.Errorf("%s game requested an analysis", name)
+		}
 	}
 }
 

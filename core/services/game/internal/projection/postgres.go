@@ -477,6 +477,9 @@ func (b *batch) flush(ctx context.Context) ([]uuid.UUID, error) {
 		if event, ok := FinishedEvent(item.game, *item.finished); ok {
 			events = append(events, event)
 		}
+		if event, ok := AnalysisEvent(item.game, *item.finished); ok {
+			events = append(events, event)
+		}
 	}
 	if err := outbox.Write(ctx, b.tx, OutboxTable, events...); err != nil {
 		return nil, fmt.Errorf("publish finished games: %w", err)

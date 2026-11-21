@@ -31,14 +31,16 @@ func (a *Auth) Register(
 	ctx context.Context,
 	req *connect.Request[authv1.RegisterRequest],
 ) (*connect.Response[authv1.RegisterResponse], error) {
-	return a.client.Register(ctx, forward(ctx, req))
+	res, err := a.client.Register(ctx, forward(ctx, req))
+	return res, withRetryAfter(err)
 }
 
 func (a *Auth) Login(
 	ctx context.Context,
 	req *connect.Request[authv1.LoginRequest],
 ) (*connect.Response[authv1.LoginResponse], error) {
-	return a.client.Login(ctx, forward(ctx, req))
+	res, err := a.client.Login(ctx, forward(ctx, req))
+	return res, withRetryAfter(err)
 }
 
 func (a *Auth) RefreshToken(
@@ -169,6 +171,25 @@ func forward[T any](ctx context.Context, req *connect.Request[T]) *connect.Reque
 	}
 
 	return out
+}
+
+func withRetryAfter(err error) error {
+	var upstream *connect.Error
+	if !errors.As(err, &upstream) || !connect.IsWireError(upstream) {
+		return err
+	}
+
+	retryAfter := upstream.Meta().Get("Retry-After")
+	if retryAfter == "" {
+		return err
+	}
+
+	relayed := connect.NewError(upstream.Code(), errors.New(upstream.Message()))
+	for _, detail := range upstream.Details() {
+		relayed.AddDetail(detail)
+	}
+	relayed.Meta().Set("Retry-After", retryAfter)
+	return relayed
 }
 
 func NewClient(httpClient *http.Client, baseURL string, opts ...connect.ClientOption) authv1connect.AuthServiceClient {

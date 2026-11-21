@@ -35,7 +35,7 @@ func (c *caller) getUsersPublicProfiles(accessToken string, userIDs []string) ([
 	return resp.Msg.GetUsers(), nil
 }
 
-func TestSearchUsersFindsTheOtherAccountByExactEmail(t *testing.T) {
+func TestSearchUsersDoesNotConfirmAnExactEmail(t *testing.T) {
 	c := newCaller(t)
 	caller := c.register(t)
 	target := c.register(t)
@@ -44,8 +44,19 @@ func TestSearchUsersFindsTheOtherAccountByExactEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchUsers: %v", err)
 	}
-	if len(found) != 1 || found[0].GetId() != target.userID {
-		t.Fatalf("found = %v, want exactly %s", found, target.userID)
+	if len(found) != 0 {
+		t.Fatalf("found = %v, want no account confirmed by its address", found)
+	}
+}
+
+func TestSearchUsersRefusesAQueryTooShortToNarrowTheDirectory(t *testing.T) {
+	c := newCaller(t)
+	caller := c.register(t)
+
+	for _, query := range []string{"", "a", "@"} {
+		if _, err := c.searchUsers(caller.tokens.GetAccessToken(), query); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("SearchUsers(%q) code = %v, want invalid_argument", query, connect.CodeOf(err))
+		}
 	}
 }
 

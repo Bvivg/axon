@@ -57,7 +57,10 @@ fieldEnv:
     fieldPath: status.podIP
   - name: POD_NAME
     fieldPath: metadata.name
-secretEnv: {}
+secretEnv:
+  GAME_INTERNAL_KEY:
+    secret: game-internal
+    key: GAME_INTERNAL_KEY
 env:
   HTTP_ADDR: ":8083"
   GAME_ADMIN_ADDR: ":9093"

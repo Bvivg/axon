@@ -189,3 +189,29 @@ func TestMovesReadsThePlayedUCIMoves(t *testing.T) {
 		t.Fatalf("Moves() of an empty state = %v", err)
 	}
 }
+
+func TestTheMoveLimitDrawsALongGame(t *testing.T) {
+	if def := Definition(); def.MaxPlies != MaxPlies || MaxPlies < 538 {
+		t.Fatalf("MaxPlies = %d (definition %d), want at least the longest recorded game", MaxPlies, def.MaxPlies)
+	}
+	s := New().Init([]engine.PlayerID{white, black})
+	s.MaxPlies = 4
+	drawn, err := play(t, s, "e2e4", "e7e5", "g1f3", "b8c6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	over, winner := New().IsTerminal(drawn)
+	if !over || winner != nil || drawn.Status != engine.StatusDraw || !drawn.MoveLimit || endOf(t, drawn) != Ongoing {
+		t.Fatalf("after the limit = over %v winner %v status %q limit %v end %q", over, winner, drawn.Status, drawn.MoveLimit, endOf(t, drawn))
+	}
+	if New().ValidMoves(drawn, white) != nil {
+		t.Fatal("moves are still offered after the limit")
+	}
+	mated, err := play(t, s, "f2f3", "e7e5", "g2g4", "d8h4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, winner := mated.Outcome(); winner == nil || *winner != black || mated.MoveLimit || endOf(t, mated) != Checkmate {
+		t.Fatalf("mate on the last ply = winner %v limit %v end %q", winner, mated.MoveLimit, endOf(t, mated))
+	}
+}

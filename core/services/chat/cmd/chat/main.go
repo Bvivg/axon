@@ -28,6 +28,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 	"github.com/bvivg/axon/core/shared/pkg/revocation"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/safehttp"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 
@@ -173,7 +174,9 @@ func run() error {
 				Subject:    cfg.Push.Subject,
 				Client:     safehttp.NewClient(15 * time.Second),
 			},
-			Logger: log,
+			Logger:             log,
+			PerSenderPerMinute: cfg.Throttle.Push.PerMinute,
+			PerSenderBurst:     cfg.Throttle.Push.Burst,
 		})
 		if err != nil {
 			return err
@@ -259,6 +262,7 @@ func run() error {
 		Presence:    presenceTracker,
 		Calls:       callService,
 		Logger:      log,
+		Limits:      chatws.FrameLimits{Send: chatws.Rate(cfg.Throttle.Send), Typing: chatws.Rate(cfg.Throttle.Typing), Subscribe: chatws.Rate(cfg.Throttle.Subscribe)},
 	})
 	if err != nil {
 		return err
@@ -321,21 +325,26 @@ func run() error {
 	go sweeper.Run(ctx)
 
 	mediaTools := media.NewTools(media.ToolsConfig{
-		FFmpeg:  cfg.Media.FFmpeg,
-		FFprobe: cfg.Media.FFprobe,
-		Workers: cfg.Media.Workers,
-		Timeout: cfg.Media.Timeout,
+		FFmpeg:         cfg.Media.FFmpeg,
+		FFprobe:        cfg.Media.FFprobe,
+		Workers:        cfg.Media.Workers,
+		PerUser:        cfg.Media.PerUser,
+		Timeout:        cfg.Media.Timeout,
+		MaxVideoPixels: cfg.Media.MaxVideoPixels,
 	})
 	if err := mediaTools.Check(); err != nil {
 		log.Warn("media processing is unavailable until ffmpeg is installed", "error", err)
 	}
 
-	pipeline := attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools)
+	images := media.NewImages(media.ImageLimits(cfg.Media.Images), media.NewSlots(cfg.Media.ImageWorkers, cfg.Media.PerUser))
+	pipeline := attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools, images)
+	uploadBudget := uploads.NewBudget(repo, cfg.Uploads.DailyBytes)
 
 	attachmentUpload, err := server.NewAttachmentHandler(server.AttachmentConfig{
 		Verifier: verifier,
 		Pipeline: pipeline,
 		Recorder: svc,
+		Budget:   uploadBudget,
 		Logger:   log,
 	})
 	if err != nil {
@@ -346,12 +355,14 @@ func run() error {
 		Sessions:      repo,
 		Objects:       attachmentStore,
 		Processor:     pipeline,
+		Budget:        uploadBudget,
 		KeysOf:        sweeper.ObjectKeys,
 		Logger:        log,
 		MaxBytes:      cfg.Uploads.MaxBytes,
 		MaxVoiceBytes: attachment.MaxVoiceBytes,
 		PartSize:      cfg.Uploads.PartBytes,
 		Workers:       cfg.Uploads.Workers,
+		PerUploader:   cfg.Media.PerUser,
 	})
 	if err != nil {
 		return err
@@ -377,7 +388,7 @@ func run() error {
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
 	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           withMediaAdmission(publicHandler(handler, callHandler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log), mediaHandler),
+		Handler:           withMediaAdmission(publicHandler(handler, callHandler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log, rpclimit.Handler(cfg.RPCReadMaxBytes)), mediaHandler, rpclimit.Handler(cfg.RPCReadMaxBytes)),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         mtls.ServerProtocols(tlsIdentity),
 	})
@@ -409,12 +420,12 @@ func run() error {
 	return graceful.Stop(publicSrv, adminSrv)
 }
 
-func withMediaAdmission(base http.Handler, handler *server.MediaAdmissionHandler) http.Handler {
+func withMediaAdmission(base http.Handler, handler *server.MediaAdmissionHandler, limits connect.HandlerOption) http.Handler {
 	if handler == nil {
 		return base
 	}
 	mux := http.NewServeMux()
-	mux.Handle(callsv1connect.NewMediaAdmissionServiceHandler(handler))
+	mux.Handle(callsv1connect.NewMediaAdmissionServiceHandler(handler, limits))
 	mux.HandleFunc("POST /internal/calls/livekit", handler.Reconciler.Webhook)
 	mux.Handle("/", base)
 	return mux
@@ -452,6 +463,7 @@ func publicHandler(
 	uploadSessions *server.UploadSessionsHandler,
 	metrics *middleware.Metrics,
 	log *slog.Logger,
+	limits connect.HandlerOption,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -460,10 +472,10 @@ func publicHandler(
 	mux.Handle("POST "+server.AttachmentUploadPath, attachmentUpload)
 	uploadSessions.Register(mux)
 	if callHandler != nil {
-		mux.Handle(callsv1connect.NewCallsServiceHandler(callHandler, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log))))
+		mux.Handle(callsv1connect.NewCallsServiceHandler(callHandler, limits, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log))))
 	}
 
-	mux.Handle(chatv1connect.NewChatServiceHandler(handler,
+	mux.Handle(chatv1connect.NewChatServiceHandler(handler, limits,
 		connect.WithInterceptors(
 			telemetry.Interceptor(),
 			middleware.NewCorrelationInterceptor(),

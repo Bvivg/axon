@@ -37,10 +37,21 @@ services:
   migrate:
     env_file:
       - .env
+  minio:
+    env_file:
+      - ../../.local/evidence/calls/LAN/.secrets/minio-root.env
+    environment:
+      MINIO_ROOT_PASSWORD: !reset null
+  minio-init:
+    env_file:
+      - ../../.local/evidence/calls/LAN/.secrets/minio-root.env
+    environment:
+      MINIO_ROOT_PASSWORD: !reset null
   auth:
+    networks: [edge]
     environment:
       AVATARS_PUBLIC_URL: https://axon.test/storage
-      OAUTH_FAKE_AUTHORIZE_URL: /oauth/fake/authorize
+      OAUTH_FAKE_ENABLED: "false"
       OAUTH_REDIRECT_BASE_URL: /auth/callback
       OAUTH_ALLOWED_RETURN_ORIGINS: http://localhost:3003,http://127.0.0.1:3003,https://axon.test,https://axon.test:3443,https://${AXON_LAN_IP:-192.168.2.1},https://${AXON_LAN_ALT_IP:-10.80.10.122},https://${AXON_LAN_IP:-192.168.2.1}:3443,https://${AXON_LAN_ALT_IP:-10.80.10.122}:3443
   chat:
@@ -52,6 +63,7 @@ services:
     environment:
       CORS_ALLOWED_ORIGINS: https://axon.test,https://axon.test:3443,https://${AXON_LAN_IP:-192.168.2.1},https://${AXON_LAN_ALT_IP:-10.80.10.122},https://${AXON_LAN_IP:-192.168.2.1}:3443,https://${AXON_LAN_ALT_IP:-10.80.10.122}:3443,http://localhost:3003,http://127.0.0.1:3003
       REFRESH_COOKIE_SECURE: "true"
+      TRUSTED_PROXIES: "1"
   web:
     ports: !reset []
     build:
@@ -61,6 +73,7 @@ services:
     volumes: !reset []
     environment:
       NEXT_PUBLIC_API_BASE_URL: /api
+      AVATARS_PUBLIC_URL: https://axon.test/storage
       ALLOWED_DEV_ORIGINS: ${AXON_LAN_IP:-192.168.2.1},${AXON_LAN_ALT_IP:-10.80.10.122}
       CALLS_E2E_PROBE: "0"
   calls-https:
@@ -75,9 +88,11 @@ services:
       - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
     networks: [edge]
     ports:
-      - "443:3443"
-      - "3443:3443"
-      - "3444:3444"
+      - "127.0.0.1:443:3443"
+      - "${AXON_LAN_IP:-192.168.2.1}:443:3443"
+      - "127.0.0.1:3443:3443"
+      - "${AXON_LAN_IP:-192.168.2.1}:3443:3443"
+      - "${AXON_LAN_IP:-192.168.2.1}:3444:3444"
       - "127.0.0.1:3003:3003"
     depends_on:
       gateway:
@@ -95,7 +110,7 @@ services:
       - ../../.local/evidence/calls/LAN/.secrets:/secrets:ro
     networks: [media]
     ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
-      - "5349:5349/tcp"
-      - "49160-49220:49160-49220/udp"
+      - "${AXON_LAN_IP:-192.168.2.1}:3478:3478/udp"
+      - "${AXON_LAN_IP:-192.168.2.1}:3478:3478/tcp"
+      - "${AXON_LAN_IP:-192.168.2.1}:5349:5349/tcp"
+      - "${AXON_LAN_IP:-192.168.2.1}:49160-49220:49160-49220/udp"
