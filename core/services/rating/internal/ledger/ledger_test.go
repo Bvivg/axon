@@ -2,6 +2,7 @@ package ledger_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestParse(t *testing.T) {
 			if err != nil {
 				return
 			}
-			if game.Winner != tt.winner || game.Players != [2]uuid.UUID{alice, bob} || game.Game != "chess" || !game.FinishedAt.Equal(finished) {
+			if game.Winner != tt.winner || !slices.Equal(game.Players, []uuid.UUID{alice, bob}) || game.Game != "chess" || !game.FinishedAt.Equal(finished) {
 				t.Fatalf("Parse() = %+v", game)
 			}
 		})
@@ -97,7 +98,7 @@ func TestDecode(t *testing.T) {
 }
 
 func TestSettle(t *testing.T) {
-	players := [2]ledger.Player{ledger.Newcomer(alice), ledger.Newcomer(bob)}
+	players := []ledger.Player{ledger.Newcomer(alice), ledger.Newcomer(bob)}
 	tests := []struct {
 		name         string
 		winner       int
@@ -112,7 +113,7 @@ func TestSettle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			after := ledger.Settle(glicko.Default, ledger.Game{Winner: tt.winner}, players)
+			after := ledger.Settle(glicko.Default, ledger.Game{Winner: tt.winner, Places: duel(tt.winner)}, players)
 			for seat, player := range after {
 				if player.User != players[seat].User || player.Games != 1 || player.Wins != tt.wins[seat] || player.Losses != tt.losses[seat] || player.Draws != tt.draws {
 					t.Fatalf("seat %d = %+v", seat, player)
@@ -152,7 +153,7 @@ func TestBookAppliesEachEventAndSessionOnce(t *testing.T) {
 		t.Fatal("a second event for the same session was applied")
 	}
 	second := parsed(t, event(1, eventsv1.GameFinished_OUTCOME_WIN))
-	second.Players = [2]uuid.UUID{alice, carol}
+	second.Players = []uuid.UUID{alice, carol}
 	if !book.Apply(second) {
 		t.Fatal("second game was not applied")
 	}
@@ -171,7 +172,7 @@ func TestBookAppliesEachEventAndSessionOnce(t *testing.T) {
 
 func TestAnnouncement(t *testing.T) {
 	game := parsed(t, event(0, eventsv1.GameFinished_OUTCOME_WIN))
-	before := [2]ledger.Player{ledger.Newcomer(alice), ledger.Newcomer(bob)}
+	before := []ledger.Player{ledger.Newcomer(alice), ledger.Newcomer(bob)}
 	after := ledger.Settle(glicko.Default, game, before)
 	announced := ledger.Announcement(game, before, after)
 	payload, ok := announced.Payload.(*eventsv1.RatingChanged)
@@ -193,5 +194,59 @@ func TestAnnouncement(t *testing.T) {
 			change.Wins != w.wins || change.Losses != w.losses || change.Deviation != after[seat].Rating.Deviation {
 			t.Fatalf("change %d = %v", seat, change)
 		}
+	}
+}
+
+func duel(winner int) []int {
+	switch winner {
+	case 0:
+		return []int{1, 2}
+	case 1:
+		return []int{2, 1}
+	default:
+		return []int{1, 1}
+	}
+}
+
+func TestSettleRanksATableByPlaces(t *testing.T) {
+	users := []uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
+	before := make([]ledger.Player, len(users))
+	for seat, user := range users {
+		before[seat] = ledger.Newcomer(user)
+	}
+	after := ledger.Settle(glicko.Default, ledger.Game{Players: users, Places: []int{3, 1, 4, 2}, Winner: 1}, before)
+	gain := func(seat int) float64 { return after[seat].Rating.Rating - before[seat].Rating.Rating }
+	if !(gain(1) > gain(3) && gain(3) > 0 && gain(0) < 0 && gain(2) < gain(0)) {
+		t.Fatalf("gains by place 1..4: %.1f %.1f %.1f %.1f", gain(1), gain(3), gain(0), gain(2))
+	}
+	if after[1].Wins != 1 || after[2].Losses != 1 || after[0].Draws != 1 || after[3].Draws != 1 {
+		t.Fatalf("counters %+v", after)
+	}
+}
+
+func TestParseTablePlaces(t *testing.T) {
+	users := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}
+	base := func() *eventsv1.GameFinished {
+		return &eventsv1.GameFinished{EventId: uuid.NewString(), SessionId: uuid.NewString(), Game: "durak", Players: users,
+			Outcome: eventsv1.GameFinished_OUTCOME_WIN, WinnerSeat: 2, Rated: true, FinishedAt: timestamppb.New(finished), Places: []uint32{2, 3, 1}}
+	}
+	game, err := ledger.Parse(base())
+	if err != nil || !slices.Equal(game.Places, []int{2, 3, 1}) || len(game.Players) != 3 {
+		t.Fatal(game, err)
+	}
+	missing := base()
+	missing.Places = nil
+	if _, err := ledger.Parse(missing); !errors.Is(err, ledger.ErrInvalid) {
+		t.Fatal("three players without places", err)
+	}
+	wrong := base()
+	wrong.Places = []uint32{1, 4, 2}
+	if _, err := ledger.Parse(wrong); !errors.Is(err, ledger.ErrInvalid) {
+		t.Fatal("place out of range", err)
+	}
+	twice := base()
+	twice.Players = []string{users[0], users[1], users[0]}
+	if _, err := ledger.Parse(twice); !errors.Is(err, ledger.ErrInvalid) {
+		t.Fatal("duplicate player", err)
 	}
 }

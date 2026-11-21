@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func setup(t *testing.T) (context.Context, *pgxpool.Pool, *store.Postgres) {
 var users = []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 
 func played(key string, a, b, winner int) ledger.Game {
-	return ledger.Game{EventID: uuid.New(), Session: uuid.New(), Game: key, Players: [2]uuid.UUID{users[a], users[b]}, Winner: winner,
+	return ledger.Game{EventID: uuid.New(), Session: uuid.New(), Game: key, Players: []uuid.UUID{users[a], users[b]}, Places: duel(winner), Winner: winner,
 		FinishedAt: time.Now().UTC().Truncate(time.Microsecond)}
 }
 
@@ -91,8 +92,8 @@ func TestApplySettlesOnceAndAnnouncesThroughTheOutbox(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatal("apply", ok, err)
 	}
-	want := ledger.Settle(glicko.Default, game, [2]ledger.Player{ledger.Newcomer(users[0]), ledger.Newcomer(users[1])})
-	if applied.After != want || applied.Before[0] != ledger.Newcomer(users[0]) {
+	want := ledger.Settle(glicko.Default, game, []ledger.Player{ledger.Newcomer(users[0]), ledger.Newcomer(users[1])})
+	if !slices.Equal(applied.After, want) || applied.Before[0] != ledger.Newcomer(users[0]) {
 		t.Fatalf("applied = %+v, want %+v", applied.After, want)
 	}
 	var id uuid.UUID
@@ -166,5 +167,16 @@ func TestLiveRatingsEqualAnInMemoryReplay(t *testing.T) {
 	}
 	if err := ratings.Replace(ctx, replacement); !errors.Is(err, store.ErrAhead) {
 		t.Fatal("replace dropped an event the rebuild never saw", err)
+	}
+}
+
+func duel(winner int) []int {
+	switch winner {
+	case 0:
+		return []int{1, 2}
+	case 1:
+		return []int{2, 1}
+	default:
+		return []int{1, 1}
 	}
 }

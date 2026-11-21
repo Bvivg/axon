@@ -21,8 +21,8 @@ var ErrAhead = errors.New("store: the live consumer processed events the rebuild
 
 type Applied struct {
 	Game   ledger.Game
-	Before [2]ledger.Player
-	After  [2]ledger.Player
+	Before []ledger.Player
+	After  []ledger.Player
 }
 
 type Standing struct {
@@ -59,12 +59,12 @@ func (s *Postgres) Apply(ctx context.Context, game ledger.Game) (Applied, bool, 
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM rating.changes WHERE session_id = $1)`, game.Session).Scan(&settled); err != nil || settled {
 			return err
 		}
-		locked := []uuid.UUID{game.Players[0], game.Players[1]}
+		locked := slices.Clone(game.Players)
 		slices.SortFunc(locked, func(a, b uuid.UUID) int { return slices.Compare(a[:], b[:]) })
 		fresh := glicko.Newcomer
 		if _, err := tx.Exec(ctx, `INSERT INTO rating.ratings (game, user_id, rating, deviation, volatility)
-			VALUES ($1, $2, $4, $5, $6), ($1, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
-			game.Game, locked[0], locked[1], fresh.Rating, fresh.Deviation, fresh.Volatility); err != nil {
+			SELECT $1, u, $3, $4, $5 FROM unnest($2::uuid[]) AS u ON CONFLICT DO NOTHING`,
+			game.Game, locked, fresh.Rating, fresh.Deviation, fresh.Volatility); err != nil {
 			return err
 		}
 		rows, err := tx.Query(ctx, `SELECT `+columns+` FROM rating.ratings WHERE game = $1 AND user_id = ANY($2) ORDER BY user_id FOR UPDATE`, game.Game, locked)
@@ -75,15 +75,16 @@ func (s *Postgres) Apply(ctx context.Context, game ledger.Game) (Applied, bool, 
 		if err != nil {
 			return err
 		}
+		out.Before = make([]ledger.Player, len(game.Players))
 		for _, player := range current {
-			for seat, user := range game.Players {
-				if player.User == user {
-					out.Before[seat] = player
-				}
+			if seat := slices.Index(game.Players, player.User); seat >= 0 {
+				out.Before[seat] = player
 			}
 		}
-		if out.Before[0].User != game.Players[0] || out.Before[1].User != game.Players[1] {
-			return fmt.Errorf("store: expected two ratings for session %s, got %d", game.Session, len(current))
+		for seat, user := range game.Players {
+			if out.Before[seat].User != user {
+				return fmt.Errorf("store: expected %d ratings for session %s, got %d", len(game.Players), game.Session, len(current))
+			}
 		}
 		out.Game, out.After = game, ledger.Settle(s.system, game, out.Before)
 		if err := write(ctx, tx, game, out.Before, out.After); err != nil {
@@ -101,7 +102,7 @@ func (s *Postgres) Apply(ctx context.Context, game ledger.Game) (Applied, bool, 
 	return out, applied, nil
 }
 
-func write(ctx context.Context, tx pgx.Tx, game ledger.Game, before, after [2]ledger.Player) error {
+func write(ctx context.Context, tx pgx.Tx, game ledger.Game, before, after []ledger.Player) error {
 	for seat, player := range after {
 		if _, err := tx.Exec(ctx, `UPDATE rating.ratings SET rating=$3, deviation=$4, volatility=$5, games=$6, wins=$7, losses=$8, draws=$9, updated_at=clock_timestamp()
 			WHERE game=$1 AND user_id=$2`, game.Game, player.User, player.Rating.Rating, player.Rating.Deviation, player.Rating.Volatility,
