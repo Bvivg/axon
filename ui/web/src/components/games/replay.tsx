@@ -4,6 +4,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { CheckersBoard, seatNames as checkersSeats } from "@/components/games/checkers/board";
 import { AnalysisPanel, EvalBar } from "@/components/games/chess/analysis";
 import { ChessBoard } from "@/components/games/chess/board";
 import { MoveList } from "@/components/games/chess/moves";
@@ -18,6 +19,7 @@ import { AnalysisStatus } from "@/gen/axon/analysis/v1/analysis_pb";
 import { SessionStatus, type HistoryFrame } from "@/gen/axon/game/v1/game_pb";
 import { profileName } from "@/lib/format";
 import { moveMarks } from "@/lib/games/analysis";
+import { boardFrom } from "@/lib/games/checkers";
 import { GameKey, gameHref, games } from "@/lib/games/catalog";
 import { useAnalysis } from "@/lib/query/analysis";
 import { useSessionHistory } from "@/lib/query/games";
@@ -27,6 +29,7 @@ const sides: Record<GameKey, string[]> = {
   [GameKey.TicTacToe]: ["X", "O"],
   [GameKey.Chess]: ["White", "Black"],
   [GameKey.Quoridor]: [...seatNames],
+  [GameKey.Checkers]: [...checkersSeats],
 };
 
 function changedCell(frame: HistoryFrame, previous?: HistoryFrame) {
@@ -41,6 +44,8 @@ function Position({ game, frame, previous }: { game: GameKey; frame: HistoryFram
       return <ChessBoard fen={frame.chess?.fen ?? ""} orientation={Side.White} legal={[]} lastMove={frame.chess?.lastMove} check={frame.chess?.check ?? false} playable={false} onMove={() => undefined} />;
     case GameKey.Quoridor:
       return <QuoridorBoard pawns={frame.quoridor?.pawns ?? ["e1", "e9"]} walls={frame.quoridor?.walls ?? []} seat={0} legal={[]} lastMove={frame.quoridor?.lastMove} playable={false} onMove={() => undefined} />;
+    case GameKey.Checkers:
+      return <CheckersBoard squares={boardFrom(frame.checkers?.squares)} seat={1} legal={[]} lastMove={frame.checkers?.lastMove} playable={false} onMove={() => undefined} />;
     default:
       return <Board board={frame.ticTacToe} playable={false} move={() => undefined} lastMove={changedCell(frame, previous)} />;
   }
@@ -49,6 +54,7 @@ function Position({ game, frame, previous }: { game: GameKey; frame: HistoryFram
 function notation(game: GameKey, frames: HistoryFrame[], at: number) {
   if (game === GameKey.Chess) return frames[frames.length - 1]?.chess?.san.slice(0, at) ?? [];
   if (game === GameKey.Quoridor) return frames[frames.length - 1]?.quoridor?.moves.slice(0, at) ?? [];
+  if (game === GameKey.Checkers) return frames[frames.length - 1]?.checkers?.moves.slice(0, at) ?? [];
   return [];
 }
 
