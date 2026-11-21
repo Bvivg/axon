@@ -24,6 +24,19 @@ type Config struct {
 	Push        PushConfig
 	Calls       CallsConfig
 	Fanout      FanoutConfig
+	Throttle    ThrottleConfig
+}
+
+type Rate struct {
+	PerMinute int
+	Burst     int
+}
+
+type ThrottleConfig struct {
+	Send      Rate
+	Typing    Rate
+	Subscribe Rate
+	Push      Rate
 }
 
 type FanoutConfig struct {
@@ -165,6 +178,12 @@ func Load() (Config, error) {
 			Shards: l.IntDefault("CHAT_FANOUT_SHARDS", 16),
 			MaxLen: l.IntDefault("CHAT_FANOUT_MAXLEN", 10000),
 			Block:  l.DurationDefault("CHAT_FANOUT_BLOCK", time.Second),
+		},
+		Throttle: ThrottleConfig{
+			Send:      Rate{PerMinute: l.IntDefault("CHAT_WS_SEND_PER_MINUTE", 300), Burst: l.IntDefault("CHAT_WS_SEND_BURST", 20)},
+			Typing:    Rate{PerMinute: l.IntDefault("CHAT_WS_TYPING_PER_MINUTE", 120), Burst: l.IntDefault("CHAT_WS_TYPING_BURST", 5)},
+			Subscribe: Rate{PerMinute: l.IntDefault("CHAT_WS_SUBSCRIBE_PER_MINUTE", 600), Burst: l.IntDefault("CHAT_WS_SUBSCRIBE_BURST", 500)},
+			Push:      Rate{PerMinute: l.IntDefault("CHAT_PUSH_PER_SENDER_PER_MINUTE", 6), Burst: l.IntDefault("CHAT_PUSH_PER_SENDER_BURST", 5)},
 		},
 	}
 

@@ -181,6 +181,32 @@ func TestKeepalivePingsThePeer(t *testing.T) {
 	<-dropped
 }
 
+func TestAForgedHandshakeCorrelationIDIsDropped(t *testing.T) {
+	serverSide := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := ws.Accept(w, r, ws.AcceptOptions{})
+		if err != nil {
+			serverSide <- "accept failed"
+			return
+		}
+		serverSide <- conn.CorrelationID()
+		_ = conn.Close(ws.StatusNormalClosure, "done")
+	}))
+	defer srv.Close()
+
+	header := http.Header{}
+	header.Set(correlation.Header, "forged-"+strings.Repeat("x", 4096))
+	conn, err := ws.Dial(t.Context(), srv.URL, ws.DialOptions{Header: header})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+
+	if got := <-serverSide; got != "" {
+		t.Fatalf("the server adopted a forged correlation id %q", got)
+	}
+}
+
 func TestCorrelationIDTravelsWithTheHandshake(t *testing.T) {
 	serverSide := make(chan string, 1)
 
@@ -195,7 +221,8 @@ func TestCorrelationIDTravelsWithTheHandshake(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ctx := correlation.WithID(t.Context(), "trace-42")
+	const traceID = "0b9d3f2e-6a41-4c8e-9f07-5d2c1a8e7b34"
+	ctx := correlation.WithID(t.Context(), traceID)
 
 	conn, err := ws.Dial(ctx, srv.URL, ws.DialOptions{})
 	if err != nil {
@@ -203,11 +230,11 @@ func TestCorrelationIDTravelsWithTheHandshake(t *testing.T) {
 	}
 	defer func() { _ = conn.CloseNow() }()
 
-	if got := <-serverSide; got != "trace-42" {
-		t.Fatalf("server side correlation id = %q, want trace-42", got)
+	if got := <-serverSide; got != traceID {
+		t.Fatalf("server side correlation id = %q, want %s", got, traceID)
 	}
-	if got := conn.CorrelationID(); got != "trace-42" {
-		t.Fatalf("client side correlation id = %q, want trace-42", got)
+	if got := conn.CorrelationID(); got != traceID {
+		t.Fatalf("client side correlation id = %q, want %s", got, traceID)
 	}
 }
 

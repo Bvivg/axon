@@ -29,6 +29,8 @@ ARG AIR_VERSION
 ARG RUNTIME_FLAVOR
 ENV SERVICE=${SERVICE}
 
+RUN ln -s /tmp/air/${SERVICE} /service
+
 RUN if [ "$RUNTIME_FLAVOR" = "media" ]; then apk add --no-cache ffmpeg; fi
 
 RUN --mount=type=cache,target=/go/pkg/mod \

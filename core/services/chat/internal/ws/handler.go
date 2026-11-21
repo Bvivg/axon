@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/time/rate"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	sharedws "github.com/bvivg/axon/core/shared/pkg/ws"
@@ -45,6 +46,24 @@ type PresenceWatcher interface {
 
 const maxPresenceWatches = 64
 
+type Rate struct {
+	PerMinute int
+	Burst     int
+}
+
+func (r Rate) limiter() *rate.Limiter {
+	if r.PerMinute <= 0 {
+		return rate.NewLimiter(rate.Inf, 0)
+	}
+	return rate.NewLimiter(rate.Limit(float64(r.PerMinute)/60), max(r.Burst, 1))
+}
+
+type FrameLimits struct {
+	Send      Rate
+	Typing    Rate
+	Subscribe Rate
+}
+
 type Handler struct {
 	svc        Rooms
 	verifier   *authn.Verifier
@@ -58,6 +77,7 @@ type Handler struct {
 	origins    []string
 	now        func() time.Time
 	calls      *calls.Service
+	limits     FrameLimits
 }
 
 type Config struct {
@@ -75,6 +95,8 @@ type Config struct {
 
 	Now   func() time.Time
 	Calls *calls.Service
+
+	Limits FrameLimits
 }
 
 func New(cfg Config) (*Handler, error) {
@@ -113,6 +135,7 @@ func New(cfg Config) (*Handler, error) {
 		origins:    cfg.Origins,
 		now:        now,
 		calls:      cfg.Calls,
+		limits:     cfg.Limits,
 	}, nil
 }
 
@@ -151,6 +174,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		expiry:   claims.ExpiresAt,
 		subs:     make(map[uuid.UUID]func()),
 		watches:  make(map[uuid.UUID]func()),
+		sends:    h.limits.Send.limiter(),
+		typings:  h.limits.Typing.limiter(),
+		joins:    h.limits.Subscribe.limiter(),
 	}
 	s.run(r.Context(), userSignals)
 }
@@ -183,6 +209,11 @@ type session struct {
 	callConnection uuid.UUID
 	callWindow     time.Time
 	callSignals    int
+
+	sends   *rate.Limiter
+	typings *rate.Limiter
+	joins   *rate.Limiter
+	name    string
 }
 
 func (s *session) run(ctx context.Context, userSignals <-chan pubsub.Signal) {
@@ -311,6 +342,10 @@ func (s *session) subscribe(ctx context.Context, frame Inbound) bool {
 
 	if s.subscribed(roomID) {
 		return true
+	}
+
+	if err := s.joins.Wait(ctx); err != nil {
+		return false
 	}
 
 	live, stop, err := s.h.bus.Subscribe(ctx, roomID)
@@ -509,6 +544,10 @@ func (s *session) typing(ctx context.Context, frame Inbound) bool {
 		return s.refuse(ctx, ErrorNotAMember, "no such room", "")
 	}
 
+	if !s.typings.Allow() {
+		return true
+	}
+
 	if err := s.h.signals.PublishSignal(ctx, pubsub.Signal{
 		Kind:   pubsub.SignalTyping,
 		RoomID: roomID,
@@ -565,7 +604,25 @@ func (s *session) unsubscribe(ctx context.Context, frame Inbound) bool {
 	return true
 }
 
+func (s *session) throttled(ctx context.Context, clientID string) bool {
+	if s.sends.Allow() {
+		return false
+	}
+	s.refuse(ctx, ErrorRateLimited, "too many messages, slow down", clientID)
+	return true
+}
+
+func (s *session) displayName(ctx context.Context) string {
+	if s.name == "" {
+		s.name = s.h.names.DisplayName(ctx, s.token)
+	}
+	return s.name
+}
+
 func (s *session) edit(ctx context.Context, frame Inbound) bool {
+	if s.throttled(ctx, frame.ClientID) {
+		return true
+	}
 	messageID, err := uuid.Parse(frame.MessageID)
 	if err != nil {
 		return s.refuse(ctx, ErrorInvalid, "message_id is not a valid id", frame.ClientID)
@@ -580,6 +637,9 @@ func (s *session) edit(ctx context.Context, frame Inbound) bool {
 }
 
 func (s *session) delete(ctx context.Context, frame Inbound) bool {
+	if s.throttled(ctx, frame.ClientID) {
+		return true
+	}
 	if len(frame.MessageIDs) > 0 {
 		return s.deleteMany(ctx, frame)
 	}
@@ -640,6 +700,10 @@ func (s *session) send(ctx context.Context, frame Inbound) bool {
 		return s.report(ctx, domain.ErrClientPayload, frame.ClientID)
 	}
 
+	if s.throttled(ctx, frame.ClientID) {
+		return true
+	}
+
 	if frame.ToUserID != "" {
 		return s.sendDirect(ctx, frame)
 	}
@@ -673,7 +737,7 @@ func (s *session) sendDirect(ctx context.Context, frame Inbound) bool {
 		return s.refuse(ctx, ErrorInvalid, "to_user_id is not a valid id", frame.ClientID)
 	}
 
-	displayName := s.h.names.DisplayName(ctx, s.token)
+	displayName := s.displayName(ctx)
 
 	message, room, duplicate, err := s.h.svc.SendDirect(ctx, service.SendDirectInput{
 		FromUserID:      s.user,

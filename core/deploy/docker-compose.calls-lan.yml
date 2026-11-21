@@ -63,6 +63,7 @@ services:
     environment:
       CORS_ALLOWED_ORIGINS: https://axon.test,https://axon.test:3443,https://${AXON_LAN_IP:-192.168.2.1},https://${AXON_LAN_ALT_IP:-10.80.10.122},https://${AXON_LAN_IP:-192.168.2.1}:3443,https://${AXON_LAN_ALT_IP:-10.80.10.122}:3443,http://localhost:3003,http://127.0.0.1:3003
       REFRESH_COOKIE_SECURE: "true"
+      TRUSTED_PROXIES: "1"
   web:
     ports: !reset []
     build:
@@ -72,6 +73,7 @@ services:
     volumes: !reset []
     environment:
       NEXT_PUBLIC_API_BASE_URL: /api
+      AVATARS_PUBLIC_URL: https://axon.test/storage
       ALLOWED_DEV_ORIGINS: ${AXON_LAN_IP:-192.168.2.1},${AXON_LAN_ALT_IP:-10.80.10.122}
       CALLS_E2E_PROBE: "0"
   calls-https:

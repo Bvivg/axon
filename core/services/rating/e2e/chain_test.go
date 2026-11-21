@@ -40,7 +40,6 @@ const (
 	quickGame      = "tictactoe"
 	gameProtocol   = "axon.game.v1"
 	bearerProtocol = "axon.bearer."
-	deviceHeader   = "X-Axon-Device"
 	finishedType   = "axon.events.v1.GameFinished"
 	changedType    = "axon.events.v1.RatingChanged"
 )
@@ -104,7 +103,6 @@ func (s *stand) register(t *testing.T, name string) gamer {
 	req := connect.NewRequest(&authv1.RegisterRequest{
 		Email: "rating-e2e-" + uuid.NewString() + "@axon.test", Password: "correct-horse-battery-staple", DisplayName: &name,
 	})
-	req.Header().Set(deviceHeader, uuid.NewString())
 	res, err := s.auth.Register(t.Context(), req)
 	if err != nil {
 		t.Fatalf("register %s: %v", name, err)

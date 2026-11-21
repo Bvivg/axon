@@ -16,6 +16,7 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/cluster"
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/journal"
@@ -34,6 +35,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -89,9 +91,10 @@ func run() error {
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
 	testHooks, ownerKey := loadControls(loader, cfg.Environment)
 	spectatorLimit := loader.IntDefault("GAME_SPECTATOR_LIMIT", 200)
-	chessGame, quoridorGame := chess.Definition(), quoridor.Definition()
+	chessGame, quoridorGame, durakGame := chess.Definition(), quoridor.Definition(), durak.Definition()
 	chessGame.MaxPlies = loader.IntDefault("GAME_CHESS_MAX_PLIES", chess.MaxPlies)
 	quoridorGame.MaxPlies = loader.IntDefault("GAME_QUORIDOR_MAX_PLIES", quoridor.MaxPlies)
+	durakGame.MaxPlies = loader.IntDefault("GAME_DURAK_MAX_PLIES", durak.MaxPlies)
 	history := server.HistoryLimits{
 		Plies:   loader.IntDefault("GAME_HISTORY_MAX_PLIES", server.DefaultHistoryPlies),
 		Bytes:   loader.IntDefault("GAME_HISTORY_MAX_BYTES", server.DefaultHistoryBytes),
@@ -131,7 +134,7 @@ func run() error {
 		return err
 	}
 	games := engine.NewRegistry()
-	for _, def := range []engine.Definition{tictactoe.Definition(), chessGame, quoridorGame} {
+	for _, def := range []engine.Definition{tictactoe.Definition(), chessGame, quoridorGame, durakGame} {
 		if err := games.Register(def); err != nil {
 			return err
 		}
@@ -181,10 +184,10 @@ func run() error {
 		_ = cluster.NewOwnership(kafka, own, log).Run(ctx)
 	}()
 	mux := http.NewServeMux()
-	mux.Handle(gamev1connect.NewGameServiceHandler(handler, connect.WithInterceptors(
+	mux.Handle(gamev1connect.NewGameServiceHandler(handler, rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
-	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, connect.WithInterceptors(
+	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(),
 	)))
 	mux.HandleFunc("GET /ws", handler.Socket)
