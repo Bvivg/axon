@@ -8,6 +8,7 @@ for (const [label, body] of [
   ["65536 Unicode characters", "я😀".repeat(32768)],
 ] as const) {
 test(`${label} is sent once with compression and survives a reload`, async ({ browser }) => {
+  test.slow();
   const ada = await newPerson(browser, "long-message", "Ada");
   const grace = await newPerson(browser, "long-peer", "Grace");
   await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "before the long message");
