@@ -294,7 +294,9 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/axon-${{ matrix.service }}"
           docker tag "axon/${{ matrix.service }}:${{ github.sha }}" "$image:${{ github.sha }}"
           docker push "$image:${{ github.sha }}"
-          echo "ref=$(docker inspect --format '{{index .RepoDigests 0}}' "$image:${{ github.sha }}")" >> "$GITHUB_OUTPUT"
+          ref=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image:${{ github.sha }}" | grep -m1 "^$image@")
+          test -n "$ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
       - uses: sigstore/cosign-installer@v3.7.0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
