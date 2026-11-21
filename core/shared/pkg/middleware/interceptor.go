@@ -30,7 +30,11 @@ func (i *CorrelationInterceptor) WrapUnary(next connect.UnaryFunc) connect.Unary
 		ctx, id := correlation.Ensure(correlation.WithID(ctx, correlation.FromHeader(req.Header().Get(correlation.Header))))
 
 		resp, err := next(ctx, req)
-		if resp != nil && !correlation.Echoed(ctx) {
+		switch {
+		case resp == nil:
+		case correlation.Echoed(ctx):
+			resp.Header().Del(correlation.Header)
+		default:
 			resp.Header().Set(correlation.Header, id)
 		}
 		return resp, err
