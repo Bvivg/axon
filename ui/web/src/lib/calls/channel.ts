@@ -21,6 +21,7 @@ export class CallChannel {
   private storageKey?: string;
   private unlock?: () => void;
   private lifecycle = 0;
+  private unattached = false;
 
   get endpoint() { return this.reference; }
 
@@ -77,6 +78,7 @@ export class CallChannel {
       this.reference = response.endpoint;
       if (this.reference && !this.unlock) await this.claim(this.reference.id);
       if (this.reference && this.storageKey) sessionStorage.setItem(this.storageKey, JSON.stringify({ id: this.reference.id, proof: this.reference.proof, epoch: this.reference.epoch.toString() }));
+      this.unattached = true;
       this.attach();
       return this.reference;
     })();
@@ -90,6 +92,10 @@ export class CallChannel {
     if (this.initialization) {
       try { await this.initialization; }
       catch { this.emitFailure("Endpoint initialization failed"); }
+      return;
+    }
+    if (this.reference && this.unattached) {
+      this.attach();
       return;
     }
     if (this.reference) {
@@ -107,6 +113,7 @@ export class CallChannel {
 
   private attach() {
     if (!this.connected || !this.reference) return;
+    this.unattached = false;
     this.batchAccepted = true;
     this.send("call_attach", { endpoint: this.reference });
     if (this.heartbeat) clearInterval(this.heartbeat);
@@ -159,6 +166,7 @@ export class CallChannel {
     this.lifecycle++;
     this.closed();
     this.reference = undefined;
+    this.unattached = false;
     this.listeners.clear();
     this.sender = undefined;
     this.reconnect = undefined;
