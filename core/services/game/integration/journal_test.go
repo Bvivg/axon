@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -32,6 +33,17 @@ func TestJournalTopicIsKeptForever(t *testing.T) {
 			t.Fatal(topic, err)
 		}
 		log.Close()
+		retention, policy := journalRetention(ctx, t, admin, topic)
+		if retention != "-1" || policy != "delete" {
+			t.Fatal(topic, "journal retention", retention, policy)
+		}
+	}
+}
+
+func journalRetention(ctx context.Context, t *testing.T, admin *kadm.Client, topic string) (string, string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
 		described, err := admin.DescribeTopicConfigs(ctx, topic)
 		if err != nil {
 			t.Fatal(err)
@@ -46,8 +58,9 @@ func TestJournalTopicIsKeptForever(t *testing.T) {
 				got[config.Key] = *config.Value
 			}
 		}
-		if got["retention.ms"] != "-1" || got["cleanup.policy"] != "delete" {
-			t.Fatal(topic, "journal retention", got["retention.ms"], got["cleanup.policy"])
+		if got["retention.ms"] == "-1" && got["cleanup.policy"] == "delete" || time.Now().After(deadline) {
+			return got["retention.ms"], got["cleanup.policy"]
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
