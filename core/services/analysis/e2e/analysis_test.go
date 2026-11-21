@@ -117,6 +117,59 @@ func (s *socket) at(ply uint32) *gamev1.Session {
 	}
 }
 
+func matched(t *testing.T, games gamev1connect.GameServiceClient, a, b player) (string, player, player) {
+	t.Helper()
+	ctx := t.Context()
+	for _, who := range []player{a, b} {
+		if _, err := games.FindMatch(ctx, as(who, &gamev1.FindMatchRequest{Game: "chess", RequestId: uuid.NewString()})); err != nil {
+			t.Fatal("find match:", err)
+		}
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		ticket, err := games.GetMatch(ctx, as(a, &gamev1.GetMatchRequest{Game: "chess"}))
+		if err != nil {
+			t.Fatal("get match:", err)
+		}
+		if id := ticket.Msg.GetTicket().GetSessionId(); ticket.Msg.GetTicket().GetStatus() == gamev1.MatchStatus_MATCH_STATUS_MATCHED && id != "" {
+			game, err := games.GetSession(ctx, as(a, &gamev1.GetSessionRequest{SessionId: id}))
+			if err != nil {
+				t.Fatal("get session:", err)
+			}
+			if !game.Msg.GetSession().GetRated() {
+				t.Fatalf("a quick match is unrated: %v", game.Msg.GetSession())
+			}
+			if game.Msg.GetSession().GetPlayerIds()[0] == b.id {
+				a, b = b, a
+			}
+			return id, a, b
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the quick match")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+func play(t *testing.T, white, black player, id string, moves []string) *gamev1.Session {
+	t.Helper()
+	sockets := map[string]*socket{white.id: open(t, white, id), black.id: open(t, black, id)}
+	for ply, uci := range moves {
+		var mover *socket
+		for _, s := range sockets {
+			session := s.at(uint32(ply))
+			if session.GetTurnUserId() != "" {
+				mover = sockets[session.GetTurnUserId()]
+			}
+		}
+		if mover == nil {
+			t.Fatalf("nobody is to move at ply %d", ply)
+		}
+		mover.send(&gamev1.SessionCommand{Action: &gamev1.SessionCommand_ChessMove{ChessMove: &gamev1.ChessMove{Ply: uint32(ply), Uci: uci}}})
+	}
+	return sockets[white.id].at(uint32(len(moves)))
+}
+
 func engineSeconds(t *testing.T) string {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, setting("ANALYSIS_METRICS_URL", "http://analysis:9095/metrics"), nil)
@@ -142,14 +195,18 @@ func TestScholarsMateBlunderIsFoundThroughTheGateway(t *testing.T) {
 	games := gamev1connect.NewGameServiceClient(client(), gatewayURL())
 	analysis := analysisv1connect.NewAnalysisServiceClient(client(), gatewayURL())
 	white, black := register(t), register(t)
-	created, err := games.CreateSession(ctx, as(white, &gamev1.CreateSessionRequest{Game: "chess", RequestId: uuid.NewString()}))
+	casual, err := games.CreateSession(ctx, as(white, &gamev1.CreateSessionRequest{Game: "chess", RequestId: uuid.NewString()}))
 	if err != nil {
 		t.Fatal("create:", err)
 	}
-	id := created.Msg.GetSession().GetId()
-	if _, err := games.JoinSession(ctx, as(black, &gamev1.JoinSessionRequest{SessionId: id})); err != nil {
+	if _, err := games.JoinSession(ctx, as(black, &gamev1.JoinSessionRequest{SessionId: casual.Msg.GetSession().GetId()})); err != nil {
 		t.Fatal("join:", err)
 	}
+	if final := play(t, white, black, casual.Msg.GetSession().GetId(), []string{"f2f3", "e7e5", "g2g4", "d8h4"}); final.GetStatus() != gamev1.SessionStatus_SESSION_STATUS_WON {
+		t.Fatalf("casual game = %v", final)
+	}
+
+	id, white, black := matched(t, games, white, black)
 	if _, err := analysis.GetAnalysis(ctx, connect.NewRequest(&analysisv1.GetAnalysisRequest{SessionId: id})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("anonymous GetAnalysis = %v, want Unauthenticated", err)
 	}
@@ -157,22 +214,7 @@ func TestScholarsMateBlunderIsFoundThroughTheGateway(t *testing.T) {
 		t.Fatalf("GetAnalysis of a live game = %v, want NotFound", err)
 	}
 
-	sockets := map[string]*socket{white.id: open(t, white, id), black.id: open(t, black, id)}
-	var final *gamev1.Session
-	for ply, uci := range scholar {
-		var mover *socket
-		for _, s := range sockets {
-			session := s.at(uint32(ply))
-			if session.GetTurnUserId() != "" {
-				mover = sockets[session.GetTurnUserId()]
-			}
-		}
-		if mover == nil {
-			t.Fatalf("nobody is to move at ply %d", ply)
-		}
-		mover.send(&gamev1.SessionCommand{Action: &gamev1.SessionCommand_ChessMove{ChessMove: &gamev1.ChessMove{Ply: uint32(ply), Uci: uci}}})
-	}
-	final = sockets[white.id].at(uint32(len(scholar)))
+	final := play(t, white, black, id, scholar)
 	if final.GetStatus() != gamev1.SessionStatus_SESSION_STATUS_WON || final.GetWinnerUserId() != white.id || final.GetChess().GetEnd() != gamev1.ChessEnd_CHESS_END_CHECKMATE {
 		t.Fatalf("final session = %v", final)
 	}
@@ -199,6 +241,9 @@ func TestScholarsMateBlunderIsFoundThroughTheGateway(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 	}
 	t.Logf("%s at depth %d: ready %s after checkmate, engine time %s", report.GetEngine(), report.GetDepth(), time.Since(finishedAt).Round(time.Millisecond), engineSeconds(t))
+	if _, err := analysis.GetAnalysis(ctx, as(black, &analysisv1.GetAnalysisRequest{SessionId: casual.Msg.GetSession().GetId()})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("GetAnalysis of a casual game = %v, want NotFound", err)
+	}
 
 	positions := report.GetPositions()
 	if len(positions) != len(scholar)+1 || report.GetDepth() != 12 || !strings.HasPrefix(report.GetEngine(), "Stockfish") {

@@ -30,6 +30,7 @@ var (
 	ErrSessionState    = errors.New("chat: the upload is not in a state for this")
 	ErrUploadInUse     = errors.New("chat: the upload is already part of a message")
 	ErrPartsMissing    = errors.New("chat: some parts of the upload are missing")
+	ErrUploadQuota     = errors.New("chat: the daily upload limit is reached")
 )
 
 type UploadSession struct {

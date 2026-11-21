@@ -82,7 +82,7 @@ func withEXIF(jpegBytes []byte, orientation uint16) []byte {
 func TestPhotosAreTurnedUprightAndLoseTheirMetadata(t *testing.T) {
 	raw := withEXIF(encodeJPEG(t, solid(40, 20, color.RGBA{R: 255, A: 255}, color.RGBA{B: 255, A: 255})), 6)
 
-	got, err := media.ProcessImage(raw)
+	got, err := media.ProcessImage(raw, media.ImageLimits{})
 	if err != nil {
 		t.Fatalf("ProcessImage: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestPhotosAreTurnedUprightAndLoseTheirMetadata(t *testing.T) {
 func TestLargePhotosAreScaledDownWithAThumbnail(t *testing.T) {
 	raw := encodeJPEG(t, solid(3000, 1000, color.White, color.Black))
 
-	got, err := media.ProcessImage(raw)
+	got, err := media.ProcessImage(raw, media.ImageLimits{})
 	if err != nil {
 		t.Fatalf("ProcessImage: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestTransparentImagesStayPNG(t *testing.T) {
 		t.Fatalf("encode png: %v", err)
 	}
 
-	got, err := media.ProcessImage(buf.Bytes())
+	got, err := media.ProcessImage(buf.Bytes(), media.ImageLimits{})
 	if err != nil {
 		t.Fatalf("ProcessImage: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestAnimatedGIFsKeepTheirFrames(t *testing.T) {
 		t.Fatalf("encode gif: %v", err)
 	}
 
-	got, err := media.ProcessImage(buf.Bytes())
+	got, err := media.ProcessImage(buf.Bytes(), media.ImageLimits{})
 	if err != nil {
 		t.Fatalf("ProcessImage: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestAnimatedGIFsKeepTheirFrames(t *testing.T) {
 }
 
 func TestWhatIsNotAPhotoIsRefused(t *testing.T) {
-	_, err := media.ProcessImage([]byte("<html><script>alert(1)</script></html>"))
+	_, err := media.ProcessImage([]byte("<html><script>alert(1)</script></html>"), media.ImageLimits{})
 	if !errors.Is(err, media.ErrUnsupported) {
 		t.Fatalf("ProcessImage = %v, want ErrUnsupported", err)
 	}
@@ -195,7 +195,7 @@ func TestAPhotoThatWouldDecodeToGigabytesIsRefused(t *testing.T) {
 	buf.Write(chunk)
 	buf.Write(binary.BigEndian.AppendUint32(nil, crc32.ChecksumIEEE(chunk)))
 
-	_, err := media.ProcessImage(buf.Bytes())
+	_, err := media.ProcessImage(buf.Bytes(), media.ImageLimits{})
 	if !errors.Is(err, media.ErrTooLarge) {
 		t.Fatalf("ProcessImage = %v, want ErrTooLarge", err)
 	}

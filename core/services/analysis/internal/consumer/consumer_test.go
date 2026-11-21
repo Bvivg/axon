@@ -61,10 +61,12 @@ type engine struct {
 	err       error
 	positions []review.Position
 	block     bool
+	moves     []string
 }
 
 func (e *engine) Analyse(ctx context.Context, moves []string) ([]review.Position, error) {
 	e.calls++
+	e.moves = moves
 	if e.block {
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -87,7 +89,7 @@ var scholar = []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"}
 func event(game string, moves []string) *eventsv1.GameFinished {
 	return &eventsv1.GameFinished{
 		EventId: uuid.NewString(), SessionId: uuid.NewString(), Game: game, Players: []string{uuid.NewString(), uuid.NewString()},
-		Outcome: eventsv1.GameFinished_OUTCOME_WIN, WinnerSeat: 0, FinishedAt: timestamppb.Now(), Moves: moves,
+		Outcome: eventsv1.GameFinished_OUTCOME_WIN, WinnerSeat: 0, FinishedAt: timestamppb.Now(), Moves: moves, Rated: true,
 	}
 }
 
@@ -97,12 +99,16 @@ func record(t *testing.T, kind string, message proto.Message) *kgo.Record {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &kgo.Record{Topic: consumer.FinishedTopic, Value: raw, Headers: []kgo.RecordHeader{{Key: "event_type", Value: []byte(kind)}}}
+	return &kgo.Record{Topic: consumer.Topic, Value: raw, Headers: []kgo.RecordHeader{{Key: "event_type", Value: []byte(kind)}}}
 }
 
 func setup(m *memory, e *engine) (*consumer.Consumer, *consumer.Metrics) {
+	return setupWith(m, e, 0)
+}
+
+func setupWith(m *memory, e *engine, maxPlies int) (*consumer.Consumer, *consumer.Metrics) {
 	metrics := consumer.NewMetrics(prometheus.NewRegistry())
-	return consumer.New(consumer.Config{Store: m, Analyser: e, Depth: 12, Engine: "Stockfish 17.1", Log: slog.New(slog.DiscardHandler), Metrics: metrics}), metrics
+	return consumer.New(consumer.Config{Store: m, Analyser: e, Depth: 12, Engine: "Stockfish 17.1", MaxPlies: maxPlies, Log: slog.New(slog.DiscardHandler), Metrics: metrics}), metrics
 }
 
 func outcomes(metrics *consumer.Metrics) map[string]float64 {
@@ -174,7 +180,7 @@ func TestInvalidEventsAreSkipped(t *testing.T) {
 	for _, rec := range []*kgo.Record{
 		record(t, finishedType, broken),
 		record(t, finishedType, late),
-		{Topic: consumer.FinishedTopic, Value: []byte{0xff, 0x01}},
+		{Topic: consumer.Topic, Value: []byte{0xff, 0x01}},
 	} {
 		if err := c.Handle(t.Context(), rec); err != nil {
 			t.Fatal(err)
@@ -261,5 +267,43 @@ func TestDecodeKeepsTheMoves(t *testing.T) {
 	}
 	if game.EventID.String() != finished.EventId || game.Session.String() != finished.SessionId || len(game.Moves) != 7 || game.FinishedAt.IsZero() {
 		t.Fatalf("game = %+v", game)
+	}
+}
+
+func TestUnratedGamesAreSkipped(t *testing.T) {
+	m, e := newMemory(), &engine{}
+	c, metrics := setup(m, e)
+	casual := event("chess", scholar)
+	casual.Rated = false
+	if err := c.Handle(t.Context(), record(t, finishedType, casual)); err != nil {
+		t.Fatal(err)
+	}
+	if e.calls != 0 || len(m.reports) != 0 || outcomes(metrics)[consumer.OutcomeSkipped] != 1 {
+		t.Fatalf("calls %d, reports %d, outcomes %v", e.calls, len(m.reports), outcomes(metrics))
+	}
+}
+
+func TestTheEngineSeesAtMostTheMaximumPlies(t *testing.T) {
+	long := make([]string, 0, 400)
+	for len(long) < 400 {
+		long = append(long, "g1f3", "g8f6", "f3g1", "f6g8")
+	}
+	for name, tt := range map[string]struct {
+		limit, want int
+	}{
+		"default": {limit: 0, want: consumer.DefaultMaxPlies},
+		"custom":  {limit: 6, want: 6},
+		"short":   {limit: 500, want: 400},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, e := newMemory(), &engine{}
+			c, _ := setupWith(m, e, tt.limit)
+			if err := c.Handle(t.Context(), record(t, finishedType, event("chess", long))); err != nil {
+				t.Fatal(err)
+			}
+			if len(e.moves) != tt.want || len(m.finished) != 1 || len(m.finished[0].Positions) != tt.want+1 {
+				t.Fatalf("engine saw %d moves, finished %d reports, want %d moves", len(e.moves), len(m.finished), tt.want)
+			}
+		})
 	}
 }

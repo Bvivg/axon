@@ -12,14 +12,15 @@ import (
 )
 
 const (
-	FinishedTopic = "game.finished.v1"
-	Chess         = "chess"
+	Topic = "game.analysis_requested.v1"
+	Chess = "chess"
 )
 
 var (
 	ErrForeign  = errors.New("consumer: not a game.finished event")
 	ErrInvalid  = errors.New("consumer: invalid game.finished event")
 	ErrNotChess = errors.New("consumer: not a chess game")
+	ErrUnrated  = errors.New("consumer: not a rated game")
 )
 
 var finishedType = string((&eventsv1.GameFinished{}).ProtoReflect().Descriptor().FullName())
@@ -41,6 +42,9 @@ func Decode(kind string, value []byte) (Game, error) {
 	}
 	if event.GetGame() != Chess {
 		return Game{}, fmt.Errorf("%w: %q", ErrNotChess, event.GetGame())
+	}
+	if !event.GetRated() {
+		return Game{}, fmt.Errorf("%w: %s", ErrUnrated, event.GetSessionId())
 	}
 	eventID, err := uuid.Parse(event.GetEventId())
 	if err != nil {
