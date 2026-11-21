@@ -1,10 +1,39 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { contentSecurityPolicy, newNonce } from "@/lib/security/csp";
+
+const probePaths = ["/calls/probe", "/calls/spike"];
+
 export function proxy(request: NextRequest) {
-  if (process.env.CALLS_E2E_PROBE !== "1" && ["/calls/probe", "/calls/spike"].includes(request.nextUrl.pathname)) {
+  if (process.env.CALLS_E2E_PROBE !== "1" && probePaths.includes(request.nextUrl.pathname)) {
     return new NextResponse(null, { status: 404 });
   }
-  return NextResponse.next();
+
+  const nonce = newNonce();
+  const policy = contentSecurityPolicy(nonce, {
+    gateway: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:18080",
+    assets: process.env.AVATARS_PUBLIC_URL,
+    development: process.env.NODE_ENV === "development",
+  });
+
+  const headers = new Headers(request.headers);
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", policy);
+  const response = NextResponse.next({ request: { headers } });
+  response.headers.set("Content-Security-Policy", policy);
+  return response;
 }
 
-export const config = { matcher: ["/calls/probe", "/calls/spike"] };
+export const config = {
+  matcher: [
+    {
+      source: "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|sw.js|calls-sw.js).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    "/calls/probe",
+    "/calls/spike",
+  ],
+};
