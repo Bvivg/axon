@@ -1,0 +1,17 @@
+name: axon-app-e2e
+
+services:
+  auth:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/readyz"]
+
+  chat:
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/readyz"]
+
+  gateway:
+    environment:
+      RATE_LIMIT_PER_MINUTE: 100000
+      RATE_LIMIT_AUTH_PER_MINUTE: 3000
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9090/readyz"]

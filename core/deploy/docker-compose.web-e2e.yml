@@ -543,7 +543,7 @@ services:
       GATEWAY_URL: http://gateway.axon.test:8080
       OAUTH_FAKE_AUTHORIZE_URL: http://auth.axon.test:8081/oauth/fake/authorize
     volumes:
-      - ../../docs/design:/docs/design:ro
+      - ../../docs/archive/design:/docs/archive/design:ro
     depends_on:
       web:
         condition: service_healthy

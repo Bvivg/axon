@@ -383,8 +383,17 @@ func moveError(err error) gamev1.SessionError {
 }
 
 func (h *Handler) watchMatch(ctx context.Context, cancel context.CancelFunc, conn *ws.Conn, user uuid.UUID, game engine.Key, write func(*gamev1.SessionEvent) error) {
-	changed, _, unsubscribe := h.matches.subscribe(user)
-	defer unsubscribe()
+	if _, err := h.store.Games().Definition(game); err != nil {
+		_ = write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Error{Error: gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND}})
+		return
+	}
+	search, ok := h.searches.join(matchKey{user: user, game: game})
+	if !ok {
+		_ = write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Error{Error: gamev1.SessionError_SESSION_ERROR_RATE_LIMITED}})
+		_ = conn.Close(ws.StatusPolicyViolation, "Too many match searches")
+		return
+	}
+	defer search.leave()
 	go func() {
 		defer cancel()
 		for {
@@ -393,29 +402,13 @@ func (h *Handler) watchMatch(ctx context.Context, cancel context.CancelFunc, con
 			}
 		}
 	}()
-	push := func() error {
-		found, err := h.store.Ticket(ctx, user, game)
-		ticket, err := ticketView(string(game), found, err)
-		if err != nil {
-			return err
-		}
-		return write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Match{Match: ticket}})
-	}
-	if h.store.Touch(ctx, user, game) != nil || push() != nil {
-		return
-	}
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-changed:
-			if push() != nil {
-				return
-			}
-		case <-ticker.C:
-			if h.store.Touch(ctx, user, game) != nil || push() != nil {
+		case <-search.signal:
+			ticket, err := search.latest()
+			if err != nil || write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Match{Match: ticket}}) != nil {
 				return
 			}
 		}

@@ -51,6 +51,7 @@ type settings struct {
 	depth       int
 	timeout     time.Duration
 	hashMB      int
+	maxPlies    int
 	jwksURL     string
 	jwksRefresh time.Duration
 	issuer      string
@@ -69,13 +70,14 @@ func load() (settings, error) {
 		base:        config.LoadBase(loader, "analysis"),
 		postgres:    postgres.LoadConfig(loader),
 		brokers:     loader.StringSlice("KAFKA_BROKERS", []string{"kafka:29092"}),
-		topic:       loader.StringDefault("ANALYSIS_FINISHED_TOPIC", consumer.FinishedTopic),
+		topic:       loader.StringDefault("ANALYSIS_TOPIC", consumer.Topic),
 		group:       loader.StringDefault("ANALYSIS_CONSUMER_GROUP", consumer.Group),
 		stockfish:   loader.StringDefault("STOCKFISH_PATH", "stockfish"),
 		engines:     loader.IntDefault("ANALYSIS_ENGINES", 2),
 		depth:       loader.IntDefault("ANALYSIS_DEPTH", 12),
 		timeout:     loader.DurationDefault("ANALYSIS_POSITION_TIMEOUT", 10*time.Second),
 		hashMB:      loader.IntDefault("ANALYSIS_ENGINE_HASH_MB", 16),
+		maxPlies:    loader.IntDefault("ANALYSIS_MAX_PLIES", consumer.DefaultMaxPlies),
 		jwksURL:     loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		jwksRefresh: loader.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
 		issuer:      loader.StringDefault("JWT_ISSUER", "https://auth.axon.local"),
@@ -84,6 +86,7 @@ func load() (settings, error) {
 	within(loader, "ANALYSIS_ENGINES", cfg.engines, 1, 32)
 	within(loader, "ANALYSIS_DEPTH", cfg.depth, 1, 40)
 	within(loader, "ANALYSIS_ENGINE_HASH_MB", cfg.hashMB, 1, 1024)
+	within(loader, "ANALYSIS_MAX_PLIES", cfg.maxPlies, 1, 2000)
 	if cfg.timeout <= 0 {
 		loader.Fail("ANALYSIS_POSITION_TIMEOUT", errors.New("must be positive"))
 	}
@@ -160,7 +163,7 @@ func run() error {
 	reports := store.New(pool.Pool)
 	games := consumer.New(consumer.Config{
 		Brokers: cfg.brokers, Topic: cfg.topic, Group: cfg.group, Store: reports, Analyser: analyser.New(engines),
-		Depth: cfg.depth, Engine: engines.Name(), Log: log, Metrics: consumer.NewMetrics(metrics.Registry()),
+		Depth: cfg.depth, Engine: engines.Name(), MaxPlies: cfg.maxPlies, Log: log, Metrics: consumer.NewMetrics(metrics.Registry()),
 	})
 	go func() { _ = games.Run(ctx) }()
 

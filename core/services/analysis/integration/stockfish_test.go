@@ -82,7 +82,7 @@ func TestScholarsMateIsAnalysedOnceThroughKafka(t *testing.T) {
 	if engine.Name() == "" {
 		t.Fatal("stockfish did not introduce itself")
 	}
-	topic, group := "game.finished.it-"+uuid.NewString()[:8], "analysis-it-"+uuid.NewString()[:8]
+	topic, group := "game.analysis_requested.it-"+uuid.NewString()[:8], "analysis-it-"+uuid.NewString()[:8]
 	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestScholarsMateIsAnalysedOnceThroughKafka(t *testing.T) {
 
 	finished := &eventsv1.GameFinished{
 		EventId: uuid.NewString(), SessionId: uuid.NewString(), Game: "chess", Players: []string{uuid.NewString(), uuid.NewString()},
-		Outcome: eventsv1.GameFinished_OUTCOME_WIN, WinnerSeat: 0, FinishedAt: timestamppb.Now(), Moves: scholar,
+		Outcome: eventsv1.GameFinished_OUTCOME_WIN, WinnerSeat: 0, FinishedAt: timestamppb.Now(), Moves: scholar, Rated: true,
 	}
 	raw, err := proto.Marshal(finished)
 	if err != nil {
@@ -117,7 +117,7 @@ func TestScholarsMateIsAnalysedOnceThroughKafka(t *testing.T) {
 	}
 	deliver := func() {
 		t.Helper()
-		record := &kgo.Record{Topic: topic, Key: []byte("chess"), Value: raw, Headers: []kgo.RecordHeader{
+		record := &kgo.Record{Topic: topic, Key: []byte(finished.SessionId), Value: raw, Headers: []kgo.RecordHeader{
 			{Key: "event_id", Value: []byte(finished.EventId)}, {Key: "event_type", Value: []byte("axon.events.v1.GameFinished")},
 		}}
 		if err := client.ProduceSync(ctx, record).FirstErr(); err != nil {

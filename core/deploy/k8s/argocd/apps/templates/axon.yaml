@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.env }}
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: axon
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.revision }}
+    path: core/deploy/k8s/charts/stack
+    helm:
+      releaseName: {{ .Values.env }}
+      valuesObject:
+        repoURL: {{ .Values.repoURL }}
+        revision: {{ .Values.revision }}
+        env: {{ .Values.env }}
+        valueFile: {{ .Values.valueFile }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 30
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m

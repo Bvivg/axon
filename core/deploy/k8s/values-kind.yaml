@@ -1,0 +1,64 @@
+global:
+  appEnv: test
+  imageTag: local
+  imagePullPolicy: Never
+  mtls:
+    enabled: true
+  kafka:
+    replication: 3
+    minInSync: 2
+  publicGatewayURL: http://localhost:28080
+  publicWebURL: http://localhost:23003
+
+infra:
+  postgres:
+    instances: 3
+  kafka:
+    replicas: 3
+  redis:
+    replicas: 3
+    sentinel:
+      enabled: true
+
+auth:
+  replicas: 2
+
+chat:
+  replicas: 2
+
+game:
+  testHooks: true
+  hpa:
+    enabled: true
+  journal:
+    replication: 3
+    minInSync: 2
+
+gateway:
+  replicas: 2
+  service:
+    type: NodePort
+    nodePorts:
+      http: 30080
+  rateLimit:
+    perMinute: 600
+    authPerMinute: 60
+  trustedProxies: 1
+  extraCorsOrigins:
+    - http://localhost:3000
+
+rating:
+  replicas: 2
+
+analysis:
+  replicas: 2
+  positionTimeout: 60s
+
+tournament:
+  replicas: 2
+
+web:
+  service:
+    type: NodePort
+    nodePorts:
+      http: 30003

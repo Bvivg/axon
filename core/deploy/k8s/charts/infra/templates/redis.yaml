@@ -1,0 +1,72 @@
+{{- $v := fromYaml (include "infra.values" .) -}}
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: app-redis
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+spec:
+  clusterSize: {{ $v.redis.replicas }}
+  kubernetesConfig:
+    image: {{ $v.redis.image }}
+    imagePullPolicy: IfNotPresent
+    redisSecret:
+      name: redis-app
+      key: password
+    resources:
+      {{- toYaml $v.redis.resources | nindent 6 }}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app: app-redis
+  {{- if $v.redis.sentinel.enabled }}
+  sentinel:
+    image: {{ $v.redis.sentinelImage }}
+    imagePullPolicy: IfNotPresent
+    size: {{ $v.redis.sentinel.size }}
+    redisSecret:
+      name: redis-app
+      key: password
+    resources:
+      {{- toYaml $v.redis.resources | nindent 6 }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-redis-config
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+data:
+  redis-additional.conf: |
+    maxmemory 64mb
+    maxmemory-policy volatile-ttl
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: Redis
+metadata:
+  name: edge-redis
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+spec:
+  kubernetesConfig:
+    image: {{ $v.redis.image }}
+    imagePullPolicy: IfNotPresent
+    redisSecret:
+      name: redis-edge
+      key: password
+    resources:
+      {{- toYaml $v.redis.resources | nindent 6 }}
+  redisConfig:
+    additionalRedisConfig: edge-redis-config
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000

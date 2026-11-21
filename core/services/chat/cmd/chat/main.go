@@ -325,21 +325,26 @@ func run() error {
 	go sweeper.Run(ctx)
 
 	mediaTools := media.NewTools(media.ToolsConfig{
-		FFmpeg:  cfg.Media.FFmpeg,
-		FFprobe: cfg.Media.FFprobe,
-		Workers: cfg.Media.Workers,
-		Timeout: cfg.Media.Timeout,
+		FFmpeg:         cfg.Media.FFmpeg,
+		FFprobe:        cfg.Media.FFprobe,
+		Workers:        cfg.Media.Workers,
+		PerUser:        cfg.Media.PerUser,
+		Timeout:        cfg.Media.Timeout,
+		MaxVideoPixels: cfg.Media.MaxVideoPixels,
 	})
 	if err := mediaTools.Check(); err != nil {
 		log.Warn("media processing is unavailable until ffmpeg is installed", "error", err)
 	}
 
-	pipeline := attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools)
+	images := media.NewImages(media.ImageLimits(cfg.Media.Images), media.NewSlots(cfg.Media.ImageWorkers, cfg.Media.PerUser))
+	pipeline := attachment.NewPipeline(attachmentStore, attachmentURLs, mediaTools, images)
+	uploadBudget := uploads.NewBudget(repo, cfg.Uploads.DailyBytes)
 
 	attachmentUpload, err := server.NewAttachmentHandler(server.AttachmentConfig{
 		Verifier: verifier,
 		Pipeline: pipeline,
 		Recorder: svc,
+		Budget:   uploadBudget,
 		Logger:   log,
 	})
 	if err != nil {
@@ -350,12 +355,14 @@ func run() error {
 		Sessions:      repo,
 		Objects:       attachmentStore,
 		Processor:     pipeline,
+		Budget:        uploadBudget,
 		KeysOf:        sweeper.ObjectKeys,
 		Logger:        log,
 		MaxBytes:      cfg.Uploads.MaxBytes,
 		MaxVoiceBytes: attachment.MaxVoiceBytes,
 		PartSize:      cfg.Uploads.PartBytes,
 		Workers:       cfg.Uploads.Workers,
+		PerUploader:   cfg.Media.PerUser,
 	})
 	if err != nil {
 		return err

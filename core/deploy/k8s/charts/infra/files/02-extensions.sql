@@ -1,0 +1,1 @@
+../../../../postgres/init/02-extensions.sql

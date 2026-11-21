@@ -1,0 +1,153 @@
+{{- $v := fromYaml (include "infra.values" .) -}}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: axon-pg
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+spec:
+  instances: {{ $v.postgres.instances }}
+  imageName: {{ $v.postgres.image }}
+  enableSuperuserAccess: true
+  primaryUpdateStrategy: unsupervised
+  livenessProbeTimeout: 60
+  {{- if gt (int $v.postgres.instances) 1 }}
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      synchronizeLogicalDecoding: true
+  {{- end }}
+  bootstrap:
+    initdb:
+      database: {{ $v.global.postgres.database }}
+      owner: axon
+  postgresql:
+    parameters:
+      wal_level: logical
+      max_connections: "200"
+      max_replication_slots: "10"
+      max_wal_senders: "10"
+      max_slot_wal_keep_size: 512MB
+      {{- if gt (int $v.postgres.instances) 1 }}
+      hot_standby_feedback: "on"
+      sync_replication_slots: "on"
+      {{- end }}
+  managed:
+    roles:
+      {{- range $v.postgres.roles }}
+      - name: {{ . }}_service
+        ensure: present
+        login: true
+        passwordSecret:
+          name: pg-{{ . }}
+      {{- end }}
+      - name: debezium
+        ensure: present
+        login: true
+        replication: true
+        passwordSecret:
+          name: pg-debezium
+  storage:
+    size: {{ $v.postgres.storage }}
+  resources:
+    {{- toYaml $v.postgres.resources | nindent 4 }}
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: preferred
+    topologyKey: topology.kubernetes.io/zone
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+data:
+  01-schemas.sh: {{ .Files.Get "files/01-schemas.sh" | quote }}
+  02-extensions.sql: {{ .Files.Get "files/02-extensions.sql" | quote }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-schemas
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 30
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-schemas
+        app.kubernetes.io/part-of: axon
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: schemas
+          image: {{ $v.postgres.clientImage }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-ec"]
+          args:
+            - >-
+              until pg_isready -q; do sleep 2; done;
+              sh /init/01-schemas.sh;
+              psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /init/02-extensions.sql
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PGHOST
+              value: {{ $v.global.postgres.host }}
+            - name: PGPORT
+              value: {{ $v.global.postgres.port | quote }}
+            - name: PGSSLMODE
+              value: require
+            - name: POSTGRES_DB
+              value: {{ $v.global.postgres.database }}
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: axon-pg-superuser
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: axon-pg-superuser
+                  key: password
+            {{- range $v.postgres.roles }}
+            - name: {{ upper . }}_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pg-{{ . }}
+                  key: password
+            {{- end }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            {{- include "infra.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: init
+              mountPath: /init
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,15 @@
+global: {}
+cdc: {}
+postgresImage: ghcr.io/cloudnative-pg/postgresql:17.10-minimal-trixie
+curlImage: curlimages/curl:8.23.0
+connector:
+  name: axon-outbox
+  cluster: axon-connect
+  config:
+    slot.failover: "true"
+publication: axon_outbox
+registry:
+  enabled: true
+  url: http://registry:8080
+  group: default
+  artifact: axon.events.v1

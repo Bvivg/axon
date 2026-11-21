@@ -1,0 +1,137 @@
+{{- $tag := (.Values.global | default dict).imageTag | default "local" -}}
+{{- $policy := (.Values.global | default dict).imagePullPolicy | default "Never" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: secrets-bootstrap
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  bootstrap.sh: |
+    #!/bin/sh
+    set -eu
+    ns=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+
+    exists() {
+      kubectl -n "$ns" get secret "$1" >/dev/null 2>&1
+    }
+
+    keep_or_create() {
+      name=$1
+      shift
+      if exists "$name"; then
+        echo "secret $name kept"
+        return 0
+      fi
+      kubectl -n "$ns" create secret generic "$name" "$@" --dry-run=client -o yaml \
+        | kubectl label --local -f - app.kubernetes.io/part-of=axon app.kubernetes.io/managed-by=secrets-bootstrap -o yaml \
+        | kubectl -n "$ns" create -f - >/dev/null
+      echo "secret $name created"
+    }
+
+    password() {
+      openssl rand -hex 24 | tr -d '\n' > "$work/$1"
+    }
+
+    for role in {{ join " " .Values.roles }}; do
+      if ! exists "pg-$role"; then
+        printf '%s' "${role}_service" > "$work/username"
+        password password
+        keep_or_create "pg-$role" --type=kubernetes.io/basic-auth --from-file=username="$work/username" --from-file=password="$work/password"
+      fi
+    done
+
+    if ! exists pg-debezium; then
+      printf '%s' debezium > "$work/username"
+      password password
+      keep_or_create pg-debezium --type=kubernetes.io/basic-auth --from-file=username="$work/username" --from-file=password="$work/password"
+    fi
+
+    for name in redis-app redis-edge; do
+      if ! exists "$name"; then
+        password password
+        keep_or_create "$name" --from-file=password="$work/password"
+      fi
+    done
+
+    if ! exists minio; then
+      printf '%s' axon > "$work/user"
+      password password
+      keep_or_create minio --from-file=user="$work/user" --from-file=password="$work/password"
+    fi
+
+    if ! exists auth-jwt; then
+      openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n' > "$work/JWT_PRIVATE_KEY_DEV_1"
+      openssl rand -base64 32 | tr -d '\n' > "$work/JWT_KEY_ENCRYPTION_KEY"
+      keep_or_create auth-jwt --from-file=JWT_PRIVATE_KEY_DEV_1="$work/JWT_PRIVATE_KEY_DEV_1" --from-file=JWT_KEY_ENCRYPTION_KEY="$work/JWT_KEY_ENCRYPTION_KEY"
+    fi
+
+    if ! exists chat-vapid; then
+      openssl ecparam -name prime256v1 -genkey -noout -out "$work/vapid.pem" 2>/dev/null
+      openssl ec -in "$work/vapid.pem" -pubout -outform DER 2>/dev/null | tail -c 65 | base64 | tr -d '\n=' | tr '/+' '_-' > "$work/CHAT_VAPID_PUBLIC_KEY"
+      openssl ec -in "$work/vapid.pem" -outform DER 2>/dev/null | tail -c +8 | head -c 32 | base64 | tr -d '\n=' | tr '/+' '_-' > "$work/CHAT_VAPID_PRIVATE_KEY"
+      [ "$(wc -c < "$work/CHAT_VAPID_PUBLIC_KEY")" -eq 87 ]
+      [ "$(wc -c < "$work/CHAT_VAPID_PRIVATE_KEY")" -eq 43 ]
+      keep_or_create chat-vapid --from-file=CHAT_VAPID_PUBLIC_KEY="$work/CHAT_VAPID_PUBLIC_KEY" --from-file=CHAT_VAPID_PRIVATE_KEY="$work/CHAT_VAPID_PRIVATE_KEY"
+    fi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: secrets-bootstrap
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: secrets-bootstrap
+        app.kubernetes.io/part-of: axon
+    spec:
+      serviceAccountName: secrets-bootstrap
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.image }}:{{ $tag }}"
+          imagePullPolicy: {{ $policy }}
+          command: ["sh", "/bootstrap/bootstrap.sh"]
+          env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: script
+              mountPath: /bootstrap
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: script
+          configMap:
+            name: secrets-bootstrap
+        - name: tmp
+          emptyDir:
+            medium: Memory

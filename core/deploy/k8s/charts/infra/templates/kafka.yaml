@@ -1,0 +1,145 @@
+{{- $v := fromYaml (include "infra.values" .) -}}
+{{- $r := int $v.global.kafka.replication -}}
+{{- $isr := int $v.global.kafka.minInSync -}}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual
+  labels:
+    strimzi.io/cluster: axon-kafka
+    {{- include "infra.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $v.kafka.replicas }}
+  roles:
+    - controller
+    - broker
+  storage:
+    type: persistent-claim
+    size: {{ $v.kafka.storage }}
+    deleteClaim: true
+  resources:
+    {{- toYaml $v.kafka.resources | nindent 4 }}
+  jvmOptions:
+    "-Xms": {{ $v.kafka.heap }}
+    "-Xmx": {{ $v.kafka.heap }}
+  template:
+    pod:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              strimzi.io/pool-name: dual
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: axon-kafka
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+spec:
+  kafka:
+    version: {{ $v.kafka.version }}
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      offsets.topic.replication.factor: {{ $r }}
+      transaction.state.log.replication.factor: {{ $r }}
+      transaction.state.log.min.isr: {{ $isr }}
+      default.replication.factor: {{ $r }}
+      min.insync.replicas: {{ $isr }}
+      auto.create.topics.enable: true
+      group.initial.rebalance.delay.ms: 0
+    rack:
+      topologyKey: topology.kubernetes.io/zone
+  entityOperator:
+    topicOperator:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 128Mi
+        limits:
+          memory: 384Mi
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: game-session-events-v1
+  labels:
+    strimzi.io/cluster: axon-kafka
+    {{- include "infra.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  topicName: game.session-events.v1
+  partitions: {{ $v.kafka.journal.partitions }}
+  replicas: {{ $r }}
+  config:
+    min.insync.replicas: {{ $isr }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: game-partition-leases-v1
+  labels:
+    strimzi.io/cluster: axon-kafka
+    {{- include "infra.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  topicName: game.partition-leases.v1
+  partitions: {{ $v.kafka.journal.partitions }}
+  replicas: {{ $r }}
+  config:
+    min.insync.replicas: {{ $isr }}
+{{- if $v.connect.enabled }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnect
+metadata:
+  name: axon-connect
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+  annotations:
+    strimzi.io/use-connector-resources: "true"
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  version: {{ $v.kafka.version }}
+  replicas: 1
+  image: "{{ $v.connect.image }}:{{ $v.global.imageTag }}"
+  bootstrapServers: axon-kafka-kafka-bootstrap:9092
+  groupId: axon-cdc
+  configStorageTopic: _axon-cdc-configs
+  offsetStorageTopic: _axon-cdc-offsets
+  statusStorageTopic: _axon-cdc-status
+  config:
+    config.storage.replication.factor: -1
+    offset.storage.replication.factor: -1
+    status.storage.replication.factor: -1
+    config.providers: env
+    config.providers.env.class: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+    offset.flush.interval.ms: 5000
+  jvmOptions:
+    "-Xms": {{ $v.connect.heap }}
+    "-Xmx": {{ $v.connect.heap }}
+  resources:
+    {{- toYaml $v.connect.resources | nindent 4 }}
+  template:
+    connectContainer:
+      env:
+        - name: CDC_DATABASE_HOST
+          value: {{ $v.global.postgres.host }}
+        - name: CDC_DATABASE_PORT
+          value: {{ $v.global.postgres.port | quote }}
+        - name: CDC_DATABASE_NAME
+          value: {{ $v.global.postgres.database }}
+        - name: DEBEZIUM_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pg-debezium
+              key: password
+{{- end }}

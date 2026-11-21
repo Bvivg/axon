@@ -1,0 +1,1 @@
+../../../../postgres/init/01-schemas.sh

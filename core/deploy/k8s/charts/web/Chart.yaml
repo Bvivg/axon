@@ -1,0 +1,9 @@
+apiVersion: v2
+name: web
+description: Axon web service
+type: application
+version: 0.1.0
+dependencies:
+  - name: axon-service
+    version: 0.1.0
+    repository: file://../axon-service

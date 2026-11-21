@@ -1,0 +1,40 @@
+repoURL: https://github.com/Bvivg/axon.git
+revision: main
+env: axon
+valueFile: values-kind.yaml
+chartsPath: core/deploy/k8s/charts
+project: default
+components:
+  - name: secrets
+    chart: secrets-bootstrap
+    wave: 0
+  - name: infra
+    chart: infra
+    wave: 1
+  - name: auth
+    chart: auth
+    wave: 2
+  - name: rating
+    chart: rating
+    wave: 2
+  - name: chat
+    chart: chat
+    wave: 3
+  - name: game
+    chart: game
+    wave: 3
+  - name: analysis
+    chart: analysis
+    wave: 3
+  - name: tournament
+    chart: tournament
+    wave: 3
+  - name: gateway
+    chart: gateway
+    wave: 4
+  - name: cdc
+    chart: cdc
+    wave: 4
+  - name: web
+    chart: web
+    wave: 5

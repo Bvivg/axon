@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 const kindIcon = { Client: Laptop, Edge: Route, Service: Box, Infrastructure: Database };
 const graphWidth = 840;
-const graphHeight = 352;
+const graphHeight = layers.length * 88;
 const coordinates = new Map<NodeId, [number, number]>(layers.flatMap((layer, row) => layer.map((id, index) => [id, [(index + 1) * graphWidth / (layer.length + 1), 44 + row * 88]] as [NodeId, [number, number]])));
 
 type Selection = { node: NodeId } | { edge: number };
@@ -144,7 +144,7 @@ export function ServiceMap() {
 
 function TopologyGraph({ activeNode, activeEdge, shown, onSelect }: { activeNode?: NodeId; activeEdge?: typeof edges[number]; shown: NodeId[]; onSelect: (value: Selection) => void }) {
   return (
-    <div className="service-graph" aria-label="Topology overview">
+    <div className="service-graph" aria-label="Topology overview" style={{ minHeight: graphHeight }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${graphWidth} ${graphHeight}`} preserveAspectRatio="none" aria-hidden>
         {edges.map((edge) => {
           const [x1, y1] = coordinates.get(edge.from)!;
