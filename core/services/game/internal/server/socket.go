@@ -16,7 +16,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/owner"
@@ -101,7 +103,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 			moved()
 			return err
 		}
-		state, err := h.view(ctx, item, err)
+		state, err := h.view(ctx, item, user, err)
 		if err != nil {
 			return err
 		}
@@ -220,6 +222,30 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 				data, _ := json.Marshal(quoridor.MoveData{Move: move.Move})
 				name, run = "move", func(ctx context.Context) (session.Session, error) {
 					return h.owner.Move(ctx, id, user, int(move.Ply), quoridor.Key, data, move.Revision)
+				}
+			case *gamev1.SessionCommand_CheckersMove:
+				move := action.CheckersMove
+				if move == nil || len(move.Move) > checkers.MaxNotation {
+					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
+						return
+					}
+					continue
+				}
+				data, _ := json.Marshal(checkers.MoveData{Move: move.Move})
+				name, run = "move", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Move(ctx, id, user, int(move.Ply), checkers.Key, data, move.Revision)
+				}
+			case *gamev1.SessionCommand_DurakMove:
+				move := action.DurakMove
+				if move == nil || len(move.Move) > durak.MaxNotation {
+					if fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND) != nil {
+						return
+					}
+					continue
+				}
+				data, _ := json.Marshal(durak.MoveData{Move: move.Move})
+				name, run = "move", func(ctx context.Context) (session.Session, error) {
+					return h.owner.Move(ctx, id, user, int(move.Ply), durak.Key, data, move.Revision)
 				}
 			case *gamev1.SessionCommand_Draw:
 				drawAction, ok := drawActions[action.Draw.GetAction()]
@@ -367,13 +393,15 @@ func moveError(err error) gamev1.SessionError {
 		return gamev1.SessionError_SESSION_ERROR_STALE_MOVE
 	case errors.Is(err, tictactoe.ErrCellTaken):
 		return gamev1.SessionError_SESSION_ERROR_CELL_TAKEN
-	case errors.Is(err, chess.ErrIllegalMove), errors.Is(err, chess.ErrBadMove), errors.Is(err, quoridor.ErrIllegalMove), errors.Is(err, quoridor.ErrBadMove):
+	case errors.Is(err, chess.ErrIllegalMove), errors.Is(err, chess.ErrBadMove), errors.Is(err, quoridor.ErrIllegalMove), errors.Is(err, quoridor.ErrBadMove),
+		errors.Is(err, checkers.ErrIllegalMove), errors.Is(err, checkers.ErrBadMove),
+		errors.Is(err, durak.ErrIllegalMove), errors.Is(err, durak.ErrBadMove):
 		return gamev1.SessionError_SESSION_ERROR_ILLEGAL_MOVE
 	case errors.Is(err, session.ErrNoDrawOffer):
 		return gamev1.SessionError_SESSION_ERROR_NO_DRAW_OFFER
 	case errors.Is(err, engine.ErrGameMismatch), errors.Is(err, engine.ErrMoveMalformed):
 		return gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND
-	case errors.Is(err, session.ErrRated):
+	case errors.Is(err, session.ErrRated), errors.Is(err, session.ErrNoUndo):
 		return gamev1.SessionError_SESSION_ERROR_UNDO_DISABLED
 	case errors.Is(err, session.ErrNotPlaying), errors.Is(err, engine.ErrGameOver):
 		return gamev1.SessionError_SESSION_ERROR_NOT_PLAYING
@@ -383,8 +411,17 @@ func moveError(err error) gamev1.SessionError {
 }
 
 func (h *Handler) watchMatch(ctx context.Context, cancel context.CancelFunc, conn *ws.Conn, user uuid.UUID, game engine.Key, write func(*gamev1.SessionEvent) error) {
-	changed, _, unsubscribe := h.matches.subscribe(user)
-	defer unsubscribe()
+	if _, err := h.store.Games().Definition(game); err != nil {
+		_ = write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Error{Error: gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND}})
+		return
+	}
+	search, ok := h.searches.join(matchKey{user: user, game: game})
+	if !ok {
+		_ = write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Error{Error: gamev1.SessionError_SESSION_ERROR_RATE_LIMITED}})
+		_ = conn.Close(ws.StatusPolicyViolation, "Too many match searches")
+		return
+	}
+	defer search.leave()
 	go func() {
 		defer cancel()
 		for {
@@ -393,29 +430,13 @@ func (h *Handler) watchMatch(ctx context.Context, cancel context.CancelFunc, con
 			}
 		}
 	}()
-	push := func() error {
-		found, err := h.store.Ticket(ctx, user, game)
-		ticket, err := ticketView(string(game), found, err)
-		if err != nil {
-			return err
-		}
-		return write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Match{Match: ticket}})
-	}
-	if h.store.Touch(ctx, user, game) != nil || push() != nil {
-		return
-	}
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-changed:
-			if push() != nil {
-				return
-			}
-		case <-ticker.C:
-			if h.store.Touch(ctx, user, game) != nil || push() != nil {
+		case <-search.signal:
+			ticket, err := search.latest()
+			if err != nil || write(&gamev1.SessionEvent{Update: &gamev1.SessionEvent_Match{Match: ticket}}) != nil {
 				return
 			}
 		}

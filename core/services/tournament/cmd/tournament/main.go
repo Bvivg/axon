@@ -26,6 +26,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -67,7 +68,7 @@ func load() (settings, error) {
 		noShow:        loader.DurationDefault("TOURNAMENT_NO_SHOW_TIMEOUT", orchestrator.DefaultNoShow),
 		sweep:         loader.DurationDefault("TOURNAMENT_SWEEP_INTERVAL", time.Second),
 		retention:     loader.DurationDefault("TOURNAMENT_OUTBOX_RETENTION", 24*time.Hour),
-		games:         loader.StringSlice("TOURNAMENT_GAMES", []string{"tictactoe", "chess", "quoridor"}),
+		games:         loader.StringSlice("TOURNAMENT_GAMES", []string{"tictactoe", "chess", "quoridor", "checkers"}),
 		authURL:       loader.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
 		jwksURL:       loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		jwksRefresh:   loader.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
@@ -151,7 +152,7 @@ func run() error {
 	checks := health.New(log, []health.Checker{pool, health.CheckerFunc{CheckerName: "kafka", Fn: probe.Ping}})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.base.ShutdownTimeout, checks, log)
 	api := http.NewServeMux()
-	api.Handle(tournamentv1connect.NewTournamentServiceHandler(server.New(saga, verifier, roles, cfg.games, log), interceptors))
+	api.Handle(tournamentv1connect.NewTournamentServiceHandler(server.New(saga, verifier, roles, cfg.games, log), interceptors, rpclimit.Handler(cfg.base.RPCReadMaxBytes)))
 	public := graceful.Serve(&http.Server{
 		Addr:              cfg.base.HTTPAddr,
 		Handler:           middleware.Chain(middleware.Correlation, middleware.Recovery(log))(api),

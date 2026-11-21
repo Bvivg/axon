@@ -9,7 +9,7 @@ trap 'rm -rf "$work"' EXIT
 catalog='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 converter=${OPENAPI2JSONSCHEMA:-https://raw.githubusercontent.com/yannh/kubeconform/v0.7.0/scripts/openapi2jsonschema.py}
 python=${PYTHON:-python3}
-services="auth chat game gateway rating web"
+services="auth chat game gateway rating analysis tournament web"
 envs="kind preview"
 
 for chart in $services; do

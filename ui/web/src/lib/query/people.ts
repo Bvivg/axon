@@ -6,6 +6,7 @@ import { useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-qu
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { apiClient } from "@/lib/connect/clients";
 import { isCode } from "@/lib/errors";
+import { searchablePeopleQuery } from "@/lib/people-search";
 
 export const peopleKeys = {
   search: (query: string) => ["people", "search-pages", query] as const,
@@ -24,6 +25,7 @@ export function invalidateProfilesOf(queryClient: QueryClient, userID: string): 
 
 export function useSearchUsers(query: string, enabled = true) {
   const trimmed = query.trim();
+  const tooShort = !searchablePeopleQuery(trimmed);
 
   const result = useInfiniteQuery({
     queryKey: peopleKeys.search(trimmed),
@@ -31,11 +33,27 @@ export function useSearchUsers(query: string, enabled = true) {
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.nextPageToken || undefined,
     staleTime: 30_000,
-    enabled,
+    enabled: enabled && !tooShort,
   });
 
-  const people = result.data?.pages.flatMap((page) => page.users);
-  return { ...result, data: people ? [...new Map(people.map((person) => [person.id, person])).values()] : undefined };
+  const people = tooShort ? undefined : result.data?.pages.flatMap((page) => page.users);
+  return {
+    ...result,
+    tooShort,
+    isPending: !tooShort && result.isPending,
+    data: people ? [...new Map(people.map((person) => [person.id, person])).values()] : undefined,
+  };
+}
+
+export const maxProfilesPerRequest = 100;
+
+type ProfileLookup<T extends { id: string }> = (request: { userIds: string[] }) => Promise<{ users: T[] }>;
+
+export async function fetchProfiles<T extends { id: string }>(lookup: ProfileLookup<T>, ids: string[]): Promise<Map<string, T>> {
+  const batches: string[][] = [];
+  for (let start = 0; start < ids.length; start += maxProfilesPerRequest) batches.push(ids.slice(start, start + maxProfilesPerRequest));
+  const responses = await Promise.all(batches.map((userIds) => lookup({ userIds })));
+  return new Map(responses.flatMap((resp) => resp.users).map((profile) => [profile.id, profile]));
 }
 
 export function usePublicProfiles(userIDs: string[]) {
@@ -43,10 +61,7 @@ export function usePublicProfiles(userIDs: string[]) {
 
   return useQuery({
     queryKey: peopleKeys.profiles(ids),
-    queryFn: async (): Promise<Map<string, PublicProfile>> => {
-      const resp = await apiClient.getUsersPublicProfiles({ userIds: ids });
-      return new Map(resp.users.map((profile) => [profile.id, profile]));
-    },
+    queryFn: (): Promise<Map<string, PublicProfile>> => fetchProfiles((request) => apiClient.getUsersPublicProfiles(request), ids),
     enabled: ids.length > 0,
   });
 }

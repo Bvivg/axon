@@ -46,6 +46,7 @@ func (f *fakeSessions) CreateSession(_ context.Context, s domain.UploadSession) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s.Status = domain.UploadUploading
+	s.CreatedAt = time.Now()
 	f.sessions[s.ID] = s
 	return s, nil
 }
@@ -145,6 +146,17 @@ func (f *fakeSessions) DeleteSession(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (f *fakeSessions) WithdrawSession(_ context.Context, id uuid.UUID) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sessions[id]
+	if !ok || s.Status != domain.UploadUploading {
+		return false, nil
+	}
+	delete(f.sessions, id)
+	return true, nil
+}
+
 func (f *fakeSessions) DeleteDraftUpload(_ context.Context, id uuid.UUID) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -204,6 +216,7 @@ type fakeObjects struct {
 	objects  map[string][]byte
 	aborted  []string
 	complete map[string]string
+	startErr error
 }
 
 func newFakeObjects() *fakeObjects {
@@ -213,6 +226,9 @@ func newFakeObjects() *fakeObjects {
 func (o *fakeObjects) StartMultipart(_ context.Context, key string) (string, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.startErr != nil {
+		return "", o.startErr
+	}
 	id := "mp-" + key
 	o.parts[id] = map[int][]byte{}
 	return id, nil
@@ -310,6 +326,14 @@ type fakeProcessor struct {
 	objects *fakeObjects
 	fail    error
 	digest  func(raw []byte) []byte
+	hold    func(user uuid.UUID)
+}
+
+func (p *fakeProcessor) Media(_ context.Context, user uuid.UUID, path string, _ int64) (attachment.Result, error) {
+	if p.hold != nil {
+		p.hold(user)
+	}
+	return p.run(path)
 }
 
 func (p *fakeProcessor) run(path string) (attachment.Result, error) {
@@ -333,10 +357,6 @@ func (p *fakeProcessor) run(path string) (attachment.Result, error) {
 	p.objects.put(key)
 	payload, _ := json.Marshal(map[string]string{"url": key})
 	return attachment.Result{Kind: domain.MessageKindImage, Payload: payload, Keys: []string{key}, SHA256: digest}, nil
-}
-
-func (p *fakeProcessor) Media(_ context.Context, _ uuid.UUID, path string, _ int64) (attachment.Result, error) {
-	return p.run(path)
 }
 
 func (p *fakeProcessor) Voice(_ context.Context, _ uuid.UUID, path string, _ int64) (attachment.Result, error) {
@@ -369,16 +389,25 @@ type harness struct {
 	sessions  *fakeSessions
 	objects   *fakeObjects
 	processor *fakeProcessor
+	usage     *fakeUsage
+	budget    *Budget
 }
 
 func newHarness(t *testing.T) harness {
 	t.Helper()
+	return newHarnessWithBudget(t, 1<<40)
+}
+
+func newHarnessWithBudget(t *testing.T, daily int64) harness {
+	t.Helper()
 	objects := newFakeObjects()
-	h := harness{sessions: newFakeSessions(), objects: objects, processor: &fakeProcessor{objects: objects}}
+	usage := newFakeUsage()
+	h := harness{sessions: newFakeSessions(), objects: objects, processor: &fakeProcessor{objects: objects}, usage: usage, budget: NewBudget(usage, daily)}
 	m, err := New(Config{
 		Sessions:      h.sessions,
 		Objects:       objects,
 		Processor:     h.processor,
+		Budget:        h.budget,
 		KeysOf:        keysOf,
 		Logger:        slog.New(slog.DiscardHandler),
 		MaxBytes:      4 * testPart,

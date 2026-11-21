@@ -19,6 +19,14 @@ type Game interface {
 	IsTerminal(state State) (bool, *PlayerID)
 }
 
+type Seeded interface {
+	InitSeeded(players []PlayerID, seed uint64) State
+}
+
+type Viewer interface {
+	View(state State, viewer PlayerID) State
+}
+
 func Precheck(game Key, state State, move Move) (int, error) {
 	if state.Game != game {
 		return NoSeat, fmt.Errorf("%w: state holds %q, game is %q", ErrGameMismatch, state.Game, game)

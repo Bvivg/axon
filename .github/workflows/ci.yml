@@ -377,3 +377,44 @@ jobs:
         run: bash core/deploy/calls-sfu-e2e.sh
       - name: Calls active transport migration and cleanup gates
         run: bash core/deploy/calls-migration-e2e.sh
+
+  app:
+    name: SwiftUI app
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select --switch "$xcode"
+          xcodebuild -version
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        run: buf generate
+
+      - name: Install XcodeGen and SwiftLint
+        run: brew install xcodegen swiftlint
+
+      - name: Lint
+        run: make app-lint
+
+      - name: Generate the Xcode project
+        run: make app-project
+
+      - uses: actions/cache@v4
+        with:
+          path: .local/app/spm
+          key: spm-${{ runner.os }}-${{ hashFiles('ui/app/project.yml') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Unit tests on macOS
+        run: make app-test
+
+      - name: Build for the iOS Simulator
+        run: make app-build

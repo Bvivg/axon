@@ -24,6 +24,19 @@ type Config struct {
 	Push        PushConfig
 	Calls       CallsConfig
 	Fanout      FanoutConfig
+	Throttle    ThrottleConfig
+}
+
+type Rate struct {
+	PerMinute int
+	Burst     int
+}
+
+type ThrottleConfig struct {
+	Send      Rate
+	Typing    Rate
+	Subscribe Rate
+	Push      Rate
 }
 
 type FanoutConfig struct {
@@ -55,17 +68,30 @@ type PushConfig struct {
 }
 
 type UploadsConfig struct {
-	MaxBytes  int64
-	PartBytes int64
-	Workers   int
+	MaxBytes   int64
+	PartBytes  int64
+	Workers    int
+	DailyBytes int64
 }
 
 type MediaConfig struct {
 	FFmpeg  string
 	FFprobe string
 
-	Workers int
-	Timeout time.Duration
+	Workers        int
+	PerUser        int
+	ImageWorkers   int
+	Timeout        time.Duration
+	MaxVideoPixels int64
+
+	Images ImageLimitsConfig
+}
+
+type ImageLimitsConfig struct {
+	MaxPixels          int64
+	MaxFrames          int
+	MaxAnimationPixels int64
+	MaxAnimationScreen int64
 }
 
 type KafkaConfig struct {
@@ -122,10 +148,19 @@ func Load() (Config, error) {
 		},
 		Attachments: loadAttachments(l),
 		Media: MediaConfig{
-			FFmpeg:  l.StringDefault("FFMPEG_PATH", "ffmpeg"),
-			FFprobe: l.StringDefault("FFPROBE_PATH", "ffprobe"),
-			Workers: l.IntDefault("MEDIA_WORKERS", 2),
-			Timeout: l.DurationDefault("MEDIA_TIMEOUT", 15*time.Minute),
+			FFmpeg:         l.StringDefault("FFMPEG_PATH", "ffmpeg"),
+			FFprobe:        l.StringDefault("FFPROBE_PATH", "ffprobe"),
+			Workers:        l.IntDefault("MEDIA_WORKERS", 2),
+			PerUser:        l.IntDefault("MEDIA_WORKERS_PER_USER", 1),
+			ImageWorkers:   l.IntDefault("MEDIA_IMAGE_WORKERS", 2),
+			Timeout:        l.DurationDefault("MEDIA_TIMEOUT", 15*time.Minute),
+			MaxVideoPixels: megapixels(l, "MEDIA_VIDEO_MAX_MP", 36),
+			Images: ImageLimitsConfig{
+				MaxPixels:          megapixels(l, "MEDIA_IMAGE_MAX_MP", 50),
+				MaxFrames:          l.IntDefault("MEDIA_GIF_MAX_FRAMES", 1000),
+				MaxAnimationPixels: megapixels(l, "MEDIA_GIF_MAX_MP", 300),
+				MaxAnimationScreen: megapixels(l, "MEDIA_GIF_MAX_SCREEN_MP", 16),
+			},
 		},
 		Push: PushConfig{
 			PublicKey:  l.StringDefault("CHAT_VAPID_PUBLIC_KEY", ""),
@@ -135,18 +170,27 @@ func Load() (Config, error) {
 		Uploads: UploadsConfig{
 			MaxBytes:  int64(l.IntDefault("CHAT_MAX_UPLOAD_MB", 200)) << 20,
 			PartBytes: int64(l.IntDefault("CHAT_UPLOAD_PART_MB", 10)) << 20,
-			Workers:   l.IntDefault("CHAT_UPLOAD_WORKERS", 1),
+			Workers:   l.IntDefault("CHAT_UPLOAD_WORKERS", 2),
+
+			DailyBytes: int64(l.IntDefault("CHAT_UPLOAD_DAILY_MB", 2048)) << 20,
 		},
 		Fanout: FanoutConfig{
 			Shards: l.IntDefault("CHAT_FANOUT_SHARDS", 16),
 			MaxLen: l.IntDefault("CHAT_FANOUT_MAXLEN", 10000),
 			Block:  l.DurationDefault("CHAT_FANOUT_BLOCK", time.Second),
 		},
+		Throttle: ThrottleConfig{
+			Send:      Rate{PerMinute: l.IntDefault("CHAT_WS_SEND_PER_MINUTE", 300), Burst: l.IntDefault("CHAT_WS_SEND_BURST", 20)},
+			Typing:    Rate{PerMinute: l.IntDefault("CHAT_WS_TYPING_PER_MINUTE", 120), Burst: l.IntDefault("CHAT_WS_TYPING_BURST", 5)},
+			Subscribe: Rate{PerMinute: l.IntDefault("CHAT_WS_SUBSCRIBE_PER_MINUTE", 600), Burst: l.IntDefault("CHAT_WS_SUBSCRIBE_BURST", 500)},
+			Push:      Rate{PerMinute: l.IntDefault("CHAT_PUSH_PER_SENDER_PER_MINUTE", 6), Burst: l.IntDefault("CHAT_PUSH_PER_SENDER_BURST", 5)},
+		},
 	}
 
 	if cfg.Postgres.SearchPath == "" {
 		cfg.Postgres.SearchPath = ServiceName
 	}
+	cfg.RefuseDefaultSecret(l, "ATTACHMENTS_SECRET_KEY", cfg.Attachments.SecretKey)
 
 	if err := l.Err(); err != nil {
 		return Config{}, err
@@ -154,11 +198,15 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+func megapixels(l *config.Loader, key string, def int) int64 {
+	return int64(l.IntDefault(key, def)) * 1_000_000
+}
+
 func loadAttachments(l *config.Loader) AttachmentConfig {
 	return AttachmentConfig{
 		Endpoint:  l.StringDefault("ATTACHMENTS_ENDPOINT", "minio:9000"),
-		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
-		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),
+		AccessKey: l.StringDefault("ATTACHMENTS_ACCESS_KEY", l.StringDefault("MINIO_ROOT_USER", "axon")),
+		SecretKey: l.SecretDefault("ATTACHMENTS_SECRET_KEY", l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal()).Reveal(),
 		Bucket:    l.StringDefault("ATTACHMENTS_BUCKET", "chat-attachments"),
 		UseSSL:    l.Bool("ATTACHMENTS_USE_SSL", false),
 		PublicURL: l.StringDefault("ATTACHMENTS_PUBLIC_URL", "http://localhost:59000"),

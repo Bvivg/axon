@@ -1,0 +1,34 @@
+excluded:
+  - Gen
+  - Axon.xcodeproj
+
+disabled_rules:
+  - trailing_comma
+
+opt_in_rules:
+  - contains_over_first_not_nil
+  - empty_count
+  - empty_string
+  - first_where
+  - last_where
+  - toggle_bool
+
+line_length:
+  warning: 140
+  ignores_urls: true
+
+identifier_name:
+  min_length: 1
+
+custom_rules:
+  no_comments:
+    name: No comments
+    regex: '(//|/\*)(?!\s*swiftlint:)'
+    match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+    message: Code carries no comments, see .claude/rules/comments.md
+    severity: error

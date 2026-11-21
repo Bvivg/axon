@@ -19,3 +19,17 @@ plugins:
   - remote: buf.build/bufbuild/es:v2.10.0
     out: ui/web/src/gen
     opt: target=ts
+
+  - remote: buf.build/apple/swift:v1.41.0
+    out: ui/app/Gen
+    opt:
+      - Visibility=Internal
+      - FileNaming=PathToUnderscores
+
+  - remote: buf.build/connectrpc/swift:v1.2.3
+    out: ui/app/Gen
+    opt:
+      - Visibility=Internal
+      - FileNaming=PathToUnderscores
+      - GenerateAsyncMethods=true
+      - GenerateCallbackMethods=false

@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"strings"
 
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/config"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
@@ -34,7 +37,7 @@ type RegistryConfig struct {
 
 	FakeAuthorizeURL string
 
-	Production bool
+	Environment config.Environment
 }
 
 type Registry struct {
@@ -46,8 +49,10 @@ func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 		return nil, errors.New("oauth: redirect base URL is required")
 	}
 
-	if cfg.FakeEnabled && cfg.Production {
-		return nil, errors.New("oauth: the fake provider cannot be enabled in production")
+	if cfg.FakeEnabled {
+		if err := fakeAllowed(cfg); err != nil {
+			return nil, err
+		}
 	}
 
 	base := strings.TrimSuffix(cfg.RedirectBaseURL, "/")
@@ -86,6 +91,33 @@ func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 	}
 
 	return &Registry{providers: providers}, nil
+}
+
+func fakeAllowed(cfg RegistryConfig) error {
+	switch cfg.Environment {
+	case config.EnvTest:
+		return nil
+	case config.EnvDevelopment:
+		if isLoopbackURL(cfg.RedirectBaseURL) && isLoopbackURL(cfg.FakeAuthorizeURL) {
+			return nil
+		}
+		return errors.New("oauth: the fake provider needs loopback OAUTH_REDIRECT_BASE_URL and OAUTH_FAKE_AUTHORIZE_URL with APP_ENV=development")
+	default:
+		return fmt.Errorf("oauth: the fake provider is allowed only with APP_ENV=test or a loopback APP_ENV=development, not %q", cfg.Environment)
+	}
+}
+
+func isLoopbackURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func newAppleFromConfig(cfg RegistryConfig) (Provider, error) {

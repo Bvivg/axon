@@ -4,7 +4,10 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { CheckersBoard, seatNames as checkersSeats } from "@/components/games/checkers/board";
 import { AnalysisPanel, EvalBar } from "@/components/games/chess/analysis";
+import { DurakTable, seatNames as durakSeats } from "@/components/games/durak/board";
+import { DurakMoves } from "@/components/games/durak/moves";
 import { ChessBoard } from "@/components/games/chess/board";
 import { MoveList } from "@/components/games/chess/moves";
 import { Side } from "@/components/games/chess/pieces";
@@ -18,6 +21,7 @@ import { AnalysisStatus } from "@/gen/axon/analysis/v1/analysis_pb";
 import { SessionStatus, type HistoryFrame } from "@/gen/axon/game/v1/game_pb";
 import { profileName } from "@/lib/format";
 import { moveMarks } from "@/lib/games/analysis";
+import { boardFrom } from "@/lib/games/checkers";
 import { GameKey, gameHref, games } from "@/lib/games/catalog";
 import { useAnalysis } from "@/lib/query/analysis";
 import { useSessionHistory } from "@/lib/query/games";
@@ -27,6 +31,8 @@ const sides: Record<GameKey, string[]> = {
   [GameKey.TicTacToe]: ["X", "O"],
   [GameKey.Chess]: ["White", "Black"],
   [GameKey.Quoridor]: [...seatNames],
+  [GameKey.Checkers]: [...checkersSeats],
+  [GameKey.Durak]: [...durakSeats],
 };
 
 function changedCell(frame: HistoryFrame, previous?: HistoryFrame) {
@@ -41,15 +47,18 @@ function Position({ game, frame, previous }: { game: GameKey; frame: HistoryFram
       return <ChessBoard fen={frame.chess?.fen ?? ""} orientation={Side.White} legal={[]} lastMove={frame.chess?.lastMove} check={frame.chess?.check ?? false} playable={false} onMove={() => undefined} />;
     case GameKey.Quoridor:
       return <QuoridorBoard pawns={frame.quoridor?.pawns ?? ["e1", "e9"]} walls={frame.quoridor?.walls ?? []} seat={0} legal={[]} lastMove={frame.quoridor?.lastMove} playable={false} onMove={() => undefined} />;
+    case GameKey.Checkers:
+      return <CheckersBoard squares={boardFrom(frame.checkers?.squares)} seat={1} legal={[]} lastMove={frame.checkers?.lastMove} playable={false} onMove={() => undefined} />;
+    case GameKey.Durak:
+      return <DurakTable view={frame.durak} seat={0} legal={[]} playable={false} onMove={() => undefined} />;
     default:
       return <Board board={frame.ticTacToe} playable={false} move={() => undefined} lastMove={changedCell(frame, previous)} />;
   }
 }
 
-function notation(game: GameKey, frames: HistoryFrame[], at: number) {
-  if (game === GameKey.Chess) return frames[frames.length - 1]?.chess?.san.slice(0, at) ?? [];
-  if (game === GameKey.Quoridor) return frames[frames.length - 1]?.quoridor?.moves.slice(0, at) ?? [];
-  return [];
+function notation(game: GameKey, frames: HistoryFrame[]) {
+  if (game === GameKey.TicTacToe) return [];
+  return frames.slice(1).map(frame => frame.move ?? "");
 }
 
 export function GameReplay({ id, game }: { id: string; game: GameKey }) {
@@ -62,7 +71,7 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
   const profiles = usePublicProfiles(session?.playerIds ?? []);
   const names = (session?.playerIds ?? []).map(player => profileName(profiles.data?.get(player)));
   const step = (to: number) => setCursor(Math.max(0, Math.min(last, to)));
-  const analysed = game === GameKey.Chess && (session?.status === SessionStatus.WON || session?.status === SessionStatus.DRAW);
+  const analysed = game === GameKey.Chess && !!session?.rated && (session.status === SessionStatus.WON || session.status === SessionStatus.DRAW);
   const analysis = useAnalysis(id, analysed);
   const ready = analysis.data?.status === AnalysisStatus.READY ? analysis.data : undefined;
 
@@ -80,7 +89,8 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
 
   const code = ConnectError.from(history.error).code;
   const frame = frames[at];
-  const moves = notation(game, frames, at);
+  const played = notation(game, frames);
+  const moves = played.slice(0, at);
   const mover = frame?.playerId ? session?.playerIds.indexOf(frame.playerId) ?? -1 : -1;
   const result = session ? spectatorStatus(session, names, sides[game]) : "";
   const marks = ready ? moveMarks(ready.positions).slice(0, at) : undefined;
@@ -121,8 +131,8 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
             <aside className="flex min-w-0 flex-col gap-3 lg:pt-14">
               {result ? <p data-replay-result className="rounded-game-md border border-game-border bg-game-card px-3 py-2 text-sm font-medium">{result}</p> : null}
               {analysed ? <AnalysisPanel report={analysis.data} failed={analysis.isError} retry={() => void analysis.refetch()} at={at} onSelect={step}
-                san={frames[last]?.chess?.san ?? []} fens={frames.map(item => item.chess?.fen ?? "")} /> : null}
-              {game !== GameKey.TicTacToe ? <MoveList san={moves} marks={marks} /> : null}
+                san={played} fens={frames.map(item => item.chess?.fen ?? "")} /> : null}
+              {game === GameKey.Durak ? <DurakMoves moves={moves} /> : game !== GameKey.TicTacToe ? <MoveList san={moves} marks={marks} /> : null}
             </aside>
           </div>
         )}

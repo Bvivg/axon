@@ -10,14 +10,15 @@ import { BrandMark } from "@/components/nav/brand";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { LoadingDots } from "@/components/ui/status";
 import { authClient } from "@/lib/connect/clients";
-import { describe, errorCode } from "@/lib/errors";
 import { providerLabels, startOAuth, takePendingFlow, toProvider } from "@/lib/auth/oauth";
+import { signInFailure } from "@/lib/auth/oauth-failure";
 import { useSession } from "@/lib/auth/session";
 import { HistoryMode, navigateTo } from "@/lib/chat/address";
 
 interface Failure {
   title: string;
   detail: string;
+  retryable?: boolean;
 }
 
 export default function OAuthCallbackPage() {
@@ -84,7 +85,7 @@ export default function OAuthCallbackPage() {
         signedIn(result.user, result.tokens);
         navigateTo(router, pending.returnTo || "/profile", HistoryMode.Replace);
       } catch (err) {
-        setFailure({ title: "Sign-in failed", detail: `[${errorCode(err)}] ${describe(err)}` });
+        setFailure(signInFailure(err));
       }
     })();
   }, [slug, provider, search, router, beginSignIn, signedIn]);
@@ -94,7 +95,7 @@ export default function OAuthCallbackPage() {
     try {
       await startOAuth(slug, "/");
     } catch (err) {
-      setFailure({ title: "Sign-in failed", detail: `[${errorCode(err)}] ${describe(err)}` });
+      setFailure(signInFailure(err));
       setRetrying(false);
     }
   };
@@ -123,7 +124,7 @@ export default function OAuthCallbackPage() {
             {failure.detail}
           </code>
           <div className="flex w-full flex-col gap-2">
-            {toProvider(slug) !== undefined ? (
+            {toProvider(slug) !== undefined && failure.retryable !== false ? (
               <Button size="lg" className="w-full" onClick={() => void retry()} disabled={retrying} aria-busy={retrying}>
                 Try {provider} again
               </Button>

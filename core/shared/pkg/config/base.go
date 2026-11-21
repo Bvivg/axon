@@ -33,6 +33,8 @@ type Base struct {
 	LogFormat logger.Format
 
 	ShutdownTimeout time.Duration
+
+	RPCReadMaxBytes int
 }
 
 func LoadBase(l *Loader, service string) Base {
@@ -49,6 +51,10 @@ func LoadBase(l *Loader, service string) Base {
 		l.fail("LOG_FORMAT", err)
 	}
 
+	if env.IsProduction() {
+		productionPreflight(l)
+	}
+
 	return Base{
 		Service:         service,
 		Environment:     env,
@@ -57,6 +63,7 @@ func LoadBase(l *Loader, service string) Base {
 		LogLevel:        level,
 		LogFormat:       format,
 		ShutdownTimeout: l.DurationDefault("SHUTDOWN_TIMEOUT", 15*time.Second),
+		RPCReadMaxBytes: l.IntDefault("RPC_READ_MAX_BYTES", 256<<10),
 	}
 }
 

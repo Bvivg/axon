@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -130,6 +130,7 @@ async function main() {
       if (!files.includes(join(root, "core/deploy/docker-compose.yml"))) throw new Error("Another checkout owns the axon Compose project; stop it before starting this checkout");
       const compose = ["compose", "--project-name", "axon", "--project-directory", join(root, "core/deploy"), ...files.flatMap((file) => ["-f", file])];
       await launch("infrastructure", "docker", [...compose, "up", "-d", "--wait", "--wait-timeout", "180", "--no-recreate", "postgres", "redis", "kafka", "minio"]).completed;
+      await launch("topics", "docker", [...compose, "run", "--rm", "--no-deps", "kafka-topics"]).completed;
       await launch("storage-init", "docker", [...compose, "run", "--rm", "--no-deps", "minio-init"]).completed;
       await launch("schemas", "docker", [...compose, "run", "--rm", "--no-deps", "postgres-schemas"]).completed;
       if (env.CALLS_SFU_ENABLED === "true" && !env.DEV_LIVEKIT_URL) {
@@ -145,8 +146,12 @@ async function main() {
       await launch("install", npm, ["ci", "--include=optional", "--no-audit", "--no-fund"], { cwd: web }).completed;
       writeFileSync(stamp, fingerprint);
     }
-    if (!existsSync(join(root, "core/shared/gen/go/axon/auth/v1/auth.pb.go")) || !existsSync(join(web, "src/gen/axon/auth/v1/auth_pb.ts"))) {
+    const protoStamp = join(root, "core/shared/gen/.stamp");
+    const contracts = join(root, "core/shared/proto");
+    const protoSources = [join(root, "buf.yaml"), join(root, "buf.gen.yaml"), contracts, ...readdirSync(contracts, { recursive: true }).map((name) => join(contracts, name))];
+    if (!existsSync(protoStamp) || !existsSync(join(web, "src/gen")) || protoSources.some((file) => statSync(file).mtimeMs > statSync(protoStamp).mtimeMs)) {
       await launch("proto", npm, ["exec", "--yes", "--package=@bufbuild/buf@1.75.0", "--", "buf", "generate"]).completed;
+      writeFileSync(protoStamp, "");
     }
     const pgHost = env.DEV_POSTGRES_HOST || "127.0.0.1";
     const localDSN = (value) => {
@@ -173,6 +178,8 @@ async function main() {
       CORS_ALLOWED_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
       OAUTH_ALLOWED_RETURN_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
       OAUTH_REDIRECT_BASE_URL: `${origin}/auth/callback`,
+      OAUTH_FAKE_ENABLED: "true",
+      NEXT_PUBLIC_OAUTH_PROVIDERS: "fake",
       OAUTH_FAKE_AUTHORIZE_URL: `${auth}/oauth/fake/authorize`,
       NEXT_PUBLIC_API_BASE_URL: api,
       AVATARS_ENDPOINT: env.DEV_S3_ENDPOINT || `127.0.0.1:${env.MINIO_HOST_PORT}`,

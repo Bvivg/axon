@@ -173,7 +173,7 @@ func TestBrowserOAuthSignInUsesTheCookie(t *testing.T) {
 
 	subject := "e2e-browser-" + uuid.NewString()
 	code, _ := consent(t, rewriteForRunner(t, started.Msg.GetAuthorizationUrl()),
-		url.Values{"sub": {subject}, "email": {subject + "@axon.test"}})
+		url.Values{"sub": {subject}, "email": {subject + "@fake.axon.test"}})
 
 	completed, err := b.client.CompleteOAuth(context.Background(),
 		asBrowser(b, connect.NewRequest(&authv1.CompleteOAuthRequest{

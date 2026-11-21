@@ -100,6 +100,28 @@ func TestUpdateProfileEmailChangeResetsVerification(t *testing.T) {
 	}
 }
 
+func TestAnEmailChangeSignsOutEveryOtherSession(t *testing.T) {
+	c := newCaller(t)
+	acct := c.register(t)
+
+	other, err := c.login(acct.email, testPassword)
+	if err != nil {
+		t.Fatalf("second login: %v", err)
+	}
+
+	newEmail := "moved-" + uuid.NewString() + "@axon.test"
+	if _, err := c.updateProfile(acct.tokens.GetAccessToken(), &authv1.UpdateProfileRequest{Email: &newEmail}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+
+	if _, err := c.refresh(other.GetRefreshToken()); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Errorf("the other session refreshed after the email changed (code %v)", connect.CodeOf(err))
+	}
+	if _, err := c.refresh(acct.tokens.GetRefreshToken()); err != nil {
+		t.Errorf("the session that changed the email was signed out: %v", err)
+	}
+}
+
 func TestListSessionsShowsEveryActiveSignIn(t *testing.T) {
 	c := newCaller(t)
 	acct := c.register(t)
@@ -265,7 +287,7 @@ func TestOAuthSignInRejectsPrivateProviderAvatar(t *testing.T) {
 	sourceURL := stageTestImageInMinio(t)
 
 	subject := "e2e-avatar-" + uuid.NewString()
-	address := subject + "@axon.test"
+	address := subject + "@fake.axon.test"
 
 	result, err := c.signInWith(t, url.Values{
 		"sub":        {subject},

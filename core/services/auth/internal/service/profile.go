@@ -9,7 +9,7 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
-func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, patch domain.ProfilePatch) (domain.User, error) {
+func (s *Service) UpdateProfile(ctx context.Context, userID, sessionFamilyID uuid.UUID, patch domain.ProfilePatch) (domain.User, error) {
 	current, err := s.store.UserByID(ctx, userID)
 	if err != nil {
 		return domain.User{}, err
@@ -68,12 +68,38 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, patch dom
 
 	update.DisplayName = resolveDisplayName(update.Nickname, update.FirstName, update.LastName, current.DisplayName)
 
-	updated, err := s.store.UpdateProfile(ctx, userID, update)
+	if update.Email == current.Email {
+		updated, err := s.store.UpdateProfile(ctx, userID, update)
+		if err != nil {
+			return domain.User{}, err
+		}
+		s.log.InfoContext(ctx, "profile updated", "user_id", userID)
+		return s.attachRoles(ctx, updated), nil
+	}
+
+	updated, revoked, err := s.store.UpdateProfileRevokingOtherSessions(ctx, userID, update, sessionFamilyID, s.now().UTC())
 	if err != nil {
 		return domain.User{}, err
 	}
 
-	s.log.InfoContext(ctx, "profile updated", "user_id", userID)
+	s.log.InfoContext(ctx, "email changed, other sessions revoked", "user_id", userID, "sessions_revoked", len(revoked))
+
+	subject := ""
+	if sessionFamilyID != uuid.Nil {
+		subject = sessionFamilyID.String()
+	}
+	s.audit(ctx, domain.SecurityEvent{
+		Action:      domain.SecurityEmailChanged,
+		UserID:      userID,
+		ActorID:     userID,
+		Subject:     subject,
+		EmailSHA256: domain.EmailSHA256(update.Email),
+	})
+
+	for _, familyID := range revoked {
+		s.publishFamilyRevocation(ctx, familyID)
+	}
+
 	return s.attachRoles(ctx, updated), nil
 }
 

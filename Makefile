@@ -3,6 +3,7 @@ SHELL := /bin/bash
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
 COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
+PROTO_STAMP   := core/shared/gen/.stamp
 GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/... ./services/analysis/... ./services/tournament/...
 
 -include core/deploy/.env
@@ -29,7 +30,7 @@ env: ## Create core/deploy/.env from the example (does not overwrite)
 	fi
 
 .PHONY: up
-up: ## Start the stack and wait until dependencies report healthy
+up: proto ## Start the stack and wait until dependencies report healthy
 	$(COMPOSE) up -d --wait
 
 .PHONY: down
@@ -125,8 +126,12 @@ migrate-new: ## Create an empty migration pair (make migrate-new S=auth NAME=add
 	$(COMPOSE) run --rm migrate -dir=/migrations create -ext sql -seq $(NAME)
 
 .PHONY: proto
-proto: ## Generate Go and TypeScript code from the contracts
-	$(COMPOSE_TOOLS) run --rm buf generate
+proto: ## Generate Go and TypeScript code from the contracts when they changed
+	@if [ -f $(PROTO_STAMP) ] && [ -d ui/web/src/gen ] && [ -z "$$(find core/shared/proto buf.yaml buf.gen.yaml -newer $(PROTO_STAMP) -print -quit)" ]; then \
+		echo "generated code is up to date"; \
+	else \
+		$(COMPOSE_TOOLS) run --rm buf generate && touch $(PROTO_STAMP); \
+	fi
 
 .PHONY: proto-lint
 proto-lint: ## Lint the contracts
@@ -309,6 +314,52 @@ test-web-e2e: e2e-key ## Run the browser e2e suite (Playwright) against the full
 		$(COMPOSE_WEB_E2E) --env-file $(E2E_ENV_FILE) logs --no-color; \
 		exit 1; \
 	fi
+
+APP_DIR         := ui/app
+APP_LOCAL       := $(CURDIR)/.local/app
+APP_SIMULATOR   ?= iPhone 18 Pro
+APP_XCODEBUILD  := xcodebuild -project $(APP_DIR)/Axon.xcodeproj -derivedDataPath $(APP_LOCAL)/DerivedData \
+	-clonedSourcePackagesDirPath $(APP_LOCAL)/spm -skipPackagePluginValidation
+
+.PHONY: app-project
+app-project: ## Generate the Xcode project for the SwiftUI app (XcodeGen)
+	cd $(APP_DIR) && xcodegen generate --quiet
+
+.PHONY: app-lint
+app-lint: ## Lint the SwiftUI app (SwiftLint)
+	cd $(APP_DIR) && swiftlint lint --strict --quiet
+
+.PHONY: app-build
+app-build: app-project ## Build the SwiftUI app for the iOS Simulator
+	$(APP_XCODEBUILD) build -scheme Axon -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+
+.PHONY: app-test
+app-test: app-project ## Run the SwiftUI app's unit tests on macOS
+	$(APP_XCODEBUILD) test -scheme Axon -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+
+COMPOSE_APP_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=56032 REDIS_HOST_PORT=56979 KAFKA_HOST_PORT=59692 MINIO_HOST_PORT=59600 \
+	MINIO_CONSOLE_HOST_PORT=59601 GATEWAY_HOST_PORT=18680 WEB_HOST_PORT=3603 AUTH_HOST_PORT=18681 AUTH_METRICS_HOST_PORT=19691 \
+	CHAT_HOST_PORT=18682 CHAT_METRICS_HOST_PORT=19692 GATEWAY_METRICS_HOST_PORT=19690 CONNECT_HOST_PORT=58483 REGISTRY_HOST_PORT=58481 \
+	docker compose -p axon-app-e2e -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.app-e2e.yml
+
+APP_E2E_GATEWAY := http://localhost:18680
+APP_E2E_RESULT  := $(APP_LOCAL)/AxonUITests.xcresult
+
+.PHONY: test-e2e-app
+test-e2e-app: jwt-key app-project ## XCUITest on the iPhone simulator against a one-off stack (KEEP=1 keeps it, TESTS=<Class> narrows)
+	@mkdir -p $(APP_LOCAL); \
+	$(if $(KEEP),,trap '$(COMPOSE_APP_E2E) logs --no-color > $(APP_LOCAL)/e2e-stand.log 2>&1; \
+	       $(COMPOSE_APP_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT;) \
+	$(COMPOSE_APP_E2E) up --build --wait gateway game && \
+	rm -rf $(APP_E2E_RESULT) && \
+	TEST_RUNNER_AXON_E2E_GATEWAY=$(APP_E2E_GATEWAY) $(APP_XCODEBUILD) test -quiet -scheme AxonUITests \
+		-destination 'platform=iOS Simulator,name=$(APP_SIMULATOR)' -resultBundlePath $(APP_E2E_RESULT) \
+		$(if $(TESTS),-only-testing:AxonUITests/$(TESTS)) && \
+	echo "AxonUITests passed; screenshots are in $(APP_E2E_RESULT)"
+
+.PHONY: app-e2e-down
+app-e2e-down: ## Tear down the app e2e stack that KEEP=1 left running
+	$(COMPOSE_APP_E2E) down -v --remove-orphans
 
 KIND_CLUSTER ?= axon
 K8S_DIR      := core/deploy/k8s

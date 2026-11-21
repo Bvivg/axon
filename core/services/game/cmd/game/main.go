@@ -15,7 +15,9 @@ import (
 
 	"github.com/bvivg/axon/core/services/game/internal/cluster"
 	"github.com/bvivg/axon/core/services/game/internal/engine"
+	"github.com/bvivg/axon/core/services/game/internal/games/checkers"
 	"github.com/bvivg/axon/core/services/game/internal/games/chess"
+	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/journal"
@@ -34,6 +36,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -84,9 +87,23 @@ func run() error {
 	tournamentTopics := loader.StringSlice("GAME_TOURNAMENT_TOPICS", []string{tournament.RoundStartedTopic, tournament.ForfeitTopic, tournament.CancelledTopic})
 	outboxRetention := loader.DurationDefault("GAME_OUTBOX_RETENTION", 24*time.Hour)
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
+	finishedTTL := loader.DurationDefault("GAME_FINISHED_TTL", 2*time.Minute)
+	appendTimeout := loader.DurationDefault("GAME_APPEND_TIMEOUT", 15*time.Second)
 	drain := loader.DurationDefault("SHUTDOWN_DRAIN", 0)
-	testHooks := loader.Bool("GAME_TEST_HOOKS", false)
+	testHooks, ownerKey := loadControls(loader, cfg.Environment)
 	spectatorLimit := loader.IntDefault("GAME_SPECTATOR_LIMIT", 200)
+	chessGame, quoridorGame, durakGame := chess.Definition(), quoridor.Definition(), durak.Definition()
+	chessGame.MaxPlies = loader.IntDefault("GAME_CHESS_MAX_PLIES", chess.MaxPlies)
+	quoridorGame.MaxPlies = loader.IntDefault("GAME_QUORIDOR_MAX_PLIES", quoridor.MaxPlies)
+	checkersGame := checkers.Definition()
+	checkersGame.MaxPlies = loader.IntDefault("GAME_CHECKERS_MAX_PLIES", checkers.MaxPlies)
+	durakGame.MaxPlies = loader.IntDefault("GAME_DURAK_MAX_PLIES", durak.MaxPlies)
+	history := server.HistoryLimits{
+		Plies:   loader.IntDefault("GAME_HISTORY_MAX_PLIES", server.DefaultHistoryPlies),
+		Bytes:   loader.IntDefault("GAME_HISTORY_MAX_BYTES", server.DefaultHistoryBytes),
+		Entries: loader.IntDefault("GAME_HISTORY_CACHE_ENTRIES", server.DefaultHistoryEntries),
+	}
+	matchSockets := loader.IntDefault("GAME_MATCH_SOCKETS_PER_USER", server.DefaultMatchSockets)
 	if err := loader.Err(); err != nil {
 		return err
 	}
@@ -120,7 +137,7 @@ func run() error {
 		return err
 	}
 	games := engine.NewRegistry()
-	for _, def := range []engine.Definition{tictactoe.Definition(), chess.Definition(), quoridor.Definition()} {
+	for _, def := range []engine.Definition{tictactoe.Definition(), chessGame, quoridorGame, checkersGame, durakGame} {
 		if err := games.Register(def); err != nil {
 			return err
 		}
@@ -136,7 +153,8 @@ func run() error {
 		return err
 	}
 	defer journalLog.Close()
-	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL, Metrics: observed})
+	own := owner.New(owner.Config{ID: instance, Address: advertise, Log: journalLog, Model: model, Rules: rules, Now: time.Now, Lease: leaseTTL, Metrics: observed,
+		AppendTimeout: appendTimeout, FinishedTTL: finishedTTL})
 	routes := route.New(model.Owners)
 	peerTransport := http.DefaultTransport
 	var sockets *http.Client
@@ -144,10 +162,11 @@ func run() error {
 		peerTransport = identity.Transport(mtls.ServerName("game"))
 		sockets = &http.Client{Transport: identity.Transport(mtls.ServerName("game"), mtls.HTTP1Only())}
 	}
-	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed, Watchers: spectatorLimit,
-		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil})
+	handler := server.New(server.Config{Store: store, Owner: own, Routes: routes, Self: advertise, Verifier: verifier, TestHooks: testHooks, Metrics: observed, Watchers: spectatorLimit, OwnerKey: ownerKey,
+		Client: &http.Client{Timeout: 15 * time.Second, Transport: telemetry.Transport(peerTransport)}, Sockets: sockets, Secure: identity != nil, History: history, MatchSockets: matchSockets})
 	own.Listen(handler)
 	go own.KeepLeases(ctx)
+	go own.KeepEvicting(ctx)
 	go routes.Run(ctx, db.listen, projection.OwnerChannel, log)
 	go model.MaintainMovePartitions(ctx, movePartitionsAhead, 24*time.Hour, log)
 	go handler.Watch(ctx, log)
@@ -168,10 +187,10 @@ func run() error {
 		_ = cluster.NewOwnership(kafka, own, log).Run(ctx)
 	}()
 	mux := http.NewServeMux()
-	mux.Handle(gamev1connect.NewGameServiceHandler(handler, connect.WithInterceptors(
+	mux.Handle(gamev1connect.NewGameServiceHandler(handler, rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
-	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, connect.WithInterceptors(
+	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(),
 	)))
 	mux.HandleFunc("GET /ws", handler.Socket)
@@ -188,7 +207,7 @@ func run() error {
 	telemetry.Profiling(admin)
 	graceful := lifecycle.New(drain, cfg.ShutdownTimeout, checks, log)
 	srv := graceful.Serve(&http.Server{
-		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log))(mux),
+		Addr: cfg.HTTPAddr, Handler: middleware.Chain(middleware.Correlation, middleware.Recovery(log), handler.GuardOwner)(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	})
 	if identity != nil {

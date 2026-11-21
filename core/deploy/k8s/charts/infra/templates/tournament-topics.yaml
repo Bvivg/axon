@@ -1,0 +1,21 @@
+{{- $v := fromYaml (include "infra.values" .) -}}
+{{- $r := int $v.global.kafka.replication -}}
+{{- $isr := int $v.global.kafka.minInSync -}}
+{{- range $topic := list "tournament.round_started.v1" "tournament.forfeit.v1" "tournament.cancelled.v1" }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: {{ replace "." "-" $topic | replace "_" "-" }}
+  labels:
+    strimzi.io/cluster: axon-kafka
+    axon.io/topic-group: commands
+    {{- include "infra.labels" $ | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  topicName: {{ $topic }}
+  replicas: {{ $r }}
+  config:
+    min.insync.replicas: {{ $isr }}
+{{- end }}

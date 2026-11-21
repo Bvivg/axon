@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -57,23 +59,102 @@ func NewKafka(ctx context.Context, cfg KafkaConfig) (*Kafka, error) {
 	return k, nil
 }
 
+var retainForever = map[string]string{"retention.ms": "-1", "cleanup.policy": "delete"}
+
 func (k *Kafka) ensureTopics(ctx context.Context) error {
-	configs := map[string]*string{}
+	shared := map[string]*string{}
 	if k.cfg.MinInSync > 0 {
 		value := fmt.Sprint(k.cfg.MinInSync)
-		configs["min.insync.replicas"] = &value
+		shared["min.insync.replicas"] = &value
 	}
-	for _, topic := range []string{k.cfg.Topic, k.cfg.LeaseTopic} {
-		if _, err := k.admin.CreateTopic(ctx, k.cfg.Partitions, k.cfg.ReplicationFactor, configs, topic); err != nil && !errors.Is(err, kerr.TopicAlreadyExists) {
-			return fmt.Errorf("journal: create topic %s: %w", topic, err)
-		}
+	journal := maps.Clone(shared)
+	for key, value := range retainForever {
+		journal[key] = &value
 	}
-	details, err := k.admin.ListTopics(ctx, k.cfg.Topic)
+	existed, err := k.createTopic(ctx, k.cfg.Topic, journal)
 	if err != nil {
 		return err
 	}
-	if got := len(details[k.cfg.Topic].Partitions); got != int(k.cfg.Partitions) {
-		return fmt.Errorf("journal: topic %s has %d partitions, want %d", k.cfg.Topic, got, k.cfg.Partitions)
+	if existed {
+		if err := k.keepForever(ctx); err != nil {
+			return err
+		}
+	}
+	if _, err := k.createTopic(ctx, k.cfg.LeaseTopic, shared); err != nil {
+		return err
+	}
+	return k.awaitPartitions(ctx)
+}
+
+const topicReadyTimeout = 10 * time.Second
+
+func (k *Kafka) awaitPartitions(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, topicReadyTimeout)
+	defer cancel()
+	got := 0
+	for {
+		details, err := k.admin.ListTopics(ctx, k.cfg.Topic)
+		if err == nil {
+			got = len(details[k.cfg.Topic].Partitions)
+			if got == int(k.cfg.Partitions) {
+				return nil
+			}
+			if got > 0 {
+				return fmt.Errorf("journal: topic %s has %d partitions, want %d", k.cfg.Topic, got, k.cfg.Partitions)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			if err != nil {
+				return fmt.Errorf("journal: list topic %s: %w", k.cfg.Topic, err)
+			}
+			return fmt.Errorf("journal: topic %s has %d partitions, want %d", k.cfg.Topic, got, k.cfg.Partitions)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (k *Kafka) createTopic(ctx context.Context, topic string, configs map[string]*string) (bool, error) {
+	_, err := k.admin.CreateTopic(ctx, k.cfg.Partitions, k.cfg.ReplicationFactor, configs, topic)
+	switch {
+	case errors.Is(err, kerr.TopicAlreadyExists):
+		return true, nil
+	case err != nil:
+		return false, fmt.Errorf("journal: create topic %s: %w", topic, err)
+	}
+	return false, nil
+}
+
+func (k *Kafka) keepForever(ctx context.Context) error {
+	described, err := k.admin.DescribeTopicConfigs(ctx, k.cfg.Topic)
+	if err != nil {
+		return fmt.Errorf("journal: describe topic %s: %w", k.cfg.Topic, err)
+	}
+	current, err := described.On(k.cfg.Topic, nil)
+	if err == nil {
+		err = current.Err
+	}
+	if err != nil {
+		return fmt.Errorf("journal: describe topic %s: %w", k.cfg.Topic, err)
+	}
+	var changes []kadm.AlterConfig
+	for key, want := range retainForever {
+		if !slices.ContainsFunc(current.Configs, func(c kadm.Config) bool { return c.Key == key && c.Value != nil && *c.Value == want }) {
+			changes = append(changes, kadm.AlterConfig{Op: kadm.SetConfig, Name: key, Value: &want})
+		}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	altered, err := k.admin.AlterTopicConfigs(ctx, changes, k.cfg.Topic)
+	if err == nil {
+		var result kadm.AlterConfigsResponse
+		if result, err = altered.On(k.cfg.Topic, nil); err == nil {
+			err = result.Err
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("journal: keep topic %s forever: %w", k.cfg.Topic, err)
 	}
 	return nil
 }

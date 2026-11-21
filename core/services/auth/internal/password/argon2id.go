@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -32,6 +33,16 @@ func DefaultParams() Params {
 		SaltLength:  16,
 		KeyLength:   32,
 	}
+}
+
+type Limits struct {
+	MaxConcurrent int
+
+	QueueTimeout time.Duration
+}
+
+func DefaultLimits() Limits {
+	return Limits{MaxConcurrent: 4, QueueTimeout: 2 * time.Second}
 }
 
 func lanes() uint8 {

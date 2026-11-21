@@ -20,7 +20,10 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
-const Group = "analysis"
+const (
+	Group           = "analysis"
+	DefaultMaxPlies = 200
+)
 
 const (
 	OutcomeReady     = "ready"
@@ -71,6 +74,7 @@ type Config struct {
 	Analyser Analyser
 	Depth    int
 	Engine   string
+	MaxPlies int
 	Log      *slog.Logger
 	Metrics  *Metrics
 }
@@ -85,7 +89,10 @@ func New(cfg Config) *Consumer {
 		cfg.Group = Group
 	}
 	if cfg.Topic == "" {
-		cfg.Topic = FinishedTopic
+		cfg.Topic = Topic
+	}
+	if cfg.MaxPlies <= 0 {
+		cfg.MaxPlies = DefaultMaxPlies
 	}
 	return &Consumer{cfg: cfg, log: cfg.Log.With("component", "consumer", "topic", cfg.Topic, "group", cfg.Group)}
 }
@@ -113,7 +120,7 @@ func (c *Consumer) Handle(ctx context.Context, record *kgo.Record) error {
 	defer span.End()
 	game, err := Decode(header(record, outbox.TypeHeader), record.Value)
 	switch {
-	case errors.Is(err, ErrNotChess), errors.Is(err, ErrForeign):
+	case errors.Is(err, ErrNotChess), errors.Is(err, ErrForeign), errors.Is(err, ErrUnrated):
 		c.count(OutcomeSkipped)
 		return nil
 	case err != nil:
@@ -138,6 +145,9 @@ func (c *Consumer) Analyse(ctx context.Context, game Game) error {
 	if seen {
 		c.count(OutcomeDuplicate)
 		return nil
+	}
+	if len(game.Moves) > c.cfg.MaxPlies {
+		game.Moves = game.Moves[:c.cfg.MaxPlies]
 	}
 	job := store.Job{Event: game.EventID, Session: game.Session, Moves: len(game.Moves), Depth: c.cfg.Depth, Engine: c.cfg.Engine, FinishedAt: game.FinishedAt}
 	started, err := c.cfg.Store.Start(ctx, job)

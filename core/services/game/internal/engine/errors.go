@@ -26,4 +26,6 @@ var (
 	ErrPlayerCount = errors.New("engine: wrong number of players for this game")
 
 	ErrDuplicatePlayer = errors.New("engine: player appears twice in the roster")
+
+	ErrSeedRequired = errors.New("engine: this game deals from a seed")
 )

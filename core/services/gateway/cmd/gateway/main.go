@@ -28,6 +28,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/resilience"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 	"github.com/bvivg/axon/core/shared/pkg/ws"
 
@@ -41,17 +42,22 @@ import (
 	"github.com/bvivg/axon/core/services/gateway/internal/mediaproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/proxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/ratelimit"
+	"github.com/bvivg/axon/core/services/gateway/internal/reqlimit"
 	"github.com/bvivg/axon/core/services/gateway/internal/wsproxy"
 	"github.com/bvivg/axon/core/services/gateway/internal/wstrace"
 )
 
 var version = "dev"
 
+const standardBurst = 60
+
 const sensitiveBurst = 5
 
 const uploadsBurst = 30
 
 const networkFactor = 10
+
+const socketsBurst = 30
 
 var retryableProcedures = []string{
 	gamev1connect.GameServiceGetSessionProcedure,
@@ -159,11 +165,13 @@ func run() error {
 		return ratelimit.New(ratelimit.Config{Name: name, PerMinute: perMinute, Burst: burst, Store: limits, Failures: limitFailures})
 	}
 	search := limiter("search", cfg.RateLimit.SearchPerMinute, 0)
-	standard := limiter("standard", cfg.RateLimit.StandardPerMinute, 0)
+	standard := limiter("standard", cfg.RateLimit.StandardPerMinute, standardBurst)
 	sensitive := limiter("sensitive", cfg.RateLimit.SensitivePerMinute, sensitiveBurst)
 	network := limiter("network", cfg.RateLimit.SensitivePerMinute*networkFactor, sensitiveBurst*networkFactor)
 	uploads := limiter("uploads", cfg.RateLimit.UploadsPerMinute, uploadsBurst)
 	uploadParts := limiter("upload-parts", cfg.RateLimit.UploadPartsPerMinute, 0)
+	sockets := limiter("sockets", cfg.RateLimit.SocketsPerMinute, socketsBurst)
+	go sockets.Start(ctx)
 	go search.Start(ctx)
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
@@ -231,6 +239,8 @@ func run() error {
 		Verifier:      verifier,
 		Origins:       cfg.CORS.AllowedOrigins,
 		Logger:        log,
+		Limiter:       sockets,
+		MaxPerUser:    cfg.RateLimit.SocketsPerUser,
 	})
 	if err != nil {
 		return err
@@ -242,7 +252,7 @@ func run() error {
 	gameSocket, err := wsproxy.New(wsproxy.Config{
 		SocketOptions: ws.Options{ReadLimit: 4096},
 		Upstream:      cfg.GameSocketURL, Protocol: "axon.game.v1", Verifier: verifier, Origins: cfg.CORS.AllowedOrigins, Logger: log,
-		Inspect: wstrace.Game, HTTPClient: socketClient,
+		Inspect: wstrace.Game, HTTPClient: socketClient, Limiter: sockets, MaxPerUser: cfg.RateLimit.SocketsPerUser,
 	})
 	if err != nil {
 		return err
@@ -255,6 +265,8 @@ func run() error {
 		Verifier:   verifier,
 		Origins:    cfg.CORS.AllowedOrigins,
 		Logger:     log,
+		Limiter:    sockets,
+		MaxPerUser: cfg.RateLimit.SocketsPerUser,
 	})
 	if err != nil {
 		return err
@@ -315,6 +327,8 @@ func run() error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, analysisProxy, tournamentProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       cfg.HTTP.ReadTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
 		Protocols:         mtls.ServerProtocols(nil),
 	})
 	mediaDownload, err := mediaproxy.New(cfg.ChatServiceURL, verifier, mediaTransport)
@@ -385,19 +399,25 @@ func publicHandler(
 	log *slog.Logger,
 ) http.Handler {
 	mux := http.NewServeMux()
+	rpc := reqlimit.Route(reqlimit.Body(cfg.HTTP.MaxBodyBytes))
+	upload := reqlimit.Deadline(cfg.UploadTimeout)
+	edge := connect.WithHandlerOptions(rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(reqlimit.Lists(cfg.HTTP.MaxListItems)))
 
 	mux.Handle(chatSocketPath, chatSocket)
 	mux.Handle(presenceSocketPath, presenceSocket)
 	mux.Handle("/ws/game", gameSocket)
-	mux.Handle("POST "+avatarUploadPath, avatarUpload)
-	mux.Handle("POST "+attachmentUploadPath, attachmentUpload)
-	uploadSessions.Register(mux, uploadSessionsPath)
-	mux.Handle(callsv1connect.NewCallsServiceHandler(callsProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
-	mux.Handle(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
-	mux.Handle(analysisv1connect.NewAnalysisServiceHandler(analysisProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
-	mux.Handle(tournamentv1connect.NewTournamentServiceHandler(tournamentProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log))))
+	mux.Handle("POST "+avatarUploadPath, upload(avatarUpload))
+	mux.Handle("POST "+attachmentUploadPath, upload(attachmentUpload))
+	sessions := http.NewServeMux()
+	uploadSessions.Register(sessions, uploadSessionsPath)
+	mux.Handle(uploadSessionsPath, upload(sessions))
+	mux.Handle(uploadSessionsPath+"/", upload(sessions))
+	mux.Handle(rpc(callsv1connect.NewCallsServiceHandler(callsProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)))
+	mux.Handle(rpc(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)))
+	mux.Handle(rpc(analysisv1connect.NewAnalysisServiceHandler(analysisProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)))
+	mux.Handle(rpc(tournamentv1connect.NewTournamentServiceHandler(tournamentProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)))
 
-	mux.Handle(authv1connect.NewAuthServiceHandler(authProxy,
+	mux.Handle(rpc(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(
 			telemetry.Interceptor(),
 			middleware.NewCorrelationInterceptor(),
@@ -412,9 +432,10 @@ func publicHandler(
 			}),
 			middleware.NewLoggingInterceptor(log),
 		),
-	))
+		edge,
+	)))
 
-	mux.Handle(chatv1connect.NewChatServiceHandler(chatProxy,
+	mux.Handle(rpc(chatv1connect.NewChatServiceHandler(chatProxy,
 		connect.WithInterceptors(
 			telemetry.Interceptor(),
 			middleware.NewCorrelationInterceptor(),
@@ -423,11 +444,12 @@ func publicHandler(
 			policyGuard,
 			middleware.NewLoggingInterceptor(log),
 		),
-	))
+		edge,
+	)))
 
 	return middleware.Chain(
 
-		guard.ClientIPMiddleware(cfg.RateLimit.TrustedProxies),
+		guard.ClientIPMiddleware(cfg.RateLimit.TrustedProxies, log),
 		middleware.Correlation,
 		middleware.Recovery(log),
 		cors.Middleware(cfg.CORS.AllowedOrigins),

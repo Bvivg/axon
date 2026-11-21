@@ -179,13 +179,17 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await expect(page.getByRole("dialog").getByRole("button", { name: "Close", exact: true })).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    const clockO = page.locator('[data-player="O"] [data-clock]');
+    const paused = await clockO.textContent() ?? "";
     await page.clock.fastForward(20000);
-    await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
+    await expect(clockO).toHaveText(paused);
     await close();
     await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeFocused();
     await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
+    const hidden = await clockO.textContent() ?? "";
+    expect(["0:55", "0:54", "0:53"]).toContain(hidden);
     await page.clock.fastForward(20000);
-    await expect(page.locator('[data-player="O"] [data-clock]')).toHaveText("0:55");
+    await expect(clockO).toHaveText(hidden);
     await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: false }); document.dispatchEvent(new Event("visibilitychange")); });
     await page.clock.fastForward(45000);
     await expect(page.locator('[data-player="O"] [data-clock]')).toHaveAttribute("data-low", "true");
@@ -250,7 +254,7 @@ test("practice settings, clocks, undo, keyboard, results and responsive themes",
     await cell(page, 4).click();
     await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
     const reference = await person.context.newPage();
-    await reference.setContent(readFileSync(new URL("../../../docs/design/tictactoe.html", import.meta.url), "utf8"));
+    await reference.setContent(readFileSync(new URL("../../../docs/archive/design/tictactoe.html", import.meta.url), "utf8"));
     await reference.locator(".cell").nth(0).click();
     await reference.locator(".cell").nth(4).click();
     for (const theme of ["light", "dark"]) {

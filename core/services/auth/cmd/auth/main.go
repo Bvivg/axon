@@ -26,17 +26,20 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 	"github.com/bvivg/axon/core/shared/pkg/revocation"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/keyring"
+	"github.com/bvivg/axon/core/services/auth/internal/limit"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 	"github.com/bvivg/axon/core/services/auth/internal/server"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
+	"github.com/bvivg/axon/core/services/auth/internal/throttle"
 )
 
 var version = "dev"
@@ -152,7 +155,7 @@ func run() error {
 		return err
 	}
 	avatarURLs := avatar.NewURLBuilder(cfg.Avatar.PublicURL, cfg.Avatar.Bucket)
-	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs, nil)
+	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs, nil, cfg.Avatar.Limits)
 
 	revocationPublisher, err := revocation.NewPublisher(cache)
 	if err != nil {
@@ -168,6 +171,8 @@ func run() error {
 
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
 		RefreshTTL:    cfg.JWT.RefreshTTL,
+		PasswordGate:  limit.NewGate(cfg.PasswordWork.MaxConcurrent, cfg.PasswordWork.QueueTimeout),
+		LoginThrottle: throttle.NewLogins(cache, cfg.LoginThrottle),
 		OAuth:         oauthCfg,
 		Avatar:        avatarPipeline,
 		Presence:      presence.NewTracker(cache),
@@ -228,7 +233,7 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 		Logger:           log,
 		FakeEnabled:      cfg.OAuth.FakeEnabled,
 		FakeAuthorizeURL: cfg.OAuth.FakeAuthorizeURL,
-		Production:       cfg.Environment.IsProduction(),
+		Environment:      cfg.Environment,
 	})
 	if err != nil {
 		return nil, err
@@ -260,12 +265,12 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 }
 
 func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
-	interceptors := connectInterceptors(metrics, log)
+	interceptors := connect.WithHandlerOptions(connectInterceptors(metrics, log), rpclimit.Handler(cfg.RPCReadMaxBytes))
 
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(handler, interceptors))
 	if len(cfg.InternalKey.Reveal()) >= 32 {
-		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}))
+		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}, rpclimit.Handler(cfg.RPCReadMaxBytes)))
 	}
 	mux.HandleFunc("POST /internal/avatar", handler.UploadAvatar)
 	mux.Handle("GET /.well-known/jwks.json", jwksHandler(keys, log))
@@ -278,6 +283,7 @@ func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, me
 		middleware.Correlation,
 		middleware.Recovery(log),
 		middleware.RequestLogger(log),
+		server.NewClientIPTrust(cfg.ClientIPPeers).Middleware,
 	)(mux)
 }
 

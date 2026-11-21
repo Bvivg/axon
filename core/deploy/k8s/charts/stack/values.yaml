@@ -23,6 +23,12 @@ components:
   - name: game
     chart: game
     wave: 3
+  - name: analysis
+    chart: analysis
+    wave: 3
+  - name: tournament
+    chart: tournament
+    wave: 3
   - name: gateway
     chart: gateway
     wave: 4

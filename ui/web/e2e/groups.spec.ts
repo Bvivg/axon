@@ -11,9 +11,9 @@ import {
 } from "./chat-support";
 import { newPerson } from "./support";
 
-async function pickPerson(page: Page, email: string, name: string): Promise<void> {
+async function pickPerson(page: Page, username: string, name: string): Promise<void> {
   const composer = chatList(page).getByRole("region", { name: "New conversation" });
-  await composer.getByLabel("Search people").fill(email);
+  await composer.getByLabel("Search people").fill(`@${username}`);
   await composer.getByRole("button", { name, exact: false }).filter({ hasNotText: "Remove" }).click();
   await expect(composer.getByRole("list", { name: "Selected people" })).toContainText(name);
 }
@@ -35,8 +35,8 @@ test("a group is built from contacts and run by its owner", async ({ browser }, 
   const composer = chatList(ada.page).getByRole("region", { name: "New conversation" });
   await composer.getByRole("button", { name: "Create group" }).click();
   await expect(composer.getByRole("button", { name: "Next" })).toBeDisabled();
-  await pickPerson(ada.page, grace.email, "Grace");
-  await pickPerson(ada.page, linus.email, "Linus");
+  await pickPerson(ada.page, grace.username, "Grace");
+  await pickPerson(ada.page, linus.username, "Linus");
   await composer.getByRole("button", { name: "Next · 2" }).click();
   await expect(composer.getByRole("button", { name: "Create group" })).toBeDisabled();
   await composer.getByLabel("Group name").fill("Weekend");

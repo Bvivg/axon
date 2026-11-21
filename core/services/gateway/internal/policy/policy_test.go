@@ -39,7 +39,7 @@ func TestAuthProcedures(t *testing.T) {
 	}{
 		"register": {authv1connect.AuthServiceRegisterProcedure, true, policy.TierSensitive},
 		"login":    {authv1connect.AuthServiceLoginProcedure, true, policy.TierSensitive},
-		"refresh":  {authv1connect.AuthServiceRefreshTokenProcedure, true, policy.TierSensitive},
+		"refresh":  {authv1connect.AuthServiceRefreshTokenProcedure, true, policy.TierRenewal},
 		"logout":   {authv1connect.AuthServiceLogoutProcedure, true, policy.TierStandard},
 		"get me":   {authv1connect.AuthServiceGetMeProcedure, false, policy.TierStandard},
 		"start oauth": {
@@ -97,6 +97,7 @@ func TestDirectMessagingProcedures(t *testing.T) {
 	}{
 		"search users":    {authv1connect.AuthServiceSearchUsersProcedure, false, policy.TierSearch},
 		"search messages": {chatv1connect.ChatServiceSearchMessagesProcedure, false, policy.TierSearch},
+		"game history":    {gamev1connect.GameServiceGetSessionHistoryProcedure, false, policy.TierSearch},
 		"get users public profiles": {
 			authv1connect.AuthServiceGetUsersPublicProfilesProcedure, false, policy.TierStandard,
 		},
@@ -161,11 +162,15 @@ func TestCredentialEndpointsAreOnTheTightBudget(t *testing.T) {
 	for _, procedure := range []string{
 		authv1connect.AuthServiceLoginProcedure,
 		authv1connect.AuthServiceRegisterProcedure,
-		authv1connect.AuthServiceRefreshTokenProcedure,
+		authv1connect.AuthServiceStartOAuthProcedure,
+		authv1connect.AuthServiceCompleteOAuthProcedure,
 	} {
 		if policy.For(procedure).Tier != policy.TierSensitive {
 			t.Errorf("%s is not on the sensitive tier", procedure)
 		}
+	}
+	if policy.For(authv1connect.AuthServiceRefreshTokenProcedure).Tier != policy.TierRenewal {
+		t.Error("refresh is not on the renewal tier")
 	}
 }
 
@@ -264,5 +269,21 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 
 	if got, want := len(policy.Procedures()), len(known); got != want {
 		t.Errorf("policy covers %d procedures, the contract has %d — a new RPC is unlisted", got, want)
+	}
+}
+
+func TestEndpointRegistrationIsOnTheStandardTierAndCallSetupStaysTight(t *testing.T) {
+	if policy.For(callsv1connect.CallsServiceRegisterEndpointProcedure).Tier != policy.TierStandard {
+		t.Error("endpoint registration runs on every page load and socket reconnect, it must not spend the sensitive budget")
+	}
+	for _, procedure := range []string{
+		callsv1connect.CallsServiceStartCallProcedure,
+		callsv1connect.CallsServiceStartDirectCallProcedure,
+		callsv1connect.CallsServiceAcceptCallProcedure,
+		callsv1connect.CallsServiceStartGroupCallProcedure,
+	} {
+		if policy.For(procedure).Tier != policy.TierSensitive {
+			t.Errorf("%s is not on the sensitive tier", procedure)
+		}
 	}
 }

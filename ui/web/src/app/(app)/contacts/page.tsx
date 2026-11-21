@@ -12,6 +12,7 @@ import { useSession } from "@/lib/auth/session";
 import { openChat } from "@/lib/chat/address";
 import { profileName } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
+import { peopleQueryHint } from "@/lib/people-search";
 import { useSearchUsers } from "@/lib/query/people";
 
 export default function ContactsPage() {
@@ -35,7 +36,7 @@ export default function ContactsPage() {
           search={search}
           label="Contacts directory"
           loading={loading}
-          empty={needle ? "No people match your search." : "No contacts yet."}
+          empty={search.tooShort ? peopleQueryHint : "No people match your search."}
           sections={[{
             title: "People",
             label: "People",

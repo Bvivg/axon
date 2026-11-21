@@ -57,6 +57,7 @@ func (s *Service) SearchUsers(ctx context.Context, callerID uuid.UUID, query str
 	users := make([]domain.User, len(results))
 	for i, result := range results {
 		users[i] = result.User
+		users[i].LastSeenAt = nil
 	}
 
 	return s.withOnlineStatus(ctx, users), next, nil

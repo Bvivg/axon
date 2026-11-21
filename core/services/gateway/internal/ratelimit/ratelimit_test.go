@@ -203,3 +203,21 @@ func TestRetryAfterTracksRefillWithoutExtendingTheWait(t *testing.T) {
 		t.Fatalf("got (%v, %v), want (true, 0)", allowed, wait)
 	}
 }
+
+func TestSubject(t *testing.T) {
+	tests := map[string]string{
+		"203.0.113.7":             "203.0.113.7",
+		"::ffff:203.0.113.7":      "203.0.113.7",
+		"2001:db8:1:2:3:4:5:6":    "2001:db8:1:2::/64",
+		"2001:db8:1:2::1":         "2001:db8:1:2::/64",
+		"fe80::1%eth0":            "fe80::/64",
+		"not-an-ip":               "not-an-ip",
+		"2001:db8:ffff:ffff::abc": "2001:db8:ffff:ffff::/64",
+	}
+
+	for ip, want := range tests {
+		if got := ratelimit.Subject(ip); got != want {
+			t.Errorf("Subject(%q) = %q, want %q", ip, got, want)
+		}
+	}
+}
