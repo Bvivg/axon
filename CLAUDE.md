@@ -16,10 +16,10 @@ web на Next.js), общающимися через единый API Gateway с
 
 ### Backend (`core/`)
 - **Язык**: Go, `go.work` — мультимодульный монорепо
-- **Сервисы**: `gateway`, `auth`, `chat`, `game`, `calling`
+- **Сервисы**: `gateway`, `auth`, `chat` (с модулем Calls), `game`, `rating`, `tournament`, `analysis`
 - **БД**: Postgres — единая база, schema-level изоляция между сервисами
-- **Кэш**: Redis — только кэширование/presence, не источник истины
-- **Event bus**: Kafka — межсервисные события (`game.started`, `chat.message`, ...)
+- **Кэш**: Redis — только кэширование/presence, не источник истины; у gateway отдельный `edge-redis` под rate limit
+- **Event bus**: Kafka — межсервисные события (`game.finished.v1`, `chat.message.v1`, `rating.changed.v1`, ...) через outbox + Debezium; живые партии — журнал `game.session-events.v1`
 - **Протоколы**:
   - gRPC — между внутренними сервисами
   - Connect (buf.build) — на gateway, один handler отдаёт gRPC + gRPC-Web + JSON
@@ -33,7 +33,7 @@ web на Next.js), общающимися через единый API Gateway с
 
 ### UI (`ui/`)
 - **`app/`** — SwiftUI, единый multiplatform target (iOS + macOS, различия через `#if os(macOS)`)
-  - Connect-Swift для RPC, WebSocket для realtime, LiveKit client SDK для звонков
+  - Connect-Swift для RPC, WebSocket для realtime; сейчас только игры (без чата, звонков и Durak)
 - **`web/`** — Next.js
   - `@connectrpc/connect-web` для RPC, `react-use-websocket` для realtime
   - shadcn + @base-ui + Tailwind — UI
@@ -41,8 +41,7 @@ web на Next.js), общающимися через единый API Gateway с
   - axios — fallback HTTP
 
 ### Docs (`docs/`)
-- Архитектурные диаграммы, API-контракты
-- `schema.jpg` — диаграмма архитектуры (сгенерирована Gemini), лежит рядом с этим файлом
+- `architecture.md` — архитектура и диаграммы, `adr/` — архитектурные решения, `benchmarks.md` — замеры
 
 ## Игровой движок (`core/services/game/internal/engine`)
 
@@ -57,9 +56,14 @@ type Game interface {
 }
 ```
 
-Quoridor — самая нетривиальная игра в наборе: доска 9x9, стены между клетками
+Игры со скрытой информацией (Durak) дополнительно реализуют опциональные интерфейсы:
+`Seeded` (`InitSeeded(players, seed)` — колода из seed, который сессия берёт из `crypto/rand`
+и записывает в журнал) и `Viewer` (`View(state, viewer)` — проекция состояния на зрителя
+на всех границах). Остальные игры их не реализуют, `Game` не меняется.
+
+Quoridor — самая нетривиальная из открытых игр: доска 9x9, стены между клетками
 моделируются как граф с "перерезанными" рёбрами, каждое размещение стены
-требует BFS-проверки, что у обоих игроков остаётся путь до финиша.
+требует BFS-проверки (`pathfinding.go`), что у обоих игроков остаётся путь до финиша.
 
 ## Структура папок
 
@@ -68,97 +72,30 @@ axon/
 ├── core/
 │   ├── go.work
 │   ├── services/
-│   │   ├── gateway/
-│   │   │   ├── go.mod
-│   │   │   ├── cmd/main.go
-│   │   │   └── internal/
-│   │   │       ├── connect/        # Connect handlers (gRPC + gRPC-Web + JSON)
-│   │   │       └── router/
-│   │   ├── auth/
-│   │   │   ├── go.mod
-│   │   │   └── internal/
-│   │   │       ├── jwt/            # RS256/JWKS
-│   │   │       ├── oauth/          # Google/GitHub/Apple
-│   │   │       └── repository/
-│   │   ├── chat/
-│   │   │   ├── go.mod
-│   │   │   └── internal/
-│   │   │       ├── ws/
-│   │   │       └── pubsub/         # Redis fan-out
+│   │   ├── gateway/        # Connect + WebSocket прокси, JWKS, CORS, rate limit
+│   │   ├── auth/           # пароль, refresh, OAuth (Google/GitHub/Apple), RBAC, JWKS
+│   │   ├── chat/           # комнаты, сообщения, медиа, поиск, push, модуль Calls
 │   │   ├── game/
-│   │   │   ├── go.mod
-│   │   │   ├── cmd/main.go
+│   │   │   ├── cmd/        # game, loadgen
 │   │   │   └── internal/
-│   │   │       ├── server/         # grpc.go, ws.go
-│   │   │       ├── session/        # session.go, repository.go, manager.go
-│   │   │       ├── engine/         # engine.go (Game interface), registry.go
-│   │   │       └── games/
-│   │   │           ├── chess/
-│   │   │           ├── durak/
-│   │   │           ├── checkers/
-│   │   │           ├── tictactoe/
-│   │   │           └── quoridor/
-│   │   │               ├── board.go
-│   │   │               ├── move.go
-│   │   │               ├── pathfinding.go   # BFS проверка пути
-│   │   │               ├── rules.go
-│   │   │               └── engine.go
-│   │   └── calling/
-│   │       ├── go.mod
-│   │       └── internal/
-│   │           └── sfu/            # LiveKit integration
+│   │   │       ├── engine/         # Game, Seeded, Viewer, registry
+│   │   │       ├── games/          # chess, checkers, durak, quoridor, tictactoe
+│   │   │       ├── journal/        # Kafka-журнал ходов
+│   │   │       ├── owner/          # владельцы партиций, lease, fencing
+│   │   │       ├── projection/     # read model в Postgres
+│   │   │       ├── session/  server/  matchmaking/  tournament/  rating/
+│   │   ├── rating/         # Glicko-2, лидерборд
+│   │   ├── tournament/     # сага турниров
+│   │   └── analysis/       # Stockfish-разбор шахмат
 │   ├── shared/
-│   │   ├── proto/                  # единый источник правды для всех клиентов
-│   │   ├── pkg/
-│   │   │   ├── kafka/
-│   │   │   ├── postgres/
-│   │   │   ├── redis/
-│   │   │   ├── logger/
-│   │   │   ├── middleware/
-│   │   │   └── ws/
-│   │   └── config/
-│   └── deploy/
-│       ├── docker-compose.yml
-│       └── k8s/
+│   │   ├── proto/          # единый источник правды для всех клиентов
+│   │   ├── gen/            # сгенерировано buf, не редактируется
+│   │   └── pkg/            # authn, correlation, kafka, logger, middleware, mtls, outbox, postgres, redis, telemetry, ws, ...
+│   └── deploy/             # docker-compose*.yml, Dockerfile.*, k8s/ (kind + Argo CD), chaos/, cdc/
 ├── ui/
-│   ├── app/
-│   │   ├── App/
-│   │   │   └── AxonApp.swift
-│   │   ├── Core/
-│   │   │   ├── Networking/         # ConnectClient, WebSocketClient, AuthTokenStore
-│   │   │   └── Models/
-│   │   ├── Features/
-│   │   │   ├── Auth/
-│   │   │   ├── Lobby/
-│   │   │   ├── Games/
-│   │   │   │   ├── Chess/
-│   │   │   │   ├── Durak/
-│   │   │   │   └── Quoridor/
-│   │   │   │       ├── QuoridorBoardView.swift
-│   │   │   │       ├── QuoridorViewModel.swift
-│   │   │   │       └── WallPlacementGesture.swift
-│   │   │   └── Calling/
-│   │   └── Shared/UI/
-│   └── web/
-│       ├── app/
-│       │   ├── (auth)/
-│       │   ├── (lobby)/
-│       │   └── games/quoridor/[sessionId]/page.tsx
-│       ├── components/
-│       │   ├── ui/                 # shadcn + @base-ui
-│       │   └── games/quoridor/
-│       │       ├── Board.tsx
-│       │       ├── Wall.tsx
-│       │       └── useQuoridorSocket.ts
-│       ├── lib/
-│       │   ├── connect/            # @connectrpc/connect-web клиент
-│       │   ├── ws/
-│       │   └── query/              # TanStack query hooks
-│       └── shared-types/
-└── docs/
-    ├── architecture.md
-    ├── schema.jpg               # диаграмма архитектуры (Gemini)
-    └── api/
+│   ├── app/                # SwiftUI: App/, Core/{Models,Networking}, Features/{Auth,Lobby,Game,Games,Replay,Settings}
+│   └── web/                # Next.js: src/app, src/components (games/<game>/, chat/, calls/), src/lib, e2e/
+└── docs/                   # architecture.md, adr/, benchmarks.md, calls.md
 ```
 
 ## Правила разработки
@@ -178,7 +115,5 @@ axon/
 - `rules/comments.md` — в коде не пишем комментарии (и почему)
 - `rules/mcp-tools.md` — доступные MCP-серверы и когда их использовать вместо ручных команд
 
-## Открытые вопросы / TODO
-- Реализация `pathfinding.go` (BFS-валидация стен Quoridor)
-- Proto-контракты для game service под текущую структуру
-- Деплой: docker-compose локально, k8s — по возможности
+## Открытые вопросы
+Известные пробелы ведутся в README (раздел «Known gaps») и в `.claude/plans/roadmap.md`.
