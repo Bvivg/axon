@@ -16,9 +16,11 @@ test("a message in another chat shows a toast that opens it, and the tab counts 
   await openChatWith(ada.page, "Grace");
   await expect(ada.page).toHaveTitle("(1) Axon");
 
+  await ada.page.mouse.move(5, 5);
   await say(grace.page, "in this chat");
   await say(cid.page, "are you there?");
   await ada.page.bringToFront();
+  await ada.page.mouse.move(10, 10);
 
   const toast = ada.page.locator("[data-sonner-toast]").filter({ hasText: "Cid" });
   await expect(toast).toContainText("are you there?");
