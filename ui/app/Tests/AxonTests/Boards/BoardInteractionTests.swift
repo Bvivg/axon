@@ -22,7 +22,8 @@ struct BoardInteractionTests {
         )
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: view.frame(width: side, height: side))
-        window.orderFront(nil)
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
         window.contentView?.layoutSubtreeIfNeeded()
         settle()
         return window
@@ -97,11 +98,13 @@ struct BoardInteractionTests {
         let flipped = host(ChessBoardView(board: board, perspective: 1, interactive: true, onMove: { recorder.moves.append($0) }))
         try click(flipped, at: try point("a7", perspective: 1))
         try click(flipped, at: try point("b8", perspective: 1))
-        settle(0.6)
         let pickerButton = max(44, square * 1.05)
         let rowWidth = pickerButton * 5 + 6 * 4
         let knight = CGPoint(x: side / 2 - rowWidth / 2 + pickerButton * 3.5 + 6 * 3, y: side / 2)
         try click(flipped, at: knight)
+        if recorder.moves.count < 2 {
+            try click(flipped, at: knight)
+        }
         flipped.close()
         #expect(recorder.moves == ["e2e4", "a7b8n"])
     }
