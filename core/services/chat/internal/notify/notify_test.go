@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -179,5 +180,53 @@ func TestPreviews(t *testing.T) {
 				t.Errorf("previewOf = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestOneSenderCannotFloodSomeonesDevices(t *testing.T) {
+	n, store, sender, author, _, roomID := setup(t, domain.RoomKindDirect, fakePresence{})
+	clock := time.Now()
+	n.budget = newSenderBudget(1, 2, func() time.Time { return clock })
+	push := func(from uuid.UUID) {
+		t.Helper()
+		if err := n.Notify(t.Context(), domain.Message{ID: uuid.New(), RoomID: roomID, AuthorID: from, Kind: domain.MessageKindText, Body: "spam"}); err != nil {
+			t.Fatalf("Notify: %v", err)
+		}
+	}
+
+	for range 5 {
+		push(author)
+	}
+	if len(sender.sent) != 4 {
+		t.Fatalf("five messages in a burst reached Ben's two devices %d times, want the burst of two messages", len(sender.sent))
+	}
+
+	clock = clock.Add(time.Minute)
+	push(author)
+	if len(sender.sent) != 6 {
+		t.Fatalf("the budget did not refill after a minute: %d pushes", len(sender.sent))
+	}
+
+	store.members = append(store.members, domain.Member{UserID: uuid.New(), DisplayName: "Dee"})
+	other := store.members[len(store.members)-1].UserID
+	push(other)
+	if len(sender.sent) != 9 {
+		t.Fatalf("another sender was throttled by the first one: %d pushes, want 6 plus Ada's and Ben's three devices", len(sender.sent))
+	}
+}
+
+func TestIdleSenderBudgetsAreForgotten(t *testing.T) {
+	clock := time.Now()
+	budget := newSenderBudget(1, 1, func() time.Time { return clock })
+	from, to := uuid.New(), uuid.New()
+
+	if got := budget.allow(from, []uuid.UUID{to}); len(got) != 1 {
+		t.Fatal("the first push was refused")
+	}
+	clock = clock.Add(time.Hour)
+	budget.allow(uuid.New(), []uuid.UUID{uuid.New()})
+
+	if tracked := budget.tracked(); tracked != 1 {
+		t.Fatalf("%d pairs are tracked after an hour of silence, want only the fresh one", tracked)
 	}
 }
