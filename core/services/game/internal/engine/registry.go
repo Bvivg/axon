@@ -15,6 +15,8 @@ type Definition struct {
 	Game Game
 
 	TimeLimit time.Duration
+
+	MaxPlies int
 }
 
 const DefaultTimeLimit = 5 * time.Minute
@@ -37,6 +39,8 @@ func (r *Registry) Register(def Definition) error {
 		return fmt.Errorf("%w: %q allows %d players", ErrInvalidDefinition, def.Key, def.MinPlayers)
 	case def.MaxPlayers < def.MinPlayers:
 		return fmt.Errorf("%w: %q allows %d..%d players", ErrInvalidDefinition, def.Key, def.MinPlayers, def.MaxPlayers)
+	case def.MaxPlies < 0:
+		return fmt.Errorf("%w: %q allows %d plies", ErrInvalidDefinition, def.Key, def.MaxPlies)
 	}
 
 	if _, exists := r.definitions[def.Key]; exists {
@@ -98,5 +102,7 @@ func (r *Registry) NewState(key Key, players []PlayerID) (State, error) {
 		seen[player] = struct{}{}
 	}
 
-	return def.Game.Init(players), nil
+	state := def.Game.Init(players)
+	state.MaxPlies = def.MaxPlies
+	return state, nil
 }

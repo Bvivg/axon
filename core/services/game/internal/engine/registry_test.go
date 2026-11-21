@@ -199,3 +199,39 @@ func TestRegistryNewStateChecksTheRoster(t *testing.T) {
 		})
 	}
 }
+
+func TestRegistryNewStateCarriesTheMoveLimit(t *testing.T) {
+	registry := engine.NewRegistry()
+	capped := stubDefinition(testKey, 2, 2)
+	capped.MaxPlies = 40
+	if err := registry.Register(capped); err != nil {
+		t.Fatalf("Register(): %v", err)
+	}
+	if err := registry.Register(stubDefinition("open", 2, 2)); err != nil {
+		t.Fatalf("Register(): %v", err)
+	}
+
+	state, err := registry.NewState(testKey, []engine.PlayerID{alice, bob})
+	if err != nil {
+		t.Fatalf("NewState(): %v", err)
+	}
+	if state.MaxPlies != 40 {
+		t.Errorf("MaxPlies = %d, want 40", state.MaxPlies)
+	}
+
+	open, err := registry.NewState("open", []engine.PlayerID{alice, bob})
+	if err != nil {
+		t.Fatalf("NewState(): %v", err)
+	}
+	if open.MaxPlies != 0 {
+		t.Errorf("MaxPlies without a limit = %d, want 0", open.MaxPlies)
+	}
+}
+
+func TestRegistryRejectsANegativeMoveLimit(t *testing.T) {
+	def := stubDefinition(testKey, 2, 2)
+	def.MaxPlies = -1
+	if err := engine.NewRegistry().Register(def); !errors.Is(err, engine.ErrInvalidDefinition) {
+		t.Errorf("Register() error = %v, want %v", err, engine.ErrInvalidDefinition)
+	}
+}

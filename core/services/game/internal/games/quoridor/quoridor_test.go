@@ -375,3 +375,54 @@ func BenchmarkLegalMoves(b *testing.B) {
 		_ = board.LegalMoves(0)
 	}
 }
+
+func TestShufflingPawnsEndsInADrawAtTheMoveLimit(t *testing.T) {
+	games := engine.NewRegistry()
+	if err := games.Register(Definition()); err != nil {
+		t.Fatal(err)
+	}
+	s, err := games.NewState(Key, []engine.PlayerID{"white", "black"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.MaxPlies != MaxPlies || MaxPlies != 400 {
+		t.Fatalf("MaxPlies = %d (default %d), want 400", s.MaxPlies, MaxPlies)
+	}
+	g := New()
+	shuffle := [2][2]string{{"e2", "e1"}, {"e8", "e9"}}
+	for ply := range MaxPlies {
+		if s.Over() {
+			t.Fatalf("the game ended at ply %d, before the limit", ply)
+		}
+		seat := ply % 2
+		if s, err = g.ApplyMove(s, NewMove(s.Players[seat], ply, shuffle[seat][(ply/2)%2])); err != nil {
+			t.Fatalf("ply %d: %v", ply, err)
+		}
+	}
+	over, winner := g.IsTerminal(s)
+	if !over || winner != nil || s.Status != engine.StatusDraw || !s.MoveLimit || s.Ply != MaxPlies {
+		t.Fatalf("after %d plies = over %v winner %v status %q limit %v ply %d, want a draw by the move limit", MaxPlies, over, winner, s.Status, s.MoveLimit, s.Ply)
+	}
+	if _, err := g.ApplyMove(s, NewMove("white", s.Ply, "e2")); !errors.Is(err, engine.ErrGameOver) {
+		t.Fatalf("a move after the limit = %v, want %v", err, engine.ErrGameOver)
+	}
+	snap, err := View(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Moves) != MaxPlies || snap.LastMove != "e9" || len(snap.Legal) != 0 {
+		t.Fatalf("snapshot after the limit = %d moves, last %q, %d legal", len(snap.Moves), snap.LastMove, len(snap.Legal))
+	}
+}
+
+func TestReachingTheGoalOnTheLastPlyStillWins(t *testing.T) {
+	s := stateWith(t, data{Pawns: [2]string{"e8", "a9"}, Walls: []string{}, Left: [2]int{3, 4}, Moves: []string{}}, 0)
+	s.Ply, s.MaxPlies = 9, 10
+	next, err := New().ApplyMove(s, NewMove("white", 9, "e9"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, winner := next.Outcome(); winner == nil || *winner != "white" || next.MoveLimit {
+		t.Fatalf("winner = %v limit %v, want white without the move limit", winner, next.MoveLimit)
+	}
+}

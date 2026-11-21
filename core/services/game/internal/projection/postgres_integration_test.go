@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -404,6 +405,44 @@ func TestChessDrawAndCheckmateSettle(t *testing.T) {
 	e.project(t)
 	e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_DRAW, -1)
 	e.finishedOnce(t, mate, eventsv1.GameFinished_OUTCOME_WIN, 1)
+	requests := e.analysisRequests(t)
+	if want := []string{"f2f3", "e7e5", "g2g4", "d8h4"}; len(requests[mate.ID]) != 1 || !slices.Equal(requests[mate.ID][0].GetMoves(), want) {
+		t.Fatal("analysis requests for the mate", requests[mate.ID])
+	}
+	if want := []string{"e2e4"}; len(requests[game.ID]) != 1 || !slices.Equal(requests[game.ID][0].GetMoves(), want) {
+		t.Fatal("analysis requests for the agreed draw", requests[game.ID])
+	}
+}
+
+func (e *env) analysisRequests(t *testing.T) map[uuid.UUID][]*eventsv1.GameFinished {
+	t.Helper()
+	rows, err := e.pool.Query(e.ctx, `SELECT id, aggregateid, payload FROM game.outbox WHERE aggregatetype = $1`, projection.AnalysisTopic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	out := map[uuid.UUID][]*eventsv1.GameFinished{}
+	for rows.Next() {
+		var eventID uuid.UUID
+		var key string
+		var payload []byte
+		if err := rows.Scan(&eventID, &key, &payload); err != nil {
+			t.Fatal(err)
+		}
+		event := &eventsv1.GameFinished{}
+		if err := proto.Unmarshal(payload, event); err != nil {
+			t.Fatal(err)
+		}
+		id := uuid.MustParse(event.SessionId)
+		if key != id.String() || eventID != projection.AnalysisEventID(id) || !event.Rated {
+			t.Fatal("analysis request envelope", eventID, key, event)
+		}
+		out[id] = append(out[id], event)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func TestFinishedRatedSessionWritesOneOutboxRowAcrossReplays(t *testing.T) {
@@ -437,6 +476,9 @@ func TestFinishedRatedSessionWritesOneOutboxRowAcrossReplays(t *testing.T) {
 	}
 	e.finishedOnce(t, game, eventsv1.GameFinished_OUTCOME_WIN, 0)
 	e.finishedOnce(t, unrated, eventsv1.GameFinished_OUTCOME_WIN, 0)
+	if requests := e.analysisRequests(t); len(requests) != 0 {
+		t.Fatal("tic-tac-toe games requested an analysis", requests)
+	}
 	if _, err := e.pool.Exec(e.ctx, `UPDATE game.projector_offsets SET next_offset=0`); err != nil {
 		t.Fatal(err)
 	}

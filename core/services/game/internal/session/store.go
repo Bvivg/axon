@@ -143,6 +143,14 @@ func (s *Store) Live(ctx context.Context, game engine.Key, limit int) ([]Session
 	return result, rows.Err()
 }
 
+func (s *Store) Get(ctx context.Context, id uuid.UUID) (Session, error) {
+	game, err := Scan(s.pool.QueryRow(ctx, `SELECT `+Columns+` FROM game.sessions WHERE id=$1`, id))
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return Session{}, fmt.Errorf("session: get: %w", err)
+	}
+	return game, err
+}
+
 func (s *Store) History(ctx context.Context, id uuid.UUID) (Session, []MoveRecord, error) {
 	var game Session
 	var moves []MoveRecord
