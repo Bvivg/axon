@@ -27,6 +27,17 @@ func FromContext(ctx context.Context) string {
 	return id
 }
 
+type echoedKey struct{}
+
+func MarkEchoed(ctx context.Context) context.Context {
+	return context.WithValue(ctx, echoedKey{}, true)
+}
+
+func Echoed(ctx context.Context) bool {
+	echoed, _ := ctx.Value(echoedKey{}).(bool)
+	return echoed
+}
+
 func Ensure(ctx context.Context) (context.Context, string) {
 	if id := FromContext(ctx); id != "" {
 		return ctx, id
