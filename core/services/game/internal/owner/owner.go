@@ -35,6 +35,7 @@ type Lease struct {
 const (
 	historyDepth         = 4
 	defaultAppendTimeout = 15 * time.Second
+	defaultFinishedTTL   = 2 * time.Minute
 )
 
 type ReadModel interface {
@@ -65,6 +66,7 @@ type Config struct {
 	Metrics  *metrics.Game
 
 	AppendTimeout time.Duration
+	FinishedTTL   time.Duration
 }
 
 type Owner struct {
@@ -87,10 +89,25 @@ type cell struct {
 	mu      sync.Mutex
 	loaded  bool
 	stale   bool
+	gone    bool
 	exists  bool
 	game    session.Session
 	history map[int]session.MoveRecord
 	timer   *time.Timer
+	offset  int64
+	used    time.Time
+}
+
+func newCell() *cell {
+	return &cell{history: map[int]session.MoveRecord{}, offset: -1}
+}
+
+func (c *cell) finished() bool {
+	return !c.exists || c.game.Opponent != nil && c.game.State.Over()
+}
+
+func (c *cell) vacant() bool {
+	return !c.stale && !c.exists && c.offset < 0
 }
 
 func New(cfg Config) *Owner {
@@ -101,6 +118,9 @@ func New(cfg Config) *Owner {
 	cfg.Now = func() time.Time { return clock().Truncate(time.Microsecond) }
 	if cfg.AppendTimeout <= 0 {
 		cfg.AppendTimeout = defaultAppendTimeout
+	}
+	if cfg.FinishedTTL <= 0 {
+		cfg.FinishedTTL = defaultFinishedTTL
 	}
 	return &Owner{cfg: cfg, parts: map[int32]*part{}}
 }
@@ -185,9 +205,12 @@ func (o *Owner) claim(ctx context.Context, p *part) error {
 	if err != nil {
 		return err
 	}
+	now := o.cfg.Now()
 	cells := make(map[uuid.UUID]*cell, len(open))
 	for _, game := range open {
-		cells[game.ID] = &cell{loaded: true, exists: true, game: game, history: map[int]session.MoveRecord{}}
+		c := newCell()
+		c.loaded, c.exists, c.game, c.used = true, true, game, now
+		cells[game.ID] = c
 	}
 	if projected.Offset < marker {
 		fence := journal.NewFence()
@@ -196,7 +219,7 @@ func (o *Owner) claim(ctx context.Context, p *part) error {
 			if !fence.Admit(entry) {
 				return nil
 			}
-			return o.absorb(ctx, cells, *entry.Event)
+			return o.absorb(ctx, cells, entry, now)
 		})
 		if err != nil {
 			return err
@@ -222,7 +245,8 @@ func (o *Owner) claim(ctx context.Context, p *part) error {
 	return nil
 }
 
-func (o *Owner) absorb(ctx context.Context, cells map[uuid.UUID]*cell, event journal.Event) error {
+func (o *Owner) absorb(ctx context.Context, cells map[uuid.UUID]*cell, entry journal.Entry, now time.Time) error {
+	event := *entry.Event
 	id := event.Session.ID
 	c := cells[id]
 	var base *session.Session
@@ -248,11 +272,13 @@ func (o *Owner) absorb(ctx context.Context, cells map[uuid.UUID]*cell, event jou
 		return nil
 	}
 	if c == nil {
-		c = &cell{loaded: true, history: map[int]session.MoveRecord{}}
+		c = newCell()
+		c.loaded, c.used = true, now
 		cells[id] = c
 	}
 	c.game = folded.Session
 	c.exists = folded.Change.Fact != session.FactCancelled
+	c.offset = max(c.offset, entry.Offset)
 	c.remember(folded.Change)
 	return nil
 }
@@ -423,50 +449,69 @@ func (o *Owner) RevokeAll() {
 type step func(c *cell, now time.Time) (session.Session, session.Change, error)
 
 func (o *Owner) do(ctx context.Context, id uuid.UUID, run step) (session.Session, error) {
+	for {
+		p, c, epoch, err := o.enter(id)
+		if err != nil {
+			return session.Session{}, err
+		}
+		game, served, err := o.serve(ctx, p, epoch, id, c, run)
+		p.inflight.Done()
+		if served {
+			return game, err
+		}
+	}
+}
+
+func (o *Owner) enter(id uuid.UUID) (*part, *cell, int64, error) {
 	o.mu.RLock()
 	p := o.parts[o.PartitionOf(id)]
 	o.mu.RUnlock()
 	if p == nil {
-		return session.Session{}, ErrNotOwner
+		return nil, nil, 0, ErrNotOwner
 	}
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	if !p.serving {
-		p.mu.Unlock()
-		return session.Session{}, ErrNotOwner
+		return nil, nil, 0, ErrNotOwner
 	}
 	p.inflight.Add(1)
 	c := p.cells[id]
 	if c == nil {
-		c = &cell{history: map[int]session.MoveRecord{}}
+		c = newCell()
 		p.cells[id] = c
 	}
-	epoch := p.epoch
-	p.mu.Unlock()
-	defer p.inflight.Done()
-	span := o.leaseSpan()
+	return p, c, p.epoch, nil
+}
 
+func (o *Owner) serve(ctx context.Context, p *part, epoch int64, id uuid.UUID, c *cell, run step) (session.Session, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.gone {
+		return session.Session{}, false, nil
+	}
+	span := o.leaseSpan()
 	if !c.loaded {
 		if err := o.load(ctx, p, epoch, id, c); err != nil {
-			return session.Session{}, err
+			o.release(p, id, c)
+			return session.Session{}, true, err
 		}
 	}
-	next, change, err := run(c, o.cfg.Now())
-	if err != nil {
-		return session.Session{}, err
-	}
-	if !change.Recorded() {
-		return next, nil
+	now := o.cfg.Now()
+	c.used = now
+	next, change, err := run(c, now)
+	if err != nil || !change.Recorded() {
+		o.release(p, id, c)
+		return next, true, err
 	}
 	next = session.Record(next, change)
 	if !o.leased(p, span) {
-		return session.Session{}, ErrNotOwner
+		return session.Session{}, true, ErrNotOwner
 	}
 	appendStarted := time.Now()
-	if _, err := o.append(ctx, p.id, journal.Entry{Event: &journal.Event{Session: next, Change: change, Generation: epoch}}); err != nil {
+	offset, err := o.append(ctx, p.id, journal.Entry{Event: &journal.Event{Session: next, Change: change, Generation: epoch}})
+	if err != nil {
 		c.loaded, c.stale = false, true
-		return session.Session{}, fmt.Errorf("owner: append session event: %w", err)
+		return session.Session{}, true, fmt.Errorf("owner: append session event: %w", err)
 	}
 	o.cfg.Metrics.Appended(ctx, time.Since(appendStarted))
 	if change.Fact == session.FactMoved {
@@ -475,16 +520,17 @@ func (o *Owner) do(ctx context.Context, id uuid.UUID, run step) (session.Session
 	if !o.leased(p, span) {
 		c.loaded = false
 		go o.revoke(p, metrics.RevokedLeaseExpiry) //nolint:gosec
-		return session.Session{}, ErrNotOwner
+		return session.Session{}, true, ErrNotOwner
 	}
 	c.game = next
 	c.exists = change.Fact != session.FactCancelled
+	c.offset = offset
 	c.remember(change)
 	o.schedule(id, c)
 	if o.cfg.Listener != nil {
 		o.cfg.Listener.Changed(id)
 	}
-	return next, nil
+	return next, true, nil
 }
 
 func (o *Owner) append(ctx context.Context, partition int32, entry journal.Entry) (int64, error) {
@@ -541,7 +587,7 @@ func (o *Owner) recover(ctx context.Context, p *part, epoch int64, id uuid.UUID,
 		if !fence.Admit(entry) || entry.Event.Session.ID != id {
 			return nil
 		}
-		return o.absorb(ctx, cells, *entry.Event)
+		return o.absorb(ctx, cells, entry, now)
 	})
 	if err != nil {
 		return fmt.Errorf("owner: recover %s: read journal: %w", id, err)
@@ -549,6 +595,111 @@ func (o *Owner) recover(ctx context.Context, p *part, epoch int64, id uuid.UUID,
 	c.loaded, c.stale = true, false
 	o.schedule(id, c)
 	return nil
+}
+
+func (o *Owner) release(p *part, id uuid.UUID, c *cell) {
+	if c.vacant() {
+		o.forget(p, id, c)
+	}
+}
+
+func (o *Owner) forget(p *part, id uuid.UUID, c *cell) {
+	c.gone = true
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+	p.mu.Lock()
+	if p.cells[id] == c {
+		delete(p.cells, id)
+	}
+	p.mu.Unlock()
+}
+
+func (o *Owner) Resident() int {
+	o.mu.RLock()
+	parts := make([]*part, 0, len(o.parts))
+	for _, p := range o.parts {
+		parts = append(parts, p)
+	}
+	o.mu.RUnlock()
+	resident := 0
+	for _, p := range parts {
+		p.mu.Lock()
+		resident += len(p.cells)
+		p.mu.Unlock()
+	}
+	return resident
+}
+
+func (o *Owner) Evict(ctx context.Context) int {
+	o.mu.RLock()
+	parts := make([]*part, 0, len(o.parts))
+	for _, p := range o.parts {
+		parts = append(parts, p)
+	}
+	o.mu.RUnlock()
+	evicted := 0
+	for _, p := range parts {
+		evicted += o.evict(ctx, p)
+	}
+	o.cfg.Metrics.Resident(o.Resident())
+	return evicted
+}
+
+func (o *Owner) evict(ctx context.Context, p *part) int {
+	p.mu.Lock()
+	if !p.serving {
+		p.mu.Unlock()
+		return 0
+	}
+	cells := make(map[uuid.UUID]*cell, len(p.cells))
+	for id, c := range p.cells {
+		cells[id] = c
+	}
+	p.mu.Unlock()
+	idle := func(c *cell, now time.Time) bool {
+		return c.loaded && !c.stale && !c.gone && c.finished() && now.Sub(c.used) >= o.cfg.FinishedTTL
+	}
+	now := o.cfg.Now()
+	candidates := map[uuid.UUID]*cell{}
+	for id, c := range cells {
+		c.mu.Lock()
+		if idle(c, now) {
+			candidates[id] = c
+		}
+		c.mu.Unlock()
+	}
+	if len(candidates) == 0 {
+		return 0
+	}
+	projected, err := o.cfg.Model.Projected(ctx, p.id)
+	if err != nil {
+		return 0
+	}
+	evicted := 0
+	for id, c := range candidates {
+		c.mu.Lock()
+		if idle(c, now) && c.offset < projected.Offset {
+			o.forget(p, id, c)
+			evicted++
+		}
+		c.mu.Unlock()
+	}
+	return evicted
+}
+
+func (o *Owner) KeepEvicting(ctx context.Context) {
+	ticker := time.NewTicker(max(o.cfg.FinishedTTL/4, time.Second))
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		o.Evict(ctx)
+	}
 }
 
 func (o *Owner) leased(p *part, span time.Duration) bool {

@@ -199,6 +199,7 @@ type cluster struct {
 	model *model
 	rules session.Rules
 	now   func() time.Time
+	ttl   time.Duration
 }
 
 func newCluster(t *testing.T, partitions int32) *cluster {
@@ -221,7 +222,7 @@ func (c *cluster) node(t *testing.T, id string, listener owner.Listener, partiti
 
 func (c *cluster) leased(t *testing.T, id string, listener owner.Listener, lease time.Duration, partitions ...int32) *owner.Owner {
 	t.Helper()
-	node := owner.New(owner.Config{ID: id, Address: id + ":8080", Log: c.log, Model: c.model, Rules: c.rules, Listener: listener, Lease: lease, Now: func() time.Time { return c.now() }})
+	node := owner.New(owner.Config{ID: id, Address: id + ":8080", Log: c.log, Model: c.model, Rules: c.rules, Listener: listener, Lease: lease, Now: func() time.Time { return c.now() }, FinishedTTL: c.ttl})
 	for _, p := range partitions {
 		if err := node.Assign(context.Background(), p); err != nil {
 			t.Fatal(err)
