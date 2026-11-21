@@ -178,8 +178,9 @@ Known gaps, as recorded in the plans:
   [phase 2](.claude/plans/platform-phase-2-outbox-cdc.md)).
 - The game journal topic keeps the broker's default retention in Compose, so the
   Postgres read model is the long-term record of finished games.
-- Calls were not checked on a physical iPhone, behind an external NAT, or with
-  push delivery ([roadmap](.claude/plans/roadmap.md)).
+- Calls were not checked behind an external NAT or with push delivery, and
+  Safari on iOS has only a partial manual check
+  ([roadmap](.claude/plans/roadmap.md), [calls](docs/calls.md)).
 
 ## Repository
 
