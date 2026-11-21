@@ -33,11 +33,13 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/keyring"
+	"github.com/bvivg/axon/core/services/auth/internal/limit"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 	"github.com/bvivg/axon/core/services/auth/internal/repository"
 	"github.com/bvivg/axon/core/services/auth/internal/server"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
+	"github.com/bvivg/axon/core/services/auth/internal/throttle"
 )
 
 var version = "dev"
@@ -153,7 +155,7 @@ func run() error {
 		return err
 	}
 	avatarURLs := avatar.NewURLBuilder(cfg.Avatar.PublicURL, cfg.Avatar.Bucket)
-	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs, nil)
+	avatarPipeline := avatar.NewPipeline(avatarStore, avatarURLs, nil, cfg.Avatar.Limits)
 
 	revocationPublisher, err := revocation.NewPublisher(cache)
 	if err != nil {
@@ -169,6 +171,8 @@ func run() error {
 
 	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
 		RefreshTTL:    cfg.JWT.RefreshTTL,
+		PasswordGate:  limit.NewGate(cfg.PasswordWork.MaxConcurrent, cfg.PasswordWork.QueueTimeout),
+		LoginThrottle: throttle.NewLogins(cache, cfg.LoginThrottle),
 		OAuth:         oauthCfg,
 		Avatar:        avatarPipeline,
 		Presence:      presence.NewTracker(cache),
@@ -229,7 +233,7 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 		Logger:           log,
 		FakeEnabled:      cfg.OAuth.FakeEnabled,
 		FakeAuthorizeURL: cfg.OAuth.FakeAuthorizeURL,
-		Production:       cfg.Environment.IsProduction(),
+		Environment:      cfg.Environment,
 	})
 	if err != nil {
 		return nil, err
@@ -279,6 +283,7 @@ func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, me
 		middleware.Correlation,
 		middleware.Recovery(log),
 		middleware.RequestLogger(log),
+		server.NewClientIPTrust(cfg.ClientIPPeers).Middleware,
 	)(mux)
 }
 

@@ -14,7 +14,7 @@ outage=${RATING_E2E_OUTAGE_SECONDS:-60}
 "${stack[@]}" run --rm cdc-connector
 "${stack[@]}" run --rm schema-register
 
-RATING_E2E_RUN=TestRatedQuickMatchTravelsTheOutboxChain "${stack[@]}" run --rm rating-e2e
+RATING_E2E_RUN='TestRatedQuickMatchTravelsTheOutboxChain|TestOutboxRowsCannotPublishAnotherServicesTopic' "${stack[@]}" run --rm rating-e2e
 
 RATING_E2E_RUN=TestRatedGamesSurviveAnOutboxOutage RATING_E2E_OUTAGE_GAMES="$games" "${stack[@]}" run --rm rating-e2e &
 runner=$!

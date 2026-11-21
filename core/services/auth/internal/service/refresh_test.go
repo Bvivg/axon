@@ -258,3 +258,49 @@ func TestReuseIsRefusedEvenIfRevocationFails(t *testing.T) {
 		t.Fatalf("error = %v, want ErrRefreshTokenReused", err)
 	}
 }
+
+func TestReusePublishesTheFamilyRevocation(t *testing.T) {
+	published := &recordingPublisher{}
+	h := newHarness(t, withRevocation(published))
+
+	registered := h.register(t, "bob@example.com", validPassword)
+	stolen := registered.Tokens.RefreshToken
+	family := h.storedToken(t, stolen).FamilyID
+
+	if _, err := h.svc.Refresh(context.Background(), stolen, domain.Device{}); err != nil {
+		t.Fatalf("first Refresh: %v", err)
+	}
+	if len(published.publishedFamilies()) != 0 {
+		t.Fatal("a normal rotation published a revocation")
+	}
+
+	if _, err := h.svc.Refresh(context.Background(), stolen, domain.Device{}); !errors.Is(err, domain.ErrRefreshTokenReused) {
+		t.Fatalf("replay error = %v, want ErrRefreshTokenReused", err)
+	}
+
+	if !published.publishedFamilies()[family] {
+		t.Error("reuse detection revoked the family without telling the sockets that still hold its access tokens")
+	}
+}
+
+func TestARacedRotationPublishesTheFamilyRevocation(t *testing.T) {
+	published := &recordingPublisher{}
+	h := newHarness(t, withRevocation(published))
+
+	registered := h.register(t, "bob@example.com", validPassword)
+	family := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+
+	h.store.beforeRotate = func() {
+		h.store.beforeRotate = nil
+		if _, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken, domain.Device{}); err != nil {
+			t.Errorf("the winning exchange failed: %v", err)
+		}
+	}
+
+	if _, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken, domain.Device{}); !errors.Is(err, domain.ErrRefreshTokenReused) {
+		t.Fatalf("losing exchange error = %v, want ErrRefreshTokenReused", err)
+	}
+	if !published.publishedFamilies()[family] {
+		t.Error("a lost race revoked the family without publishing it")
+	}
+}

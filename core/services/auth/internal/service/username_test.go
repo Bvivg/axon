@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
@@ -119,7 +121,7 @@ func TestUpdateProfileChangesTheUsername(t *testing.T) {
 	ada := h.register(t, "ada@example.com", validPassword)
 	eve := h.register(t, "eve@example.com", validPassword)
 
-	updated, err := h.svc.UpdateProfile(context.Background(), ada.User.ID, domain.ProfilePatch{Username: ptr("@Countess")})
+	updated, err := h.svc.UpdateProfile(context.Background(), ada.User.ID, uuid.Nil, domain.ProfilePatch{Username: ptr("@Countess")})
 	if err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
 	}
@@ -127,7 +129,7 @@ func TestUpdateProfileChangesTheUsername(t *testing.T) {
 		t.Errorf("username = %q, want countess", updated.Username)
 	}
 
-	_, err = h.svc.UpdateProfile(context.Background(), eve.User.ID, domain.ProfilePatch{Username: ptr("countess")})
+	_, err = h.svc.UpdateProfile(context.Background(), eve.User.ID, uuid.Nil, domain.ProfilePatch{Username: ptr("countess")})
 	if !errors.Is(err, domain.ErrUsernameTaken) {
 		t.Errorf("err = %v, want ErrUsernameTaken", err)
 	}
@@ -137,7 +139,7 @@ func TestUpdateProfileCannotClearTheUsername(t *testing.T) {
 	h := newHarness(t)
 	ada := h.register(t, "ada@example.com", validPassword)
 
-	_, err := h.svc.UpdateProfile(context.Background(), ada.User.ID, domain.ProfilePatch{Username: ptr(" ")})
+	_, err := h.svc.UpdateProfile(context.Background(), ada.User.ID, uuid.Nil, domain.ProfilePatch{Username: ptr(" ")})
 	if v, ok := domain.AsValidationError(err); !ok || v.Field != "username" {
 		t.Fatalf("err = %v, want a username validation error", err)
 	}
@@ -148,7 +150,7 @@ func TestUpdateProfileKeepsTheCurrentUsernameEvenIfReserved(t *testing.T) {
 	ada := h.register(t, "ada@example.com", validPassword)
 	h.store.users[ada.User.ID] = withUsername(h.store.users[ada.User.ID], "admin")
 
-	updated, err := h.svc.UpdateProfile(context.Background(), ada.User.ID, domain.ProfilePatch{
+	updated, err := h.svc.UpdateProfile(context.Background(), ada.User.ID, uuid.Nil, domain.ProfilePatch{
 		Username: ptr("Admin"),
 		Nickname: ptr("Ada"),
 	})

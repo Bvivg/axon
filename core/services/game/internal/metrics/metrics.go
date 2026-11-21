@@ -20,6 +20,7 @@ type Game struct {
 	revocations    *prometheus.CounterVec
 	renewals       *prometheus.CounterVec
 	active         *prometheus.GaugeVec
+	resident       prometheus.Gauge
 	projected      prometheus.Counter
 	batchSize      prometheus.Histogram
 	applyLatency   prometheus.Histogram
@@ -52,6 +53,7 @@ func New(registry prometheus.Registerer) *Game {
 		revocations: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "game_partition_revocations_total", Help: "Partitions given up, by reason."}, []string{"reason"}),
 		renewals:    prometheus.NewCounterVec(prometheus.CounterOpts{Name: "game_lease_renewals_total", Help: "Lease renewal rounds, by outcome."}, []string{"outcome"}),
 		active:      prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "game_active_sessions", Help: "In-progress games held in memory by this owner, by game."}, []string{"game"}),
+		resident:    prometheus.NewGauge(prometheus.GaugeOpts{Name: "game_resident_sessions", Help: "Sessions held in memory by this owner, including finished ones not yet evicted."}),
 		projected:   prometheus.NewCounter(prometheus.CounterOpts{Name: "game_projector_records_total", Help: "Journal records projected into the read model."}),
 		batchSize: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "game_projector_batch_size", Help: "Records per projector transaction.", Buckets: []float64{1, 5, 10, 50, 100, 500, 1000, 2500, 5000},
@@ -62,7 +64,7 @@ func New(registry prometheus.Registerer) *Game {
 		spectators:   prometheus.NewGauge(prometheus.GaugeOpts{Name: "game_spectators", Help: "Spectator sockets watching games served by this owner."}),
 	}
 	registry.MustRegister(m.commands, m.commandLatency, m.moves, m.appendLatency, m.owned, m.claims, m.claimLatency,
-		m.revocations, m.renewals, m.active, m.projected, m.batchSize, m.applyLatency, m.lagRecords, m.lagSeconds, m.spectators)
+		m.revocations, m.renewals, m.active, m.resident, m.projected, m.batchSize, m.applyLatency, m.lagRecords, m.lagSeconds, m.spectators)
 	return m
 }
 
@@ -127,6 +129,12 @@ func (m *Game) Active(byGame map[string]int) {
 	m.active.Reset()
 	for game, count := range byGame {
 		m.active.WithLabelValues(game).Set(float64(count))
+	}
+}
+
+func (m *Game) Resident(sessions int) {
+	if m != nil {
+		m.resident.Set(float64(sessions))
 	}
 }
 

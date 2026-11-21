@@ -215,7 +215,8 @@ func TestAuthorizeMatchesCommonNameOrSAN(t *testing.T) {
 		allowed []string
 		ok      bool
 	}{
-		{nil, true},
+		{nil, false},
+		{[]string{}, false},
 		{[]string{"gateway"}, true},
 		{[]string{"gateway.axon.internal"}, true},
 		{[]string{"chat", "game"}, false},

@@ -8,8 +8,10 @@ for (const host of (process.env.LAN_HOSTS || "192.168.2.1,10.80.10.122,localhost
 hosts.add("localhost:3003"); hosts.add("127.0.0.1:3003");
 hosts.add("axon.test"); hosts.add("axon.test:443"); hosts.add("axon.test:3443");
 const mediaPath = "/api/media/";
+const avatarObject = /^\/storage(\/avatars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:small|medium|large|original)\.jpg)$/;
+const storageHeaders = ["accept", "accept-encoding", "if-none-match", "if-modified-since", "range", "user-agent"];
 const gatewayHost = process.env.GATEWAY_HOST || "gateway";
-const target = url => url.split("?")[0] === "/oauth/fake/authorize" ? { host: "auth", port: 8081, path: url } : url.startsWith("/api/") ? { host: gatewayHost, port: 8080, path: url.startsWith(mediaPath) ? url : url.slice(4) } : url.startsWith("/storage/") ? { host: "minio", port: 9000, path: url.slice(8) } : { host: "web", port: 3000, path: url };
+const target = url => url.startsWith("/api/") ? { host: gatewayHost, port: 8080, path: url.startsWith(mediaPath) ? url : url.slice(4) } : url.startsWith("/storage/") ? { host: "minio", port: 9000, path: url.split("?")[0].slice(8), storage: true } : { host: "web", port: 3000, path: url };
 const handler = (request, response) => {
   if (!hosts.has(request.headers.host)) { response.writeHead(421); response.end(); return; }
   if (request.url?.startsWith("/api" + mediaPath)) {
@@ -17,8 +19,15 @@ const handler = (request, response) => {
     response.end();
     return;
   }
+  if (request.url?.startsWith("/storage/") && !((request.method === "GET" || request.method === "HEAD") && avatarObject.test(request.url))) {
+    response.writeHead(404, { "Cache-Control": "no-store" });
+    response.end();
+    return;
+  }
   const upstream = target(request.url || "/");
-  const headers = { ...request.headers, "x-forwarded-proto": request.socket.encrypted ? "https" : "http", "x-forwarded-for": request.socket.remoteAddress, "x-forwarded-host": request.headers.host };
+  const headers = upstream.storage
+    ? Object.fromEntries(storageHeaders.filter(name => request.headers[name]).map(name => [name, request.headers[name]]))
+    : { ...request.headers, "x-forwarded-proto": request.socket.encrypted ? "https" : "http", "x-forwarded-for": request.socket.remoteAddress, "x-forwarded-host": request.headers.host };
   const proxy = http.request({ hostname: upstream.host, port: upstream.port, path: upstream.path, method: request.method, headers }, incoming => {
     if (request.url?.startsWith("/api/") && incoming.headers["set-cookie"]) incoming.headers["set-cookie"] = incoming.headers["set-cookie"].map(cookie => cookie.replace(/Path=\/axon\.auth\./gi, "Path=/api/axon.auth."));
     response.writeHead(incoming.statusCode || 502, incoming.headers); incoming.pipe(response);

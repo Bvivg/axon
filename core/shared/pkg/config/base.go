@@ -51,6 +51,10 @@ func LoadBase(l *Loader, service string) Base {
 		l.fail("LOG_FORMAT", err)
 	}
 
+	if env.IsProduction() {
+		productionPreflight(l)
+	}
+
 	return Base{
 		Service:         service,
 		Environment:     env,

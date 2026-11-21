@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
+	"strconv"
 
 	"connectrpc.com/connect"
 
@@ -20,6 +22,19 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	var connectErr *connect.Error
 	if errors.As(err, &connectErr) {
 		return connectErr
+	}
+
+	var throttled *domain.ThrottledError
+	if errors.As(err, &throttled) {
+		limited := connect.NewError(connect.CodeResourceExhausted, errors.New("too many failed sign-ins for this account; try again later"))
+		limited.Meta().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(throttled.RetryAfter.Seconds())))))
+		return limited
+	}
+
+	if errors.Is(err, domain.ErrPasswordHashingBusy) {
+		busy := connect.NewError(connect.CodeResourceExhausted, errors.New("the service is busy; try again shortly"))
+		busy.Meta().Set("Retry-After", "1")
+		return busy
 	}
 
 	if v, ok := domain.AsValidationError(err); ok {
@@ -71,6 +86,14 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrOauthIdentityClaimed):
 		return connect.NewError(connect.CodeAlreadyExists,
 			errors.New("this provider account is already linked to another user"))
+
+	case errors.Is(err, domain.ErrOauthEmailNotAllowed):
+		return connect.NewError(connect.CodeInvalidArgument,
+			errors.New("the test provider only accepts @fake.axon.test addresses"))
+
+	case errors.Is(err, domain.ErrOauthAccountExists):
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("an account with this email already exists; sign in with your password instead"))
 
 	case errors.Is(err, domain.ErrOauthReturnToNotAllowed):
 		return connect.NewError(connect.CodeInvalidArgument,

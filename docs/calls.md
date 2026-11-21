@@ -60,3 +60,15 @@ bash core/deploy/calls-migration-e2e.sh   # P2P to SFU migration and cleanup
 Not verified: an external NAT outside the local network and push notifications
 for incoming calls. Safari on iOS has only a partial manual check; the checklist
 is in [`calls-safari-ios-runbook.md`](calls-safari-ios-runbook.md).
+
+## LAN stand
+
+```sh
+LAN_IP=192.168.2.1 LAN_SECRETS_DIR=.local/evidence/calls/LAN/.secrets node core/deploy/calls-lan-init.mjs
+AXON_LAN_IP=192.168.2.1 docker compose -f core/deploy/docker-compose.yml -f core/deploy/docker-compose.calls-lan.yml up -d
+```
+
+- The generator keeps the CA, the TURN secret and a random MinIO root password in `minio-root.env`. It reissues only the server certificate. The overlay refuses to start without `minio-root.env`.
+- Auth and Chat reach MinIO as their own users, `axon-avatars` and `axon-attachments`. Each user has a policy for its own bucket only (`core/deploy/minio`). The root account stays with `minio` and `minio-init`.
+- Under `/storage/` the proxy passes only `GET` and `HEAD` for public avatars (`/storage/avatars/<uuid>/<size>.jpg`), with no query string and no `Authorization`. The MinIO S3 and admin APIs are not reachable from outside.
+- HTTPS (443, 3443), the CA (3444) and coturn bind only to `AXON_LAN_IP`, and HTTPS also to 127.0.0.1. To reach the stand at another address, for example over Tailscale, add the binding in a local overlay.

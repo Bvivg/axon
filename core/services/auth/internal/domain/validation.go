@@ -15,6 +15,8 @@ const MaxEmailLength = 254
 
 const MaxDisplayNameLength = 64
 
+const MinSearchQueryLength = 2
+
 func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
@@ -59,6 +61,9 @@ func ValidateSearchQuery(query string) (string, error) {
 	trimmed := strings.TrimSpace(query)
 	if !utf8.ValidString(trimmed) || utf8.RuneCountInString(trimmed) > MaxEmailLength {
 		return "", newValidationError("query", "is invalid or too long")
+	}
+	if utf8.RuneCountInString(strings.TrimSpace(strings.TrimLeft(trimmed, "@"))) < MinSearchQueryLength {
+		return "", newValidationError("query", "must be at least 2 characters")
 	}
 	return trimmed, nil
 }
