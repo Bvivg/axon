@@ -37,7 +37,42 @@ services:
       toxiproxy:
         condition: service_started
 
+  postgres-schemas:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  auth-migrate:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  chat-migrate:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
   game-migrate:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  rating-migrate:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  analysis-migrate:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  tournament-migrate:
+    depends_on:
+      toxiproxy:
+        condition: service_started
+
+  cdc-setup:
     depends_on:
       toxiproxy:
         condition: service_started
