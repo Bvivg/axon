@@ -94,9 +94,9 @@ function Hand({ hand, legal, playable, onMove }: { hand?: DurakHandView; legal: 
           <button key={card} ref={element => { buttons.current[at] = element; }} type="button" data-hand-card={card} data-legal={move ? "true" : undefined}
             aria-label={`${cardName(card)}, ${action}`} aria-disabled={!move} tabIndex={at === index ? 0 : -1}
             onFocus={() => setFocused(at)} onKeyDown={event => onKeyDown(event, at)} onClick={() => { if (move) onMove(move); }}
-            className={cn("relative rounded-[14%] outline-none transition-transform duration-150 hover:z-10 focus-visible:z-10 motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-game-primary focus-visible:ring-offset-2 focus-visible:ring-offset-durak-felt",
+            className={cn("relative rounded-[14%] outline-none transition-transform duration-150 focus-visible:z-10 motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-game-primary focus-visible:ring-offset-2 focus-visible:ring-offset-durak-felt",
               at > 0 && (cards.length > 8 ? "-ml-[clamp(16px,4.5vw,30px)]" : "-ml-[clamp(8px,2.5vw,16px)]"),
-              move ? "cursor-pointer hover:-translate-y-1.5 [&>span]:ring-2 [&>span]:ring-game-primary/70" : playable ? "cursor-default brightness-[0.86] saturate-50" : "cursor-default")}>
+              move ? "cursor-pointer hover:z-10 hover:-translate-y-1.5 [&>span]:ring-2 [&>span]:ring-game-primary/70" : playable ? "cursor-default brightness-[0.86] saturate-50" : "cursor-default")}>
             <CardFace card={card} />
           </button>
         );
