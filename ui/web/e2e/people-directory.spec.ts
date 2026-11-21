@@ -19,7 +19,7 @@ async function scrollForMore(page: Page, label: string, query: string) {
   return (await next).json();
 }
 
-test("people load immediately and paginate with or without a query in search and group creation", async ({ browser, request }, testInfo) => {
+test("people paginate by query in search and group creation, and a too-short query asks for more", async ({ browser, request }, testInfo) => {
   test.setTimeout(120_000);
   const tag = Math.random().toString(36).slice(2, 9);
   const prefix = `Paging${tag}`;
@@ -38,21 +38,26 @@ test("people load immediately and paginate with or without a query in search and
   const ada = await newPerson(browser, "directory", "Ada");
   const list = chatList(ada.page);
   await goToChats(ada.page);
-  const initial = searchResponse(ada.page, "", false);
+  const searches: string[] = [];
+  ada.page.on("request", (sent) => {
+    if (sent.url().endsWith("/axon.auth.v1.AuthService/SearchUsers")) searches.push(sent.postDataJSON().query ?? "");
+  });
   const search = list.getByLabel("Search chats and people", { exact: true });
   await search.click();
-  const first = await (await initial).json();
-  expect(first.users).toHaveLength(20);
-  expect(first.nextPageToken).toBeTruthy();
-  await expect(list.getByRole("region", { name: "Matching people" })).toBeVisible();
-  const second = await scrollForMore(ada.page, "Chat search results", "");
-  expect(second.users).toHaveLength(20);
-  expect(second.users.some((person: { id: string }) => first.users.some((other: { id: string }) => other.id === person.id))).toBe(false);
+  await expect(list.getByRole("status")).toHaveText("Type at least 2 characters to find people.");
+  await search.fill(tag.slice(0, 1));
+  await expect(list.getByRole("status")).toHaveText("Type at least 2 characters to find people.");
+  expect(searches).toEqual([]);
 
   const filtered = searchResponse(ada.page, tag.toLowerCase(), false);
   await search.fill(tag);
-  expect((await (await filtered).json()).users).toHaveLength(20);
-  await scrollForMore(ada.page, "Chat search results", tag.toLowerCase());
+  const first = await (await filtered).json();
+  expect(first.users).toHaveLength(20);
+  expect(first.nextPageToken).toBeTruthy();
+  await expect(list.getByRole("region", { name: "Matching people" })).toBeVisible();
+  const second = await scrollForMore(ada.page, "Chat search results", tag.toLowerCase());
+  expect(second.users).toHaveLength(20);
+  expect(second.users.some((person: { id: string }) => first.users.some((other: { id: string }) => other.id === person.id))).toBe(false);
   const last = await scrollForMore(ada.page, "Chat search results", tag.toLowerCase());
   expect(last.users).toHaveLength(5);
   expect(last.nextPageToken ?? "").toBe("");
@@ -61,8 +66,7 @@ test("people load immediately and paginate with or without a query in search and
 
   await list.getByRole("button", { name: "New chat" }).click();
   await list.getByRole("button", { name: "Create group" }).click();
-  await expect(list.getByRole("region", { name: "Available people" })).toBeVisible();
-  await scrollForMore(ada.page, "People directory", "");
+  await expect(list.getByRole("status")).toHaveText("Type at least 2 characters to find people.");
   const groupSearch = list.getByLabel("Search people", { exact: true });
   const groupFirst = searchResponse(ada.page, prefix, false);
   await groupSearch.fill(prefix);

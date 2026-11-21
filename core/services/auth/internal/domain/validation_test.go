@@ -147,3 +147,24 @@ func TestProviderValid(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateSearchQueryNeedsTwoCharactersBesidesTheAt(t *testing.T) {
+	for query, valid := range map[string]bool{
+		"":       false,
+		"  ":     false,
+		"a":      false,
+		"@a":     false,
+		"@@":     false,
+		"@ a":    false,
+		"ab":     true,
+		" ab ":   true,
+		"@ab":    true,
+		"жё":     true,
+		"ada lo": true,
+	} {
+		_, err := domain.ValidateSearchQuery(query)
+		if (err == nil) != valid {
+			t.Errorf("ValidateSearchQuery(%q) err = %v, want valid=%v", query, err, valid)
+		}
+	}
+}

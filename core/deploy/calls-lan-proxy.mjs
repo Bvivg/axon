@@ -11,7 +11,7 @@ const mediaPath = "/api/media/";
 const avatarObject = /^\/storage(\/avatars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:small|medium|large|original)\.jpg)$/;
 const storageHeaders = ["accept", "accept-encoding", "if-none-match", "if-modified-since", "range", "user-agent"];
 const gatewayHost = process.env.GATEWAY_HOST || "gateway";
-const target = url => url.split("?")[0] === "/oauth/fake/authorize" ? { host: "auth", port: 8081, path: url } : url.startsWith("/api/") ? { host: gatewayHost, port: 8080, path: url.startsWith(mediaPath) ? url : url.slice(4) } : url.startsWith("/storage/") ? { host: "minio", port: 9000, path: url.split("?")[0].slice(8), storage: true } : { host: "web", port: 3000, path: url };
+const target = url => url.startsWith("/api/") ? { host: gatewayHost, port: 8080, path: url.startsWith(mediaPath) ? url : url.slice(4) } : url.startsWith("/storage/") ? { host: "minio", port: 9000, path: url.split("?")[0].slice(8), storage: true } : { host: "web", port: 3000, path: url };
 const handler = (request, response) => {
   if (!hosts.has(request.headers.host)) { response.writeHead(421); response.end(); return; }
   if (request.url?.startsWith("/api" + mediaPath)) {

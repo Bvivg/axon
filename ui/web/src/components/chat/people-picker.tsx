@@ -10,6 +10,7 @@ import { DirectoryList } from "@/components/chat/directory-list";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { profileName } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
+import { peopleQueryHint } from "@/lib/people-search";
 import { useSearchUsers } from "@/lib/query/people";
 import { cn } from "@/lib/utils";
 
@@ -119,7 +120,7 @@ export function UserSearch({
           id={id}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Email or display name"
+          placeholder="Name or @username"
         />
       </div>
 
@@ -131,7 +132,7 @@ export function UserSearch({
         className={className}
         search={search}
         loading={query.trim() !== trimmed || search.isPending}
-        empty={trimmed ? `No match for "${trimmed}".` : "No people found."}
+        empty={search.tooShort ? peopleQueryHint : `No match for "${trimmed}".`}
         sections={[{ label: "Available people", title: "People", rows: results.map((profile) => ({
           id: profile.id,
           height: 72,

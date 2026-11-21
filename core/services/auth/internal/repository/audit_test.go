@@ -87,6 +87,12 @@ func TestSecurityAuditEvent(t *testing.T) {
 			wantAggregate: user.String(),
 		},
 		{
+			name:          "email changed",
+			event:         domain.SecurityEvent{Action: domain.SecurityEmailChanged, UserID: user, ActorID: user, Subject: family.String(), EmailSHA256: domain.EmailSHA256("ada@axon.test")},
+			wantAction:    eventsv1.SecurityAction_SECURITY_ACTION_EMAIL_CHANGED,
+			wantAggregate: user.String(),
+		},
+		{
 			name:          "unknown action",
 			event:         domain.SecurityEvent{Action: "password_changed", UserID: user},
 			wantAction:    eventsv1.SecurityAction_SECURITY_ACTION_UNSPECIFIED,
