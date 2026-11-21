@@ -20,6 +20,7 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/attachment"
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 	"github.com/bvivg/axon/core/services/chat/internal/media"
+	"github.com/bvivg/axon/core/services/chat/internal/uploads"
 )
 
 const AttachmentUploadPath = "/internal/attachment"
@@ -45,6 +46,7 @@ type AttachmentConfig struct {
 	Verifier *authn.Verifier
 	Pipeline *attachment.Pipeline
 	Recorder UploadRecorder
+	Budget   *uploads.Budget
 	Logger   *slog.Logger
 }
 
@@ -52,6 +54,7 @@ type AttachmentHandler struct {
 	verifier *authn.Verifier
 	pipeline *attachment.Pipeline
 	recorder UploadRecorder
+	budget   *uploads.Budget
 	log      *slog.Logger
 }
 
@@ -63,6 +66,8 @@ func NewAttachmentHandler(cfg AttachmentConfig) (*AttachmentHandler, error) {
 		return nil, errors.New("server: attachment pipeline is required")
 	case cfg.Recorder == nil:
 		return nil, errors.New("server: upload recorder is required")
+	case cfg.Budget == nil:
+		return nil, errors.New("server: upload budget is required")
 	case cfg.Logger == nil:
 		return nil, errors.New("server: logger is required")
 	}
@@ -71,6 +76,7 @@ func NewAttachmentHandler(cfg AttachmentConfig) (*AttachmentHandler, error) {
 		verifier: cfg.Verifier,
 		pipeline: cfg.Pipeline,
 		recorder: cfg.Recorder,
+		budget:   cfg.Budget,
 		log:      cfg.Logger,
 	}, nil
 }
@@ -110,6 +116,11 @@ func (h *AttachmentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = os.Remove(tmp) }()
 
+	if _, err := h.budget.Charge(r.Context(), claims.UserID, size); err != nil {
+		h.fail(r.Context(), w, mode, err)
+		return
+	}
+
 	var result attachment.Result
 	switch mode {
 	case UploadAsMedia:
@@ -141,6 +152,11 @@ func (h *AttachmentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *AttachmentHandler) fail(ctx context.Context, w http.ResponseWriter, mode UploadMode, err error) {
 	switch {
+	case errors.Is(err, domain.ErrUploadQuota):
+		refuseOverQuota(w)
+	case errors.Is(err, media.ErrAnimationTooLarge):
+		h.log.InfoContext(ctx, "refused an animation over the limits", "as", mode, "error", err)
+		http.Error(w, "the animation has too many frames or is too large", http.StatusBadRequest)
 	case errors.Is(err, media.ErrTooLarge):
 		http.Error(w, "the file is too large", http.StatusRequestEntityTooLarge)
 	case errors.Is(err, media.ErrUnsupported):
@@ -171,6 +187,13 @@ func uploadMode(raw string) (UploadMode, int64, bool) {
 }
 
 var errEmptyUpload = errors.New("server: empty upload")
+
+func refuseOverQuota(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusRequestEntityTooLarge)
+	_, _ = w.Write([]byte(`{"code":"resource_exhausted","message":"the daily upload limit is reached"}` + "\n"))
+}
 
 func spool(w http.ResponseWriter, r *http.Request, limit int64) (string, int64, error) {
 	body := http.MaxBytesReader(w, r.Body, limit)

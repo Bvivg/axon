@@ -5,6 +5,10 @@
 
 ## Context
 
+> Исторический контекст: так выглядел пустой репозиторий на старте, текущее состояние — в строке статуса ниже и в [README](../../README.md).
+>
+> Статус на 2026-11-21: этапы 0–5 и фазы архитектурного усиления закрыты — [1](platform-phase-1-game-event-sourcing.md), [1b](platform-phase-1b-game-performance.md), [2](platform-phase-2-outbox-cdc.md), [3](platform-phase-3-scale-resilience.md), [4](platform-phase-4-observability.md), [5](platform-phase-5-security.md), [6](platform-phase-6-k8s-gitops.md), 7a ([план фазы 7](platform-phase-7-features.md)), [7b](platform-phase-7b-analysis.md), [7c](platform-phase-7c-tournaments.md); 7d (SwiftUI) на ревью в [PR #25](https://github.com/Bvivg/axon/pull/25).
+
 Репозиторий сейчас пустой: только `CLAUDE.md`, 9 файлов конвенций в `.claude/rules/`,
 `schema.jpg` и IDE-конфиги. Один коммит `init`, в котором лежат исключительно файлы
 `.idea/`. Вся структура из «Структура папок» в `CLAUDE.md` — целевая, на диске её нет.

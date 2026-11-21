@@ -39,7 +39,7 @@ worktree их не изолирует. Отсюда правила ниже.
 стартует уже внутри своего каталога:
 
 ```bash
-cd /Users/bvivg/Developer/PetProjects/axon
+cd axon
 git worktree add -b feat/web-playwright        ../axon-playwright feat/auth-gateway
 git worktree add -b feat/auth-apple-signin     ../axon-apple      feat/auth-gateway
 git worktree add -b feat/game-engine-tictactoe ../axon-game       feat/auth-gateway

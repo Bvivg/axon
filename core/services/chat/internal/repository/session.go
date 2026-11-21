@@ -204,6 +204,14 @@ func (r *Repository) DeleteSession(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (r *Repository) WithdrawSession(ctx context.Context, id uuid.UUID) (bool, error) {
+	tag, err := r.q.Exec(ctx, `DELETE FROM upload_sessions WHERE id = $1 AND status = 'uploading'`, id)
+	if err != nil {
+		return false, fmt.Errorf("repository: withdraw upload session: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func (r *Repository) DeleteDraftUpload(ctx context.Context, uploadID uuid.UUID) error {
 	return r.InTx(ctx, func(tx *Repository) error {
 		var used bool

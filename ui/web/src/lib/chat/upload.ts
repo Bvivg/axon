@@ -63,6 +63,11 @@ async function accessToken(): Promise<string> {
 
 const throttled = (err: unknown) => isAxiosError(err) && err.response?.status === 429;
 
+const dailyLimitMessage = "You have reached today's upload limit. Try again tomorrow.";
+
+const overDailyLimit = (data: unknown) =>
+  typeof data === "object" && data !== null && (data as { code?: unknown }).code === "resource_exhausted";
+
 async function call<T>(config: AxiosRequestConfig): Promise<T> {
   for (let attempt = 1; ; attempt += 1) {
     try {
@@ -203,6 +208,8 @@ function failed(reason: string | undefined, as: UploadAs): Error {
       return new Error("The file changed while it was being uploaded. Attach it again.");
     case "too_large":
       return new Error(`That file is too large. ${limits[as]}`);
+    case "animation_too_large":
+      return new Error("This animation is too long or too large to send as a photo. Send it as a file instead.");
     case "unsupported":
       return new Error(
         as === UploadAs.Media
@@ -228,7 +235,7 @@ function explain(err: unknown, as: UploadAs): Error {
     case undefined:
       return new Error("Could not reach the server. Check the connection and try again.");
     case 413:
-      return new Error(`That file is too large. ${limits[as]}`);
+      return new Error(overDailyLimit(err.response.data) ? dailyLimitMessage : `That file is too large. ${limits[as]}`);
     case 429:
       return new Error(`Too many uploads at once. Try again in ${Math.ceil(retryAfterMs(err.response.headers["retry-after"]) / 1_000)} seconds.`);
     default:

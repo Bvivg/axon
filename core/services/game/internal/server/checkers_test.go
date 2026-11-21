@@ -34,9 +34,13 @@ func TestCheckersBoard(t *testing.T) {
 	if board.GetLastMove() != "11-15" || len(board.GetMoves()) != 1 || len(board.GetLegalMoves()) != 7 || out.GetTurnUserId() != o.String() {
 		t.Fatal(board, out.GetTurnUserId())
 	}
-	frame, err := historyFrame(item, state)
-	if err != nil || frame.GetCheckers().GetLastMove() != "11-15" || len(frame.GetCheckers().GetLegalMoves()) != 0 || frame.GetPly() != 1 {
+	frame, err := historyFrame(item, state, true)
+	if err != nil || frame.GetCheckers().GetLastMove() != "11-15" || frame.GetMove() != "11-15" || len(frame.GetCheckers().GetMoves()) != 1 || len(frame.GetCheckers().GetLegalMoves()) != 0 || frame.GetPly() != 1 {
 		t.Fatal(frame, err)
+	}
+	middle, err := historyFrame(item, state, false)
+	if err != nil || middle.GetMove() != "11-15" || len(middle.GetCheckers().GetMoves()) != 0 {
+		t.Fatal(middle, err)
 	}
 	waiting, err := present(session.Session{ID: uuid.New(), Creator: x, Game: checkers.Key, UpdatedAt: time.Now()}, session.TimeLimitMS, nil)
 	if err != nil || len(waiting.GetCheckers().GetSquares()) != checkers.Squares || waiting.GetCheckers().GetSquares()[0] != gamev1.CheckersPiece_CHECKERS_PIECE_BLACK_MAN {
