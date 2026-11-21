@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -50,9 +52,29 @@ func (c Change) Recorded() bool { return c.Fact != FactNone }
 
 type Rules struct {
 	games *engine.Registry
+	seeds func() uint64
 }
 
-func NewRules(games *engine.Registry) Rules { return Rules{games: games} }
+func NewRules(games *engine.Registry) Rules { return Rules{games: games, seeds: secretSeed} }
+
+func (r Rules) WithSeeds(seeds func() uint64) Rules {
+	r.seeds = seeds
+	return r
+}
+
+func secretSeed() uint64 {
+	var raw [8]byte
+	_, _ = rand.Read(raw[:])
+	return binary.LittleEndian.Uint64(raw[:])
+}
+
+func (r Rules) deal(key engine.Key, players []engine.PlayerID) (engine.State, error) {
+	seeds := r.seeds
+	if seeds == nil {
+		seeds = secretSeed
+	}
+	return r.games.NewSeededState(key, players, seeds())
+}
 
 func (r Rules) Games() *engine.Registry { return r.games }
 
@@ -85,7 +107,7 @@ func (r Rules) Create(user, request uuid.UUID, key engine.Key, now time.Time) (S
 
 func (r Rules) Start(id uuid.UUID, key engine.Key, creator, opponent uuid.UUID, rated bool, now time.Time) (Session, Change, error) {
 	players := []engine.PlayerID{engine.PlayerID(creator.String()), engine.PlayerID(opponent.String())}
-	state, err := r.games.NewState(key, players)
+	state, err := r.deal(key, players)
 	if err != nil {
 		return Session{}, Change{}, err
 	}
@@ -138,7 +160,7 @@ func (r Rules) Join(game Session, user uuid.UUID, now time.Time) (Session, Chang
 		return Session{}, Change{}, ErrFull
 	}
 	players := []engine.PlayerID{engine.PlayerID(game.Creator.String()), engine.PlayerID(user.String())}
-	state, err := r.games.NewState(game.Game, players)
+	state, err := r.deal(game.Game, players)
 	if err != nil {
 		return Session{}, Change{}, err
 	}
@@ -250,6 +272,9 @@ func (r Rules) Undo(game Session, user uuid.UUID, revision *uint32, previous Pre
 	if game.Rated {
 		return Session{}, Change{}, ErrRated
 	}
+	if r.games.Hidden(game.Game) {
+		return Session{}, Change{}, ErrNoUndo
+	}
 	if revision != nil && *revision != game.Revision {
 		return Session{}, Change{}, engine.ErrStaleMove
 	}
@@ -281,7 +306,7 @@ func (r Rules) AdjustClock(game Session, remaining [2]int64, now time.Time) (Ses
 }
 
 func (r Rules) opening(game Session) (engine.State, error) {
-	state, err := r.games.NewState(game.Game, game.State.Players)
+	state, err := r.games.NewSeededState(game.Game, game.State.Players, game.State.Seed)
 	if err != nil {
 		return state, err
 	}

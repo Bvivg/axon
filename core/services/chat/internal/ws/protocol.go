@@ -66,6 +66,8 @@ const (
 	ErrorInternal = "internal"
 
 	ErrorForbidden = "forbidden"
+
+	ErrorRateLimited = "rate_limited"
 )
 
 type Inbound struct {

@@ -89,6 +89,14 @@ func (s *stubAuth) Login(
 	return connect.NewResponse(&authv1.LoginResponse{}), nil
 }
 
+func (s *stubAuth) RefreshToken(
+	_ context.Context,
+	_ *connect.Request[authv1.RefreshTokenRequest],
+) (*connect.Response[authv1.RefreshTokenResponse], error) {
+	s.calls++
+	return connect.NewResponse(&authv1.RefreshTokenResponse{}), nil
+}
+
 func (s *stubAuth) SearchUsers(
 	_ context.Context,
 	_ *connect.Request[authv1.SearchUsersRequest],
@@ -111,8 +119,10 @@ type harness struct {
 }
 
 type limits struct {
-	standard  int
-	sensitive int
+	standard       int
+	sensitive      int
+	network        int
+	trustedProxies int
 }
 
 func newHarness(t *testing.T, l limits) *harness {
@@ -134,11 +144,17 @@ func newHarness(t *testing.T, l limits) *harness {
 		l.sensitive = 1000
 	}
 
+	var network *ratelimit.Limiter
+	if l.network > 0 {
+		network = ratelimit.New(ratelimit.Config{PerMinute: l.network, Burst: l.network})
+	}
+
 	g, err := guard.New(guard.Config{
 		Verifier:  verifier,
 		Search:    ratelimit.New(ratelimit.Config{PerMinute: 60}),
 		Standard:  ratelimit.New(ratelimit.Config{PerMinute: l.standard, Burst: l.standard}),
 		Sensitive: ratelimit.New(ratelimit.Config{PerMinute: l.sensitive, Burst: l.sensitive}),
+		Network:   network,
 		Logger:    logger.Discard(),
 	})
 	if err != nil {
@@ -150,7 +166,7 @@ func newHarness(t *testing.T, l limits) *harness {
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(stub, connect.WithInterceptors(g)))
 
-	srv := httptest.NewServer(guard.ClientIPMiddleware(0)(mux))
+	srv := httptest.NewServer(guard.ClientIPMiddleware(l.trustedProxies, logger.Discard())(mux))
 	t.Cleanup(srv.Close)
 
 	return &harness{
@@ -165,6 +181,22 @@ func (h *harness) login(accessToken string) error {
 		req.Header().Set(authn.Header, "Bearer "+accessToken)
 	}
 	_, err := h.client.Login(context.Background(), req)
+	return err
+}
+
+func (h *harness) anonymousLogin(header http.Header) error {
+	req := connect.NewRequest(&authv1.LoginRequest{})
+	for name, values := range header {
+		for _, value := range values {
+			req.Header().Add(name, value)
+		}
+	}
+	_, err := h.client.Login(context.Background(), req)
+	return err
+}
+
+func (h *harness) refresh() error {
+	_, err := h.client.RefreshToken(context.Background(), connect.NewRequest(&authv1.RefreshTokenRequest{}))
 	return err
 }
 
@@ -359,5 +391,62 @@ func TestSearchHasAnIndependentBudget(t *testing.T) {
 	req.Header().Set(authn.Header, "Bearer "+accessToken)
 	if _, err := h.client.SearchUsers(context.Background(), req); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("search was not limited: %v", err)
+	}
+}
+
+func TestAClientChosenDeviceHeaderDoesNotOpenANewBudget(t *testing.T) {
+	h := newHarness(t, limits{sensitive: 3})
+
+	for i := range 3 {
+		if err := h.anonymousLogin(http.Header{"X-Axon-Device": {uuid.NewString()}}); err != nil {
+			t.Fatalf("login %d was refused inside the budget: %v", i+1, err)
+		}
+	}
+
+	err := h.anonymousLogin(http.Header{"X-Axon-Device": {uuid.NewString()}})
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("a fresh device id bought a fresh budget: code = %v, want resource_exhausted", connect.CodeOf(err))
+	}
+}
+
+func TestAnIPv6SubnetSharesOneAnonymousBudget(t *testing.T) {
+	h := newHarness(t, limits{sensitive: 2, trustedProxies: 1})
+	from := func(ip string) http.Header { return http.Header{"X-Forwarded-For": {ip}} }
+
+	if err := h.anonymousLogin(from("2001:db8:1:2::1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.anonymousLogin(from("2001:db8:1:2:ffff::2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.anonymousLogin(from("2001:db8:1:2:abcd::3")); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("a third address in the same /64 got its own budget: code = %v", connect.CodeOf(err))
+	}
+
+	if err := h.anonymousLogin(from("2001:db8:1:3::1")); err != nil {
+		t.Fatalf("the next /64 shares the budget of its neighbour: %v", err)
+	}
+	if err := h.anonymousLogin(from("198.51.100.7")); err != nil {
+		t.Fatalf("an IPv4 client was throttled by IPv6 traffic: %v", err)
+	}
+}
+
+func TestAnonymousRenewalUsesTheWiderNetworkBudget(t *testing.T) {
+	h := newHarness(t, limits{sensitive: 1, network: 4})
+
+	if err := h.login(""); err != nil {
+		t.Fatal(err)
+	}
+	if connect.CodeOf(h.login("")) != connect.CodeResourceExhausted {
+		t.Fatal("the sensitive budget was not exhausted")
+	}
+
+	for i := range 3 {
+		if err := h.refresh(); err != nil {
+			t.Fatalf("refresh %d behind one address was refused inside the network budget: %v", i+1, err)
+		}
+	}
+	if connect.CodeOf(h.refresh()) != connect.CodeResourceExhausted {
+		t.Fatal("refreshes are not bounded by the network budget")
 	}
 }

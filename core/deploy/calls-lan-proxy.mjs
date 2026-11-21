@@ -46,7 +46,7 @@ const upgrade = (request, socket, head) => {
   const media = path === "/api/livekit/rtc" || path === "/api/livekit/rtc/v1";
   if (!hosts.has(request.headers.host) || !(media || request.url?.startsWith("/api/ws/") || request.url?.startsWith("/_next/webpack-hmr"))) { socket.destroy(); return; }
   const upstream = target(request.url);
-  const proxy = http.request({ hostname: upstream.host, port: upstream.port, path: upstream.path, method: "GET", headers: request.headers });
+  const proxy = http.request({ hostname: upstream.host, port: upstream.port, path: upstream.path, method: "GET", headers: { ...request.headers, "x-forwarded-for": request.socket.remoteAddress } });
   proxy.on("upgrade", (response, remote, pending) => {
     socket.write(`HTTP/1.1 101 Switching Protocols\r\n${Object.entries(response.headers).map(([name, value]) => `${name}: ${value}`).join("\r\n")}\r\n\r\n`);
     if (pending.length) socket.write(pending);

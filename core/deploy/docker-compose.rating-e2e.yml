@@ -1,4 +1,7 @@
 services:
+  gateway:
+    environment:
+      RATE_LIMIT_AUTH_PER_MINUTE: 3000
   rating-e2e:
     image: golang:1.27.4-alpine
     working_dir: /src/core/services/rating

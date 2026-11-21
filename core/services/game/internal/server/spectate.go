@@ -67,7 +67,8 @@ func (w *watchers) total() int {
 }
 
 func (h *Handler) ListLiveSessions(ctx context.Context, req *connect.Request[gamev1.ListLiveSessionsRequest]) (*connect.Response[gamev1.ListLiveSessionsResponse], error) {
-	if _, err := h.actor(req.Header()); err != nil {
+	user, err := h.actor(req.Header())
+	if err != nil {
 		return nil, err
 	}
 	key := engine.Key(req.Msg.GetGame())
@@ -82,7 +83,7 @@ func (h *Handler) ListLiveSessions(ctx context.Context, req *connect.Request[gam
 	}
 	response := &gamev1.ListLiveSessionsResponse{Sessions: make([]*gamev1.Session, 0, len(items))}
 	for _, item := range items {
-		state, err := h.result(item, nil)
+		state, err := h.result(item, user, nil)
 		if err != nil {
 			return nil, err
 		}

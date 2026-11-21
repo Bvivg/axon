@@ -30,6 +30,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -168,7 +169,7 @@ func serve(ctx context.Context, cfg settings, pool *postgres.Pool, cache *redis.
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.base.ShutdownTimeout, checks, log)
 
 	api := http.NewServeMux()
-	api.Handle(ratingv1connect.NewRatingServiceHandler(server.New(board, ratings, log), connect.WithInterceptors(
+	api.Handle(ratingv1connect.NewRatingServiceHandler(server.New(board, ratings, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
 	identity, err := mtls.LoadEnv()

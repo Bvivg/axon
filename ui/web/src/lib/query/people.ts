@@ -45,15 +45,23 @@ export function useSearchUsers(query: string, enabled = true) {
   };
 }
 
+export const maxProfilesPerRequest = 100;
+
+type ProfileLookup<T extends { id: string }> = (request: { userIds: string[] }) => Promise<{ users: T[] }>;
+
+export async function fetchProfiles<T extends { id: string }>(lookup: ProfileLookup<T>, ids: string[]): Promise<Map<string, T>> {
+  const batches: string[][] = [];
+  for (let start = 0; start < ids.length; start += maxProfilesPerRequest) batches.push(ids.slice(start, start + maxProfilesPerRequest));
+  const responses = await Promise.all(batches.map((userIds) => lookup({ userIds })));
+  return new Map(responses.flatMap((resp) => resp.users).map((profile) => [profile.id, profile]));
+}
+
 export function usePublicProfiles(userIDs: string[]) {
   const ids = [...new Set(userIDs)].sort();
 
   return useQuery({
     queryKey: peopleKeys.profiles(ids),
-    queryFn: async (): Promise<Map<string, PublicProfile>> => {
-      const resp = await apiClient.getUsersPublicProfiles({ userIds: ids });
-      return new Map(resp.users.map((profile) => [profile.id, profile]));
-    },
+    queryFn: (): Promise<Map<string, PublicProfile>> => fetchProfiles((request) => apiClient.getUsersPublicProfiles(request), ids),
     enabled: ids.length > 0,
   });
 }

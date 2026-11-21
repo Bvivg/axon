@@ -19,6 +19,7 @@ var (
 	ErrNotPlaying  = errors.New("game is not in progress")
 	ErrFull        = errors.New("game session is full")
 	ErrRated       = errors.New("rated games cannot be undone")
+	ErrNoUndo      = errors.New("games with hidden cards cannot be undone")
 	ErrNoDrawOffer = errors.New("there is no draw offer to answer")
 
 	ErrNotReplayable = errors.New("only recorded moves can be replayed")

@@ -64,3 +64,33 @@ func TestNewIDIsUnique(t *testing.T) {
 		seen[id] = struct{}{}
 	}
 }
+
+func TestValid(t *testing.T) {
+	for id, want := range map[string]bool{
+		"6f1c2a4e-9b7d-4c3a-8e21-0d5f7a9b3c11":          true,
+		"6F1C2A4E-9B7D-4C3A-8E21-0D5F7A9B3C11":          true,
+		"01HZX3F5Q8K2V7N9M4T6B1C0DE":                    true,
+		correlation.NewID():                             true,
+		"":                                              false,
+		"corr-99":                                       false,
+		"6f1c2a4e9b7d4c3a8e210d5f7a9b3c11":              false,
+		"{6f1c2a4e-9b7d-4c3a-8e21-0d5f7a9b3c11}":        false,
+		"urn:uuid:6f1c2a4e-9b7d-4c3a-8e21-0d5f7a9b3c11": false,
+		"6f1c2a4e-9b7d-4c3a-8e21-0d5f7a9b3c1\n":         false,
+		"01HZX3F5Q8K2V7N9M4T6B1C0DU":                    false,
+		"81HZX3F5Q8K2V7N9M4T6B1C0DE":                    false,
+	} {
+		if got := correlation.Valid(id); got != want {
+			t.Errorf("Valid(%q) = %v, want %v", id, got, want)
+		}
+	}
+}
+
+func TestFromHeaderDropsAnInvalidID(t *testing.T) {
+	if got := correlation.FromHeader("6f1c2a4e-9b7d-4c3a-8e21-0d5f7a9b3c11"); got != "6f1c2a4e-9b7d-4c3a-8e21-0d5f7a9b3c11" {
+		t.Fatalf("a valid id was dropped: %q", got)
+	}
+	if got := correlation.FromHeader("free text"); got != "" {
+		t.Fatalf("an invalid id passed: %q", got)
+	}
+}

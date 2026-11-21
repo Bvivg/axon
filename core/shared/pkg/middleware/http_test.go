@@ -38,16 +38,45 @@ func TestCorrelationReusesInboundID(t *testing.T) {
 	}))
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
-	req.Header.Set(correlation.Header, "inbound-id")
+	req.Header.Set(correlation.Header, inboundID)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if seen != "inbound-id" {
+	if seen != inboundID {
 		t.Fatalf("context ID = %q, want the inbound ID", seen)
 	}
-	if got := rec.Header().Get(correlation.Header); got != "inbound-id" {
+	if got := rec.Header().Get(correlation.Header); got != inboundID {
 		t.Fatalf("response header = %q, want the inbound ID", got)
+	}
+}
+
+const inboundID = "6f1c2a4e-9b7d-4c3a-8e21-0d5f7a9b3c11"
+
+func TestCorrelationReplacesAnIDThatIsNotAUUIDOrULID(t *testing.T) {
+	for name, inbound := range map[string]string{
+		"oversized":   strings.Repeat("x", 60000),
+		"log forging": "abc\n{\"level\":\"ERROR\"}",
+		"free text":   "corr-99",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var seen string
+			h := middleware.Correlation(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				seen = correlation.FromContext(r.Context())
+			}))
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+			req.Header.Set(correlation.Header, inbound)
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if seen == inbound || !correlation.Valid(seen) {
+				t.Fatalf("context ID = %.40q, want a freshly generated one", seen)
+			}
+			if got := rec.Header().Get(correlation.Header); got != seen {
+				t.Fatalf("response header = %.40q, want the generated ID %q", got, seen)
+			}
+		})
 	}
 }
 
@@ -175,13 +204,13 @@ func TestChainOrderAndCorrelationInLogs(t *testing.T) {
 	)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
-	req.Header.Set(correlation.Header, "corr-99")
+	req.Header.Set(correlation.Header, inboundID)
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
 	if len(order) != 2 || order[0] != "first" || order[1] != "second" {
 		t.Fatalf("middleware ran in order %v, want [first second]", order)
 	}
-	if !strings.Contains(buf.String(), `"correlation_id":"corr-99"`) {
+	if !strings.Contains(buf.String(), `"correlation_id":"`+inboundID+`"`) {
 		t.Fatalf("request log line has no correlation ID: %s", buf.String())
 	}
 }
