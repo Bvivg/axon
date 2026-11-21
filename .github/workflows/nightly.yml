@@ -1,0 +1,93 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: ${{ matrix.suite.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.suite.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Security: mTLS and key rotation", target: test-e2e-security, timeout: 45 }
+          - { name: "Rating: outbox, CDC and rebuild", target: test-rating-e2e, timeout: 60 }
+          - { name: "Game: spectators and replay", target: test-e2e-game, timeout: 45 }
+          - { name: "Analysis: CDC and Stockfish", target: test-e2e-analysis, timeout: 45 }
+          - { name: "Tournament: saga with a no-show", target: test-e2e-tournament, timeout: 60 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        run: buf generate
+
+      - name: make ${{ matrix.suite.target }}
+        run: make ${{ matrix.suite.target }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: logs-${{ matrix.suite.target }}
+          path: e2e-logs.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+  chaos:
+    name: "Chaos smoke: no lost confirmed moves"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.work
+          cache-dependency-path: core/services/game/go.sum
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Generate contracts
+        run: buf generate
+
+      - name: Reconciliation detects lost moves
+        working-directory: core/services/game
+        run: go test -race -count=1 ./cmd/reconcile/...
+
+      - name: make chaos
+        env:
+          MATCHES: "200"
+          REPORT_DIR: chaos-report
+        run: make chaos
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-report
+          path: chaos-report/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: logs-chaos
+          path: e2e-logs.txt
+          if-no-files-found: ignore
+          retention-days: 14

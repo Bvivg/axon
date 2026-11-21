@@ -171,6 +171,10 @@ E2E_ENV_FILE := core/deploy/.env.e2e
 
 E2E_LOG_FILE := e2e-logs.txt
 
+define e2e-teardown
+trap 'status=$$?; [ $$status -eq 0 ] || $(1) logs --no-color > $(E2E_LOG_FILE) 2>&1; $(1) down -v --remove-orphans >/dev/null 2>&1; exit $$status' EXIT
+endef
+
 .PHONY: test-e2e
 test-e2e: e2e-key ## Run e2e against the full stack on the shipping images
 	@trap '$(COMPOSE_E2E) --env-file $(E2E_ENV_FILE) logs --no-color > $(E2E_LOG_FILE) 2>&1; \
@@ -186,7 +190,7 @@ COMPOSE_SECURITY_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55732 REDIS_HOST
 
 .PHONY: test-e2e-security
 test-e2e-security: jwt-key ## mTLS and key-rotation e2e on the base stack with the mTLS overlay (WATCH=1 also waits for renewals and rotations)
-	@trap '$(COMPOSE_SECURITY_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	@$(call e2e-teardown,$(COMPOSE_SECURITY_E2E) --profile e2e); \
 	$(COMPOSE_SECURITY_E2E) --profile e2e run --rm --build security-e2e
 
 COMPOSE_GAME_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55832 REDIS_HOST_PORT=56779 KAFKA_HOST_PORT=59492 MINIO_HOST_PORT=59400 \
@@ -196,7 +200,7 @@ COMPOSE_GAME_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55832 REDIS_HOST_POR
 
 .PHONY: test-e2e-game
 test-e2e-game: jwt-key ## Spectator and replay e2e through the gateway on the base stack
-	@trap '$(COMPOSE_GAME_E2E) --profile e2e down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	@$(call e2e-teardown,$(COMPOSE_GAME_E2E) --profile e2e); \
 	$(COMPOSE_GAME_E2E) --profile e2e run --rm --build game-e2e
 
 COMPOSE_ANALYSIS_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55932 REDIS_HOST_PORT=56879 KAFKA_HOST_PORT=59592 MINIO_HOST_PORT=59500 \
@@ -206,7 +210,7 @@ COMPOSE_ANALYSIS_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=55932 REDIS_HOST
 
 .PHONY: test-e2e-analysis
 test-e2e-analysis: jwt-key ## Scholar's mate through the gateway, CDC and Stockfish analysis (one-off stack)
-	@trap '$(COMPOSE_ANALYSIS_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	@$(call e2e-teardown,$(COMPOSE_ANALYSIS_E2E)); \
 	$(COMPOSE_ANALYSIS_E2E) run --rm --build analysis-e2e
 
 COMPOSE_TOURNAMENT_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=56132 REDIS_HOST_PORT=57079 KAFKA_HOST_PORT=59792 MINIO_HOST_PORT=59700 \
@@ -216,7 +220,7 @@ COMPOSE_TOURNAMENT_E2E := BUILD_TARGET=runtime POSTGRES_HOST_PORT=56132 REDIS_HO
 
 .PHONY: test-e2e-tournament
 test-e2e-tournament: jwt-key ## Eight-player tic-tac-toe bracket with a no-show through the gateway, CDC and the tournament saga (one-off stack)
-	@trap '$(COMPOSE_TOURNAMENT_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	@$(call e2e-teardown,$(COMPOSE_TOURNAMENT_E2E)); \
 	$(COMPOSE_TOURNAMENT_E2E) run --rm --build tournament-e2e
 
 .PHONY: e2e-key
@@ -278,7 +282,7 @@ COMPOSE_RATING_E2E := docker compose -p axon-rating-e2e -f core/deploy/docker-co
 
 .PHONY: test-rating-e2e
 test-rating-e2e: jwt-key ## Rated quick matches through gateway, CDC and rating, a Connect outage and a rebuild (one-off stack)
-	@trap '$(COMPOSE_RATING_E2E) down -v --remove-orphans >/dev/null 2>&1' EXIT; \
+	@$(call e2e-teardown,$(COMPOSE_RATING_E2E)); \
 	core/deploy/rating-e2e.sh $(COMPOSE_RATING_E2E)
 
 COMPOSE_BENCH := env BUILD_TARGET=runtime docker compose -p axon-bench \
