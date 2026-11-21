@@ -202,7 +202,7 @@ func (e *env) finishedOnce(t *testing.T, game session.Session, outcome eventsv1.
 func (e *env) match(t *testing.T, node *owner.Owner, game engine.Key, a, b uuid.UUID) session.Session {
 	t.Helper()
 	for _, user := range []uuid.UUID{a, b} {
-		if _, err := e.store.FindMatch(e.ctx, user, uuid.New(), game); err != nil {
+		if _, err := e.store.FindMatch(e.ctx, user, uuid.New(), game, session.Table{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -215,11 +215,11 @@ func (e *env) match(t *testing.T, node *owner.Owner, game engine.Key, a, b uuid.
 		t.Fatal("unstarted match is visible", ticket, err)
 	}
 	pending, err := e.store.Pending(e.ctx)
-	if err != nil || len(pending) != 1 || pending[0] != paired[0] {
+	if err != nil || len(pending) != 1 || pending[0].ID != paired[0].ID || !slices.Equal(pending[0].Players, paired[0].Players) {
 		t.Fatal("pending", pending, err)
 	}
 	item := pending[0]
-	started, err := node.Start(e.ctx, item.ID, item.Game, item.Creator, item.Opponent, true)
+	started, err := node.Start(e.ctx, item.ID, item.Game, item.Players, item.Table, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestMatchedGameProjectsAndSettlesOnce(t *testing.T) {
 	if _, err := e.store.Ticket(e.ctx, a, tictactoe.Key); !errors.Is(err, session.ErrNotSearching) {
 		t.Fatal("finished ticket still visible", err)
 	}
-	ticket, err := e.store.FindMatch(e.ctx, a, uuid.New(), tictactoe.Key)
+	ticket, err := e.store.FindMatch(e.ctx, a, uuid.New(), tictactoe.Key, session.Table{})
 	if err != nil || ticket.Session != nil {
 		t.Fatal("requeue after finished game", ticket, err)
 	}
@@ -458,7 +458,7 @@ func TestFinishedRatedSessionWritesOneOutboxRowAcrossReplays(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	unrated, err := node.Start(e.ctx, session.SessionID(players[0], uuid.New()), tictactoe.Key, players[0], players[1], false)
+	unrated, err := node.Start(e.ctx, session.SessionID(players[0], uuid.New()), tictactoe.Key, []uuid.UUID{players[0], players[1]}, session.Table{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,7 @@ func TestCancelledWaitingGameIsRemoved(t *testing.T) {
 	e := setup(t)
 	node := e.node(t, "a")
 	creator, outsider := uuid.New(), uuid.New()
-	game, err := node.Create(e.ctx, creator, uuid.New(), tictactoe.Key)
+	game, err := node.Create(e.ctx, creator, uuid.New(), tictactoe.Key, session.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +531,7 @@ func TestProjectorFencesZombieOwner(t *testing.T) {
 	e := setup(t)
 	zombie := e.node(t, "a")
 	x, o := uuid.New(), uuid.New()
-	game, err := zombie.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, x, o, false)
+	game, err := zombie.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, []uuid.UUID{x, o}, session.Table{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -655,7 +655,7 @@ func TestMovesAcrossMonthsLandInMonthlyPartitionsAndReplayIdentically(t *testing
 	e := setup(t)
 	node := e.node(t, "a")
 	x, o := uuid.New(), uuid.New()
-	game, err := node.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, x, o, false)
+	game, err := node.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, []uuid.UUID{x, o}, session.Table{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -669,7 +669,7 @@ func TestMovesAcrossMonthsLandInMonthlyPartitionsAndReplayIdentically(t *testing
 	now := time.Now().UTC()
 	next := time.Date(now.Year(), now.Month()+1, 2, 12, 0, 0, 0, time.UTC)
 	e.skew.Store(int64(time.Until(next)))
-	if game, err = node.AdjustClock(e.ctx, game.ID, [2]int64{300_000, 300_000}); err != nil {
+	if game, err = node.AdjustClock(e.ctx, game.ID, []int64{300_000, 300_000}); err != nil {
 		t.Fatal(err)
 	}
 	if game, err = node.Undo(e.ctx, game.ID, o, &game.Revision); err != nil || game.State.Ply != 1 {
@@ -724,7 +724,7 @@ func TestEnsureMovePartitionsAdoptsRowsFromDefault(t *testing.T) {
 	e := setup(t)
 	node := e.node(t, "a")
 	x, o := uuid.New(), uuid.New()
-	game, err := node.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, x, o, false)
+	game, err := node.Start(e.ctx, session.SessionID(x, uuid.New()), tictactoe.Key, []uuid.UUID{x, o}, session.Table{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -187,6 +187,8 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		gamev1connect.GameServiceLeaveSessionProcedure:        true,
 		gamev1connect.GameServiceGetSessionHistoryProcedure:   true,
 		gamev1connect.GameServiceListLiveSessionsProcedure:    true,
+		gamev1connect.GameServiceListOpenTablesProcedure:      true,
+		gamev1connect.GameServiceFillWithBotsProcedure:        true,
 		analysisv1connect.AnalysisServiceGetAnalysisProcedure: true,
 
 		tournamentv1connect.TournamentServiceCreateTournamentProcedure:       true,

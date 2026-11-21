@@ -82,6 +82,42 @@ func Match(entries []Entry, now time.Time, wait time.Duration) []Pair {
 	return pairs
 }
 
+func Groups(entries []Entry, seats int, now time.Time, wait time.Duration) [][]uuid.UUID {
+	if seats <= 2 {
+		var groups [][]uuid.UUID
+		for _, pair := range Match(entries, now, wait) {
+			groups = append(groups, []uuid.UUID{pair.First.User, pair.Second.User})
+		}
+		return groups
+	}
+	queue := append([]Entry(nil), entries...)
+	sort.SliceStable(queue, func(i, j int) bool { return queue[i].JoinedAt.Before(queue[j].JoinedAt) })
+	taken := make([]bool, len(queue))
+	var groups [][]uuid.UUID
+	for i, anchor := range queue {
+		if taken[i] {
+			continue
+		}
+		allowed := Window(now.Sub(anchor.JoinedAt), wait)
+		members := []int{i}
+		for j := i + 1; j < len(queue) && len(members) < seats; j++ {
+			if !taken[j] && abs(anchor.Rating-queue[j].Rating) <= max(allowed, Window(now.Sub(queue[j].JoinedAt), wait)) {
+				members = append(members, j)
+			}
+		}
+		if len(members) < seats {
+			continue
+		}
+		group := make([]uuid.UUID, len(members))
+		for k, member := range members {
+			taken[member] = true
+			group[k] = queue[member].User
+		}
+		groups = append(groups, group)
+	}
+	return groups
+}
+
 func abs(value int) int {
 	if value < 0 {
 		return -value

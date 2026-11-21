@@ -168,3 +168,23 @@ func TestOutboxMigrationMatchesTheSharedSchema(t *testing.T) {
 		t.Fatalf("000008_outbox.up.sql drifted from outbox.Migration(\"game\"):\n%s", raw)
 	}
 }
+
+func TestFinishedEventCarriesPlacesOfATable(t *testing.T) {
+	players := []uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
+	opponent := players[1]
+	game := session.Session{
+		ID: uuid.New(), Game: "durak", Creator: players[0], Opponent: &opponent, Seats: 4, Seated: players, Rated: true, Left: []int{0},
+		State: engine.State{Game: "durak", Status: engine.StatusWin, Winner: 0, Turn: engine.NoSeat, Places: []int{1, 3, 2, 4}},
+	}
+	event, ok := projection.FinishedEvent(game, time.Now())
+	if !ok {
+		t.Fatal("no event")
+	}
+	payload := event.Payload.(*eventsv1.GameFinished)
+	if !slices.Equal(payload.Places, []uint32{4, 2, 1, 3}) || payload.WinnerSeat != 2 || payload.Outcome != eventsv1.GameFinished_OUTCOME_WIN || len(payload.Players) != 4 {
+		t.Fatalf("places %v winner %d outcome %v players %d", payload.Places, payload.WinnerSeat, payload.Outcome, len(payload.Players))
+	}
+	if payload.Players[3] != players[3].String() {
+		t.Fatal("players out of seat order")
+	}
+}

@@ -60,7 +60,7 @@ func TestFoldReplaysRandomGamesExactly(t *testing.T) {
 			rng := rand.New(rand.NewPCG(seed, uint64(len(key))))
 			creator, opponent := uuid.New(), uuid.New()
 			now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
-			game, change, err := rules.Start(uuid.New(), key, creator, opponent, false, now)
+			game, change, err := rules.Start(uuid.New(), key, []uuid.UUID{creator, opponent}, session.Table{}, false, now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,7 +114,7 @@ func TestFoldSkipsKnownRevisionsAndRejectsGaps(t *testing.T) {
 	rules := session.NewRules(games)
 	creator, opponent := uuid.New(), uuid.New()
 	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
-	game, change, _ := rules.Start(uuid.New(), tictactoe.Key, creator, opponent, false, now)
+	game, change, _ := rules.Start(uuid.New(), tictactoe.Key, []uuid.UUID{creator, opponent}, session.Table{}, false, now)
 	game = session.Record(game, change)
 	base := game
 	data, _ := json.Marshal(tictactoe.Cell{Row: 1, Col: 1})
@@ -166,5 +166,60 @@ func TestSnapshotCarriesTheTournament(t *testing.T) {
 	plain.Tournament = nil
 	if roundTrip(t, plain, change).Session.Tournament != nil {
 		t.Fatal("a casual game gained a tournament")
+	}
+}
+
+func TestFoldReplaysTablesWithBotsAndLeavers(t *testing.T) {
+	rules := session.NewRules(registry(t))
+	now := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
+	for seats := 3; seats <= 6; seats++ {
+		options := durak.DefaultOptions(seats)
+		options.Mode, options.Cheats = durak.ModeTransfer, seats%2 == 0
+		raw, _ := json.Marshal(options)
+		host, guest := uuid.New(), uuid.New()
+		game, change, err := rules.Create(host, uuid.New(), durak.Key, session.Table{Seats: seats, Options: raw, Bots: seats - 2}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		game = session.Record(game, change)
+		folded, err := journal.Fold(rules, nil, roundTrip(t, game, change))
+		if err != nil {
+			t.Fatal(err)
+		}
+		same(t, game, folded.Session)
+		replica := folded.Session
+		apply := func(next session.Session, change session.Change, err error) {
+			t.Helper()
+			if err != nil {
+				t.Fatalf("%d seats: %v", seats, err)
+			}
+			game = session.Record(next, change)
+			folded, err := journal.Fold(rules, &replica, roundTrip(t, game, change))
+			if err != nil {
+				t.Fatalf("%d seats revision %d: %v", seats, game.Revision, err)
+			}
+			same(t, game, folded.Session)
+			replica = folded.Session
+		}
+		apply(rules.Join(game, guest, now))
+		if !replica.Started() || len(replica.State.Players) != seats {
+			t.Fatalf("%d seats: replica did not start", seats)
+		}
+		apply(rules.Leave(game, guest, now))
+		for step := 0; step < 3000 && !game.State.Over(); step++ {
+			now = now.Add(time.Second)
+			next, change, err := rules.Bot(game, now)
+			if !change.Recorded() {
+				def, _ := rules.Games().Get(durak.Key)
+				for _, move := range def.ValidMoves(game.State, engine.PlayerID(host.String())) {
+					next, change, err = rules.Move(game, host, game.State.Ply, durak.Key, move.Data, nil, now)
+					break
+				}
+			}
+			apply(next, change, err)
+		}
+		if !replica.State.Over() || len(replica.Places()) != seats || replica.Places()[seats-1] != seats {
+			t.Fatalf("%d seats: places %v", seats, replica.Places())
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,14 +47,18 @@ type Session struct {
 	DrawOffer  *uuid.UUID
 	AgreedDraw bool
 	Tournament *uuid.UUID
+	Seats      int
+	Seated     []uuid.UUID
+	Options    json.RawMessage
+	Left       []int
 }
 
 func (s Session) HasPlayer(user uuid.UUID) bool {
-	return s.Creator == user || s.Opponent != nil && *s.Opponent == user
+	return slices.Contains(s.Players(), user)
 }
 
 func (s Session) Watchable(user uuid.UUID) bool {
-	return s.Opponent != nil || s.HasPlayer(user)
+	return s.Opponent != nil || s.Seats > 0 || s.HasPlayer(user)
 }
 
 type Store struct {
@@ -88,14 +93,26 @@ func (s *Store) Replica() *Store {
 	return &Store{pool: s.replica, games: s.games}
 }
 
-const Columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw, tournament_id"
+const Columns = "id, game, creator_id, opponent_id, state, updated_at, revision, clock, timed_out, rated, resigned, draw_offered_by, agreed_draw, tournament_id, seats, players, options, left_seats"
 
 func Scan(row pgx.Row) (Session, error) {
 	var s Session
-	var raw, clock []byte
-	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned, &s.DrawOffer, &s.AgreedDraw, &s.Tournament)
+	var raw, clock, options []byte
+	var seats *int16
+	var left []int16
+	err := row.Scan(&s.ID, &s.Game, &s.Creator, &s.Opponent, &raw, &s.UpdatedAt, &s.Revision, &clock, &s.TimedOut, &s.Rated, &s.Resigned, &s.DrawOffer, &s.AgreedDraw, &s.Tournament,
+		&seats, &s.Seated, &options, &left)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNotFound
+	}
+	if seats != nil {
+		s.Seats = int(*seats)
+	}
+	if len(options) > 0 {
+		s.Options = options
+	}
+	for _, seat := range left {
+		s.Left = append(s.Left, int(seat))
 	}
 	if err == nil && raw != nil {
 		err = json.Unmarshal(raw, &s.State)
@@ -108,7 +125,7 @@ func Scan(row pgx.Row) (Session, error) {
 
 func (s *Store) List(ctx context.Context, user uuid.UUID) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+Columns+` FROM game.sessions
-		WHERE creator_id=$1 OR opponent_id=$1 ORDER BY updated_at DESC, id DESC LIMIT 30`, user)
+		WHERE creator_id=$1 OR opponent_id=$1 OR players @> ARRAY[$1]::uuid[] ORDER BY updated_at DESC, id DESC LIMIT 30`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +144,26 @@ func (s *Store) List(ctx context.Context, user uuid.UUID) ([]Session, error) {
 func (s *Store) Live(ctx context.Context, game engine.Key, limit int) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+Columns+` FROM game.sessions
 		WHERE opponent_id IS NOT NULL AND state->>'status' = 'in_progress' AND updated_at > now() - interval '6 hours'
+			AND ($1 = '' OR game = $1)
+		ORDER BY updated_at DESC, id DESC LIMIT $2`, string(game), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []Session
+	for rows.Next() {
+		item, err := Scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) OpenTables(ctx context.Context, game engine.Key, limit int) ([]Session, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+Columns+` FROM game.sessions
+		WHERE opponent_id IS NULL AND seats IS NOT NULL AND updated_at > now() - interval '30 minutes'
 			AND ($1 = '' OR game = $1)
 		ORDER BY updated_at DESC, id DESC LIMIT $2`, string(game), limit)
 	if err != nil {
@@ -187,8 +224,8 @@ func (s *Store) TimeLimitMS(game engine.Key) int64 {
 	return s.games.TimeLimit(game).Milliseconds()
 }
 
-func (s *Store) NewClock(game engine.Key, now time.Time) *Clock {
-	return NewClock(now, s.TimeLimitMS(game))
+func (s *Store) NewClock(game engine.Key, now time.Time, seats int) *Clock {
+	return NewClock(now, s.TimeLimitMS(game), seats)
 }
 
 func (s *Store) Watch(ctx context.Context, changed, matched func(uuid.UUID), ready func()) error {

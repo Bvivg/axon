@@ -3,6 +3,7 @@ package projection
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,11 +41,15 @@ func finished(game session.Session) bool {
 }
 
 func gameFinished(game session.Session, id uuid.UUID, at time.Time) *eventsv1.GameFinished {
+	players := make([]string, 0, len(game.Players()))
+	for _, player := range game.Players() {
+		players = append(players, player.String())
+	}
 	payload := &eventsv1.GameFinished{
 		EventId:    id.String(),
 		SessionId:  game.ID.String(),
 		Game:       string(game.Game),
-		Players:    []string{game.Creator.String(), game.Opponent.String()},
+		Players:    players,
 		Outcome:    eventsv1.GameFinished_OUTCOME_WIN,
 		WinnerSeat: int32(game.State.Winner),
 		FinishedAt: timestamppb.New(at.UTC()),
@@ -56,6 +61,15 @@ func gameFinished(game session.Session, id uuid.UUID, at time.Time) *eventsv1.Ga
 	}
 	if game.State.Status == engine.StatusDraw || game.State.Winner < 0 {
 		payload.Outcome, payload.WinnerSeat = eventsv1.GameFinished_OUTCOME_DRAW, int32(engine.NoSeat)
+	}
+	if game.Multiseat() || len(game.Left) > 0 {
+		for _, place := range game.Places() {
+			payload.Places = append(payload.Places, uint32(place))
+		}
+		if slices.Contains(payload.Places, 1) && slices.ContainsFunc(payload.Places, func(place uint32) bool { return place > 1 }) {
+			payload.Outcome = eventsv1.GameFinished_OUTCOME_WIN
+			payload.WinnerSeat = int32(slices.Index(payload.Places, 1))
+		}
 	}
 	return payload
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -20,8 +21,8 @@ const (
 )
 
 type clockAdjustment struct {
-	SessionID   string   `json:"session_id"`
-	RemainingMS [2]int64 `json:"remaining_ms"`
+	SessionID   string  `json:"session_id"`
+	RemainingMS []int64 `json:"remaining_ms"`
 }
 
 func (h *Handler) AdjustClock(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +37,7 @@ func (h *Handler) AdjustClock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, err := uuid.Parse(request.SessionID)
-	if err != nil || id == uuid.Nil || request.RemainingMS[0] < 0 || request.RemainingMS[1] < 0 {
+	if err != nil || id == uuid.Nil || len(request.RemainingMS) < 2 || slices.ContainsFunc(request.RemainingMS, func(ms int64) bool { return ms < 0 }) {
 		http.Error(w, "invalid clock", http.StatusBadRequest)
 		return
 	}

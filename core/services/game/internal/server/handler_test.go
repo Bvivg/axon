@@ -18,7 +18,7 @@ func TestResultClock(t *testing.T) {
 	x, o := uuid.New(), uuid.New()
 	item := session.Session{ID: uuid.New(), Creator: x, Opponent: &o, Game: tictactoe.Key,
 		State: tictactoe.New().Init([]engine.PlayerID{engine.PlayerID(x.String()), engine.PlayerID(o.String())}),
-		Clock: session.NewClock(time.Now().Add(-2*time.Second), session.TimeLimitMS), Revision: 7, UpdatedAt: time.Now()}
+		Clock: session.NewClock(time.Now().Add(-2*time.Second), session.TimeLimitMS, 2), Revision: 7, UpdatedAt: time.Now()}
 	out, err := present(item, session.TimeLimitMS, nil)
 	if err != nil {
 		t.Fatal(err)

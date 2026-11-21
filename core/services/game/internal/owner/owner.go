@@ -36,6 +36,7 @@ const (
 	historyDepth         = 4
 	defaultAppendTimeout = 15 * time.Second
 	defaultFinishedTTL   = 2 * time.Minute
+	defaultBotDelay      = 700 * time.Millisecond
 )
 
 type ReadModel interface {
@@ -67,6 +68,7 @@ type Config struct {
 
 	AppendTimeout time.Duration
 	FinishedTTL   time.Duration
+	BotDelay      time.Duration
 }
 
 type Owner struct {
@@ -121,6 +123,9 @@ func New(cfg Config) *Owner {
 	}
 	if cfg.FinishedTTL <= 0 {
 		cfg.FinishedTTL = defaultFinishedTTL
+	}
+	if cfg.BotDelay <= 0 {
+		cfg.BotDelay = defaultBotDelay
 	}
 	return &Owner{cfg: cfg, parts: map[int32]*part{}}
 }
@@ -714,7 +719,18 @@ func (o *Owner) schedule(id uuid.UUID, c *cell) {
 		c.timer = nil
 	}
 	game := c.game
-	if !c.exists || game.Clock == nil || game.State.Over() || game.State.Turn < 0 || game.State.Turn >= len(game.Clock.RemainingMS) {
+	if !c.exists || game.Clock == nil || game.State.Over() {
+		return
+	}
+	if _, _, ok := o.cfg.Rules.BotChoice(game); ok {
+		c.timer = time.AfterFunc(o.cfg.BotDelay, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, _ = o.Bot(ctx, id)
+		})
+		return
+	}
+	if game.State.Turn < 0 || game.State.Turn >= len(game.Clock.RemainingMS) || game.Automated(game.State.Turn) {
 		return
 	}
 	deadline := game.Clock.StartedAt.Add(time.Duration(game.Clock.RemainingMS[game.State.Turn]) * time.Millisecond)
@@ -733,21 +749,41 @@ func (o *Owner) existing(c *cell) (session.Session, error) {
 	return c.game, nil
 }
 
-func (o *Owner) Create(ctx context.Context, user, request uuid.UUID, key engine.Key) (session.Session, error) {
+func (o *Owner) Create(ctx context.Context, user, request uuid.UUID, key engine.Key, table session.Table) (session.Session, error) {
 	return o.do(ctx, session.SessionID(user, request), func(c *cell, now time.Time) (session.Session, session.Change, error) {
 		if c.exists {
 			return c.game, session.Change{}, nil
 		}
-		return o.cfg.Rules.Create(user, request, key, now)
+		return o.cfg.Rules.Create(user, request, key, table, now)
 	})
 }
 
-func (o *Owner) Start(ctx context.Context, id uuid.UUID, key engine.Key, creator, opponent uuid.UUID, rated bool) (session.Session, error) {
+func (o *Owner) Start(ctx context.Context, id uuid.UUID, key engine.Key, players []uuid.UUID, table session.Table, rated bool) (session.Session, error) {
 	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
 		if c.exists {
 			return c.game, session.Change{}, nil
 		}
-		return o.cfg.Rules.Start(id, key, creator, opponent, rated, now)
+		return o.cfg.Rules.Start(id, key, players, table, rated, now)
+	})
+}
+
+func (o *Owner) FillWithBots(ctx context.Context, id, user uuid.UUID) (session.Session, error) {
+	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
+		game, err := o.existing(c)
+		if err != nil {
+			return session.Session{}, session.Change{}, err
+		}
+		return o.cfg.Rules.FillWithBots(game, user, now)
+	})
+}
+
+func (o *Owner) Bot(ctx context.Context, id uuid.UUID) (session.Session, error) {
+	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
+		game, err := o.existing(c)
+		if err != nil {
+			return session.Session{}, session.Change{}, err
+		}
+		return o.cfg.Rules.Bot(game, now)
 	})
 }
 
@@ -884,7 +920,7 @@ func (o *Owner) Leave(ctx context.Context, id, user uuid.UUID) (session.Session,
 	return game, cancelled, err
 }
 
-func (o *Owner) AdjustClock(ctx context.Context, id uuid.UUID, remaining [2]int64) (session.Session, error) {
+func (o *Owner) AdjustClock(ctx context.Context, id uuid.UUID, remaining []int64) (session.Session, error) {
 	return o.do(ctx, id, func(c *cell, now time.Time) (session.Session, session.Change, error) {
 		game, err := o.existing(c)
 		if err != nil {

@@ -148,9 +148,13 @@ func (h *Handler) CreateSession(ctx context.Context, req *connect.Request[gamev1
 	if _, err := h.store.Games().Get(engine.Key(req.Msg.Game)); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown game"))
 	}
+	table, err := tableOf(engine.Key(req.Msg.Game), req.Msg.Seats, req.Msg.Bots, req.Msg.Options)
+	if err != nil {
+		return nil, err
+	}
 	id := session.SessionID(user, request)
 	return onOwner(h, ctx, id, req, func() (*connect.Response[gamev1.CreateSessionResponse], error) {
-		item, err := h.owner.Create(ctx, user, request, engine.Key(req.Msg.Game))
+		item, err := h.owner.Create(ctx, user, request, engine.Key(req.Msg.Game), table)
 		state, err := h.respond(ctx, item, user, err)
 		if err != nil {
 			return nil, err
@@ -295,19 +299,46 @@ func (h *Handler) respond(ctx context.Context, item session.Session, viewer uuid
 	return h.view(ctx, item, viewer, err)
 }
 
+func playerIDs(players []uuid.UUID) []string {
+	out := make([]string, len(players))
+	for seat, player := range players {
+		out[seat] = player.String()
+	}
+	return out
+}
+
+func clockProto(clock *session.Clock) *gamev1.SessionClock {
+	out := &gamev1.SessionClock{SampledAt: timestamppb.New(clock.StartedAt)}
+	for seat, remaining := range clock.RemainingMS {
+		ms := uint32(max(remaining, 0))
+		out.RemainingMs = append(out.RemainingMs, ms)
+		switch seat {
+		case 0:
+			out.XRemainingMs = proto.Uint32(ms)
+		case 1:
+			out.ORemainingMs = proto.Uint32(ms)
+		}
+	}
+	return out
+}
+
 func present(item session.Session, limit int64, err error) (*gamev1.Session, error) {
 	switch {
 	case errors.Is(err, session.ErrNotFound):
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	case errors.Is(err, session.ErrFull):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, session.ErrInvalidTable), errors.Is(err, session.ErrNoBots):
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.Is(err, session.ErrNotHost):
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
 	case errors.Is(err, engine.ErrUnknownGame):
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown game"))
 	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, errors.New("game service unavailable"))
 	}
 	out := &gamev1.Session{
-		Id: item.ID.String(), Game: string(item.Game), PlayerIds: []string{item.Creator.String()},
+		Id: item.ID.String(), Game: string(item.Game), PlayerIds: playerIDs(item.Players()),
 		Status:    gamev1.SessionStatus_SESSION_STATUS_WAITING,
 		UpdatedAt: timestamppb.New(item.UpdatedAt), Revision: proto.Uint32(item.Revision), TimedOut: proto.Bool(item.TimedOut),
 		Rated: proto.Bool(item.Rated), Resigned: proto.Bool(item.Resigned), AgreedDraw: proto.Bool(item.AgreedDraw),
@@ -332,14 +363,18 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 	case durak.Key:
 		out.Durak = &gamev1.DurakBoard{}
 	}
+	if item.Seats > 0 {
+		out.Seats = proto.Uint32(uint32(item.Seats))
+		out.Options = optionsProto(item.Game, item.Options)
+		out.Seating = seating(item)
+	}
 	if item.Opponent == nil {
-		out.Clock = &gamev1.SessionClock{XRemainingMs: proto.Uint32(uint32(limit)), ORemainingMs: proto.Uint32(uint32(limit)), SampledAt: timestamppb.Now()}
+		out.Clock = clockProto(session.NewClock(time.Now(), limit, item.Capacity()))
 		return out, nil
 	}
 	if clock := item.ClockAt(time.Now()); clock != nil {
-		out.Clock = &gamev1.SessionClock{XRemainingMs: proto.Uint32(uint32(clock.RemainingMS[0])), ORemainingMs: proto.Uint32(uint32(clock.RemainingMS[1])), SampledAt: timestamppb.New(clock.StartedAt)}
+		out.Clock = clockProto(clock)
 	}
-	out.PlayerIds = append(out.PlayerIds, item.Opponent.String())
 	out.Ply = uint32(item.State.Ply)
 	out.Status = gamev1.SessionStatus_SESSION_STATUS_PLAYING
 	if err := board(out, item); err != nil {

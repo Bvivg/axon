@@ -30,7 +30,7 @@ func TestEveryDealDrawsAFreshSecretSeed(t *testing.T) {
 	now := time.Now()
 	seen := map[uint64]bool{}
 	for range 8 {
-		game, _, err := r.Start(uuid.New(), durak.Key, creator, opponent, false, now)
+		game, _, err := r.Start(uuid.New(), durak.Key, []uuid.UUID{creator, opponent}, session.Table{}, false, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +39,7 @@ func TestEveryDealDrawsAFreshSecretSeed(t *testing.T) {
 		}
 		seen[game.State.Seed] = true
 	}
-	waiting, _, err := r.Create(creator, uuid.New(), durak.Key, now)
+	waiting, _, err := r.Create(creator, uuid.New(), durak.Key, session.Table{}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestEveryDealDrawsAFreshSecretSeed(t *testing.T) {
 	if err != nil || change.Fact != session.FactJoined || joined.State.Seed == 0 || seen[joined.State.Seed] {
 		t.Fatalf("join dealt %+v, %v", joined.State, err)
 	}
-	ticTacToe, _, err := r.Start(uuid.New(), tictactoe.Key, creator, opponent, false, now)
+	ticTacToe, _, err := r.Start(uuid.New(), tictactoe.Key, []uuid.UUID{creator, opponent}, session.Table{}, false, now)
 	if err != nil || ticTacToe.State.Seed != 0 {
 		t.Fatalf("an open-information game kept a seed: %d, %v", ticTacToe.State.Seed, err)
 	}
@@ -57,7 +57,7 @@ func TestDurakHistoryReplaysFromTheRecordedSeed(t *testing.T) {
 	r := cardRules(t).WithSeeds(func() uint64 { return 7 })
 	creator, opponent := uuid.New(), uuid.New()
 	now := time.Now()
-	game, _, err := r.Start(uuid.New(), durak.Key, creator, opponent, false, now)
+	game, _, err := r.Start(uuid.New(), durak.Key, []uuid.UUID{creator, opponent}, session.Table{}, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestDurakHistoryReplaysFromTheRecordedSeed(t *testing.T) {
 func TestDurakRefusesUndo(t *testing.T) {
 	r := cardRules(t)
 	creator, opponent := uuid.New(), uuid.New()
-	game, _, err := r.Start(uuid.New(), durak.Key, creator, opponent, false, time.Now())
+	game, _, err := r.Start(uuid.New(), durak.Key, []uuid.UUID{creator, opponent}, session.Table{}, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

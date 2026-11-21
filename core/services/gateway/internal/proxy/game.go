@@ -60,3 +60,11 @@ func (p *Game) ListLiveSessions(ctx context.Context, req *connect.Request[gamev1
 func (p *Game) LeaveSession(ctx context.Context, req *connect.Request[gamev1.LeaveSessionRequest]) (*connect.Response[gamev1.LeaveSessionResponse], error) {
 	return p.client.LeaveSession(ctx, forward(ctx, req))
 }
+
+func (p *Game) ListOpenTables(ctx context.Context, req *connect.Request[gamev1.ListOpenTablesRequest]) (*connect.Response[gamev1.ListOpenTablesResponse], error) {
+	return p.client.ListOpenTables(ctx, forward(ctx, req))
+}
+
+func (p *Game) FillWithBots(ctx context.Context, req *connect.Request[gamev1.FillWithBotsRequest]) (*connect.Response[gamev1.FillWithBotsResponse], error) {
+	return p.client.FillWithBots(ctx, forward(ctx, req))
+}

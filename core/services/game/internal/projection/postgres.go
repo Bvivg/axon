@@ -517,15 +517,34 @@ func queueSession(rows *pgx.Batch, item *pending) error {
 	if item.request != uuid.Nil {
 		request = item.request
 	}
+	var seats, options, players, left any
+	if game.Seats > 0 {
+		seats = int16(game.Seats)
+	}
+	if len(game.Options) > 0 {
+		options = []byte(game.Options)
+	}
+	if len(game.Seated) > 0 {
+		players = game.Seated
+	}
+	if len(game.Left) > 0 {
+		marks := make([]int16, len(game.Left))
+		for i, seat := range game.Left {
+			marks[i] = int16(seat)
+		}
+		left = marks
+	}
 	rows.Queue(`INSERT INTO game.sessions (id, game, creator_id, opponent_id, request_id, state, updated_at, revision, clock,
-			timed_out, rated, resigned, draw_offered_by, agreed_draw, partition, tournament_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+			timed_out, rated, resigned, draw_offered_by, agreed_draw, partition, tournament_id, seats, players, options, left_seats)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		ON CONFLICT (id) DO UPDATE SET opponent_id=EXCLUDED.opponent_id, state=EXCLUDED.state, updated_at=EXCLUDED.updated_at,
 			revision=EXCLUDED.revision, clock=EXCLUDED.clock, timed_out=EXCLUDED.timed_out, rated=EXCLUDED.rated,
 			resigned=EXCLUDED.resigned, draw_offered_by=EXCLUDED.draw_offered_by, agreed_draw=EXCLUDED.agreed_draw,
-			partition=EXCLUDED.partition, tournament_id=COALESCE(game.sessions.tournament_id, EXCLUDED.tournament_id)
+			partition=EXCLUDED.partition, tournament_id=COALESCE(game.sessions.tournament_id, EXCLUDED.tournament_id),
+			seats=EXCLUDED.seats, players=EXCLUDED.players, options=EXCLUDED.options, left_seats=EXCLUDED.left_seats
 		WHERE game.sessions.revision < EXCLUDED.revision`,
 		game.ID, game.Game, game.Creator, game.Opponent, request, state, game.UpdatedAt, game.Revision, clock,
-		game.TimedOut, game.Rated, game.Resigned, game.DrawOffer, game.AgreedDraw, item.partition, game.Tournament)
+		game.TimedOut, game.Rated, game.Resigned, game.DrawOffer, game.AgreedDraw, item.partition, game.Tournament,
+		seats, players, options, left)
 	return nil
 }

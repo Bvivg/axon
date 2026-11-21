@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,7 @@ const (
 	FactUndone
 	FactCancelled
 	FactClockAdjusted
+	FactLeft
 )
 
 type MoveRecord struct {
@@ -68,18 +70,40 @@ func secretSeed() uint64 {
 	return binary.LittleEndian.Uint64(raw[:])
 }
 
-func (r Rules) deal(key engine.Key, players []engine.PlayerID) (engine.State, error) {
+func (r Rules) deal(key engine.Key, players []engine.PlayerID, options json.RawMessage) (engine.State, error) {
 	seeds := r.seeds
 	if seeds == nil {
 		seeds = secretSeed
 	}
-	return r.games.NewSeededState(key, players, seeds())
+	return r.games.NewTableState(key, players, seeds(), options)
+}
+
+func roster(users []uuid.UUID) []engine.PlayerID {
+	players := make([]engine.PlayerID, len(users))
+	for seat, user := range users {
+		players[seat] = engine.PlayerID(user.String())
+	}
+	return players
+}
+
+func (r Rules) begin(game Session, now time.Time) (Session, error) {
+	users := game.Players()
+	if len(users) < DefaultSeats {
+		return Session{}, ErrNotPlaying
+	}
+	state, err := r.deal(game.Game, roster(users), game.Options)
+	if err != nil {
+		return Session{}, err
+	}
+	opponent := users[1]
+	game.Opponent, game.State, game.Clock = &opponent, state, r.clock(game.Game, now, len(users))
+	return game, nil
 }
 
 func (r Rules) Games() *engine.Registry { return r.games }
 
-func (r Rules) clock(game engine.Key, now time.Time) *Clock {
-	return NewClock(now, r.games.TimeLimit(game).Milliseconds())
+func (r Rules) clock(game engine.Key, now time.Time, seats int) *Clock {
+	return NewClock(now, r.games.TimeLimit(game).Milliseconds(), seats)
 }
 
 var sessionNamespace = uuid.MustParse("6f0c3c55-2a77-4d0a-9d1e-6b5bd1c39a51")
@@ -97,26 +121,80 @@ func Record(game Session, change Change) Session {
 	return game
 }
 
-func (r Rules) Create(user, request uuid.UUID, key engine.Key, now time.Time) (Session, Change, error) {
+func (r Rules) table(key engine.Key, table Table) (Table, error) {
+	table.Seats = max(table.Seats, DefaultSeats)
+	if err := r.games.ValidateTable(key, table.Seats, table.Options); err != nil {
+		return Table{}, fmt.Errorf("%w: %w", ErrInvalidTable, err)
+	}
+	if table.Bots < 0 || table.Bots >= table.Seats {
+		return Table{}, fmt.Errorf("%w: %d bots at %d seats", ErrInvalidTable, table.Bots, table.Seats)
+	}
+	if table.Bots > 0 && !r.Botted(key) {
+		return Table{}, ErrNoBots
+	}
+	return table, nil
+}
+
+func (r Rules) Botted(key engine.Key) bool {
+	game, err := r.games.Get(key)
+	if err != nil {
+		return false
+	}
+	_, ok := game.(engine.Botted)
+	return ok
+}
+
+func (r Rules) Create(user, request uuid.UUID, key engine.Key, table Table, now time.Time) (Session, Change, error) {
 	if _, err := r.games.Get(key); err != nil {
 		return Session{}, Change{}, err
 	}
 	game := Session{ID: SessionID(user, request), Game: key, Creator: user}
-	return game, Change{Fact: FactCreated, Actor: user, Request: request, At: now}, nil
-}
-
-func (r Rules) Start(id uuid.UUID, key engine.Key, creator, opponent uuid.UUID, rated bool, now time.Time) (Session, Change, error) {
-	players := []engine.PlayerID{engine.PlayerID(creator.String()), engine.PlayerID(opponent.String())}
-	state, err := r.deal(key, players)
+	change := Change{Fact: FactCreated, Actor: user, Request: request, At: now}
+	if table.Plain() {
+		return game, change, nil
+	}
+	table, err := r.table(key, table)
 	if err != nil {
 		return Session{}, Change{}, err
 	}
-	game := Session{ID: id, Game: key, Creator: creator, Opponent: &opponent, State: state, Clock: r.clock(key, now), Rated: rated}
-	return game, Change{Fact: FactCreated, Actor: creator, At: now}, nil
+	game.Seats, game.Options = table.Seats, table.Options
+	game.Seated = []uuid.UUID{user}
+	for seat := 1; seat <= table.Bots; seat++ {
+		game.Seated = append(game.Seated, BotID(seat))
+	}
+	if len(game.Seated) == game.Seats {
+		if game, err = r.begin(game, now); err != nil {
+			return Session{}, Change{}, err
+		}
+	}
+	return game, change, nil
+}
+
+func (r Rules) Start(id uuid.UUID, key engine.Key, players []uuid.UUID, table Table, rated bool, now time.Time) (Session, Change, error) {
+	if len(players) < DefaultSeats {
+		return Session{}, Change{}, fmt.Errorf("%w: %d players", ErrInvalidTable, len(players))
+	}
+	game := Session{ID: id, Game: key, Creator: players[0], Rated: rated}
+	if len(players) > DefaultSeats || !table.Plain() {
+		table.Seats = len(players)
+		checked, err := r.table(key, table)
+		if err != nil {
+			return Session{}, Change{}, err
+		}
+		game.Seats, game.Options, game.Seated = checked.Seats, checked.Options, slices.Clone(players)
+	} else {
+		opponent := players[1]
+		game.Opponent = &opponent
+	}
+	game, err := r.begin(game, now)
+	if err != nil {
+		return Session{}, Change{}, err
+	}
+	return game, Change{Fact: FactCreated, Actor: game.Creator, At: now}, nil
 }
 
 func (r Rules) StartTournament(id uuid.UUID, key engine.Key, tournament, creator, opponent uuid.UUID, now time.Time) (Session, Change, error) {
-	game, change, err := r.Start(id, key, creator, opponent, true, now)
+	game, change, err := r.Start(id, key, []uuid.UUID{creator, opponent}, Table{}, true, now)
 	if err != nil {
 		return Session{}, Change{}, err
 	}
@@ -127,6 +205,9 @@ func (r Rules) StartTournament(id uuid.UUID, key engine.Key, tournament, creator
 func (r Rules) Forfeit(game Session, now time.Time) (Session, Change, error) {
 	if game.Opponent == nil {
 		return Session{}, Change{}, ErrNotPlaying
+	}
+	if game.Multiseat() {
+		return game, Change{}, nil
 	}
 	if next, change := r.Expire(game, now); change.Recorded() {
 		return next, change, nil
@@ -156,17 +237,94 @@ func (r Rules) Join(game Session, user uuid.UUID, now time.Time) (Session, Chang
 	if game.HasPlayer(user) {
 		return game, Change{}, nil
 	}
-	if game.Opponent != nil {
+	if game.Started() || len(game.Players()) >= game.Capacity() || IsBot(user) {
 		return Session{}, Change{}, ErrFull
 	}
-	players := []engine.PlayerID{engine.PlayerID(game.Creator.String()), engine.PlayerID(user.String())}
-	state, err := r.deal(game.Game, players)
+	seated := slices.Concat(game.Players(), []uuid.UUID{user})
+	if game.Seats > 0 {
+		game.Seated = seated
+	}
+	if len(seated) == game.Capacity() {
+		game.Seated = seated
+		next, err := r.begin(game, now)
+		if err != nil {
+			return Session{}, Change{}, err
+		}
+		if game.Seats == 0 {
+			next.Seated = nil
+		}
+		game = next
+	}
+	return game, Change{Fact: FactJoined, Actor: user, At: now}, nil
+}
+
+func (r Rules) FillWithBots(game Session, user uuid.UUID, now time.Time) (Session, Change, error) {
+	if !game.HasPlayer(user) {
+		return Session{}, Change{}, ErrNotFound
+	}
+	if game.Creator != user {
+		return Session{}, Change{}, ErrNotHost
+	}
+	if game.Started() {
+		return game, Change{}, nil
+	}
+	if !r.Botted(game.Game) {
+		return Session{}, Change{}, ErrNoBots
+	}
+	seated := slices.Clone(game.Players())
+	for seat := len(seated); seat < game.Capacity(); seat++ {
+		seated = append(seated, BotID(seat))
+	}
+	game.Seats, game.Seated = game.Capacity(), seated
+	game, err := r.begin(game, now)
 	if err != nil {
 		return Session{}, Change{}, err
 	}
-	game.Opponent, game.State = &user, state
-	game.Clock = r.clock(game.Game, now)
 	return game, Change{Fact: FactJoined, Actor: user, At: now}, nil
+}
+
+func (r Rules) BotChoice(game Session) (uuid.UUID, engine.Move, bool) {
+	if !game.Started() || game.State.Over() {
+		return uuid.Nil, engine.Move{}, false
+	}
+	players := game.Players()
+	order := make([]int, 0, len(players))
+	if game.State.Turn >= 0 && game.State.Turn < len(players) {
+		order = append(order, game.State.Turn)
+	}
+	for seat := range players {
+		if seat != game.State.Turn {
+			order = append(order, seat)
+		}
+	}
+	seed := game.State.Seed ^ uint64(game.State.Ply+1)*0x9e3779b97f4a7c15
+	for _, seat := range order {
+		if !game.Automated(seat) {
+			continue
+		}
+		if move, ok := r.games.BotMove(game.State, engine.PlayerID(players[seat].String()), seed); ok {
+			return players[seat], move, true
+		}
+	}
+	return uuid.Nil, engine.Move{}, false
+}
+
+func (r Rules) Bot(game Session, now time.Time) (Session, Change, error) {
+	if !game.Started() || game.State.Over() {
+		return game, Change{}, nil
+	}
+	if next, change := r.Expire(game, now); change.Recorded() {
+		return next, change, nil
+	}
+	player, move, ok := r.BotChoice(game)
+	if !ok {
+		return game, Change{}, nil
+	}
+	rules, err := r.games.Get(game.Game)
+	if err != nil {
+		return Session{}, Change{}, err
+	}
+	return play(rules, game, player, move.Data, now)
 }
 
 func (r Rules) Expire(game Session, now time.Time) (Session, Change) {
@@ -192,6 +350,9 @@ func (r Rules) Move(game Session, user uuid.UUID, ply int, kind engine.Key, data
 		return Session{}, Change{}, engine.ErrGameMismatch
 	}
 	if game.Opponent == nil {
+		return Session{}, Change{}, ErrNotPlaying
+	}
+	if seat, _ := game.SeatOf(user); slices.Contains(game.Left, seat) {
 		return Session{}, Change{}, ErrNotPlaying
 	}
 	if ply != game.State.Ply || revision != nil && *revision != game.Revision {
@@ -237,6 +398,9 @@ func (r Rules) Draw(game Session, user uuid.UUID, action DrawAction, now time.Ti
 	if game.Opponent == nil || game.State.Over() {
 		return Session{}, Change{}, ErrNotPlaying
 	}
+	if game.Multiseat() {
+		return Session{}, Change{}, ErrTwoPlayers
+	}
 	if next, change := r.Expire(game, now); change.Recorded() {
 		return next, change, nil
 	}
@@ -272,7 +436,7 @@ func (r Rules) Undo(game Session, user uuid.UUID, revision *uint32, previous Pre
 	if game.Rated {
 		return Session{}, Change{}, ErrRated
 	}
-	if r.games.Hidden(game.Game) {
+	if r.games.Hidden(game.Game) || game.Multiseat() {
 		return Session{}, Change{}, ErrNoUndo
 	}
 	if revision != nil && *revision != game.Revision {
@@ -285,7 +449,7 @@ func (r Rules) Undo(game Session, user uuid.UUID, revision *uint32, previous Pre
 	if err != nil {
 		return Session{}, Change{}, err
 	}
-	clock := r.clock(game.Game, now)
+	clock := r.clock(game.Game, now, len(game.Players()))
 	if before != nil {
 		restored := *before
 		restored.StartedAt = now
@@ -297,16 +461,19 @@ func (r Rules) Undo(game Session, user uuid.UUID, revision *uint32, previous Pre
 	return game, Change{Fact: FactUndone, Actor: user, UndonePly: ply, At: now}, nil
 }
 
-func (r Rules) AdjustClock(game Session, remaining [2]int64, now time.Time) (Session, Change, error) {
+func (r Rules) AdjustClock(game Session, remaining []int64, now time.Time) (Session, Change, error) {
 	if game.Opponent == nil || game.State.Over() || game.Clock == nil {
 		return Session{}, Change{}, ErrNotPlaying
 	}
-	game.Clock = &Clock{RemainingMS: remaining, StartedAt: now}
+	if len(remaining) != len(game.Clock.RemainingMS) {
+		return Session{}, Change{}, fmt.Errorf("%w: %d clocks for %d seats", ErrInvalidTable, len(remaining), len(game.Clock.RemainingMS))
+	}
+	game.Clock = &Clock{RemainingMS: slices.Clone(remaining), StartedAt: now}
 	return game, Change{Fact: FactClockAdjusted, At: now}, nil
 }
 
 func (r Rules) opening(game Session) (engine.State, error) {
-	state, err := r.games.NewSeededState(game.Game, game.State.Players, game.State.Seed)
+	state, err := r.games.NewTableState(game.Game, game.State.Players, game.State.Seed, game.Options)
 	if err != nil {
 		return state, err
 	}
@@ -366,6 +533,10 @@ func (r Rules) Leave(game Session, user uuid.UUID, now time.Time) (Session, Chan
 	if !game.HasPlayer(user) {
 		return Session{}, Change{}, ErrNotFound
 	}
+	if game.Opponent == nil && user != game.Creator {
+		game.Seated = slices.DeleteFunc(slices.Clone(game.Players()), func(id uuid.UUID) bool { return id == user })
+		return game, Change{Fact: FactLeft, Actor: user, At: now}, nil
+	}
 	if game.Opponent == nil {
 		return game, Change{Fact: FactCancelled, Actor: user, At: now}, nil
 	}
@@ -378,6 +549,14 @@ func (r Rules) Leave(game Session, user uuid.UUID, now time.Time) (Session, Chan
 	seat, ok := game.State.Seat(engine.PlayerID(user.String()))
 	if !ok {
 		return Session{}, Change{}, ErrNotFound
+	}
+	if game.Multiseat() {
+		if game.Out(seat) || slices.Contains(game.Left, seat) {
+			return game, Change{}, nil
+		}
+		game.Clock = game.ClockAt(now)
+		game.Left = slices.Concat(game.Left, []int{seat})
+		return game, Change{Fact: FactLeft, Actor: user, At: now}, nil
 	}
 	game.Clock = game.ClockAt(now)
 	game.State = game.State.Finish(1 - seat)

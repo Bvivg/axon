@@ -49,7 +49,7 @@ func TestForfeitResignsThePlayerWhoNeverMoved(t *testing.T) {
 	}
 	fresh := started(t, r, creator, opponent)
 	expired := started(t, r, creator, opponent)
-	expired.Clock = &session.Clock{RemainingMS: [2]int64{50, 50}, StartedAt: now.Add(-time.Second)}
+	expired.Clock = &session.Clock{RemainingMS: []int64{50, 50}, StartedAt: now.Add(-time.Second)}
 	over := play(fresh, [2]int{0, 0}, [2]int{1, 0}, [2]int{0, 1}, [2]int{1, 1}, [2]int{0, 2})
 	cases := []struct {
 		name     string
