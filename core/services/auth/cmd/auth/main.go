@@ -26,6 +26,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/presence"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 	"github.com/bvivg/axon/core/shared/pkg/revocation"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
@@ -260,12 +261,12 @@ func buildOAuth(cfg config.Config, cache *redis.Client, log *slog.Logger) (*serv
 }
 
 func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, metrics *middleware.Metrics, log *slog.Logger) http.Handler {
-	interceptors := connectInterceptors(metrics, log)
+	interceptors := connect.WithHandlerOptions(connectInterceptors(metrics, log), rpclimit.Handler(cfg.RPCReadMaxBytes))
 
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(handler, interceptors))
 	if len(cfg.InternalKey.Reveal()) >= 32 {
-		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}))
+		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}, rpclimit.Handler(cfg.RPCReadMaxBytes)))
 	}
 	mux.HandleFunc("POST /internal/avatar", handler.UploadAvatar)
 	mux.Handle("GET /.well-known/jwks.json", jwksHandler(keys, log))

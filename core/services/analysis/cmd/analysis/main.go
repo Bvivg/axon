@@ -28,6 +28,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -170,7 +171,7 @@ func run() error {
 	})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.base.ShutdownTimeout, checks, log)
 	api := http.NewServeMux()
-	api.Handle(analysisv1connect.NewAnalysisServiceHandler(server.New(reports, verifier, log), connect.WithInterceptors(
+	api.Handle(analysisv1connect.NewAnalysisServiceHandler(server.New(reports, verifier, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
 	)))
 	public := graceful.Serve(&http.Server{

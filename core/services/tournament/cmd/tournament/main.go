@@ -26,6 +26,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/middleware"
 	"github.com/bvivg/axon/core/shared/pkg/mtls"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
+	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 )
 
@@ -151,7 +152,7 @@ func run() error {
 	checks := health.New(log, []health.Checker{pool, health.CheckerFunc{CheckerName: "kafka", Fn: probe.Ping}})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.base.ShutdownTimeout, checks, log)
 	api := http.NewServeMux()
-	api.Handle(tournamentv1connect.NewTournamentServiceHandler(server.New(saga, verifier, roles, cfg.games, log), interceptors))
+	api.Handle(tournamentv1connect.NewTournamentServiceHandler(server.New(saga, verifier, roles, cfg.games, log), interceptors, rpclimit.Handler(cfg.base.RPCReadMaxBytes)))
 	public := graceful.Serve(&http.Server{
 		Addr:              cfg.base.HTTPAddr,
 		Handler:           middleware.Chain(middleware.Correlation, middleware.Recovery(log))(api),
