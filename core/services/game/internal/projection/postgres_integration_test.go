@@ -90,6 +90,8 @@ func migrate(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		{"000006_owner_lease", `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='game' AND table_name='owners' AND column_name='lease_until')`},
 		{"000007_moves_partitioned", `SELECT EXISTS (SELECT 1 FROM pg_partitioned_table WHERE partrelid = 'game.moves'::regclass)`},
 		{"000008_outbox", `SELECT to_regclass('game.outbox') IS NOT NULL`},
+		{"000009_live_sessions", `SELECT to_regclass('game.game_sessions_live') IS NOT NULL`},
+		{"000010_tournaments", `SELECT to_regclass('game.cancelled_tournaments') IS NOT NULL`},
 	}
 	for _, check := range checks {
 		var applied bool
