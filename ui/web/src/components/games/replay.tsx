@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-r
 import { useEffect, useState } from "react";
 
 import { AnalysisPanel, EvalBar } from "@/components/games/chess/analysis";
+import { DurakTable, seatNames as durakSeats } from "@/components/games/durak/board";
+import { DurakMoves } from "@/components/games/durak/moves";
 import { ChessBoard } from "@/components/games/chess/board";
 import { MoveList } from "@/components/games/chess/moves";
 import { Side } from "@/components/games/chess/pieces";
@@ -27,6 +29,7 @@ const sides: Record<GameKey, string[]> = {
   [GameKey.TicTacToe]: ["X", "O"],
   [GameKey.Chess]: ["White", "Black"],
   [GameKey.Quoridor]: [...seatNames],
+  [GameKey.Durak]: [...durakSeats],
 };
 
 function changedCell(frame: HistoryFrame, previous?: HistoryFrame) {
@@ -41,6 +44,8 @@ function Position({ game, frame, previous }: { game: GameKey; frame: HistoryFram
       return <ChessBoard fen={frame.chess?.fen ?? ""} orientation={Side.White} legal={[]} lastMove={frame.chess?.lastMove} check={frame.chess?.check ?? false} playable={false} onMove={() => undefined} />;
     case GameKey.Quoridor:
       return <QuoridorBoard pawns={frame.quoridor?.pawns ?? ["e1", "e9"]} walls={frame.quoridor?.walls ?? []} seat={0} legal={[]} lastMove={frame.quoridor?.lastMove} playable={false} onMove={() => undefined} />;
+    case GameKey.Durak:
+      return <DurakTable view={frame.durak} seat={0} legal={[]} playable={false} onMove={() => undefined} />;
     default:
       return <Board board={frame.ticTacToe} playable={false} move={() => undefined} lastMove={changedCell(frame, previous)} />;
   }
@@ -122,7 +127,7 @@ export function GameReplay({ id, game }: { id: string; game: GameKey }) {
               {result ? <p data-replay-result className="rounded-game-md border border-game-border bg-game-card px-3 py-2 text-sm font-medium">{result}</p> : null}
               {analysed ? <AnalysisPanel report={analysis.data} failed={analysis.isError} retry={() => void analysis.refetch()} at={at} onSelect={step}
                 san={played} fens={frames.map(item => item.chess?.fen ?? "")} /> : null}
-              {game !== GameKey.TicTacToe ? <MoveList san={moves} marks={marks} /> : null}
+              {game === GameKey.Durak ? <DurakMoves moves={moves} /> : game !== GameKey.TicTacToe ? <MoveList san={moves} marks={marks} /> : null}
             </aside>
           </div>
         )}

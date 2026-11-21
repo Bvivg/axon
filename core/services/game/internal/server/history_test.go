@@ -65,7 +65,7 @@ func TestHistoryGrowsLinearlyWithTheGame(t *testing.T) {
 	sizes := map[int]int{}
 	for _, plies := range []int{300, 600} {
 		game, moves := shuffled(t, r, plies)
-		frames, err := buildHistory(t.Context(), r, game, moves, 0)
+		frames, err := buildHistory(t.Context(), r, game, moves, 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,7 +112,7 @@ func TestChessHistoryNamesEachMoveOnce(t *testing.T) {
 		}
 		moves = append(moves, session.MoveRecord{Ply: ply + 1, Player: player, Data: data})
 	}
-	frames, err := buildHistory(t.Context(), r, game, moves, 0)
+	frames, err := buildHistory(t.Context(), r, game, moves, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,10 +137,10 @@ func TestChessHistoryNamesEachMoveOnce(t *testing.T) {
 func TestHistoryRefusesGamesLongerThanTheLimit(t *testing.T) {
 	r := historyRules(t, 0)
 	game, moves := shuffled(t, r, 30)
-	if _, err := buildHistory(t.Context(), r, game, moves, 29); !errors.Is(err, errHistoryTooLong) {
+	if _, err := buildHistory(t.Context(), r, game, moves, 29, nil); !errors.Is(err, errHistoryTooLong) {
 		t.Fatalf("history over the limit = %v, want %v", err, errHistoryTooLong)
 	}
-	if _, err := buildHistory(t.Context(), r, game, moves, 30); err != nil {
+	if _, err := buildHistory(t.Context(), r, game, moves, 30, nil); err != nil {
 		t.Fatalf("history at the limit = %v", err)
 	}
 }
@@ -150,7 +150,7 @@ func TestHistoryStopsWhenTheCallerLeaves(t *testing.T) {
 	game, moves := shuffled(t, r, 30)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := buildHistory(ctx, r, game, moves, 0); !errors.Is(err, context.Canceled) {
+	if _, err := buildHistory(ctx, r, game, moves, 0, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("history after a cancel = %v, want %v", err, context.Canceled)
 	}
 }
