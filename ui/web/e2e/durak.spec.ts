@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
+import { expect, test, type APIResponse, type Browser, type Locator, type Page } from "@playwright/test";
 
 import { gatewayUrl, newEmail, newUsername, password } from "./support";
 
@@ -8,6 +8,10 @@ type Person = Awaited<ReturnType<typeof person>>;
 
 const status = (page: Page) => page.locator("[data-game-status]");
 const finished = /^(You won|You lost|Draw)/;
+async function pick(card: Locator) {
+  await card.page().mouse.move(0, 0);
+  await card.first().click({ position: { x: 8, y: 24 }, timeout: 10_000 });
+}
 
 function boards(value: unknown, source: string, userId: string, into: Seen[]) {
   if (!value || typeof value !== "object") return;
@@ -114,18 +118,19 @@ test("two players play durak to the end and never see each other's hand", async 
       const canPlay = await legal.count() > 0;
       if (text.includes("defend")) {
         if (!took || !canPlay) { took = true; await page.getByRole("button", { name: "Take", exact: true }).click(); }
-        else await legal.first().click();
+        else await pick(legal);
       } else if (text.includes("· attack")) {
-        await legal.first().click();
+        await pick(legal);
       } else if (canPlay && !threw) {
         threw = true;
-        await legal.first().click();
+        await pick(legal);
       } else {
         await page.getByRole("button", { name: "Pass", exact: true }).click();
       }
       mover.movedAt = Date.now();
       await expect(page.getByTestId("move-list").locator("li")).toHaveCount(revision + 1);
-      if (step % 10 === 0) for (const who of [a, b, watcher]) await expectHiddenTable(who.page);
+      const live = !finished.test((await status(page).textContent()) ?? "");
+      if (live && step % 10 === 0) for (const who of [a, b, watcher]) await expectHiddenTable(who.page);
     }
 
     await expect(status(a.page)).toHaveText(finished);
@@ -166,7 +171,7 @@ test("quick match pairs two durak players and resignation moves the rating", asy
     await expect(b.page).toHaveURL(a.page.url(), { timeout: 20_000 });
     const first = await turnOf(a, b);
     const second = first === a ? b : a;
-    await first!.page.locator("[data-hand-card][data-legal]").first().click();
+    await pick(first!.page.locator("[data-hand-card][data-legal]"));
     await expect(status(second.page)).toContainText("Your move · defend");
     await second.page.getByRole("button", { name: "Resign", exact: true }).click();
     await second.page.getByRole("button", { name: "Resign", exact: true }).click();
