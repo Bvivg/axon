@@ -4,14 +4,16 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Cpu, Link2, Loader2, Play, Swords } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { DurakTableSettings, defaultDurakSettings, describeDurak, durakOptions, type DurakSettings } from "@/components/games/durak/table-settings";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { MatchTicket } from "@/gen/axon/game/v1/game_pb";
 import { gameClient } from "@/lib/connect/clients";
 import { fromTimestamp } from "@/lib/format";
-import { type GameKey, practiceHref } from "@/lib/games/catalog";
+import { GameKey, practiceHref } from "@/lib/games/catalog";
 import { gameHref, sessionKey, sessionsKey } from "@/lib/query/games";
 import { useMatchSearch } from "@/lib/ws/use-match-search";
 
@@ -35,6 +37,10 @@ export function StartGameDialog({ game, rating, autoQuick = false }: { game: Gam
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const requestID = useRef<string | undefined>(undefined);
+  const [durak, setDurak] = useState<DurakSettings>(defaultDurakSettings);
+  const table = useMemo(() => game === GameKey.Durak ? { seats: durak.seats, options: durakOptions(durak) } : {}, [game, durak]);
+  const bots = game === GameKey.Durak ? durak.bots : 0;
+  const withBots = bots > 0 && bots >= durak.seats - 1;
   const search = useMatchSearch(game, sessionId => {
     void client.invalidateQueries({ queryKey: sessionsKey });
     router.push(gameHref(sessionId, game));
@@ -42,7 +48,7 @@ export function StartGameDialog({ game, rating, autoQuick = false }: { game: Gam
   const privateGame = useMutation({
     mutationFn: async () => {
       requestID.current ??= crypto.randomUUID();
-      const { session } = await gameClient.createSession({ game, requestId: requestID.current });
+      const { session } = await gameClient.createSession({ game, requestId: requestID.current, ...table, bots: bots || undefined });
       if (!session) throw new Error("Could not create the game.");
       return session;
     },
@@ -58,8 +64,8 @@ export function StartGameDialog({ game, rating, autoQuick = false }: { game: Gam
     if (!autoQuick || started.current) return;
     started.current = true;
     setOpen(true);
-    void search.start();
-  }, [autoQuick, search]);
+    void search.start(table);
+  }, [autoQuick, search, table]);
   const visible = open || search.searching;
 
   return (
@@ -73,26 +79,35 @@ export function StartGameDialog({ game, rating, autoQuick = false }: { game: Gam
           {search.searching && search.ticket ? (
             <Searching ticket={search.ticket} receivedAt={search.receivedAt} busy={search.busy} cancel={() => { void search.cancel(); setOpen(false); }} />
           ) : (
-            <div className="space-y-2">
-              <button type="button" className={optionClass} disabled={search.busy} onClick={() => void search.start()}>
-                <Option icon={<Swords aria-hidden className="size-5" />} title="Quick match" hint={rating ? `Rated · your rating ${rating}` : "Rated · find an opponent"}>
+            <ScrollArea className="-mx-1 max-h-[calc(100dvh-9rem)]"><div className="space-y-2 px-1">
+              {game === GameKey.Durak ? <DurakTableSettings value={durak} onChange={setDurak} withBots /> : null}
+              <button type="button" className={optionClass} disabled={search.busy || bots > 0} onClick={() => void search.start(table)}>
+                <Option icon={<Swords aria-hidden className="size-5" />} title="Quick match" hint={quickHint(game, durak, rating)}>
                   {search.busy ? <Loader2 aria-hidden className="size-4 animate-spin text-muted-foreground" /> : null}
                 </Option>
               </button>
               <button type="button" className={optionClass} disabled={privateGame.isPending} onClick={() => privateGame.mutate()}>
-                <Option icon={<Link2 aria-hidden className="size-5" />} title={privateGame.isPending ? "Creating game…" : "Private game"} hint="Unrated · share the link with a friend" />
+                <Option icon={<Link2 aria-hidden className="size-5" />} title={privateGame.isPending ? "Creating game…" : withBots ? "Play the bots" : "Private game"} hint={withBots ? "Unrated · starts right away" : "Unrated · share the link with a friend"} />
               </button>
               <Link href={practiceHref(game)} className={optionClass}>
                 <Option icon={<Cpu aria-hidden className="size-5" />} title="Practice offline" hint="Against the computer or on one device" />
               </Link>
               {search.error ? <p role="alert" className="text-sm text-destructive">{search.error}</p> : null}
               {privateGame.isError ? <p role="alert" className="text-sm text-destructive">Could not create the game. Try again.</p> : null}
-            </div>
+            </div></ScrollArea>
           )}
         </DialogContent>
       </Dialog>
     </>
   );
+}
+
+function quickHint(game: GameKey, durak: DurakSettings, rating?: number): string {
+  if (game === GameKey.Durak) {
+    if (durak.bots > 0) return "Bots only join private tables";
+    return `${durak.cheats ? "Unrated" : "Rated"} · ${describeDurak(durak)}`;
+  }
+  return rating ? `Rated · your rating ${rating}` : "Rated · find an opponent";
 }
 
 function Searching({ ticket, receivedAt, busy, cancel }: { ticket: MatchTicket; receivedAt: number; busy: boolean; cancel: () => void }) {

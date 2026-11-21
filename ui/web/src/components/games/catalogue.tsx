@@ -16,7 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SessionStatus } from "@/gen/axon/game/v1/game_pb";
 import { useSession } from "@/lib/auth/session";
 import { fromTimestamp, initials, profileName, shortWhen } from "@/lib/format";
-import { GameKey, gameKey, gameKeys, games, lobbyHref } from "@/lib/games/catalog";
+import { GameKey, gameKey, gameKeys, games, lobbyHref, playersLabel } from "@/lib/games/catalog";
 import { gameHref, gameStatusLabel, useGameSessions, useRatings } from "@/lib/query/games";
 import { usePublicProfiles } from "@/lib/query/people";
 import { tournamentsHref } from "@/lib/query/tournaments";
@@ -81,7 +81,7 @@ function CatalogueItem({ game, pathname, rating }: { game: GameKey; pathname: st
       active={pathname === href || pathname.startsWith(`${href}/practice`)}
       leading={<GameIcon game={game} />}
       title={games[game].title}
-      subtitle={`2 players · Rating ${rating ?? 1200}`}
+      subtitle={`${playersLabel(game)} · Rating ${rating ?? 1200}`}
     />
   );
 }

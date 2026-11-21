@@ -17,6 +17,16 @@ export function useGameSessions() {
 
 export const liveSessionsKey = (game: string) => ["game", "live", game] as const;
 export const historyKey = (id: string) => ["game", "history", id] as const;
+export const openTablesKey = (game: string) => ["game", "open", game] as const;
+
+export function useOpenTables(game: string, enabled = true) {
+  return useQuery({
+    queryKey: openTablesKey(game),
+    queryFn: async ({ signal }) => (await gameClient.listOpenTables({ game }, { signal })).sessions,
+    refetchInterval: 5_000,
+    enabled,
+  });
+}
 
 export function useLiveSessions(game: string) {
   return useQuery({

@@ -4,7 +4,7 @@ import { create, fromJsonString, toJson } from "@bufbuild/protobuf";
 import { useEffect, useMemo, useRef, useState } from "react";
 import useWebSocket from "react-use-websocket";
 
-import { MatchStatus, SessionCommandSchema, SessionEventSchema, type MatchTicket } from "@/gen/axon/game/v1/game_pb";
+import { MatchStatus, SessionCommandSchema, SessionEventSchema, type GameOptions, type MatchTicket } from "@/gen/axon/game/v1/game_pb";
 import { refreshSession } from "@/lib/auth/refresh";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { gameClient } from "@/lib/connect/clients";
@@ -13,6 +13,8 @@ import { bearerPrefix } from "@/lib/ws/protocol";
 
 const url = apiBaseUrl.replace(/^http/, "ws") + "/ws/game";
 const retryDelay = (attempt: number) => Math.min(1_000 * 2 ** attempt, 10_000);
+
+export type MatchTable = { seats?: number; options?: GameOptions };
 
 export function useMatchSearch(game: string, onMatched: (sessionId: string) => void) {
   const [ticket, setTicket] = useState<MatchTicket>();
@@ -83,11 +85,11 @@ export function useMatchSearch(game: string, onMatched: (sessionId: string) => v
     searching,
     busy,
     error,
-    start: async () => {
+    start: async (table: MatchTable = {}) => {
       setBusy(true);
       setError("");
       try {
-        const { ticket: next } = await gameClient.findMatch({ game, requestId: crypto.randomUUID() });
+        const { ticket: next } = await gameClient.findMatch({ game, requestId: crypto.randomUUID(), seats: table.seats, options: table.options });
         setToken(getAccessToken());
         accept(next);
       } catch {

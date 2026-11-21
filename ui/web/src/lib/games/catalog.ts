@@ -28,3 +28,7 @@ export const lobbyHref = (game: GameKey) => `/games/${games[game].slug}`;
 export const practiceHref = (game: GameKey) => `${lobbyHref(game)}/practice`;
 export const gameHref = (id: string, game: string) => `${lobbyHref(gameKey(game))}/${id}`;
 export const replayHref = (id: string, game: string) => `${gameHref(id, game)}/replay`;
+
+export function playersLabel(game: GameKey): string {
+  return game === GameKey.Durak ? "2–6 players" : "2 players";
+}

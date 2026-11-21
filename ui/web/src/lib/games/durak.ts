@@ -1,4 +1,5 @@
 export const ranks = "6789TJQKA";
+const allRanks = "23456789TJQKA";
 export const suits = "SCDH";
 export const handSize = 6;
 
@@ -13,7 +14,7 @@ export const suitSymbols: Record<Suit, string> = { [Suit.Spades]: "♠", [Suit.C
 export const suitNames: Record<Suit, string> = { [Suit.Spades]: "spades", [Suit.Clubs]: "clubs", [Suit.Diamonds]: "diamonds", [Suit.Hearts]: "hearts" };
 const rankNames: Record<string, string> = { T: "10", J: "jack", Q: "queen", K: "king", A: "ace" };
 
-export type TablePair = { attack: string; defense?: string };
+export type TablePair = { attack: string; defense?: string; by?: number; checked?: string[] };
 
 export type DurakHandView = { cards: string[]; count: number; hidden: boolean };
 
@@ -26,6 +27,8 @@ export type DurakView = {
   attackerSeat: number;
   taking: boolean;
   boutLimit: number;
+  defenderSeat?: number;
+  places?: number[];
 };
 
 export type DurakPosition = {
@@ -40,7 +43,7 @@ export type DurakPosition = {
   moves: string[];
 };
 
-export const rankOf = (card: string) => ranks.indexOf(card[0] ?? "");
+export const rankOf = (card: string) => allRanks.indexOf(card[0] ?? "");
 export const suitOf = (card: string) => (card[1] ?? "") as Suit;
 export const isCard = (card: string) => card.length === 2 && rankOf(card) >= 0 && suits.includes(card[1] ?? "-");
 export const rankLabel = (card: string) => card[0] === "T" ? "10" : card[0] ?? "";
@@ -80,7 +83,7 @@ export function fromDeck(cards: string[]): DurakPosition {
 
 export function firstAttacker(hands: string[][], trump: Suit): 0 | 1 {
   let seat: 0 | 1 = 0;
-  let lowest = ranks.length;
+  let lowest = allRanks.length;
   hands.forEach((hand, at) => {
     for (const card of hand) {
       if (suitOf(card) === trump && rankOf(card) < lowest) {
@@ -182,13 +185,15 @@ export function openAttack(view: { table: TablePair[] }) {
 }
 
 export function cardMove(card: string, legal: string[]) {
-  return legal.find(move => move === `attack ${card}` || (move.startsWith("defend ") && move.endsWith(` ${card}`)));
+  return legal.find(move => move === `attack ${card}` || (move.startsWith("defend ") && move.endsWith(` ${card}`))) ?? legal.find(move => move === `transfer ${card}`);
 }
 
 export function describeMove(move: string) {
   const [action, first, second] = move.split(" ");
   if (action === "attack" && first) return `attacks with the ${cardName(first)}`;
   if (action === "defend" && first && second) return `beats the ${cardName(first)} with the ${cardName(second)}`;
+  if (action === "transfer" && first) return `transfers with the ${cardName(first)}`;
+  if (action === "catch" && first) return `catches the ${cardName(first)}`;
   if (action === "take") return "takes the cards";
   if (action === "pass") return "passes";
   return move;
