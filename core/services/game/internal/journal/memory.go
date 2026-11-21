@@ -9,6 +9,7 @@ type Memory struct {
 	mu         sync.Mutex
 	partitions [][][]byte
 	fail       func(partition int32) error
+	lose       func(partition int32) error
 }
 
 func NewMemory(partitions int32) *Memory {
@@ -21,9 +22,18 @@ func (m *Memory) FailWith(fail func(partition int32) error) {
 	m.fail = fail
 }
 
+func (m *Memory) LoseAcksWith(lose func(partition int32) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lose = lose
+}
+
 func (m *Memory) Partitions() int32 { return int32(len(m.partitions)) }
 
-func (m *Memory) Append(_ context.Context, partition int32, entry Entry) (int64, error) {
+func (m *Memory) Append(ctx context.Context, partition int32, entry Entry) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	raw, err := Encode(entry)
 	if err != nil {
 		return 0, err
@@ -36,6 +46,11 @@ func (m *Memory) Append(_ context.Context, partition int32, entry Entry) (int64,
 		}
 	}
 	m.partitions[partition] = append(m.partitions[partition], raw)
+	if m.lose != nil {
+		if err := m.lose(partition); err != nil {
+			return 0, err
+		}
+	}
 	return int64(len(m.partitions[partition]) - 1), nil
 }
 

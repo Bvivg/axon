@@ -6,6 +6,7 @@ import { useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-qu
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { apiClient } from "@/lib/connect/clients";
 import { isCode } from "@/lib/errors";
+import { searchablePeopleQuery } from "@/lib/people-search";
 
 export const peopleKeys = {
   search: (query: string) => ["people", "search-pages", query] as const,
@@ -24,6 +25,7 @@ export function invalidateProfilesOf(queryClient: QueryClient, userID: string): 
 
 export function useSearchUsers(query: string, enabled = true) {
   const trimmed = query.trim();
+  const tooShort = !searchablePeopleQuery(trimmed);
 
   const result = useInfiniteQuery({
     queryKey: peopleKeys.search(trimmed),
@@ -31,11 +33,16 @@ export function useSearchUsers(query: string, enabled = true) {
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.nextPageToken || undefined,
     staleTime: 30_000,
-    enabled,
+    enabled: enabled && !tooShort,
   });
 
-  const people = result.data?.pages.flatMap((page) => page.users);
-  return { ...result, data: people ? [...new Map(people.map((person) => [person.id, person])).values()] : undefined };
+  const people = tooShort ? undefined : result.data?.pages.flatMap((page) => page.users);
+  return {
+    ...result,
+    tooShort,
+    isPending: !tooShort && result.isPending,
+    data: people ? [...new Map(people.map((person) => [person.id, person])).values()] : undefined,
+  };
 }
 
 export function usePublicProfiles(userIDs: string[]) {

@@ -50,11 +50,11 @@ secretEnv:
   REDIS_PASSWORD:
     secret: redis-app
     key: password
-  MINIO_ROOT_USER:
-    secret: minio
+  ATTACHMENTS_ACCESS_KEY:
+    secret: minio-attachments
     key: user
-  MINIO_ROOT_PASSWORD:
-    secret: minio
+  ATTACHMENTS_SECRET_KEY:
+    secret: minio-attachments
     key: password
   CHAT_VAPID_PUBLIC_KEY:
     secret: chat-vapid

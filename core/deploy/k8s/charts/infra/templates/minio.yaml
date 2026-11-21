@@ -100,6 +100,17 @@ spec:
       port: 9001
       targetPort: console
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minio-init
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+data:
+  init.sh: {{ .Files.Get "files/minio-init.sh" | quote }}
+  avatars-bucket.json: {{ .Files.Get "files/avatars-bucket.json" | quote }}
+  attachments-bucket.json: {{ .Files.Get "files/attachments-bucket.json" | quote }}
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -131,10 +142,7 @@ spec:
           args:
             - >-
               until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null; do sleep 2; done;
-              mc mb --ignore-existing local/avatars;
-              mc anonymous set download local/avatars;
-              mc mb --ignore-existing local/chat-attachments;
-              mc anonymous set none local/chat-attachments
+              sh /minio/init.sh
           env:
             - name: HOME
               value: /tmp
@@ -148,6 +156,26 @@ spec:
                 secretKeyRef:
                   name: minio
                   key: password
+            - name: AVATARS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-avatars
+                  key: user
+            - name: AVATARS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-avatars
+                  key: password
+            - name: ATTACHMENTS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-attachments
+                  key: user
+            - name: ATTACHMENTS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-attachments
+                  key: password
           resources:
             requests:
               cpu: 10m
@@ -159,6 +187,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: init
+              mountPath: /minio
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: init
+          configMap:
+            name: minio-init

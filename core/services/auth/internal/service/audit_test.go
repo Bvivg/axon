@@ -90,7 +90,7 @@ func TestSecurityEventsPerFlow(t *testing.T) {
 				if err != nil {
 					t.Fatalf("StartOAuth: %v", err)
 				}
-				code := h.follow(t, started.AuthorizationURL, identity("fake-ada", "ada@axon.test"))
+				code := h.follow(t, started.AuthorizationURL, identity("fake-ada", "ada@fake.axon.test"))
 				res, err := h.svc.CompleteOAuth(onDevice(t), service.CompleteOAuthInput{Provider: domain.ProviderFake, Code: code, State: started.State})
 				if err != nil {
 					t.Fatalf("CompleteOAuth: %v", err)

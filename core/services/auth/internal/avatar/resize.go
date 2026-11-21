@@ -16,7 +16,18 @@ var sizePixels = map[Size]int{
 	SizeLarge:  512,
 }
 
-func derive(raw []byte) (map[Size][]byte, error) {
+func derive(raw []byte, limits Limits) (map[Size][]byte, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidImage, err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, ErrInvalidImage
+	}
+	if cfg.Width > limits.MaxSide || cfg.Height > limits.MaxSide || cfg.Width*cfg.Height > limits.MaxPixels {
+		return nil, fmt.Errorf("%w: %dx%d", ErrImageDimensionsTooLarge, cfg.Width, cfg.Height)
+	}
+
 	src, err := imaging.Decode(bytes.NewReader(raw), imaging.AutoOrientation(true))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidImage, err)

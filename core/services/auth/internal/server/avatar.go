@@ -59,8 +59,13 @@ func (h *Handler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 
 func writeAvatarError(w http.ResponseWriter, log *slog.Logger, err error) {
 	switch {
-	case errors.Is(err, avatar.ErrInvalidImage), errors.Is(err, avatar.ErrImageTooLarge):
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, avatar.ErrInvalidImage):
+		http.Error(w, "the file is not a supported image", http.StatusBadRequest)
+	case errors.Is(err, avatar.ErrImageTooLarge), errors.Is(err, avatar.ErrImageDimensionsTooLarge):
+		http.Error(w, "the image is too large", http.StatusRequestEntityTooLarge)
+	case errors.Is(err, avatar.ErrBusy):
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "avatar processing is busy; try again", http.StatusServiceUnavailable)
 	case errors.Is(err, service.ErrAvatarStorageUnavailable):
 		http.Error(w, "avatar storage is not available", http.StatusServiceUnavailable)
 	default:
