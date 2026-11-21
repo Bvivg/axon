@@ -79,13 +79,11 @@ func TestAnUnusableNameFromTheClientDoesNotFailTheSignIn(t *testing.T) {
 func TestTheClientsNameDoesNotRenameAnExistingAccount(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
-	registered, err := h.svc.Register(t.Context(), service.RegisterInput{
-		Email:       "person@example.test",
-		Password:    validPassword,
-		DisplayName: "Ada Lovelace",
-	})
+	who := identity("github-1", "person@example.test")
+	who.Set("name", "Ada Lovelace")
+	created, err := h.trySignInWith(t, domain.ProviderGitHub, who, "")
 	if err != nil {
-		t.Fatalf("Register: %v", err)
+		t.Fatalf("first sign-in: %v", err)
 	}
 
 	result, err := h.trySignInAs(t, identity("subject-1", "person@example.test"), "Someone Else")
@@ -93,7 +91,7 @@ func TestTheClientsNameDoesNotRenameAnExistingAccount(t *testing.T) {
 		t.Fatalf("sign in: %v", err)
 	}
 
-	if result.User.ID != registered.User.ID {
+	if result.User.ID != created.User.ID {
 		t.Fatal("the sign-in did not resolve to the account it matched by address")
 	}
 	if result.User.DisplayName != "Ada Lovelace" {
@@ -120,11 +118,17 @@ func TestReturningUserResolvesToTheSameAccount(t *testing.T) {
 	}
 }
 
-func TestProviderSignInLinksToAnExistingPasswordAccount(t *testing.T) {
+func TestProviderSignInLinksToAnAccountWithAVerifiedEmail(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
 	const email = "both-ways@example.test"
-	existing := h.register(t, email, validPassword)
+	existing, err := h.trySignInWith(t, domain.ProviderGitHub, identity("github-1", email), "")
+	if err != nil {
+		t.Fatalf("first sign-in: %v", err)
+	}
+	if !existing.User.EmailVerified {
+		t.Fatal("a provider-created account was not recorded as verified")
+	}
 
 	result := h.signIn(t, identity("subject-1", email))
 
@@ -134,12 +138,90 @@ func TestProviderSignInLinksToAnExistingPasswordAccount(t *testing.T) {
 	if result.User.ID != existing.User.ID {
 		t.Errorf("a second account was created for %s", email)
 	}
+}
 
-	if _, err := h.svc.Login(t.Context(), service.LoginInput{
-		Email:    email,
-		Password: validPassword,
-	}); err != nil {
-		t.Errorf("the password stopped working after linking a provider: %v", err)
+func TestProviderSignInDoesNotLinkToAnUnverifiedAccount(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	const email = "victim@example.test"
+	squatter := h.register(t, email, validPassword)
+
+	_, err := h.trySignIn(t, identity("victim-google", email))
+	if !errors.Is(err, domain.ErrOauthAccountExists) {
+		t.Fatalf("err = %v, want ErrOauthAccountExists", err)
+	}
+
+	if _, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderGoogle, "victim-google"); err == nil {
+		t.Error("the provider identity was linked to an account nobody verified")
+	}
+	if n := h.store.liveTokensForUser(squatter.User.ID, h.clock); n != 1 {
+		t.Errorf("the unverified account holds %d live tokens, want only the one from registration", n)
+	}
+}
+
+func TestAChangedEmailCannotBeClaimedByAProvider(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	victim := h.signIn(t, identity("victim-google", "victim@example.test"))
+	family := h.storedToken(t, victim.Tokens.RefreshToken).FamilyID
+
+	changed, err := h.svc.UpdateProfile(t.Context(), victim.User.ID, family, domain.ProfilePatch{Email: ptr("attacker@example.test")})
+	if err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if changed.EmailVerified {
+		t.Fatal("the changed address is still marked verified")
+	}
+
+	_, err = h.trySignIn(t, identity("attacker-google", "attacker@example.test"))
+	if !errors.Is(err, domain.ErrOauthAccountExists) {
+		t.Fatalf("err = %v, want ErrOauthAccountExists", err)
+	}
+	if _, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderGoogle, "attacker-google"); err == nil {
+		t.Error("the attacker's identity was linked to the victim's account")
+	}
+}
+
+func TestTheFakeProviderOnlySignsInItsReservedDomain(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	h.register(t, "victim@example.test", validPassword)
+
+	_, err := h.trySignInFake(t, identity("attacker", "victim@example.test"))
+	if !errors.Is(err, domain.ErrOauthEmailNotAllowed) {
+		t.Fatalf("err = %v, want ErrOauthEmailNotAllowed", err)
+	}
+
+	created, err := h.trySignInFake(t, identity("tester", "tester@fake.axon.test"))
+	if err != nil {
+		t.Fatalf("sign in with a reserved address: %v", err)
+	}
+	if !created.Created || created.User.Email != "tester@fake.axon.test" {
+		t.Errorf("result = %+v, want a new account for the reserved address", created.User)
+	}
+}
+
+func TestTheFakeProviderNeverLinksToAnExistingAccount(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	password := h.register(t, "taken@fake.axon.test", validPassword)
+	verified, err := h.trySignInWith(t, domain.ProviderGitHub, identity("github-1", "verified@fake.axon.test"), "")
+	if err != nil {
+		t.Fatalf("GitHub sign-in: %v", err)
+	}
+
+	for _, target := range []domain.User{password.User, verified.User} {
+		_, err := h.trySignInFake(t, identity("attacker-"+target.Email, target.Email))
+		if !errors.Is(err, domain.ErrOauthAccountExists) {
+			t.Fatalf("fake sign-in over %s: err = %v, want ErrOauthAccountExists", target.Email, err)
+		}
+		if _, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderFake, "attacker-"+target.Email); err == nil {
+			t.Errorf("the fake identity was linked to %s", target.Email)
+		}
+	}
+
+	if _, err := h.svc.Login(t.Context(), service.LoginInput{Email: "taken@fake.axon.test", Password: validPassword}); err != nil {
+		t.Errorf("the password account was disturbed: %v", err)
 	}
 }
 
@@ -158,7 +240,7 @@ func TestAnUnverifiedAddressCannotClaimAnAccount(t *testing.T) {
 		t.Fatalf("err = %v, want ErrOauthEmailUnverified", err)
 	}
 
-	if _, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderFake, "attacker-subject"); err == nil {
+	if _, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderGoogle, "attacker-subject"); err == nil {
 		t.Error("a link was created despite the sign-in being refused")
 	}
 	if _, err := h.svc.Login(t.Context(), service.LoginInput{
@@ -178,25 +260,28 @@ func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 		subject  = "contested-subject"
 	)
 
-	matched := h.register(t, email, validPassword)
+	matched, err := h.trySignInWith(t, domain.ProviderGitHub, identity("github-matched", email), "")
+	if err != nil {
+		t.Fatalf("GitHub sign-in: %v", err)
+	}
 	other := h.register(t, claimant, validPassword)
 
 	h.store.beforeLink = func() {
 		h.store.beforeLink = nil
 		h.store.linkDirectly(domain.OauthAccount{
-			Provider:       domain.ProviderFake,
+			Provider:       domain.ProviderGoogle,
 			ProviderUserID: subject,
 			UserID:         other.User.ID,
 			Email:          claimant,
 		})
 	}
 
-	_, err := h.trySignIn(t, identity(subject, email))
+	_, err = h.trySignIn(t, identity(subject, email))
 	if !errors.Is(err, domain.ErrOauthIdentityClaimed) {
 		t.Fatalf("err = %v, want ErrOauthIdentityClaimed", err)
 	}
 
-	link, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderFake, subject)
+	link, err := h.store.OauthAccountByProviderID(t.Context(), domain.ProviderGoogle, subject)
 	if err != nil {
 		t.Fatalf("look up the contested identity: %v", err)
 	}
@@ -205,10 +290,7 @@ func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 	}
 
 	if n := h.store.liveTokensForUser(matched.User.ID, h.clock); n != 1 {
-		t.Errorf("the address-matched account holds %d live tokens, want only the one from registration", n)
-	}
-	if _, err := h.svc.Login(t.Context(), service.LoginInput{Email: email, Password: validPassword}); err != nil {
-		t.Errorf("the address-matched account was disturbed: %v", err)
+		t.Errorf("the address-matched account holds %d live tokens, want only the one from its first sign-in", n)
 	}
 }
 
@@ -220,7 +302,7 @@ func TestStateCannotBeReplayed(t *testing.T) {
 		t.Fatalf("StartOAuth: %v", err)
 	}
 
-	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@example.test"))
+	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@fake.axon.test"))
 
 	if _, err := h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
 		Provider: domain.ProviderFake,
@@ -248,7 +330,7 @@ func TestStateIsBoundToItsProvider(t *testing.T) {
 		t.Fatalf("StartOAuth: %v", err)
 	}
 
-	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@example.test"))
+	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@fake.axon.test"))
 
 	_, err = h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
 		Provider: domain.ProviderGoogle,
@@ -285,7 +367,7 @@ func TestStartOauthChecksTheDestination(t *testing.T) {
 		t.Fatalf("StartOAuth: %v", err)
 	}
 
-	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@example.test"))
+	code := h.follow(t, started.AuthorizationURL, identity("subject-1", "person@fake.axon.test"))
 
 	completed, err := h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
 		Provider: domain.ProviderFake,
@@ -303,7 +385,7 @@ func TestStartOauthChecksTheDestination(t *testing.T) {
 func TestUnconfiguredProvidersAreRefused(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
-	for _, provider := range []domain.Provider{domain.ProviderApple, domain.ProviderGitHub} {
+	for _, provider := range []domain.Provider{domain.ProviderApple} {
 		if _, err := h.svc.StartOAuth(t.Context(), provider, ""); !errors.Is(err, domain.ErrProviderUnsupported) {
 			t.Errorf("StartOAuth(%q) = %v, want ErrProviderUnsupported", provider, err)
 		}

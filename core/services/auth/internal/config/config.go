@@ -11,9 +11,11 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
 	"github.com/bvivg/axon/core/shared/pkg/redis"
 
+	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
+	"github.com/bvivg/axon/core/services/auth/internal/throttle"
 )
 
 const ServiceName = "auth"
@@ -21,13 +23,15 @@ const ServiceName = "auth"
 type Config struct {
 	config.Base
 
-	Postgres    postgres.Config
-	Redis       redis.Config
-	JWT         JWTConfig
-	Password    password.Params
-	OAuth       OAuthConfig
-	Avatar      AvatarConfig
-	InternalKey config.Secret
+	Postgres      postgres.Config
+	Redis         redis.Config
+	JWT           JWTConfig
+	Password      password.Params
+	PasswordWork  password.Limits
+	LoginThrottle throttle.LoginConfig
+	OAuth         OAuthConfig
+	Avatar        AvatarConfig
+	InternalKey   config.Secret
 }
 
 type AvatarConfig struct {
@@ -37,6 +41,7 @@ type AvatarConfig struct {
 	Bucket    string
 	UseSSL    bool
 	PublicURL string
+	Limits    avatar.Limits
 }
 
 type OAuthConfig struct {
@@ -78,14 +83,16 @@ func Load() (Config, error) {
 	l := config.NewLoader()
 
 	cfg := Config{
-		InternalKey: l.SecretDefault("CALLS_INTERNAL_KEY", ""),
-		Base:        config.LoadBase(l, ServiceName),
-		Postgres:    postgres.LoadConfig(l),
-		Redis:       redis.LoadConfig(l),
-		JWT:         loadJWT(l),
-		Password:    loadPasswordParams(l),
-		OAuth:       loadOAuth(l),
-		Avatar:      loadAvatar(l),
+		InternalKey:   l.SecretDefault("CALLS_INTERNAL_KEY", ""),
+		Base:          config.LoadBase(l, ServiceName),
+		Postgres:      postgres.LoadConfig(l),
+		Redis:         redis.LoadConfig(l),
+		JWT:           loadJWT(l),
+		Password:      loadPasswordParams(l),
+		PasswordWork:  loadPasswordLimits(l),
+		LoginThrottle: loadLoginThrottle(l),
+		OAuth:         loadOAuth(l),
+		Avatar:        loadAvatar(l),
 	}
 
 	if cfg.Postgres.SearchPath == "" {
@@ -240,7 +247,15 @@ func applePrivateKey(l *config.Loader) string {
 }
 
 func loadAvatar(l *config.Loader) AvatarConfig {
+	defaults := avatar.DefaultLimits()
+
 	return AvatarConfig{
+		Limits: avatar.Limits{
+			MaxPixels:     l.IntDefault("AVATARS_MAX_PIXELS", defaults.MaxPixels),
+			MaxSide:       l.IntDefault("AVATARS_MAX_SIDE", defaults.MaxSide),
+			MaxConcurrent: l.IntDefault("AVATARS_MAX_CONCURRENT", defaults.MaxConcurrent),
+			QueueTimeout:  l.DurationDefault("AVATARS_QUEUE_TIMEOUT", defaults.QueueTimeout),
+		},
 		Endpoint:  l.StringDefault("AVATARS_ENDPOINT", "minio:9000"),
 		AccessKey: l.StringDefault("MINIO_ROOT_USER", "axon"),
 		SecretKey: l.SecretDefault("MINIO_ROOT_PASSWORD", "axon12345").Reveal(),
@@ -259,6 +274,26 @@ func loadPasswordParams(l *config.Loader) password.Params {
 		Parallelism: uint8(l.IntDefault("ARGON2_PARALLELISM", int(defaults.Parallelism))),
 		SaltLength:  uint32(l.IntDefault("ARGON2_SALT_LENGTH", int(defaults.SaltLength))),
 		KeyLength:   uint32(l.IntDefault("ARGON2_KEY_LENGTH", int(defaults.KeyLength))),
+	}
+}
+
+func loadPasswordLimits(l *config.Loader) password.Limits {
+	defaults := password.DefaultLimits()
+
+	return password.Limits{
+		MaxConcurrent: l.IntDefault("ARGON2_MAX_CONCURRENT", defaults.MaxConcurrent),
+		QueueTimeout:  l.DurationDefault("ARGON2_QUEUE_TIMEOUT", defaults.QueueTimeout),
+	}
+}
+
+func loadLoginThrottle(l *config.Loader) throttle.LoginConfig {
+	defaults := throttle.DefaultLoginConfig()
+
+	return throttle.LoginConfig{
+		Threshold: l.IntDefault("LOGIN_THROTTLE_THRESHOLD", defaults.Threshold),
+		BaseDelay: l.DurationDefault("LOGIN_THROTTLE_BASE_DELAY", defaults.BaseDelay),
+		MaxDelay:  l.DurationDefault("LOGIN_THROTTLE_MAX_DELAY", defaults.MaxDelay),
+		Window:    l.DurationDefault("LOGIN_THROTTLE_WINDOW", defaults.Window),
 	}
 }
 

@@ -202,7 +202,7 @@ func (h *Handler) UpdateProfile(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	user, err := h.svc.UpdateProfile(ctx, claims.UserID, domain.ProfilePatch{
+	user, err := h.svc.UpdateProfile(ctx, claims.UserID, claims.FamilyID, domain.ProfilePatch{
 		Email:     req.Msg.Email,
 		FirstName: req.Msg.FirstName,
 		LastName:  req.Msg.LastName,

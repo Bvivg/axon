@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -172,6 +173,76 @@ func TestSetPasswordAndRevokeSessionsIsAtomic(t *testing.T) {
 
 	if live := countLiveTokens(t, user.ID, now); live != 0 {
 		t.Errorf("%d sessions survived a password change", live)
+	}
+}
+
+func TestAnEmailChangeRevokesEveryOtherFamilyInOneTransaction(t *testing.T) {
+	repo := newRepo(t)
+	ctx := t.Context()
+
+	user := createUser(t, repo)
+	bystander := createUser(t, repo)
+	now := time.Now().UTC()
+
+	current, first, second := uuid.New(), uuid.New(), uuid.New()
+	for _, token := range []domain.RefreshToken{
+		newToken(user.ID, current, "current-1", now),
+		newToken(user.ID, first, "first-1", now),
+		newToken(user.ID, first, "first-2", now),
+		newToken(user.ID, second, "second-1", now),
+		newToken(bystander.ID, uuid.New(), "bystander-1", now),
+	} {
+		if err := repo.CreateRefreshToken(ctx, token); err != nil {
+			t.Fatalf("seed %s: %v", token.TokenHash, err)
+		}
+	}
+
+	update := domain.ProfileUpdate{Email: "changed-" + uuid.NewString() + "@axon.test", Username: user.Username}
+	updated, revoked, err := repo.UpdateProfileRevokingOtherSessions(ctx, user.ID, update, current, now)
+	if err != nil {
+		t.Fatalf("UpdateProfileRevokingOtherSessions: %v", err)
+	}
+	if updated.Email != update.Email || updated.EmailVerified {
+		t.Errorf("updated = %s verified=%v, want %s unverified", updated.Email, updated.EmailVerified, update.Email)
+	}
+
+	got := map[uuid.UUID]bool{}
+	for _, family := range revoked {
+		if got[family] {
+			t.Errorf("family %s reported twice", family)
+		}
+		got[family] = true
+	}
+	if len(got) != 2 || !got[first] || !got[second] {
+		t.Errorf("revoked families = %v, want exactly %s and %s", revoked, first, second)
+	}
+
+	for hash, want := range map[string]bool{"current-1": false, "first-1": true, "first-2": true, "second-1": true, "bystander-1": false} {
+		if stored := mustLoad(t, repo, hash); stored.Revoked() != want {
+			t.Errorf("%s revoked = %v, want %v", hash, stored.Revoked(), want)
+		}
+	}
+}
+
+func TestARefusedEmailChangeRevokesNothing(t *testing.T) {
+	repo := newRepo(t)
+	ctx := t.Context()
+
+	user := createUser(t, repo)
+	other := createUser(t, repo)
+	now := time.Now().UTC()
+
+	if err := repo.CreateRefreshToken(ctx, newToken(user.ID, uuid.New(), "other-session", now)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	_, _, err := repo.UpdateProfileRevokingOtherSessions(ctx, user.ID,
+		domain.ProfileUpdate{Email: other.Email, Username: user.Username}, uuid.New(), now)
+	if !errors.Is(err, domain.ErrEmailTaken) {
+		t.Fatalf("err = %v, want ErrEmailTaken", err)
+	}
+	if stored := mustLoad(t, repo, "other-session"); stored.Revoked() {
+		t.Error("a refused email change still revoked a session")
 	}
 }
 

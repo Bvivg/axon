@@ -17,7 +17,7 @@ func TestUpdateProfileAppliesOnlyPresentFields(t *testing.T) {
 	h := newHarness(t)
 	registered := h.register(t, "ada@example.com", validPassword)
 
-	updated, err := h.svc.UpdateProfile(context.Background(), registered.User.ID, domain.ProfilePatch{
+	updated, err := h.svc.UpdateProfile(context.Background(), registered.User.ID, uuid.Nil, domain.ProfilePatch{
 		FirstName: ptr("Ada"),
 	})
 	if err != nil {
@@ -40,7 +40,7 @@ func TestUpdateProfileDisplayNamePriority(t *testing.T) {
 	registered := h.register(t, "ada@example.com", validPassword)
 	userID := registered.User.ID
 
-	updated, err := h.svc.UpdateProfile(context.Background(), userID, domain.ProfilePatch{
+	updated, err := h.svc.UpdateProfile(context.Background(), userID, uuid.Nil, domain.ProfilePatch{
 		FirstName: ptr("Ada"),
 		LastName:  ptr("Lovelace"),
 	})
@@ -51,7 +51,7 @@ func TestUpdateProfileDisplayNamePriority(t *testing.T) {
 		t.Errorf("DisplayName = %q, want \"Ada Lovelace\"", updated.DisplayName)
 	}
 
-	updated, err = h.svc.UpdateProfile(context.Background(), userID, domain.ProfilePatch{
+	updated, err = h.svc.UpdateProfile(context.Background(), userID, uuid.Nil, domain.ProfilePatch{
 		Nickname: ptr("countess"),
 	})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestUpdateProfileDisplayNamePriority(t *testing.T) {
 		t.Errorf("DisplayName = %q, want nickname to win over first/last", updated.DisplayName)
 	}
 
-	updated, err = h.svc.UpdateProfile(context.Background(), userID, domain.ProfilePatch{
+	updated, err = h.svc.UpdateProfile(context.Background(), userID, uuid.Nil, domain.ProfilePatch{
 		Nickname: ptr(""),
 	})
 	if err != nil {
@@ -83,7 +83,7 @@ func TestUpdateProfileEmailChangeResetsVerification(t *testing.T) {
 	h.store.users[userID] = u
 	h.store.mu.Unlock()
 
-	updated, err := h.svc.UpdateProfile(context.Background(), userID, domain.ProfilePatch{
+	updated, err := h.svc.UpdateProfile(context.Background(), userID, uuid.Nil, domain.ProfilePatch{
 		Email: ptr("ada@newmail.com"),
 	})
 	if err != nil {
@@ -108,7 +108,7 @@ func TestUpdateProfileSameEmailKeepsVerification(t *testing.T) {
 	h.store.users[userID] = u
 	h.store.mu.Unlock()
 
-	updated, err := h.svc.UpdateProfile(context.Background(), userID, domain.ProfilePatch{
+	updated, err := h.svc.UpdateProfile(context.Background(), userID, uuid.Nil, domain.ProfilePatch{
 		Email: ptr("ADA@EXAMPLE.COM"),
 	})
 	if err != nil {
@@ -123,7 +123,7 @@ func TestUpdateProfileRejectsInvalidEmail(t *testing.T) {
 	h := newHarness(t)
 	registered := h.register(t, "ada@example.com", validPassword)
 
-	_, err := h.svc.UpdateProfile(context.Background(), registered.User.ID, domain.ProfilePatch{
+	_, err := h.svc.UpdateProfile(context.Background(), registered.User.ID, uuid.Nil, domain.ProfilePatch{
 		Email: ptr("not-an-email"),
 	})
 	var v *domain.ValidationError
@@ -141,7 +141,7 @@ func TestUpdateProfileRejectsOverlongName(t *testing.T) {
 		long[i] = 'a'
 	}
 
-	_, err := h.svc.UpdateProfile(context.Background(), registered.User.ID, domain.ProfilePatch{
+	_, err := h.svc.UpdateProfile(context.Background(), registered.User.ID, uuid.Nil, domain.ProfilePatch{
 		FirstName: ptr(string(long)),
 	})
 	var v *domain.ValidationError
@@ -153,7 +153,7 @@ func TestUpdateProfileRejectsOverlongName(t *testing.T) {
 func TestUpdateProfileUnknownUser(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.svc.UpdateProfile(context.Background(), uuid.New(), domain.ProfilePatch{
+	_, err := h.svc.UpdateProfile(context.Background(), uuid.New(), uuid.Nil, domain.ProfilePatch{
 		FirstName: ptr("Ada"),
 	})
 	if !errors.Is(err, domain.ErrUserNotFound) {
@@ -168,5 +168,104 @@ func TestUploadAvatarWithoutStorageConfigured(t *testing.T) {
 	_, err := h.svc.UploadAvatar(context.Background(), registered.User.ID, []byte("not an image"))
 	if !errors.Is(err, service.ErrAvatarStorageUnavailable) {
 		t.Fatalf("err = %v, want ErrAvatarStorageUnavailable", err)
+	}
+}
+
+func TestAnEmailChangeEndsEveryOtherSession(t *testing.T) {
+	published := &recordingPublisher{}
+	h := newHarness(t, withRevocation(published))
+
+	registered := h.register(t, "ada@example.com", validPassword)
+	current := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+
+	var others []string
+	for range 2 {
+		res, err := h.svc.Login(context.Background(), service.LoginInput{Email: "ada@example.com", Password: validPassword})
+		if err != nil {
+			t.Fatalf("Login: %v", err)
+		}
+		others = append(others, res.Tokens.RefreshToken)
+	}
+
+	if _, err := h.svc.UpdateProfile(onDevice(t), registered.User.ID, current, domain.ProfilePatch{Email: ptr("ada@newmail.com")}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+
+	families := published.publishedFamilies()
+	for _, presented := range others {
+		family := h.storedToken(t, presented).FamilyID
+		if _, err := h.svc.Refresh(context.Background(), presented, domain.Device{}); err == nil {
+			t.Error("another session still refreshes after the email changed")
+		}
+		if !families[family] {
+			t.Errorf("the revocation of family %s was not published", family)
+		}
+	}
+	if families[current] {
+		t.Error("the session that changed the email was revoked too")
+	}
+	if _, err := h.svc.Refresh(context.Background(), registered.Tokens.RefreshToken, domain.Device{}); err != nil {
+		t.Errorf("the session that changed the email stopped working: %v", err)
+	}
+
+	var changed []domain.SecurityEvent
+	for _, e := range h.store.recordedSecurityEvents() {
+		if e.Action == domain.SecurityEmailChanged {
+			changed = append(changed, e)
+		}
+	}
+	if len(changed) != 1 {
+		t.Fatalf("%d email_changed events, want 1", len(changed))
+	}
+	e := changed[0]
+	if e.UserID != registered.User.ID || e.ActorID != registered.User.ID || e.Subject != current.String() ||
+		e.EmailSHA256 != domain.EmailSHA256("ada@newmail.com") || e.Device != auditDevice {
+		t.Errorf("event = %+v", e)
+	}
+}
+
+func TestAProfileEditWithoutAnEmailChangeKeepsOtherSessions(t *testing.T) {
+	published := &recordingPublisher{}
+	h := newHarness(t, withRevocation(published))
+
+	registered := h.register(t, "ada@example.com", validPassword)
+	other, err := h.svc.Login(context.Background(), service.LoginInput{Email: "ada@example.com", Password: validPassword})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	current := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+	if _, err := h.svc.UpdateProfile(context.Background(), registered.User.ID, current, domain.ProfilePatch{
+		Email:     ptr("ADA@example.com"),
+		FirstName: ptr("Ada"),
+	}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+
+	if _, err := h.svc.Refresh(context.Background(), other.Tokens.RefreshToken, domain.Device{}); err != nil {
+		t.Errorf("a name change ended another session: %v", err)
+	}
+	if len(published.publishedFamilies()) != 0 {
+		t.Error("a revocation was published without an email change")
+	}
+}
+
+func TestAnEmailChangeToATakenAddressRevokesNothing(t *testing.T) {
+	h := newHarness(t)
+
+	registered := h.register(t, "ada@example.com", validPassword)
+	h.register(t, "eve@example.com", validPassword)
+	other, err := h.svc.Login(context.Background(), service.LoginInput{Email: "ada@example.com", Password: validPassword})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+
+	current := h.storedToken(t, registered.Tokens.RefreshToken).FamilyID
+	_, err = h.svc.UpdateProfile(context.Background(), registered.User.ID, current, domain.ProfilePatch{Email: ptr("eve@example.com")})
+	if !errors.Is(err, domain.ErrEmailTaken) {
+		t.Fatalf("err = %v, want ErrEmailTaken", err)
+	}
+	if _, err := h.svc.Refresh(context.Background(), other.Tokens.RefreshToken, domain.Device{}); err != nil {
+		t.Errorf("a refused email change ended another session: %v", err)
 	}
 }
