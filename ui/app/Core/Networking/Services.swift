@@ -27,8 +27,16 @@ protocol AuthAPI: Sendable {
     func restore() async -> User?
     func register(email: String, username: String, password: String) async throws(APIError) -> User
     func login(email: String, password: String) async throws(APIError) -> User
+    func startOAuth(_ provider: OAuthProvider, challenge: String) async throws(APIError) -> OAuthStart
+    func completeOAuth(_ provider: OAuthProvider, code: String, state: String, verifier: String) async throws(APIError) -> User
     func logout() async
     func profiles(ids: [String]) async throws(APIError) -> [String: PublicProfile]
+    func account() async throws(APIError) -> Account
+    func updateProfile(_ changes: ProfileChanges) async throws(APIError) -> User
+    func sessions() async throws(APIError) -> [SignInSession]
+    func revokeSession(id: String) async throws(APIError)
+    func startLink(_ provider: OAuthProvider, challenge: String) async throws(APIError) -> OAuthStart
+    func completeLink(_ provider: OAuthProvider, code: String, state: String, verifier: String) async throws(APIError) -> User
     var signedOut: AsyncStream<Void> { get }
 }
 
@@ -43,6 +51,15 @@ protocol GameAPI: Sendable {
     func cancelMatch(_ game: GameKind) async throws(APIError)
     func leaveSession(id: String) async throws(APIError) -> Session?
     func history(id: String) async throws(APIError) -> SessionHistory
+    func rating(_ game: GameKind, user: String) async throws(APIError) -> Rating
+}
+
+protocol ChatAPI: Sendable {
+    func rooms() async throws(APIError) -> [Room]
+}
+
+protocol CallsAPI: Sendable {
+    func history(limit: Int) async throws(APIError) -> [Call]
 }
 
 enum GameSubscription: Equatable, Hashable, Sendable {
@@ -77,5 +94,7 @@ protocol GameChannelFactory: Sendable {
 struct Services: Sendable {
     let auth: any AuthAPI
     let game: any GameAPI
+    let chat: any ChatAPI
+    let calls: any CallsAPI
     let channels: any GameChannelFactory
 }

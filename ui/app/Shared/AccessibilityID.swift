@@ -21,18 +21,55 @@ enum AccessibilityID {
         static let submit = "auth.submit"
         static let error = "auth.error"
         static let logout = "auth.logout"
+
+        static func provider(_ name: String) -> String { "auth.provider.\(name)" }
+    }
+
+    enum Home {
+        static func tab(_ name: String) -> String { "home.tab.\(name)" }
     }
 
     enum Lobby {
         static let root = "lobby"
+        static let start = "lobby.start"
         static let joinID = "lobby.joinID"
         static let join = "lobby.join"
         static let cancelMatch = "lobby.cancelMatch"
         static let error = "lobby.error"
 
+        static func game(_ game: String) -> String { "lobby.game.\(game)" }
         static func create(_ game: String) -> String { "lobby.create.\(game)" }
         static func quickMatch(_ game: String) -> String { "lobby.quickMatch.\(game)" }
         static func session(_ id: String) -> String { "lobby.session.\(id)" }
+    }
+
+    enum Chats {
+        static let root = "chats"
+
+        static func room(_ id: String) -> String { "chats.room.\(id)" }
+    }
+
+    enum Calls {
+        static let root = "calls"
+        static let filter = "calls.filter"
+
+        static func call(_ id: String) -> String { "calls.call.\(id)" }
+    }
+
+    enum Profile {
+        static let root = "profile"
+        static let save = "profile.save"
+        static let saved = "profile.saved"
+        static let email = "profile.email"
+        static let username = "profile.username"
+        static let firstName = "profile.firstName"
+        static let lastName = "profile.lastName"
+        static let nickname = "profile.nickname"
+
+        static func page(_ name: String) -> String { "profile.page.\(name)" }
+        static func endSession(_ id: String) -> String { "profile.endSession.\(id)" }
+        static func connect(_ provider: String) -> String { "profile.connect.\(provider)" }
+        static func theme(_ name: String) -> String { "profile.theme.\(name)" }
     }
 
     enum Game {
@@ -46,6 +83,7 @@ enum AccessibilityID {
         static let declineDraw = "game.declineDraw"
         static let undo = "game.undo"
         static let replay = "game.replay"
+        static let moves = "game.moves"
 
         static func clock(_ seat: Int) -> String { "game.clock.\(seat)" }
         static func ticTacToeCell(_ index: Int) -> String { "ttt.cell.\(index)" }

@@ -12,28 +12,38 @@ struct ReplayView: View {
             if let frame = model.frame {
                 AdaptiveGameLayout {
                     GameBoard(kind: model.kind, frame: frame)
-                } panel: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.positionText)
-                            .font(.title2.weight(.bold))
-                            .monospacedDigit()
-                            .accessibilityIdentifier(AccessibilityID.Replay.position)
+                        .padding(8)
+                        .cardBackground()
+                } panel: { wide in
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(model.positionText)
+                                .font(.geist(22, .bold, relativeTo: .title2))
+                                .monospacedDigit()
+                                .contentTransition(.numericText())
+                                .accessibilityIdentifier(AccessibilityID.Replay.position)
+                            Spacer(minLength: 8)
+                            GameBadge(kind: model.kind, size: 30)
+                        }
                         if let result = model.resultText {
                             Text(result)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.muted)
                                 .accessibilityIdentifier(AccessibilityID.Replay.result)
                         }
-                    }
-                    if model.lastIndex > 0 {
-                        Slider(value: model.sliderValue, in: 0...Double(model.lastIndex), step: 1) {
-                            Text("Move")
+                        if model.lastIndex > 0 {
+                            Slider(value: model.sliderValue, in: 0...Double(model.lastIndex), step: 1) {
+                                Text("Move")
+                            }
+                            .accessibilityIdentifier(AccessibilityID.Replay.slider)
                         }
-                        .accessibilityIdentifier(AccessibilityID.Replay.slider)
                     }
-                    ReplayControls(model: model)
+                    .card()
                     if !model.moves.isEmpty {
-                        MoveListView(moves: model.moves, highlightedPly: model.highlightedPly, layout: MoveListLayout(model.kind))
+                        MovesCard(moves: model.moves, highlightedPly: model.highlightedPly, layout: MoveListLayout(model.kind), wide: wide)
                     }
+                }
+                .bottomActions {
+                    ReplayControls(model: model)
                 }
             } else if let error = model.error {
                 ContentUnavailableView {
@@ -42,6 +52,7 @@ struct ReplayView: View {
                     Text(error)
                 } actions: {
                     Button("Try again") { Task { await model.load() } }
+                        .buttonStyle(.glassProminent)
                 }
             } else {
                 ProgressView()
@@ -60,26 +71,22 @@ private struct ReplayControls: View {
     let model: ReplayViewModel
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button("First", systemImage: "backward.end.fill", action: model.first)
-                .disabled(model.atStart)
-                .keyboardShortcut(.home, modifiers: [])
-                .accessibilityIdentifier(AccessibilityID.Replay.first)
-            Button("Previous", systemImage: "backward.fill", action: model.previous)
-                .disabled(model.atStart)
-                .keyboardShortcut(.leftArrow, modifiers: [])
-                .accessibilityIdentifier(AccessibilityID.Replay.previous)
-            Button("Next", systemImage: "forward.fill", action: model.next)
-                .disabled(model.atEnd)
-                .keyboardShortcut(.rightArrow, modifiers: [])
-                .accessibilityIdentifier(AccessibilityID.Replay.next)
-            Button("Last", systemImage: "forward.end.fill", action: model.last)
-                .disabled(model.atEnd)
-                .keyboardShortcut(.end, modifiers: [])
-                .accessibilityIdentifier(AccessibilityID.Replay.last)
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.bordered)
-        .controlSize(.large)
+        Button("First", systemImage: "backward.end.fill", action: model.first)
+            .disabled(model.atStart)
+            .keyboardShortcut(.home, modifiers: [])
+            .accessibilityIdentifier(AccessibilityID.Replay.first)
+        Button("Previous", systemImage: "backward.fill", action: model.previous)
+            .disabled(model.atStart)
+            .keyboardShortcut(.leftArrow, modifiers: [])
+            .accessibilityIdentifier(AccessibilityID.Replay.previous)
+        Spacer()
+        Button("Next", systemImage: "forward.fill", action: model.next)
+            .disabled(model.atEnd)
+            .keyboardShortcut(.rightArrow, modifiers: [])
+            .accessibilityIdentifier(AccessibilityID.Replay.next)
+        Button("Last", systemImage: "forward.end.fill", action: model.last)
+            .disabled(model.atEnd)
+            .keyboardShortcut(.end, modifiers: [])
+            .accessibilityIdentifier(AccessibilityID.Replay.last)
     }
 }

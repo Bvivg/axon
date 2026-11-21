@@ -13,6 +13,7 @@ struct AxonApp: App {
            arguments[index + 1] == "YES" {
             try? tokens.clear()
         }
+        Theme.configureAppearance()
         let settings = GatewaySettings(storage: storage)
         let vault = TokenVault(store: tokens)
         _app = State(initialValue: AppModel(settings: settings, vault: vault, build: LiveServices.make))

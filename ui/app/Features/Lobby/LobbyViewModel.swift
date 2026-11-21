@@ -7,6 +7,7 @@ final class LobbyViewModel {
     private(set) var mine: [Session] = []
     private(set) var live: [Session] = []
     private(set) var names: [String: String] = [:]
+    private(set) var ratings: [GameKind: Rating] = [:]
     private(set) var isLoading = false
     private(set) var busy: String?
     private(set) var error: String?
@@ -19,6 +20,7 @@ final class LobbyViewModel {
     @ObservationIgnored private var matchChannel: (any GameChannel)?
     @ObservationIgnored private var matchTask: Task<Void, Never>?
     @ObservationIgnored let refreshInterval: Duration
+    @ObservationIgnored private var ratedAfter: Int?
 
     init(services: Services, me: String, refreshInterval: Duration = .seconds(15), open: @escaping (Route) -> Void) {
         self.services = services
@@ -29,6 +31,18 @@ final class LobbyViewModel {
 
     var active: [Session] { mine.filter { !$0.isFinished } }
     var finished: [Session] { mine.filter(\.isFinished) }
+
+    func rating(_ game: GameKind) -> UInt32 {
+        ratings[game]?.rating ?? Rating.starting
+    }
+
+    func mine(_ game: GameKind) -> [Session] {
+        mine.filter { $0.kind == game }
+    }
+
+    func live(_ game: GameKind) -> [Session] {
+        live.filter { $0.kind == game }
+    }
 
     func name(_ id: String) -> String {
         names[id] ?? "Player"
@@ -62,6 +76,25 @@ final class LobbyViewModel {
             self.error = "Could not load games."
         }
         await loadNames()
+        await loadRatings()
+    }
+
+    private func loadRatings() async {
+        let finishedCount = finished.count
+        guard ratedAfter != finishedCount else { return }
+        ratedAfter = finishedCount
+        await withTaskGroup(of: (GameKind, Rating?).self) { [services, me] group in
+            for game in GameKind.allCases {
+                group.addTask { (game, try? await services.game.rating(game, user: me)) }
+            }
+            for await (game, rating) in group {
+                if let rating {
+                    ratings[game] = rating
+                } else {
+                    ratedAfter = nil
+                }
+            }
+        }
     }
 
     func create(_ game: GameKind) async {
@@ -184,10 +217,8 @@ final class LobbyViewModel {
         }
     }
 
-    static func displayName(_ profile: PublicProfile) -> String {
-        if profile.hasDisplayName, !profile.displayName.isEmpty { return profile.displayName }
-        if profile.hasUsername, !profile.username.isEmpty { return profile.username }
-        return "Player"
+    nonisolated static func displayName(_ profile: PublicProfile) -> String {
+        profile.shownName
     }
 
     static func sessionID(in text: String) -> String? {
