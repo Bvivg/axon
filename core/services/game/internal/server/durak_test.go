@@ -366,7 +366,7 @@ func TestDurakSocketsAndGetSessionNeverLeakTheOtherHand(t *testing.T) {
 		until(w, seat, current.Revision)
 	}
 	flush()
-	if checked < int(current.State.Ply) {
+	if checked < current.State.Ply {
 		t.Fatalf("only %d frames checked over %d plies", checked, current.State.Ply)
 	}
 	end, err := s.client.GetSession(ctx, asUser(stranger, &gamev1.GetSessionRequest{SessionId: id}))

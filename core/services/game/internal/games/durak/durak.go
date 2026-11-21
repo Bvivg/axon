@@ -10,10 +10,9 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 )
 
-const (
-	Key      engine.Key = "durak"
-	MaxPlies            = 1000
-)
+const Key engine.Key = "durak"
+
+const MaxPlies = 1000
 
 var (
 	ErrIllegalMove = errors.New("durak: illegal move")
@@ -294,7 +293,7 @@ func Describe(state engine.State) (Snapshot, error) {
 		}
 	}
 	for _, item := range d.Table {
-		snap.Table = append(snap.Table, TablePair{Attack: item.Attack, Defense: item.Defense})
+		snap.Table = append(snap.Table, TablePair(item))
 	}
 	if n := len(d.Moves); n > 0 {
 		snap.LastMove = d.Moves[n-1]
