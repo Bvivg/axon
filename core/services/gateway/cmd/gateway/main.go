@@ -49,6 +49,8 @@ import (
 
 var version = "dev"
 
+const standardBurst = 60
+
 const sensitiveBurst = 5
 
 const uploadsBurst = 30
@@ -163,7 +165,7 @@ func run() error {
 		return ratelimit.New(ratelimit.Config{Name: name, PerMinute: perMinute, Burst: burst, Store: limits, Failures: limitFailures})
 	}
 	search := limiter("search", cfg.RateLimit.SearchPerMinute, 0)
-	standard := limiter("standard", cfg.RateLimit.StandardPerMinute, 0)
+	standard := limiter("standard", cfg.RateLimit.StandardPerMinute, standardBurst)
 	sensitive := limiter("sensitive", cfg.RateLimit.SensitivePerMinute, sensitiveBurst)
 	network := limiter("network", cfg.RateLimit.SensitivePerMinute*networkFactor, sensitiveBurst*networkFactor)
 	uploads := limiter("uploads", cfg.RateLimit.UploadsPerMinute, uploadsBurst)

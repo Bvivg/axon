@@ -271,3 +271,19 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		t.Errorf("policy covers %d procedures, the contract has %d — a new RPC is unlisted", got, want)
 	}
 }
+
+func TestEndpointRegistrationIsOnTheStandardTierAndCallSetupStaysTight(t *testing.T) {
+	if policy.For(callsv1connect.CallsServiceRegisterEndpointProcedure).Tier != policy.TierStandard {
+		t.Error("endpoint registration runs on every page load and socket reconnect, it must not spend the sensitive budget")
+	}
+	for _, procedure := range []string{
+		callsv1connect.CallsServiceStartCallProcedure,
+		callsv1connect.CallsServiceStartDirectCallProcedure,
+		callsv1connect.CallsServiceAcceptCallProcedure,
+		callsv1connect.CallsServiceStartGroupCallProcedure,
+	} {
+		if policy.For(procedure).Tier != policy.TierSensitive {
+			t.Errorf("%s is not on the sensitive tier", procedure)
+		}
+	}
+}
