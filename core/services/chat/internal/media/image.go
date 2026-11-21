@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -9,6 +10,8 @@ import (
 	"image/jpeg"
 	"image/png"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/disintegration/imaging"
 	_ "golang.org/x/image/webp"
@@ -18,16 +21,86 @@ const (
 	MaxImageSide  = 2560
 	ThumbnailSide = 480
 
-	maxImagePixels = 50_000_000
-
 	imageQuality     = 85
 	thumbnailQuality = 75
 )
 
 var (
-	ErrUnsupported = errors.New("media: unsupported format")
-	ErrTooLarge    = errors.New("media: too large")
+	ErrUnsupported       = errors.New("media: unsupported format")
+	ErrTooLarge          = errors.New("media: too large")
+	ErrAnimationTooLarge = errors.New("media: the animation has too many frames or pixels")
 )
+
+type ImageLimits struct {
+	MaxPixels          int64
+	MaxFrames          int
+	MaxAnimationPixels int64
+	MaxAnimationScreen int64
+}
+
+func DefaultImageLimits() ImageLimits {
+	return ImageLimits{
+		MaxPixels:          50_000_000,
+		MaxFrames:          1000,
+		MaxAnimationPixels: 300_000_000,
+		MaxAnimationScreen: 16_000_000,
+	}
+}
+
+func (l ImageLimits) withDefaults() ImageLimits {
+	d := DefaultImageLimits()
+	if l.MaxPixels <= 0 {
+		l.MaxPixels = d.MaxPixels
+	}
+	if l.MaxFrames <= 0 {
+		l.MaxFrames = d.MaxFrames
+	}
+	if l.MaxAnimationPixels <= 0 {
+		l.MaxAnimationPixels = d.MaxAnimationPixels
+	}
+	if l.MaxAnimationScreen <= 0 {
+		l.MaxAnimationScreen = d.MaxAnimationScreen
+	}
+	return l
+}
+
+func (l ImageLimits) checkAnimation(s gifShape) error {
+	if !s.animated() {
+		return nil
+	}
+	switch {
+	case int64(s.width)*int64(s.height) > l.MaxAnimationScreen:
+		return fmt.Errorf("%w: a %dx%d screen", ErrAnimationTooLarge, s.width, s.height)
+	case s.frames > l.MaxFrames:
+		return fmt.Errorf("%w: more than %d frames", ErrAnimationTooLarge, l.MaxFrames)
+	case s.pixels > l.MaxAnimationPixels:
+		return fmt.Errorf("%w: more than %d decoded pixels", ErrAnimationTooLarge, l.MaxAnimationPixels)
+	}
+	return nil
+}
+
+type Images struct {
+	limits ImageLimits
+	slots  *Slots
+}
+
+func NewImages(limits ImageLimits, slots *Slots) *Images {
+	return &Images{limits: limits.withDefaults(), slots: slots}
+}
+
+func (i *Images) ProcessFile(ctx context.Context, path string) (Image, error) {
+	release, err := i.slots.Acquire(ctx, OwnerOf(ctx))
+	if err != nil {
+		return Image{}, err
+	}
+	defer release()
+
+	raw, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return Image{}, fmt.Errorf("media: read image: %w", err)
+	}
+	return ProcessImage(raw, i.limits)
+}
 
 type Image struct {
 	Data   []byte
@@ -52,7 +125,8 @@ func Sniff(head []byte) string {
 	return http.DetectContentType(head)
 }
 
-func ProcessImage(raw []byte) (Image, error) {
+func ProcessImage(raw []byte, limits ImageLimits) (Image, error) {
+	limits = limits.withDefaults()
 	mime := Sniff(raw)
 	if !IsImageMime(mime) {
 		return Image{}, ErrUnsupported
@@ -65,17 +139,17 @@ func ProcessImage(raw []byte) (Image, error) {
 	if cfg.Width <= 0 || cfg.Height <= 0 {
 		return Image{}, ErrUnsupported
 	}
-	if cfg.Width*cfg.Height > maxImagePixels {
+	if int64(cfg.Width)*int64(cfg.Height) > limits.MaxPixels {
 		return Image{}, ErrTooLarge
 	}
 
 	if mime == "image/gif" {
-		animated, ok, err := processAnimatedGIF(raw)
+		shape, err := scanGIF(raw, limits)
 		if err != nil {
 			return Image{}, err
 		}
-		if ok {
-			return animated, nil
+		if shape.animated() {
+			return processAnimatedGIF(raw)
 		}
 	}
 
@@ -112,13 +186,10 @@ func ProcessImage(raw []byte) (Image, error) {
 	}, nil
 }
 
-func processAnimatedGIF(raw []byte) (Image, bool, error) {
+func processAnimatedGIF(raw []byte) (Image, error) {
 	g, err := gif.DecodeAll(bytes.NewReader(raw))
 	if err != nil {
-		return Image{}, false, fmt.Errorf("%w: %w", ErrUnsupported, err)
-	}
-	if len(g.Image) < 2 {
-		return Image{}, false, nil
+		return Image{}, fmt.Errorf("%w: %w", ErrUnsupported, err)
 	}
 
 	var buf bytes.Buffer
@@ -130,12 +201,12 @@ func processAnimatedGIF(raw []byte) (Image, bool, error) {
 		Config:          g.Config,
 		BackgroundIndex: g.BackgroundIndex,
 	}); err != nil {
-		return Image{}, false, fmt.Errorf("media: encode gif: %w", err)
+		return Image{}, fmt.Errorf("media: encode gif: %w", err)
 	}
 
 	thumb, thumbMime, err := encode(fitThumbnail(g.Image[0]), false, thumbnailQuality)
 	if err != nil {
-		return Image{}, false, err
+		return Image{}, err
 	}
 
 	return Image{
@@ -145,7 +216,7 @@ func processAnimatedGIF(raw []byte) (Image, bool, error) {
 		Height:        g.Config.Height,
 		Thumbnail:     thumb,
 		ThumbnailMime: thumbMime,
-	}, true, nil
+	}, nil
 }
 
 func fitThumbnail(img image.Image) image.Image {
