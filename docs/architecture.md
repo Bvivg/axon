@@ -10,7 +10,7 @@ plans in [`.claude/plans/`](../.claude/plans/).
 ```mermaid
 flowchart TB
   web["Web client<br/>Next.js"] --> gw
-  ios["iOS and macOS<br/>SwiftUI, in review"] -.-> gw
+  ios["iOS and macOS<br/>SwiftUI"] --> gw
   gw["gateway<br/>Connect and WebSocket proxy<br/>JWT via JWKS, CORS, rate limits"] --> eredis[("edge Redis")]
   gw --> auth["auth<br/>accounts, OAuth, roles, JWKS"]
   gw --> chat["chat<br/>messages, media, Calls"]
