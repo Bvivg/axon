@@ -1,6 +1,9 @@
 package engine
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+)
 
 type Status string
 
@@ -34,6 +37,8 @@ type State struct {
 	MaxPlies int `json:"max_plies,omitempty"`
 
 	MoveLimit bool `json:"move_limit,omitempty"`
+
+	Places []int `json:"places,omitempty"`
 }
 
 func NewState(game Key, players []PlayerID, data json.RawMessage) State {
@@ -102,6 +107,26 @@ func (s State) Outcome() (bool, *PlayerID) {
 
 	winner := s.Players[s.Winner]
 	return true, &winner
+}
+
+func (s State) Rank(places []int) State {
+	winner := NoSeat
+	for seat, place := range places {
+		if place != 1 {
+			continue
+		}
+		if winner != NoSeat {
+			winner = NoSeat
+			break
+		}
+		winner = seat
+	}
+	s = s.Finish(winner)
+	if winner == NoSeat && slices.ContainsFunc(places, func(place int) bool { return place > 1 }) {
+		s.Status = StatusWin
+	}
+	s.Places = slices.Clone(places)
+	return s
 }
 
 type Move struct {

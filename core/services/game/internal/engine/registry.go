@@ -113,6 +113,66 @@ func (r *Registry) NewSeededState(key Key, players []PlayerID, seed uint64) (Sta
 	return state, nil
 }
 
+func (r *Registry) NewTableState(key Key, players []PlayerID, seed uint64, options []byte) (State, error) {
+	if len(options) == 0 {
+		return r.NewSeededState(key, players, seed)
+	}
+	def, err := r.roster(key, players)
+	if err != nil {
+		return State{}, err
+	}
+	game, ok := def.Game.(Configurable)
+	if !ok {
+		return State{}, fmt.Errorf("%w: %q has no table options", ErrInvalidOptions, key)
+	}
+	state, err := game.InitConfigured(players, seed, options)
+	if err != nil {
+		return State{}, err
+	}
+	state.Seed = seed
+	state.MaxPlies = def.MaxPlies
+	return state, nil
+}
+
+func (r *Registry) ValidateTable(key Key, seats int, options []byte) error {
+	def, err := r.Definition(key)
+	if err != nil {
+		return err
+	}
+	if seats < def.MinPlayers || seats > def.MaxPlayers {
+		return fmt.Errorf("%w: %q takes %d..%d, got %d", ErrPlayerCount, key, def.MinPlayers, def.MaxPlayers, seats)
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	game, ok := def.Game.(Configurable)
+	if !ok {
+		return fmt.Errorf("%w: %q has no table options", ErrInvalidOptions, key)
+	}
+	if err := game.ValidateOptions(options); err != nil {
+		return err
+	}
+	players := make([]PlayerID, seats)
+	for seat := range players {
+		players[seat] = PlayerID(fmt.Sprintf("seat-%d", seat))
+	}
+	_, err = game.InitConfigured(players, 0, options)
+	return err
+}
+
+func (r *Registry) BotMove(state State, player PlayerID, seed uint64) (Move, bool) {
+	def, ok := r.definitions[state.Game]
+	if !ok {
+		return Move{}, false
+	}
+	game, botted := def.Game.(Botted)
+	if !botted {
+		return Move{}, false
+	}
+	move, err := game.BotMove(state, player, seed)
+	return move, err == nil
+}
+
 func (r *Registry) Hidden(key Key) bool {
 	def, ok := r.definitions[key]
 	if !ok {

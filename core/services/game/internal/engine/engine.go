@@ -27,6 +27,15 @@ type Viewer interface {
 	View(state State, viewer PlayerID) State
 }
 
+type Configurable interface {
+	ValidateOptions(options []byte) error
+	InitConfigured(players []PlayerID, seed uint64, options []byte) (State, error)
+}
+
+type Botted interface {
+	BotMove(state State, player PlayerID, seed uint64) (Move, error)
+}
+
 func Precheck(game Key, state State, move Move) (int, error) {
 	if state.Game != game {
 		return NoSeat, fmt.Errorf("%w: state holds %q, game is %q", ErrGameMismatch, state.Game, game)
