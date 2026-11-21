@@ -32,6 +32,7 @@ export function QuoridorGame({ id }: { id: string }) {
 function reason(game: Session) {
   if (game.timedOut) return "Time's up";
   if (game.resigned) return "Resignation";
+  if (game.moveLimit) return "Move limit";
   return game.status === SessionStatus.WON ? "Reached the far side" : "";
 }
 

@@ -48,6 +48,7 @@ message Session {
   QuoridorBoard quoridor = 19;
   optional uint32 spectators = 20;
   optional string tournament_id = 21;
+  optional bool move_limit = 22;
 }
 
 message QuoridorBoard {
@@ -287,6 +288,7 @@ message HistoryFrame {
   optional TicTacToeBoard tic_tac_toe = 4;
   optional ChessBoard chess = 5;
   optional QuoridorBoard quoridor = 6;
+  optional string move = 7;
 }
 
 message ListLiveSessionsRequest {

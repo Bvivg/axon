@@ -21,7 +21,7 @@
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
-  name: {{ replace "." "-" $topic }}
+  name: {{ $topic | replace "." "-" | replace "_" "-" }}
   annotations:
     argocd.argoproj.io/sync-wave: "1"
   labels:
@@ -36,10 +36,12 @@ spec:
   {{- if gt $replicas 0 }}
   replicas: {{ $replicas }}
   {{- end }}
+  {{- if $settings }}
   config:
     {{- range $name, $value := $settings }}
     {{ $name }}: {{ $value | quote }}
     {{- end }}
+  {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
