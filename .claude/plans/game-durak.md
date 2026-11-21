@@ -85,3 +85,48 @@ Durak стоит первым в списке игр `CLAUDE.md`, но его н
 ## Критерий готовности
 Двое доигрывают Durak через gateway до конца, а все проверки утечек на сокетах, `GetSession`, списках и
 истории живой партии зелёные.
+
+## Результаты
+Этап закрыт: двое доигрывают Durak через gateway до конца; ни сокет соперника, ни зритель, ни `GetSession`,
+списки и история живой партии не получают чужую руку, порядок колоды и seed.
+
+### Что изменено вне `games/durak` и зачем
+| Файл | Изменение | Почему без него нельзя |
+|---|---|---|
+| `engine/engine.go` | опциональные `Seeded`, `Viewer` | `Game` не меняется, `Init` остаётся чистым, а колоде нужен seed снаружи; проекция нужна только играм со скрытой информацией |
+| `engine/state.go` | `State.Seed` (`omitempty`, строка в JSON) | seed — записанный факт: snapshot журнала, fold, compaction и replay раздают ту же колоду; открытые игры сериализуются как раньше |
+| `engine/registry.go`, `errors.go` | `NewSeededState`, `Hidden`, `View`, `ErrSeedRequired` | одна точка, где seed снимается у любой игры и применяется проекция; `NewState` не даст раздать seeded-игру без seed |
+| `session/domain.go`, `store.go` | seed из `crypto/rand` при `Start`/`Join`, `Replay`/`Frames` по записанному seed, `ErrNoUndo` | undo после добора показал бы верх колоды |
+| `server/handler.go`, `socket.go`, `spectate.go` | проекция для вызывающего на всех границах, команда `durak_move` | без этого чужая рука уходит в сокет, `GetSession`, списки и историю |
+| `server/durak.go` | `DurakBoard` из `Snapshot` | рендер доски, как у остальных игр |
+| `game.proto` | `Session.durak = 24`, `SessionCommand.durak_move = 9`, `HistoryFrame.durak = 9` + сообщения | additive; номера не пересекаются с `feat/game-checkers` (23/8/8) |
+| `cmd/game/main.go` | регистрация | — |
+| web `catalog.ts`, `catalogue.tsx`, `replay.tsx`, `use-game-socket.ts`, `tokens.css` | каталог, реплей, `durakMove`, токены стола и карт | — |
+| web `tournaments/create-dialog.tsx` | список из `tournamentGameKeys` | Durak исключён из турниров (форфейт неявки считает, что место s ходит первым на ходу s); на сервере `TOURNAMENT_GAMES` по умолчанию и так его не содержит |
+
+Не менялись: gateway, rating (общий, проверен живьём: рейтинговый quick match двигает рейтинг), analysis
+(только шахматы), SwiftUI, loadgen.
+
+### Расхождения с замыслом
+- В Playwright-прогоне нашлись два дефекта вёрстки: шестая карта переносилась на вторую строку при ширине
+  1024, а козырь под колодой был почти не виден. Рука теперь веером с перекрытием (сильнее при 9+ картах),
+  козырь лежит ровно и выглядывает из-под колоды индексом; поднимается при наведении только играбельная карта.
+- Лимит сокета (4 команды/с) срабатывает на автоматической игре: оба e2e держат паузу 300 мс на игрока.
+
+### Проверки
+- `go test -race` по `services/game/...`, `services/gateway/...`, `shared/...` — зелёные; в пакете
+  `durak` 51 тест/подтест, включая property-тест на 300 seed и fuzz нотации; `server/durak_test.go`
+  — 4 негативных теста утечек (сокеты игроков и зрителя, `GetSession`, списки, история), каждый падает,
+  если отключить проекцию.
+- `make lint` — 0 issues (с тегами `e2e` и `integration`).
+- `go test -tags integration ./services/game/integration/...` — зелёный (Kafka-журнал, проектор,
+  Postgres read model, failover на второй узел).
+- Go e2e на стенде `axon-durak` через gateway (`make`-аналог `test-e2e-game`): обе e2e игры зелёные,
+  Durak доигран (60–73 хода, были attack/defend/take/pass).
+- Web: `tsc`, `eslint` (0 ошибок), `vitest` 160/160 (из них 22 — Durak), Playwright `durak.spec.ts`
+  (2 теста, 3 повтора подряд зелёные), а также `spectate`, `tic-tac-toe`, `quoridor`, `chess`,
+  `tournament` на том же стенде.
+- Живьём: создание, вход по ссылке вторым браузером, атака, побитие с клавиатуры, «бито»,
+  «беру», доигрывание до ничьей «оба вышли», реплей, сдача, практика с ботом, ширина 375 px. В
+  101 кадре WebSocket у второго игрока и в ответах `GetSession`/`ListLiveSessions` карт соперника,
+  колоды и seed нет.
