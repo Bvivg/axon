@@ -125,7 +125,12 @@ final class GameViewModel {
 
     func start() async {
         do {
-            apply(try await services.game.session(id: sessionID))
+            let loaded = try await services.game.session(id: sessionID)
+            guard loaded.isSupported else {
+                loadError = Self.unsupportedGame
+                return
+            }
+            apply(loaded)
             loadError = nil
         } catch {
             loadError = Self.message(for: error)
@@ -336,6 +341,8 @@ extension GameViewModel {
 }
 
 extension GameViewModel {
+    static let unsupportedGame = "This game is not available in the app yet."
+
     static func message(for error: SessionError) -> String {
         sessionErrorMessages[error] ?? "Could not play that move."
     }

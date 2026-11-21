@@ -13,17 +13,55 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
 
-func TestSearchUsersFindsAnExactEmailMatch(t *testing.T) {
+func TestSearchUsersDoesNotConfirmAnExactEmail(t *testing.T) {
 	h := newHarness(t)
 	caller := h.register(t, "ada@example.com", validPassword)
-	target := h.register(t, "eve@example.com", validPassword)
+	h.register(t, "eve@example.com", validPassword)
 
-	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, "eve@example.com", 0, "")
-	if err != nil {
-		t.Fatalf("SearchUsers: %v", err)
+	for _, query := range []string{"eve@example.com", "EVE@EXAMPLE.COM"} {
+		found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, query, 0, "")
+		if err != nil {
+			t.Fatalf("SearchUsers(%q): %v", query, err)
+		}
+		if len(found) != 0 {
+			t.Fatalf("SearchUsers(%q) = %v, want no account confirmed by its address", query, found)
+		}
 	}
-	if len(found) != 1 || found[0].User.ID != target.User.ID {
-		t.Fatalf("found = %v, want exactly %s", found, target.User.ID)
+}
+
+func TestSearchUsersNeedsAtLeastTwoCharacters(t *testing.T) {
+	h := newHarness(t)
+	caller := h.register(t, "ada@example.com", validPassword)
+	h.registerNamed(t, "eve@example.com", "Eve", "Online")
+
+	for _, query := range []string{"", "   ", "e", "@e", " @ "} {
+		_, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, query, 0, "")
+		v, ok := domain.AsValidationError(err)
+		if !ok || v.Field != "query" {
+			t.Errorf("SearchUsers(%q) err = %v, want a validation error on query", query, err)
+		}
+	}
+
+	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, "ev", 0, "")
+	if err != nil || len(found) != 1 {
+		t.Fatalf("SearchUsers(ev) = %v, %v; want the one match", found, err)
+	}
+}
+
+func TestSearchResultsDoNotRevealLastSeen(t *testing.T) {
+	h := newHarness(t)
+	caller := h.register(t, "ada@example.com", validPassword)
+	target := h.registerNamed(t, "eve@example.com", "Eve", "Online")
+	if err := h.svc.UpdateLastSeen(context.Background(), target.User.ID); err != nil {
+		t.Fatalf("UpdateLastSeen: %v", err)
+	}
+
+	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, "eve", 0, "")
+	if err != nil || len(found) != 1 {
+		t.Fatalf("SearchUsers = %v, %v", found, err)
+	}
+	if found[0].User.LastSeenAt != nil {
+		t.Error("a search result carries the person's last-seen time")
 	}
 }
 
@@ -33,7 +71,7 @@ func TestSearchUsersFindsAnExactDisplayNameMatch(t *testing.T) {
 	target := h.register(t, "eve@example.com", validPassword)
 
 	first, last := "Eve", "Online"
-	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, domain.ProfilePatch{
+	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, uuid.Nil, domain.ProfilePatch{
 		FirstName: &first, LastName: &last,
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -51,9 +89,9 @@ func TestSearchUsersFindsAnExactDisplayNameMatch(t *testing.T) {
 func TestSearchUsersIsCaseInsensitive(t *testing.T) {
 	h := newHarness(t)
 	caller := h.register(t, "ada@example.com", validPassword)
-	target := h.register(t, "eve@example.com", validPassword)
+	target := h.registerNamed(t, "eve@example.com", "Eve", "Online")
 
-	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, strings.ToUpper(target.User.Email), 0, "")
+	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, "EVE ONLINE", 0, "")
 	if err != nil {
 		t.Fatalf("SearchUsers: %v", err)
 	}
@@ -64,9 +102,9 @@ func TestSearchUsersIsCaseInsensitive(t *testing.T) {
 
 func TestSearchUsersExcludesTheCaller(t *testing.T) {
 	h := newHarness(t)
-	caller := h.register(t, "ada@example.com", validPassword)
+	caller := h.registerNamed(t, "ada@example.com", "Ada", "Lovelace")
 
-	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, caller.User.Email, 0, "")
+	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, "Ada Lovelace", 0, "")
 	if err != nil {
 		t.Fatalf("SearchUsers: %v", err)
 	}
@@ -85,17 +123,6 @@ func TestSearchUsersNoMatchReturnsAnEmptyListNotAnError(t *testing.T) {
 	}
 	if len(found) != 0 {
 		t.Fatalf("found = %v, want empty", found)
-	}
-}
-
-func TestSearchUsersListsPeopleWithABlankQuery(t *testing.T) {
-	h := newHarness(t)
-	caller := h.register(t, "ada@example.com", validPassword)
-
-	target := h.register(t, "eve@example.com", validPassword)
-	found, _, err := h.svc.SearchUsers(context.Background(), caller.User.ID, "   ", 0, "")
-	if err != nil || len(found) != 1 || found[0].User.ID != target.User.ID {
-		t.Fatalf("found = %v, err = %v, want the other person", found, err)
 	}
 }
 
@@ -141,7 +168,7 @@ func (h *harness) registerNamed(t *testing.T, email, first, last string) service
 	t.Helper()
 
 	res := h.register(t, email, validPassword)
-	if _, err := h.svc.UpdateProfile(context.Background(), res.User.ID, domain.ProfilePatch{
+	if _, err := h.svc.UpdateProfile(context.Background(), res.User.ID, uuid.Nil, domain.ProfilePatch{
 		FirstName: &first, LastName: &last,
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -168,7 +195,7 @@ func TestSearchUsersFindsAPartialNicknameMatch(t *testing.T) {
 	caller := h.register(t, "ada@example.com", validPassword)
 	target := h.register(t, "u1@example.com", validPassword)
 
-	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, domain.ProfilePatch{
+	if _, err := h.svc.UpdateProfile(context.Background(), target.User.ID, uuid.Nil, domain.ProfilePatch{
 		Nickname: ptr("countess"),
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -236,7 +263,7 @@ func TestSearchUsersCapsTheResultCount(t *testing.T) {
 }
 
 func TestSearchUsersPagesThroughDirectoryAndMatches(t *testing.T) {
-	for _, query := range []string{"", "page"} {
+	for _, query := range []string{"pa", "page"} {
 		t.Run(query, func(t *testing.T) {
 			h := newHarness(t)
 			caller := h.register(t, "caller@example.com", validPassword)

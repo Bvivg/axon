@@ -30,6 +30,10 @@ type State struct {
 	Seed uint64 `json:"seed,omitempty,string"`
 
 	Data json.RawMessage `json:"data"`
+
+	MaxPlies int `json:"max_plies,omitempty"`
+
+	MoveLimit bool `json:"move_limit,omitempty"`
 }
 
 func NewState(game Key, players []PlayerID, data json.RawMessage) State {
@@ -69,6 +73,10 @@ func (s State) Advance(data json.RawMessage, turn int) State {
 	s.Data = data
 	s.Turn = turn
 	s.Ply++
+	if s.MaxPlies > 0 && s.Ply >= s.MaxPlies {
+		s = s.Finish(NoSeat)
+		s.MoveLimit = true
+	}
 	return s
 }
 
@@ -80,6 +88,7 @@ func (s State) Finish(winner int) State {
 	}
 	s.Winner = winner
 	s.Turn = NoSeat
+	s.MoveLimit = false
 	return s
 }
 

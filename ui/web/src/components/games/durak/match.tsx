@@ -32,10 +32,10 @@ export function durakReason(game: Session) {
   if (game.timedOut) return "Time's up";
   if (game.resigned) return "Resignation";
   if (game.agreedDraw) return "Agreed draw";
+  if (game.moveLimit) return "Move limit";
   switch (game.durak?.end) {
     case DurakEnd.DURAK: return "Last one holding cards";
     case DurakEnd.DRAW: return "Both out together";
-    case DurakEnd.MOVE_LIMIT: return "Move limit";
     default: return "";
   }
 }

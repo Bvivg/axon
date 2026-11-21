@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -191,12 +192,9 @@ func TestDurakPlayedThroughTheGatewayNeverRevealsAHand(t *testing.T) {
 	}
 	var history *gamev1.GetSessionHistoryResponse
 	eventually(t, "the finished history", func() bool {
-		response, err := client.GetSessionHistory(ctx, as(watcher, &gamev1.GetSessionHistoryRequest{SessionId: id}))
-		if err != nil {
-			t.Fatal("history:", err)
-		}
-		history = response.Msg
-		return history.GetSession().GetStatus() != gamev1.SessionStatus_SESSION_STATUS_PLAYING && len(history.GetFrames()) == int(final.GetPly())+1
+		response, ok := historyOf(t, watcher, id)
+		history = response
+		return ok && history.GetSession().GetStatus() != gamev1.SessionStatus_SESSION_STATUS_PLAYING && len(history.GetFrames()) == int(final.GetPly())+1
 	})
 	for _, hand := range history.GetFrames()[len(history.GetFrames())/2].GetDurak().GetHands() {
 		if hand.GetHidden() || len(hand.GetCards()) != int(hand.GetCount()) {
@@ -209,25 +207,36 @@ func TestDurakPlayedThroughTheGatewayNeverRevealsAHand(t *testing.T) {
 	t.Logf("durak finished after %d plies with %v: %v", final.GetPly(), final.GetDurak().GetEnd(), actions)
 }
 
+func historyOf(t *testing.T, who player, id string) (*gamev1.GetSessionHistoryResponse, bool) {
+	t.Helper()
+	response, err := games().GetSessionHistory(t.Context(), as(who, &gamev1.GetSessionHistoryRequest{SessionId: id}))
+	if connect.CodeOf(err) == connect.CodeResourceExhausted {
+		return nil, false
+	}
+	if err != nil {
+		t.Fatal("history:", err)
+	}
+	return response.Msg, true
+}
+
 func assertLiveViews(t *testing.T, id string, players []player, watcher player, current *gamev1.Session) {
 	t.Helper()
 	client := games()
 	eventually(t, "the live history", func() bool {
-		response, err := client.GetSessionHistory(t.Context(), as(watcher, &gamev1.GetSessionHistoryRequest{SessionId: id}))
-		if err != nil {
-			t.Fatal("history:", err)
-		}
-		return len(response.Msg.GetFrames()) > 1
+		response, ok := historyOf(t, watcher, id)
+		return ok && len(response.GetFrames()) > 1
 	})
 	for seat, who := range append(slices.Clone(players), watcher) {
 		if seat == 2 {
 			seat = -1
 		}
-		response, err := client.GetSessionHistory(t.Context(), as(who, &gamev1.GetSessionHistoryRequest{SessionId: id}))
-		if err != nil {
-			t.Fatal("history:", err)
-		}
-		for i, frame := range response.Msg.GetFrames() {
+		var response *gamev1.GetSessionHistoryResponse
+		eventually(t, "the live history of a viewer", func() bool {
+			got, ok := historyOf(t, who, id)
+			response = got
+			return ok
+		})
+		for i, frame := range response.GetFrames() {
 			for s, hand := range frame.GetDurak().GetHands() {
 				if s != seat && (!hand.GetHidden() || len(hand.GetCards()) != 0) {
 					t.Fatalf("live history frame %d gave seat %d the hand of seat %d", i, seat, s)

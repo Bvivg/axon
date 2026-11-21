@@ -133,18 +133,22 @@ func TestBoutThroughTheEngine(t *testing.T) {
 }
 
 func TestPlyCap(t *testing.T) {
+	if def := Definition(); def.MaxPlies != MaxPlies {
+		t.Fatalf("definition caps at %d, want %d", def.MaxPlies, MaxPlies)
+	}
 	state := New().InitSeeded(players, 7)
+	state.MaxPlies = MaxPlies
 	state.Ply = MaxPlies - 1
 	next, err := New().ApplyMove(state, NewMove(players[state.Turn], state.Ply, "attack 6H"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Status != engine.StatusDraw || next.Winner != engine.NoSeat || next.Turn != engine.NoSeat {
+	if next.Status != engine.StatusDraw || next.Winner != engine.NoSeat || next.Turn != engine.NoSeat || !next.MoveLimit {
 		t.Fatalf("capped game %+v", next)
 	}
 	snap, err := Describe(next)
-	if err != nil || snap.End != MoveLimit {
-		t.Fatal(snap.End, err)
+	if err != nil || snap.End != Ongoing || snap.Legal != nil {
+		t.Fatal(snap.End, snap.Legal, err)
 	}
 	if _, err := New().ApplyMove(next, NewMove(players[0], next.Ply, "take")); !errors.Is(err, engine.ErrGameOver) {
 		t.Fatal("played after the cap", err)

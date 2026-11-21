@@ -218,7 +218,7 @@ func (hiddenGame) View(state engine.State, viewer engine.PlayerID) engine.State 
 
 func TestRegistrySeedsAndViewsOptionalExtensions(t *testing.T) {
 	games := engine.NewRegistry()
-	for _, def := range []engine.Definition{stubDefinition(testKey, 2, 2), {Key: "cards", MinPlayers: 2, MaxPlayers: 2, Game: hiddenGame{stubGame{key: "cards"}}}} {
+	for _, def := range []engine.Definition{stubDefinition(testKey, 2, 2), {Key: "cards", MinPlayers: 2, MaxPlayers: 2, Game: hiddenGame{stubGame{key: "cards"}}, MaxPlies: 30}} {
 		if err := games.Register(def); err != nil {
 			t.Fatal(err)
 		}
@@ -231,7 +231,7 @@ func TestRegistrySeedsAndViewsOptionalExtensions(t *testing.T) {
 		t.Fatalf("seeded deal skipped the roster check: %v", err)
 	}
 	dealt, err := games.NewSeededState("cards", players, 1234)
-	if err != nil || dealt.Seed != 1234 || string(dealt.Data) != `{"deck":70,"hands":["a","b"]}` {
+	if err != nil || dealt.Seed != 1234 || dealt.MaxPlies != 30 || string(dealt.Data) != `{"deck":70,"hands":["a","b"]}` {
 		t.Fatalf("seeded deal = %+v, %v", dealt, err)
 	}
 	plain, err := games.NewSeededState(testKey, players, 1234)
@@ -256,5 +256,41 @@ func TestRegistrySeedsAndViewsOptionalExtensions(t *testing.T) {
 	}
 	if open := games.View(plain, "a"); string(open.Data) != string(plain.Data) {
 		t.Fatal("an open game changed under View")
+	}
+}
+
+func TestRegistryNewStateCarriesTheMoveLimit(t *testing.T) {
+	registry := engine.NewRegistry()
+	capped := stubDefinition(testKey, 2, 2)
+	capped.MaxPlies = 40
+	if err := registry.Register(capped); err != nil {
+		t.Fatalf("Register(): %v", err)
+	}
+	if err := registry.Register(stubDefinition("open", 2, 2)); err != nil {
+		t.Fatalf("Register(): %v", err)
+	}
+
+	state, err := registry.NewState(testKey, []engine.PlayerID{alice, bob})
+	if err != nil {
+		t.Fatalf("NewState(): %v", err)
+	}
+	if state.MaxPlies != 40 {
+		t.Errorf("MaxPlies = %d, want 40", state.MaxPlies)
+	}
+
+	open, err := registry.NewState("open", []engine.PlayerID{alice, bob})
+	if err != nil {
+		t.Fatalf("NewState(): %v", err)
+	}
+	if open.MaxPlies != 0 {
+		t.Errorf("MaxPlies without a limit = %d, want 0", open.MaxPlies)
+	}
+}
+
+func TestRegistryRejectsANegativeMoveLimit(t *testing.T) {
+	def := stubDefinition(testKey, 2, 2)
+	def.MaxPlies = -1
+	if err := engine.NewRegistry().Register(def); !errors.Is(err, engine.ErrInvalidDefinition) {
+		t.Errorf("Register() error = %v, want %v", err, engine.ErrInvalidDefinition)
 	}
 }

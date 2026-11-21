@@ -18,14 +18,30 @@ async function person(browser: Browser, origin: string, name: string) {
     return registered.status();
   }, { intervals: [1000], timeout: 10000 }).not.toBe(429);
   expect(registered!.status()).toBe(200);
-  const { tokens } = await registered!.json();
+  const { tokens, user } = await registered!.json();
   return {
+    id: user.id as string,
     context,
     page: await context.newPage(),
     rpc: (method: string, data: object) => context.request.post(gatewayUrl + "/axon.game.v1.GameService/" + method, {
       headers: { ...headers, Authorization: `Bearer ${tokens.accessToken}` }, data,
     }),
   };
+}
+
+type Person = Awaited<ReturnType<typeof person>>;
+
+async function quickMatch(a: Person, b: Person) {
+  for (const player of [a, b]) expect((await player.rpc("FindMatch", { game: "chess", requestId: randomUUID() })).status()).toBe(200);
+  let id = "";
+  await expect.poll(async () => {
+    const { ticket } = await (await a.rpc("GetMatch", { game: "chess" })).json();
+    id = ticket?.status === "MATCH_STATUS_MATCHED" ? ticket.sessionId ?? "" : "";
+    return id;
+  }, { intervals: [250], timeout: 30_000 }).not.toBe("");
+  const { session } = await (await a.rpc("GetSession", { sessionId: id })).json();
+  expect(session.rated).toBe(true);
+  return { id, white: session.playerIds[0] === a.id ? a : b, black: session.playerIds[0] === a.id ? b : a };
 }
 
 async function move(page: Page, from: string, to: string) {
@@ -37,13 +53,10 @@ async function move(page: Page, from: string, to: string) {
 test("the chess replay shows the engine evaluation and marks the blunder", async ({ browser, baseURL }, testInfo) => {
   test.setTimeout(150_000);
   const origin = new URL(baseURL!).origin;
-  const white = await person(browser, origin, "Scholar White");
-  const black = await person(browser, origin, "Scholar Black");
+  const first = await person(browser, origin, "Scholar One");
+  const second = await person(browser, origin, "Scholar Two");
   try {
-    const created = await white.rpc("CreateSession", { game: "chess", requestId: randomUUID() });
-    expect(created.status()).toBe(200);
-    const id: string = (await created.json()).session.id;
-    expect((await black.rpc("JoinSession", { sessionId: id })).status()).toBe(200);
+    const { id, white, black } = await quickMatch(first, second);
     await white.page.goto(`/games/chess/${id}`);
     await black.page.goto(`/games/chess/${id}`);
     for (const [ply, [from, to]] of scholar.entries()) await move(ply % 2 === 0 ? white.page : black.page, from, to);
@@ -88,6 +101,6 @@ test("the chess replay shows the engine evaluation and marks the blunder", async
     await expect(page.getByTestId("move-list").locator("[data-move-mark='??']")).toHaveCount(0);
     await expect(bar).not.toHaveAttribute("data-eval", "+M1");
   } finally {
-    await Promise.all([white.context.close(), black.context.close()]);
+    await Promise.all([first.context.close(), second.context.close()]);
   }
 });

@@ -98,7 +98,8 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 	profile, err := provider.Exchange(ctx, in.Code, stored.Verifier)
 	if err != nil {
 
-		if errors.Is(err, domain.ErrOauthEmailUnverified) || errors.Is(err, domain.ErrOauthProfileIncomplete) {
+		if errors.Is(err, domain.ErrOauthEmailUnverified) || errors.Is(err, domain.ErrOauthProfileIncomplete) ||
+			errors.Is(err, domain.ErrOauthEmailNotAllowed) {
 			return CompleteOAuthResult{}, err
 		}
 		s.log.ErrorContext(ctx, "oauth code exchange failed", "provider", id, "error", err)
@@ -175,6 +176,12 @@ func (s *Service) resolveOauthUser(
 	existing, err := s.store.UserByEmail(ctx, email)
 	switch {
 	case err == nil:
+		if id == domain.ProviderFake || !existing.EmailVerified {
+			s.log.WarnContext(ctx, "provider sign-in refused: the address belongs to an account it may not be linked to",
+				"provider", id, "user_id", existing.ID, "email_verified", existing.EmailVerified)
+			return domain.User{}, false, domain.ErrOauthAccountExists
+		}
+
 		account.UserID = existing.ID
 		if err := s.store.LinkOauthAccount(ctx, account); err != nil {
 

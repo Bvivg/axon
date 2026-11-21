@@ -405,7 +405,7 @@ func TestDurakHistoryIsRedactedWhileLiveAndRevealedAfterwards(t *testing.T) {
 				if seat == 2 {
 					seat = engine.NoSeat
 				}
-				response, err := h.history(t.Context(), live, moves, viewer)
+				response, err := replayFor(t, h, rules, live, moves, viewer)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -432,7 +432,7 @@ func TestDurakHistoryIsRedactedWhileLiveAndRevealedAfterwards(t *testing.T) {
 			}
 		}
 	}
-	response, err := h.history(t.Context(), game, moves, stranger)
+	response, err := replayFor(t, h, rules, game, moves, stranger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,6 +445,19 @@ func TestDurakHistoryIsRedactedWhileLiveAndRevealedAfterwards(t *testing.T) {
 	if raw, _ := protojson.Marshal(response); strings.Contains(string(raw), "seed") {
 		t.Fatal("the seed left the service")
 	}
+}
+
+func replayFor(t *testing.T, h *Handler, rules session.Rules, game session.Session, moves []session.MoveRecord, viewer uuid.UUID) (*gamev1.GetSessionHistoryResponse, error) {
+	t.Helper()
+	frames, err := buildHistory(t.Context(), rules, game, moves, 0, h.seen(game, viewer))
+	if err != nil {
+		return nil, err
+	}
+	state, err := h.view(t.Context(), game, viewer, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &gamev1.GetSessionHistoryResponse{Session: state, Frames: frames}, nil
 }
 
 func TestDurakListsRedactForTheCaller(t *testing.T) {

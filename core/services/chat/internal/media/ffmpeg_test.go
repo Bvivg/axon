@@ -203,3 +203,20 @@ func TestAPortraitPhoneVideoComesOutUpright(t *testing.T) {
 		t.Error("the output still asks the player to rotate it")
 	}
 }
+
+func TestAVideoWithHugeFramesIsRefusedBeforeItIsDecoded(t *testing.T) {
+	tl := media.NewTools(media.ToolsConfig{FFmpeg: "ffmpeg", FFprobe: "ffprobe", Timeout: time.Minute, MaxVideoPixels: 320 * 240})
+	if err := tl.Check(); err != nil {
+		t.Skipf("ffmpeg is not installed here: %v", err)
+	}
+
+	small := generate(t, "small.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=5:duration=1", "-c:v", "mpeg4")
+	if _, err := tl.Probe(t.Context(), small, media.VideoDemuxers); err != nil {
+		t.Fatalf("Probe of a video at the limit: %v", err)
+	}
+
+	big := generate(t, "big.mp4", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=5:duration=1", "-c:v", "mpeg4")
+	if _, err := tl.Probe(t.Context(), big, media.VideoDemuxers); !errors.Is(err, media.ErrTooLarge) {
+		t.Fatalf("Probe of a video over the limit = %v, want ErrTooLarge", err)
+	}
+}

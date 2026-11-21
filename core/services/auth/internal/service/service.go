@@ -11,6 +11,7 @@ import (
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
+	"github.com/bvivg/axon/core/services/auth/internal/limit"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
 	"github.com/bvivg/axon/core/services/auth/internal/password"
 )
@@ -23,6 +24,7 @@ type Store interface {
 	UserByID(ctx context.Context, id uuid.UUID) (domain.User, error)
 	UserByUsername(ctx context.Context, username string) (domain.User, error)
 	UpdateProfile(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate) (domain.User, error)
+	UpdateProfileRevokingOtherSessions(ctx context.Context, id uuid.UUID, u domain.ProfileUpdate, keepFamilyID uuid.UUID, at time.Time) (domain.User, []uuid.UUID, error)
 	SetAvatar(ctx context.Context, id uuid.UUID, avatarURL string, custom bool) (domain.User, error)
 	UpdateLastSeen(ctx context.Context, id uuid.UUID, at time.Time) error
 
@@ -62,8 +64,18 @@ type RevocationPublisher interface {
 	PublishUser(ctx context.Context, userID uuid.UUID) error
 }
 
+type LoginThrottle interface {
+	Blocked(ctx context.Context, account string) (time.Duration, error)
+	Failed(ctx context.Context, account string) (time.Duration, error)
+	Succeeded(ctx context.Context, account string) error
+}
+
 type Config struct {
 	RefreshTTL time.Duration
+
+	PasswordGate *limit.Gate
+
+	LoginThrottle LoginThrottle
 
 	OAuth *OAuthConfig
 
@@ -78,14 +90,18 @@ type Config struct {
 	Now func() time.Time
 }
 
+type OAuthProviders interface {
+	Get(id domain.Provider) (oauth.Provider, error)
+}
+
 type OAuthConfig struct {
-	Providers *oauth.Registry
+	Providers OAuthProviders
 	States    *oauth.StateStore
 	ReturnTo  *oauth.ReturnToPolicy
 }
 
 type oauthDeps struct {
-	providers *oauth.Registry
+	providers OAuthProviders
 	states    *oauth.StateStore
 	returnTo  *oauth.ReturnToPolicy
 }
@@ -95,6 +111,9 @@ type Service struct {
 	hasher *password.Hasher
 	issuer *jwt.Issuer
 	log    *slog.Logger
+
+	passwordGate  *limit.Gate
+	loginThrottle LoginThrottle
 
 	refreshTTL time.Duration
 	now        func() time.Time
@@ -143,17 +162,25 @@ func New(store Store, hasher *password.Hasher, issuer *jwt.Issuer, log *slog.Log
 		return nil, err
 	}
 
+	gate := cfg.PasswordGate
+	if gate == nil {
+		defaults := password.DefaultLimits()
+		gate = limit.NewGate(defaults.MaxConcurrent, defaults.QueueTimeout)
+	}
+
 	return &Service{
-		store:      store,
-		hasher:     hasher,
-		issuer:     issuer,
-		log:        log,
-		refreshTTL: cfg.RefreshTTL,
-		now:        now,
-		oauth:      deps,
-		avatar:     cfg.Avatar,
-		presence:   cfg.Presence,
-		revocation: cfg.Revocation,
+		store:         store,
+		hasher:        hasher,
+		issuer:        issuer,
+		log:           log,
+		passwordGate:  gate,
+		loginThrottle: cfg.LoginThrottle,
+		refreshTTL:    cfg.RefreshTTL,
+		now:           now,
+		oauth:         deps,
+		avatar:        cfg.Avatar,
+		presence:      cfg.Presence,
+		revocation:    cfg.Revocation,
 
 		auditFailures: auditFailures,
 

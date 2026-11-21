@@ -36,6 +36,20 @@ struct LobbyViewModelTests {
         #expect(model.error == nil)
     }
 
+    @Test func hidesGamesTheAppCannotShow() async {
+        let world = FakeWorld()
+        var unknown = GameFixtures.session(id: "u", updated: 9)
+        unknown.game = "checkers"
+        var watched = GameFixtures.session(id: "w", players: [GameFixtures.rival, GameFixtures.third], updated: 8)
+        watched.game = "checkers"
+        world.game.mine = [unknown, GameFixtures.session(id: "a", updated: 1)]
+        world.game.live = [watched]
+        let (model, _) = lobby(world)
+        await model.refresh()
+        #expect(model.active.map(\.id) == ["a"])
+        #expect(model.live.isEmpty)
+    }
+
     @Test func createOpensTheNewGame() async {
         let world = FakeWorld()
         world.game.created = GameFixtures.session(id: "new", players: [GameFixtures.me], status: .waiting, turn: nil)
@@ -187,6 +201,18 @@ struct ReplayViewModelTests {
         #expect(model.index == 5)
     }
 
+    @Test func unsupportedReplaysShowAnError() async {
+        let fake = FakeGame()
+        var history = SessionHistory()
+        history.session = GameFixtures.session(status: .won, turn: nil, winner: GameFixtures.me)
+        history.session.game = "checkers"
+        fake.historyResult = history
+        let model = ReplayViewModel(sessionID: GameFixtures.sessionID, game: fake)
+        await model.load()
+        #expect(model.error == GameViewModel.unsupportedGame)
+        #expect(model.frame == nil)
+    }
+
     @Test func missingReplayShowsAnError() async {
         let model = ReplayViewModel(sessionID: GameFixtures.sessionID, game: FakeGame())
         await model.load()
@@ -217,6 +243,9 @@ struct SessionStatusTextTests {
         var mate = GameFixtures.session(game: .chess, status: .won, turn: nil, winner: GameFixtures.me)
         mate.chess.end = .checkmate
         #expect(SessionStatusText.detail(mate) == "by checkmate")
+        var capped = GameFixtures.session(game: .quoridor, status: .draw, turn: nil)
+        capped.moveLimit = true
+        #expect(SessionStatusText.detail(capped) == "move limit reached")
         #expect(SessionStatusText.detail(GameFixtures.session()) == nil)
     }
 }

@@ -36,7 +36,7 @@ func syntheticImage(t *testing.T, width, height int, encodeJPEGSource bool) []by
 func TestDeriveProducesEverySize(t *testing.T) {
 	raw := syntheticImage(t, 800, 600, true)
 
-	out, err := derive(raw)
+	out, err := derive(raw, DefaultLimits())
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestDeriveProducesEverySize(t *testing.T) {
 func TestDeriveCapsTheOriginal(t *testing.T) {
 	raw := syntheticImage(t, 3000, 1500, true)
 
-	out, err := derive(raw)
+	out, err := derive(raw, DefaultLimits())
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
@@ -96,20 +96,20 @@ func TestDeriveCapsTheOriginal(t *testing.T) {
 func TestDeriveAcceptsPNG(t *testing.T) {
 	raw := syntheticImage(t, 200, 200, false)
 
-	if _, err := derive(raw); err != nil {
+	if _, err := derive(raw, DefaultLimits()); err != nil {
 		t.Fatalf("derive: %v", err)
 	}
 }
 
 func TestDeriveRejectsNonImages(t *testing.T) {
-	_, err := derive([]byte("this is not an image, just some bytes pretending to be one"))
+	_, err := derive([]byte("this is not an image, just some bytes pretending to be one"), DefaultLimits())
 	if !errors.Is(err, ErrInvalidImage) {
 		t.Fatalf("err = %v, want ErrInvalidImage", err)
 	}
 }
 
 func TestDeriveRejectsEmptyInput(t *testing.T) {
-	_, err := derive(nil)
+	_, err := derive(nil, DefaultLimits())
 	if !errors.Is(err, ErrInvalidImage) {
 		t.Fatalf("err = %v, want ErrInvalidImage", err)
 	}

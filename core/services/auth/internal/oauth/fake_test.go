@@ -2,11 +2,15 @@ package oauth_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/bvivg/axon/core/shared/pkg/config"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
@@ -22,6 +26,7 @@ func newFakeProvider(t *testing.T) oauth.Provider {
 		RedirectBaseURL:  "http://localhost:3000/auth/callback",
 		FakeEnabled:      true,
 		FakeAuthorizeURL: server.URL,
+		Environment:      config.EnvTest,
 	})
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
@@ -96,7 +101,7 @@ func TestFakeProviderHonoursTheRequestedIdentity(t *testing.T) {
 	provider := newFakeProvider(t)
 
 	authURL := provider.AuthorizationURL("s", oauth.Challenge("v")) +
-		"&sub=subject-42&email=chosen@example.test&name=Chosen+Person"
+		"&sub=subject-42&email=chosen@fake.axon.test&name=Chosen+Person"
 
 	callback := authorize(t, authURL)
 
@@ -108,7 +113,7 @@ func TestFakeProviderHonoursTheRequestedIdentity(t *testing.T) {
 	if profile.ProviderUserID != "subject-42" {
 		t.Errorf("subject = %q", profile.ProviderUserID)
 	}
-	if profile.Email != "chosen@example.test" {
+	if profile.Email != "chosen@fake.axon.test" {
 		t.Errorf("email = %q", profile.Email)
 	}
 	if profile.DisplayName != "Chosen Person" {
@@ -155,5 +160,43 @@ func TestFakeAuthorizeNeedsSomewhereToGo(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 without a redirect_uri", resp.StatusCode)
+	}
+}
+
+func fakeCode(t *testing.T, profile map[string]any) string {
+	t.Helper()
+
+	raw, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatalf("encode profile: %v", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func TestFakeProviderOnlyVouchesForItsReservedDomain(t *testing.T) {
+	provider := newFakeProvider(t)
+
+	for email, allowed := range map[string]bool{
+		"someone@fake.axon.test":            true,
+		"Someone@Fake.Axon.Test":            true,
+		"victim@example.com":                false,
+		"victim@axon.test":                  false,
+		"victim@notfake.axon.test":          false,
+		"victim@sub.fake.axon.test":         false,
+		"victim@fake.axon.test.evil":        false,
+		"victim@example.com@fake.axon.test": false,
+		"@fake.axon.test":                   false,
+	} {
+		t.Run(email, func(t *testing.T) {
+			code := fakeCode(t, map[string]any{"ProviderUserID": "atk", "Email": email, "EmailVerified": true})
+
+			_, err := provider.Exchange(context.Background(), code, "v")
+			if allowed && err != nil {
+				t.Fatalf("Exchange(%s) = %v, want it accepted", email, err)
+			}
+			if !allowed && !errors.Is(err, domain.ErrOauthEmailNotAllowed) {
+				t.Fatalf("Exchange(%s) = %v, want ErrOauthEmailNotAllowed", email, err)
+			}
+		})
 	}
 }

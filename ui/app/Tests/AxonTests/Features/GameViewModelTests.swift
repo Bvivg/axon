@@ -200,6 +200,18 @@ struct GameViewModelTests {
         #expect(requested.count == 1)
     }
 
+    @Test func unsupportedGamesShowAnErrorAndStayOffline() async {
+        let world = FakeWorld()
+        var session = GameFixtures.session()
+        session.game = "checkers"
+        world.game.sessions[session.id] = session
+        let model = GameViewModel(sessionID: session.id, me: GameFixtures.me, services: world.services)
+        await model.start()
+        #expect(model.loadError == GameViewModel.unsupportedGame)
+        #expect(model.session == nil)
+        #expect(world.channels.opened.isEmpty)
+    }
+
     @Test func missingGamesShowAnError() async {
         let world = FakeWorld()
         let model = GameViewModel(sessionID: GameFixtures.sessionID, me: GameFixtures.me, services: world.services)

@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/shared/pkg/safehttp"
+
+	"github.com/bvivg/axon/core/services/auth/internal/limit"
 )
 
 type Size string
@@ -28,6 +30,10 @@ const MaxUploadBytes = 5 << 20
 var (
 	ErrInvalidImage  = errors.New("avatar: not a decodable image")
 	ErrImageTooLarge = errors.New("avatar: image exceeds the upload limit")
+
+	ErrImageDimensionsTooLarge = errors.New("avatar: image dimensions exceed the limit")
+
+	ErrBusy = errors.New("avatar: image processing is at capacity")
 )
 
 type URLs struct {
@@ -63,20 +69,58 @@ func objectKey(userID uuid.UUID, size Size) string {
 	return userID.String() + "/" + string(size) + ".jpg"
 }
 
+type Limits struct {
+	MaxPixels     int
+	MaxSide       int
+	MaxConcurrent int
+	QueueTimeout  time.Duration
+}
+
+func DefaultLimits() Limits {
+	return Limits{
+		MaxPixels:     25_000_000,
+		MaxSide:       8192,
+		MaxConcurrent: 2,
+		QueueTimeout:  5 * time.Second,
+	}
+}
+
+func (l Limits) orDefaults() Limits {
+	d := DefaultLimits()
+	if l.MaxPixels <= 0 {
+		l.MaxPixels = d.MaxPixels
+	}
+	if l.MaxSide <= 0 {
+		l.MaxSide = d.MaxSide
+	}
+	if l.MaxConcurrent <= 0 {
+		l.MaxConcurrent = d.MaxConcurrent
+	}
+	if l.QueueTimeout < 0 {
+		l.QueueTimeout = 0
+	}
+	return l
+}
+
 type Pipeline struct {
 	store  *Store
 	urls   URLBuilder
 	client *http.Client
+	limits Limits
+	gate   *limit.Gate
 }
 
-func NewPipeline(store *Store, urls URLBuilder, client *http.Client) *Pipeline {
+func NewPipeline(store *Store, urls URLBuilder, client *http.Client, limits Limits) *Pipeline {
 	if client == nil {
 		client = safehttp.NewClient(5 * time.Second)
 	}
+	limits = limits.orDefaults()
 	return &Pipeline{
 		store:  store,
 		urls:   urls,
 		client: client,
+		limits: limits,
+		gate:   limit.NewGate(limits.MaxConcurrent, limits.QueueTimeout),
 	}
 }
 
@@ -85,7 +129,15 @@ func (p *Pipeline) Process(ctx context.Context, userID uuid.UUID, raw []byte) (U
 		return URLs{}, ErrImageTooLarge
 	}
 
-	sizes, err := derive(raw)
+	release, err := p.gate.Acquire(ctx)
+	if err != nil {
+		if errors.Is(err, limit.ErrSaturated) {
+			return URLs{}, ErrBusy
+		}
+		return URLs{}, err
+	}
+	sizes, err := derive(raw, p.limits)
+	release()
 	if err != nil {
 		return URLs{}, err
 	}

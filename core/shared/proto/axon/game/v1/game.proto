@@ -48,6 +48,7 @@ message Session {
   QuoridorBoard quoridor = 19;
   optional uint32 spectators = 20;
   optional string tournament_id = 21;
+  optional bool move_limit = 22;
   DurakBoard durak = 24;
 }
 
@@ -81,7 +82,6 @@ enum DurakEnd {
   DURAK_END_UNSPECIFIED = 0;
   DURAK_END_DURAK = 1;
   DURAK_END_DRAW = 2;
-  DURAK_END_MOVE_LIMIT = 3;
 }
 
 message QuoridorBoard {
@@ -328,6 +328,7 @@ message HistoryFrame {
   optional TicTacToeBoard tic_tac_toe = 4;
   optional ChessBoard chess = 5;
   optional QuoridorBoard quoridor = 6;
+  optional string move = 7;
   optional DurakBoard durak = 9;
 }
 

@@ -6,9 +6,8 @@ import (
 )
 
 var durakEnds = map[durak.End]gamev1.DurakEnd{
-	durak.Lost:      gamev1.DurakEnd_DURAK_END_DURAK,
-	durak.Drawn:     gamev1.DurakEnd_DURAK_END_DRAW,
-	durak.MoveLimit: gamev1.DurakEnd_DURAK_END_MOVE_LIMIT,
+	durak.Lost:  gamev1.DurakEnd_DURAK_END_DURAK,
+	durak.Drawn: gamev1.DurakEnd_DURAK_END_DRAW,
 }
 
 func durakBoard(snap durak.Snapshot) *gamev1.DurakBoard {

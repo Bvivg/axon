@@ -74,8 +74,12 @@ func TestDurakHistoryReplaysFromTheRecordedSeed(t *testing.T) {
 		game = next
 	}
 	reseeded := cardRules(t)
-	frames, err := reseeded.Frames(game, moves)
-	if err != nil {
+	var frames []engine.State
+	collect := func(state engine.State) error {
+		frames = append(frames, state)
+		return nil
+	}
+	if err := reseeded.Frames(t.Context(), game, moves, collect); err != nil {
 		t.Fatal(err)
 	}
 	if last := frames[len(frames)-1]; string(last.Data) != string(game.State.Data) || last.Turn != game.State.Turn || last.Seed != 7 {
@@ -87,7 +91,7 @@ func TestDurakHistoryReplaysFromTheRecordedSeed(t *testing.T) {
 	}
 	wrong := game
 	wrong.State.Seed = 8
-	if _, err := reseeded.Frames(wrong, moves); err == nil {
+	if err := reseeded.Frames(t.Context(), wrong, moves, func(engine.State) error { return nil }); err == nil {
 		t.Fatal("a different seed replayed the same history")
 	}
 }
