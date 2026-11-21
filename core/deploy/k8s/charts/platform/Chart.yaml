@@ -1,0 +1,5 @@
+apiVersion: v2
+name: platform
+description: Cluster-wide resources shared by every Axon environment
+type: application
+version: 0.1.0

@@ -1,0 +1,158 @@
+{{- $v := fromYaml (include "cdc.values" .) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdc-scripts
+  labels:
+    {{- include "cdc.labels" . | nindent 4 }}
+data:
+  setup.sh: {{ .Files.Get "files/setup.sh" | quote }}
+  register-schema.sh: {{ .Files.Get "files/register-schema.sh" | quote }}
+  events.proto: {{ .Files.Get "files/events.proto" | quote }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cdc-setup
+  labels:
+    {{- include "cdc.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 20
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cdc-setup
+        app.kubernetes.io/part-of: axon
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: setup
+          image: {{ $v.postgresImage }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "/cdc/setup.sh"]
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PGHOST
+              value: {{ $v.global.postgres.host }}
+            - name: PGPORT
+              value: {{ $v.global.postgres.port | quote }}
+            - name: PGSSLMODE
+              value: require
+            - name: PGDATABASE
+              value: {{ $v.global.postgres.database }}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: axon-pg-superuser
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: axon-pg-superuser
+                  key: password
+            - name: DEBEZIUM_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pg-debezium
+                  key: password
+            - name: CDC_PUBLICATION
+              value: {{ $v.publication }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            {{- include "cdc.jobSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /cdc
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: scripts
+          configMap:
+            name: cdc-scripts
+        - name: tmp
+          emptyDir: {}
+{{- if $v.registry.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: schema-register
+  labels:
+    {{- include "cdc.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 20
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: schema-register
+        app.kubernetes.io/part-of: axon
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: register
+          image: {{ $v.curlImage }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "/cdc/register-schema.sh"]
+          env:
+            - name: TMPDIR
+              value: /tmp
+            - name: REGISTRY_URL
+              value: {{ $v.registry.url }}
+            - name: SCHEMA_GROUP
+              value: {{ $v.registry.group }}
+            - name: SCHEMA_ARTIFACT
+              value: {{ $v.registry.artifact }}
+            - name: SCHEMA_FILE
+              value: /cdc/events.proto
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            {{- include "cdc.jobSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /cdc
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: scripts
+          configMap:
+            name: cdc-scripts
+        - name: tmp
+          emptyDir: {}
+{{- end }}

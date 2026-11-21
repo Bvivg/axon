@@ -43,3 +43,12 @@
 ## Docker / K8s
 - `docker-compose.yml` — воспроизводимый стенд для проверки и пользовательского ревью; для локальной разработки можно поднимать только нужные инфраструктурные зависимости. Дополнительные сервисы запускать по необходимости и в пределах разрешённого объёма задачи.
 - Секреты — только через env/`.env.local`, никогда не коммитить в репозиторий.
+
+## Kubernetes (kind + Argo CD)
+- Кластер — kind `axon` (`core/deploy/k8s/kind/cluster.yaml`): control-plane и 3 worker с зонами `a|b|c`. Поднимается `make kind-up`, удаляется `make kind-down`; все команды `kubectl`/`helm` — с `--context kind-axon`, контексты других кластеров не трогать.
+- Argo CD синхронизирует из GitHub (`Bvivg/axon`), поэтому ветка должна быть запушена; `ARGO_REVISION` по умолчанию — текущая ветка. Руками в кластере ничего не правится: selfHeal откатит изменение, правка идёт через git.
+- Env, порты, healthcheck и миграции сервисов зеркалят `docker-compose.yml` и `docker-compose.mtls.yml`. Новая переменная окружения или зависимость сервиса добавляется в оба места тем же изменением.
+- Конфиг, который уже лежит в репозитории (SQL миграций, `postgres/init`, `cdc/*.sh`, `outbox-connector.json`, `events.proto`), чарт читает через symlink в свой каталог, а не копирует.
+- Образы собираются на хосте и грузятся в worker'ы `make kind-load` (тег `local`, `imagePullPolicy: Never`); на control-plane образы не грузятся — диск Docker общий со стеками `axon`.
+- Секреты окружения создаёт Job `secrets-bootstrap` в кластере и никогда не перезаписывает; в git их нет. Тестовые Job'ы (`make kind-e2e`, `make kind-chaos`) ходят во внутренние сервисы через envoy-sidecar с сертификатом из cert-manager.
+- Перед коммитом изменений в `core/deploy/k8s` — `make k8s-validate` (helm lint + kubeconform), CI повторяет то же в job `k8s`.

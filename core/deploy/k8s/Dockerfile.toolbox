@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+ARG GO_VERSION=1.27.4
+
+FROM golang:${GO_VERSION}-alpine AS build
+
+WORKDIR /src
+
+ENV GOWORK=off CGO_ENABLED=0
+
+COPY shared/ ./shared/
+COPY services/ ./services/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -e; \
+    cd /src/services/game && go build -trimpath -o /out/loadgen ./cmd/loadgen; \
+    cd /src/services/auth && go test -c -tags e2e -trimpath -o /out/auth-e2e.test ./e2e; \
+    cd /src/services/chat && go test -c -tags e2e -trimpath -o /out/chat-e2e.test ./e2e; \
+    cd /src/services/rating && go test -c -tags e2e -trimpath -o /out/rating-e2e.test ./e2e; \
+    cd /src/shared && go test -c -tags e2e -trimpath -o /out/security-e2e.test ./e2e/security
+
+FROM alpine:3.24
+
+RUN apk add --no-cache bash ca-certificates curl jq kcat kubectl openssl postgresql-client \
+    && adduser -D -H -u 65532 nonroot
+
+COPY --from=build /out/ /usr/local/bin/
+COPY services/chat/e2e/testdata /opt/axon/chat/testdata
+COPY deploy/k8s/toolbox/ /opt/axon/toolbox/
+
+USER 65532:65532
+
+WORKDIR /opt/axon

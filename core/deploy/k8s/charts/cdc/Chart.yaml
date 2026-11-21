@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cdc
+description: Debezium outbox connector, its publication and the event schema registration for one Axon environment
+type: application
+version: 0.1.0

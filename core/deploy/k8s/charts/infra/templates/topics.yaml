@@ -1,0 +1,45 @@
+{{- $config := fromJson (.Files.Get "files/outbox-connector.json") -}}
+{{- $groups := splitList "," (get $config "topic.creation.groups" | default "") -}}
+{{- range $group := $groups }}
+{{- $group = trim $group }}
+{{- if $group }}
+{{- $prefix := printf "topic.creation.%s." $group }}
+{{- $settings := dict }}
+{{- range $key, $value := $config }}
+{{- if hasPrefix $prefix $key }}
+{{- $name := trimPrefix $prefix $key }}
+{{- if not (has $name (list "include" "exclude" "replication.factor" "partitions")) }}
+{{- $_ := set $settings $name (toString $value) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $replicas := get $config (printf "%sreplication.factor" $prefix) | default "-1" | int }}
+{{- $partitions := get $config (printf "%spartitions" $prefix) | default "-1" | int }}
+{{- range $pattern := splitList "," (get $config (printf "%sinclude" $prefix)) }}
+{{- $topic := replace "\\." "." (trim $pattern) }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: {{ replace "." "-" $topic }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    strimzi.io/cluster: axon-kafka
+    axon.io/topic-group: {{ $group }}
+    {{- include "infra.labels" $ | nindent 4 }}
+spec:
+  topicName: {{ $topic }}
+  {{- if gt $partitions 0 }}
+  partitions: {{ $partitions }}
+  {{- end }}
+  {{- if gt $replicas 0 }}
+  replicas: {{ $replicas }}
+  {{- end }}
+  config:
+    {{- range $name, $value := $settings }}
+    {{ $name }}: {{ $value | quote }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

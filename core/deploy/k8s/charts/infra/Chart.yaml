@@ -1,0 +1,5 @@
+apiVersion: v2
+name: infra
+description: Postgres, Kafka, Kafka Connect, schema registry, Redis and MinIO for one Axon environment
+type: application
+version: 0.1.0

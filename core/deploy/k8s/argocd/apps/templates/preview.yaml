@@ -1,0 +1,56 @@
+{{- if .Values.preview.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: axon-preview
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: axon
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - pullRequest:
+        requeueAfterSeconds: {{ .Values.preview.requeueAfterSeconds }}
+        github:
+          owner: {{ .Values.preview.owner }}
+          repo: {{ .Values.preview.repo }}
+          labels:
+            - {{ .Values.preview.label }}
+  template:
+    metadata:
+      name: 'axon-pr-{{ "{{" }} .number {{ "}}" }}'
+      labels:
+        app.kubernetes.io/part-of: axon
+        axon.io/preview: "true"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: {{ .Values.repoURL }}
+        targetRevision: '{{ "{{" }} .head_sha {{ "}}" }}'
+        path: core/deploy/k8s/charts/stack
+        helm:
+          releaseName: 'axon-pr-{{ "{{" }} .number {{ "}}" }}'
+          valuesObject:
+            repoURL: {{ .Values.repoURL }}
+            revision: '{{ "{{" }} .head_sha {{ "}}" }}'
+            env: 'axon-pr-{{ "{{" }} .number {{ "}}" }}'
+            valueFile: {{ .Values.preview.valueFile }}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: argocd
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 30
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 2m
+{{- end }}

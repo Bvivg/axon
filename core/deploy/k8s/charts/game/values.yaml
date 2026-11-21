@@ -1,0 +1,75 @@
+global: {}
+name: game
+image: axon/game
+replicas: 1
+ports:
+  http: 8083
+  admin: 9093
+probes:
+  port: admin
+  livePath: /healthz
+  readyPath: /readyz
+database:
+  role: game
+migrations:
+  enabled: true
+  image: migrate/migrate:v4.20.1
+mtls:
+  enabled: true
+  allowedClients: gateway,game
+  duration: 1h
+  renewBefore: 20m
+  env:
+    JWKS_URL: https://auth:8081/.well-known/jwks.json
+  plainEnv:
+    JWKS_URL: http://auth:9091/.well-known/jwks.json
+service:
+  type: ClusterIP
+  nodePorts: {}
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  metric: game_active_sessions
+  averageValue: "50"
+  scaleDownWindowSeconds: 60
+pdb:
+  minAvailable: 1
+serviceMonitor:
+  enabled: true
+terminationGracePeriodSeconds: 45
+securityContext:
+  runAsUser: 65532
+writablePaths:
+  - /tmp
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    memory: 512Mi
+testHooks: false
+journal:
+  replication: 1
+  minInSync: 1
+fieldEnv:
+  - name: POD_IP
+    fieldPath: status.podIP
+  - name: POD_NAME
+    fieldPath: metadata.name
+secretEnv: {}
+env:
+  HTTP_ADDR: ":8083"
+  GAME_ADMIN_ADDR: ":9093"
+  GAME_ADVERTISE_ADDR: "$(POD_IP):8083"
+  GAME_INSTANCE_ID: "$(POD_NAME)"
+  SHUTDOWN_DRAIN: 3s
+  KAFKA_BROKERS: "{{ .Values.global.kafka.brokers }}"
+  GAME_JOURNAL_REPLICATION: "{{ .Values.journal.replication }}"
+  GAME_JOURNAL_MIN_INSYNC: "{{ .Values.journal.minInSync }}"
+  GAME_TEST_HOOKS: "{{ .Values.testHooks }}"
+  GAME_LEASE_DATABASE_URL: "postgres://game_service:$(DB_PASSWORD)@{{ .Values.global.postgres.host }}:{{ .Values.global.postgres.port }}/{{ .Values.global.postgres.database }}?sslmode={{ .Values.global.postgres.sslmode }}&search_path=game"
+  GAME_LISTEN_DATABASE_URL: "postgres://game_service:$(DB_PASSWORD)@{{ .Values.global.postgres.host }}:{{ .Values.global.postgres.port }}/{{ .Values.global.postgres.database }}?sslmode={{ .Values.global.postgres.sslmode }}&search_path=game"
+  GAME_READ_DATABASE_URL: "postgres://game_service:$(DB_PASSWORD)@{{ .Values.global.postgres.readHost }}:{{ .Values.global.postgres.port }}/{{ .Values.global.postgres.database }}?sslmode={{ .Values.global.postgres.sslmode }}&search_path=game"
+  JWT_ISSUER: https://auth.axon.local
+  JWT_AUDIENCE: axon

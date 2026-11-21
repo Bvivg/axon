@@ -1,0 +1,5 @@
+apiVersion: v2
+name: secrets-bootstrap
+description: Creates the missing generated secrets of one Axon environment and never rotates existing ones
+type: application
+version: 0.1.0

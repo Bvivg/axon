@@ -1,0 +1,78 @@
+global: {}
+name: auth
+image: axon/auth
+replicas: 1
+ports:
+  http: 8081
+  admin: 9091
+probes:
+  port: admin
+  livePath: /healthz
+  readyPath: /readyz
+database:
+  role: auth
+migrations:
+  enabled: true
+  image: migrate/migrate:v4.20.1
+mtls:
+  enabled: true
+  allowedClients: gateway,chat,game
+  duration: 1h
+  renewBefore: 20m
+  env: {}
+  plainEnv: {}
+service:
+  type: ClusterIP
+  nodePorts: {}
+hpa:
+  enabled: false
+pdb:
+  minAvailable: 1
+serviceMonitor:
+  enabled: true
+terminationGracePeriodSeconds: 30
+securityContext:
+  runAsUser: 65532
+writablePaths:
+  - /tmp
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+fieldEnv: []
+secretEnv:
+  JWT_PRIVATE_KEY_DEV_1:
+    secret: auth-jwt
+    key: JWT_PRIVATE_KEY_DEV_1
+  JWT_KEY_ENCRYPTION_KEY:
+    secret: auth-jwt
+    key: JWT_KEY_ENCRYPTION_KEY
+  REDIS_PASSWORD:
+    secret: redis-app
+    key: password
+  MINIO_ROOT_USER:
+    secret: minio
+    key: user
+  MINIO_ROOT_PASSWORD:
+    secret: minio
+    key: password
+env:
+  HTTP_ADDR: ":8081"
+  METRICS_ADDR: ":9091"
+  SHUTDOWN_DRAIN: 3s
+  REDIS_ADDR: "{{ .Values.global.redis.app }}"
+  JWT_ACTIVE_KEY_ID: dev-1
+  JWT_ISSUER: https://auth.axon.local
+  JWT_AUDIENCE: axon
+  JWT_ACCESS_TOKEN_TTL: 15m
+  JWT_REFRESH_TOKEN_TTL: 720h
+  JWT_ROTATION_INTERVAL: 24h
+  JWT_ROTATION_LEAD: 20m
+  OAUTH_FAKE_ENABLED: "true"
+  OAUTH_FAKE_AUTHORIZE_URL: "{{ if .Values.global.mtls.enabled }}https{{ else }}http{{ end }}://auth:8081/oauth/fake/authorize"
+  OAUTH_REDIRECT_BASE_URL: "{{ .Values.global.publicWebURL }}/auth/callback"
+  OAUTH_ALLOWED_RETURN_ORIGINS: "{{ .Values.global.publicWebURL }}"
+  AVATARS_ENDPOINT: minio:9000
+  AVATARS_PUBLIC_URL: http://minio:9000

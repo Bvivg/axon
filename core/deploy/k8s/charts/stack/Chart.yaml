@@ -1,0 +1,5 @@
+apiVersion: v2
+name: stack
+description: One Axon environment as Argo CD applications in sync waves, from secrets to the web client
+type: application
+version: 0.1.0
