@@ -171,6 +171,7 @@ services:
 
       CHAT_VAPID_PUBLIC_KEY: ${CHAT_VAPID_PUBLIC_KEY:-}
       CHAT_VAPID_PRIVATE_KEY: ${CHAT_VAPID_PRIVATE_KEY:-}
+      CHAT_WS_SEND_BURST: 500
 
     depends_on:
       migrate-chat:
