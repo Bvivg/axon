@@ -46,21 +46,21 @@ Argo CD Kubernetes setup.
 ## Architecture
 
 ```mermaid
-flowchart LR
-  web["Web client, Next.js"] -->|"Connect, WebSocket"| gw["gateway"]
-  app["SwiftUI app, in review"] -.-> gw
+flowchart TB
+  web["Web client<br/>Next.js"] -->|"Connect, WebSocket"| gw["gateway"]
+  app["SwiftUI app<br/>in review"] -.-> gw
   gw --> auth["auth"]
   gw --> chat["chat and calls"]
   gw --> game["game owners"]
   gw --> tour["tournament"]
   gw --> ana["analysis"]
   game -->|"append"| journal[("Kafka journal")]
-  journal -->|"project"| pg[("Postgres, schema per service")]
-  pg -->|"outbox, Debezium"| bus[("Kafka domain events")]
-  bus -->|"game.finished.v1"| rating["rating, Glicko-2"]
+  journal -->|"project"| pg[("Postgres<br/>schema per service")]
+  pg -->|"outbox, Debezium"| bus[("Kafka<br/>domain events")]
+  bus -->|"game.finished.v1"| rating["rating<br/>Glicko-2"]
   bus -->|"game.finished.v1"| ana
   bus -->|"game.finished.v1"| tour
-  bus -->|"rating.changed.v1, tournament commands"| game
+  bus -->|"rating.changed.v1,<br/>tournament commands"| game
 ```
 
 Diagrams of the move path, partition ownership, the tournament saga, network

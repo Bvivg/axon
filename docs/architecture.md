@@ -9,53 +9,28 @@ plans in [`.claude/plans/`](../.claude/plans/).
 
 ```mermaid
 flowchart TB
-  subgraph clients["Clients"]
-    web["Web client, Next.js"]
-    ios["iOS and macOS client, SwiftUI, in review"]
-  end
-  subgraph edge["Edge"]
-    gw["gateway: Connect and WebSocket proxy, JWT via JWKS, CORS, rate limits"]
-    eredis[("edge Redis")]
-  end
-  subgraph services["Services"]
-    auth["auth: accounts, OAuth, roles, rotating JWKS"]
-    chat["chat: messages, media, search, Calls module"]
-    game["game: partition owners, projector, matchmaking"]
-    rating["rating: Glicko-2, leaderboard"]
-    analysis["analysis: Stockfish worker"]
-    tournament["tournament: saga orchestrator"]
-  end
-  subgraph data["Data"]
-    pg[("Postgres, schema per service")]
-    redis[("Redis")]
-    kafka[("Kafka")]
-    minio[("MinIO")]
-    debezium["Debezium Connect, outbox router"]
-    apicurio["Apicurio Registry"]
-  end
-  subgraph media["Media"]
-    coturn["coturn"]
-    livekit["LiveKit SFU"]
-  end
-  web -->|"Connect, WebSocket"| gw
-  ios -.->|"Connect, WebSocket"| gw
-  web -.->|"WebRTC media"| coturn
-  web -.->|"WebRTC media"| livekit
-  gw --> eredis
-  gw --> auth & chat & game & analysis & tournament
-  tournament -->|"roles"| auth
-  auth & chat & game & rating & analysis & tournament --> pg
-  auth & chat & rating --> redis
-  chat --> minio
-  chat -->|"rooms, admission"| livekit
-  game -->|"journal, leases"| kafka
-  debezium -->|"logical replication of outbox tables"| pg
-  debezium -->|"domain events"| kafka
-  kafka -->|"game.finished.v1"| rating & analysis & tournament
-  kafka -->|"rating.changed.v1, tournament commands"| game
+  web["Web client<br/>Next.js"] --> gw
+  ios["iOS and macOS<br/>SwiftUI, in review"] -.-> gw
+  gw["gateway<br/>Connect and WebSocket proxy<br/>JWT via JWKS, CORS, rate limits"] --> eredis[("edge Redis")]
+  gw --> auth["auth<br/>accounts, OAuth, roles, JWKS"]
+  gw --> chat["chat<br/>messages, media, Calls"]
+  gw --> game["game<br/>partition owners, projector"]
+  gw --> tournament["tournament<br/>saga orchestrator"]
+  gw --> analysis["analysis<br/>Stockfish worker"]
+  rating["rating<br/>Glicko-2, leaderboard"]
+  auth & chat & game & tournament & analysis & rating --> pg[("Postgres<br/>schema per service")]
+  game & tournament & analysis & rating --> kafka[("Kafka")]
+  auth & chat & rating --> redis[("Redis")]
+  chat --> minio[("MinIO")]
+  chat --> livekit["LiveKit SFU, coturn"]
+  pg --> debezium["Debezium Connect<br/>outbox router"]
+  debezium --> kafka
+  apicurio["Apicurio Registry<br/>event schemas"]
 ```
 
-The gateway is the trust boundary: it verifies JWTs locally against JWKS,
+Browsers send WebRTC media directly to each other, to coturn or to LiveKit,
+never through the gateway. Debezium reads the outbox tables through logical
+replication and publishes domain events to Kafka. The gateway is the trust boundary: it verifies JWTs locally against JWKS,
 applies CORS and GCRA rate limits in its own Redis, and turns the refresh token
 into an `httpOnly` cookie. Resource-level authorization stays in the service
 that owns the resource. Services verify tokens themselves and, in the mTLS
@@ -67,31 +42,31 @@ overlay, accept only the client certificates on their allow-list.
 sequenceDiagram
   autonumber
   participant C as Client
-  participant G as Gateway WebSocket
-  participant O as Game partition owner
-  participant J as Kafka journal
+  participant G as Gateway
+  participant O as Game owner
+  participant J as Journal
   participant P as Projector
   participant DB as Postgres
   participant D as Debezium
-  participant E as game.finished.v1
-  participant S as rating, analysis, tournament
-  C->>G: move frame with traceparent
-  G->>O: game replica forwards to the owner of the session partition
-  O->>O: engine validates the move, lease still held
-  O->>J: append SessionRecorded with the owner generation, acks=all
+  participant S as Consumers
+  C->>G: move over WebSocket
+  G->>O: forwarded to the partition owner
+  O->>O: validate, check lease
+  O->>J: append with generation, acks=all
   J-->>O: offset
-  O->>O: lease still held after the append
-  O-->>C: new snapshot to players and spectators
-  J->>P: records batched per partition
-  P->>DB: upsert read model and offset in one transaction
-  Note over P,DB: a finished game also writes its outbox row in this transaction
-  D->>DB: read the outbox through logical replication
-  D->>E: EventRouter with event_id and event_type headers
-  E->>S: consume, skip ids already in processed_events
+  O->>O: check lease again
+  O-->>C: snapshot to players and spectators
+  J->>P: batch per partition
+  P->>DB: read model, offset, outbox row
+  D->>DB: read outbox via logical replication
+  D->>S: game.finished.v1 with event_id
+  S->>S: skip ids in processed_events
 ```
 
-The owner acknowledges a move only after the journal append succeeds while its
-lease is valid, so an acknowledged move is in the log. The projector upserts
+The consumers are rating, analysis and tournament. The owner acknowledges a move
+only after the journal append succeeds while its lease is valid, so an
+acknowledged move is in the log. The projector writes the outbox row only for a
+finished game. The projector upserts
 with `WHERE revision < EXCLUDED.revision` and commits its Kafka offset in the
 same Postgres transaction, so replays are harmless. `game.finished.v1` comes
 from the outbox rather than the journal because it must be atomic with the read
