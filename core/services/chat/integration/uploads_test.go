@@ -178,7 +178,8 @@ func newUploads(t *testing.T) (*uploads.Manager, context.CancelFunc) {
 	m, err := uploads.New(uploads.Config{
 		Sessions:      repo,
 		Objects:       attachmentStore,
-		Processor:     attachment.NewPipeline(attachmentStore, attachmentURLs, media.NewTools(media.ToolsConfig{})),
+		Processor:     attachment.NewPipeline(attachmentStore, attachmentURLs, media.NewTools(media.ToolsConfig{}), media.NewImages(media.ImageLimits{}, media.NewSlots(1, 1))),
+		Budget:        uploads.NewBudget(repo, 1<<30),
 		KeysOf:        sweeper.ObjectKeys,
 		Logger:        slog.New(slog.DiscardHandler),
 		MaxBytes:      50 << 20,

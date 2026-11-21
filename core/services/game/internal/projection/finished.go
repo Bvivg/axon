@@ -18,24 +18,28 @@ import (
 
 const (
 	FinishedTopic = "game.finished.v1"
+	AnalysisTopic = "game.analysis_requested.v1"
 	OutboxTable   = "game.outbox"
 )
 
-var finishedNamespace = uuid.MustParse("7af34790-8eb2-4832-86b6-7d161fbf75e4")
+var (
+	finishedNamespace = uuid.MustParse("7af34790-8eb2-4832-86b6-7d161fbf75e4")
+	analysisNamespace = uuid.MustParse("b4098f8d-4441-4a52-b69c-1a7c1ef671b4")
+)
 
 func FinishedEventID(id uuid.UUID) uuid.UUID {
 	return uuid.NewSHA1(finishedNamespace, id[:])
+}
+
+func AnalysisEventID(id uuid.UUID) uuid.UUID {
+	return uuid.NewSHA1(analysisNamespace, id[:])
 }
 
 func finished(game session.Session) bool {
 	return game.Opponent != nil && game.State.Over()
 }
 
-func FinishedEvent(game session.Session, at time.Time) (outbox.Event, bool) {
-	if !finished(game) {
-		return outbox.Event{}, false
-	}
-	id := FinishedEventID(game.ID)
+func gameFinished(game session.Session, id uuid.UUID, at time.Time) *eventsv1.GameFinished {
 	payload := &eventsv1.GameFinished{
 		EventId:    id.String(),
 		SessionId:  game.ID.String(),
@@ -50,15 +54,32 @@ func FinishedEvent(game session.Session, at time.Time) (outbox.Event, bool) {
 	if game.Tournament != nil {
 		payload.TournamentId = proto.String(game.Tournament.String())
 	}
-	if game.Game == chess.Key {
-		if moves, err := chess.Moves(game.State); err == nil {
-			payload.Moves = moves
-		}
-	}
 	if game.State.Status == engine.StatusDraw || game.State.Winner < 0 {
 		payload.Outcome, payload.WinnerSeat = eventsv1.GameFinished_OUTCOME_DRAW, int32(engine.NoSeat)
 	}
-	return outbox.Event{ID: id, Topic: FinishedTopic, AggregateID: string(game.Game), Payload: payload}, true
+	return payload
+}
+
+func FinishedEvent(game session.Session, at time.Time) (outbox.Event, bool) {
+	if !finished(game) {
+		return outbox.Event{}, false
+	}
+	id := FinishedEventID(game.ID)
+	return outbox.Event{ID: id, Topic: FinishedTopic, AggregateID: string(game.Game), Payload: gameFinished(game, id, at)}, true
+}
+
+func AnalysisEvent(game session.Session, at time.Time) (outbox.Event, bool) {
+	if !finished(game) || !game.Rated || game.Game != chess.Key {
+		return outbox.Event{}, false
+	}
+	moves, err := chess.Moves(game.State)
+	if err != nil || len(moves) == 0 {
+		return outbox.Event{}, false
+	}
+	id := AnalysisEventID(game.ID)
+	payload := gameFinished(game, id, at)
+	payload.Moves = moves
+	return outbox.Event{ID: id, Topic: AnalysisTopic, AggregateID: game.ID.String(), Payload: payload}, true
 }
 
 func (m *Postgres) PruneOutbox(ctx context.Context, every, olderThan time.Duration, log *slog.Logger) {

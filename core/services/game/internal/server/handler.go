@@ -28,17 +28,25 @@ import (
 const Protocol = "axon.game.v1"
 
 type Config struct {
-	Store     *session.Store
-	Owner     *owner.Owner
-	Routes    *route.Table
-	Self      string
-	Verifier  *authn.Verifier
-	Client    *http.Client
-	Sockets   *http.Client
-	Secure    bool
-	TestHooks bool
-	Metrics   *metrics.Game
-	Watchers  int
+	Store        *session.Store
+	Owner        *owner.Owner
+	Routes       *route.Table
+	Self         string
+	Verifier     *authn.Verifier
+	Client       *http.Client
+	Sockets      *http.Client
+	Secure       bool
+	TestHooks    bool
+	Metrics      *metrics.Game
+	Watchers     int
+	History      HistoryLimits
+	MatchSockets int
+}
+
+type HistoryLimits struct {
+	Plies   int
+	Bytes   int
+	Entries int
 }
 
 type Handler struct {
@@ -57,6 +65,11 @@ type Handler struct {
 	updates  updates
 	matches  updates
 	watchers *watchers
+
+	historyPlies int
+	historyBytes int
+	histories    *historyCache
+	searches     *matchFeeds
 }
 
 func New(cfg Config) *Handler {
@@ -68,7 +81,7 @@ func New(cfg Config) *Handler {
 	if cfg.Secure {
 		scheme = "https"
 	}
-	return &Handler{
+	h := &Handler{
 		store: cfg.Store, owner: cfg.Owner, routes: cfg.Routes, self: cfg.Self, verifier: cfg.Verifier, hooks: cfg.TestHooks, metrics: cfg.Metrics,
 		peers:    newPeers(client, scheme),
 		sockets:  cfg.Sockets,
@@ -76,7 +89,13 @@ func New(cfg Config) *Handler {
 		updates:  newUpdates(),
 		matches:  newUpdates(),
 		watchers: newWatchers(cfg.Watchers),
+
+		historyPlies: cfg.History.Plies,
+		historyBytes: cfg.History.Bytes,
+		histories:    newHistoryCache(cfg.History.Entries),
 	}
+	h.searches = newMatchFeeds(cfg.MatchSockets, matchPollInterval, h.pollMatch, h.watchMatches)
+	return h
 }
 
 func (h *Handler) Changed(id uuid.UUID) { h.updates.notify(id) }
@@ -282,6 +301,7 @@ func present(item session.Session, limit int64, err error) (*gamev1.Session, err
 		Status:    gamev1.SessionStatus_SESSION_STATUS_WAITING,
 		UpdatedAt: timestamppb.New(item.UpdatedAt), Revision: proto.Uint32(item.Revision), TimedOut: proto.Bool(item.TimedOut),
 		Rated: proto.Bool(item.Rated), Resigned: proto.Bool(item.Resigned), AgreedDraw: proto.Bool(item.AgreedDraw),
+		MoveLimit: proto.Bool(item.State.MoveLimit),
 	}
 	if item.DrawOffer != nil {
 		offer := item.DrawOffer.String()

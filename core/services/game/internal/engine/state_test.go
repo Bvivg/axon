@@ -3,6 +3,7 @@ package engine_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
@@ -205,5 +206,60 @@ func TestStateAndMoveSurviveJSON(t *testing.T) {
 	}
 	if !bytes.Equal(decodedMove.Data, move.Data) {
 		t.Errorf("move payload = %s, want %s", decodedMove.Data, move.Data)
+	}
+}
+
+func TestAdvanceDrawsTheGameAtTheMoveLimit(t *testing.T) {
+	state := newTestState()
+	state.MaxPlies = 2
+
+	first := state.Advance(json.RawMessage(`{}`), 1)
+	if first.Over() || first.MoveLimit {
+		t.Fatalf("ply 1 of 2 = status %q limit %v, want a game in progress", first.Status, first.MoveLimit)
+	}
+
+	capped := first.Advance(json.RawMessage(`{}`), 0)
+	if capped.Status != engine.StatusDraw || capped.Winner != engine.NoSeat || capped.Turn != engine.NoSeat || !capped.MoveLimit {
+		t.Errorf("ply 2 of 2 = status %q winner %d turn %d limit %v, want a draw by the move limit",
+			capped.Status, capped.Winner, capped.Turn, capped.MoveLimit)
+	}
+	if capped.MaxPlies != 2 {
+		t.Errorf("MaxPlies = %d after the limit, want 2", capped.MaxPlies)
+	}
+
+	won := first.Advance(json.RawMessage(`{}`), 0).Finish(1)
+	if won.Status != engine.StatusWin || won.Winner != 1 || won.MoveLimit {
+		t.Errorf("a win on the last ply = status %q winner %d limit %v, want a plain win", won.Status, won.Winner, won.MoveLimit)
+	}
+
+	if _, err := engine.Precheck(testKey, capped, engine.Move{Player: alice, Ply: capped.Ply}); !errors.Is(err, engine.ErrGameOver) {
+		t.Errorf("a move after the limit = %v, want %v", err, engine.ErrGameOver)
+	}
+}
+
+func TestAdvanceWithoutALimitNeverEndsTheGame(t *testing.T) {
+	state := newTestState()
+	for ply := range 1000 {
+		state = state.Advance(json.RawMessage(`{}`), (ply+1)%2)
+	}
+	if state.Over() || state.MoveLimit {
+		t.Errorf("after 1000 plies without a limit = status %q limit %v, want in progress", state.Status, state.MoveLimit)
+	}
+}
+
+func TestStateWithoutALimitDecodesFromOlderRecords(t *testing.T) {
+	var state engine.State
+	if err := json.Unmarshal([]byte(`{"game":"stub","players":["alice","bob"],"turn":0,"ply":7,"status":"in_progress","winner":-1,"data":{}}`), &state); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if state.MaxPlies != 0 || state.MoveLimit {
+		t.Errorf("an older record = max %d limit %v, want no limit", state.MaxPlies, state.MoveLimit)
+	}
+	raw, err := json.Marshal(newTestState())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(raw, []byte("max_plies")) || bytes.Contains(raw, []byte("move_limit")) {
+		t.Errorf("a state without a limit encodes the limit fields: %s", raw)
 	}
 }

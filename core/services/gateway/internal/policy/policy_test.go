@@ -97,6 +97,7 @@ func TestDirectMessagingProcedures(t *testing.T) {
 	}{
 		"search users":    {authv1connect.AuthServiceSearchUsersProcedure, false, policy.TierSearch},
 		"search messages": {chatv1connect.ChatServiceSearchMessagesProcedure, false, policy.TierSearch},
+		"game history":    {gamev1connect.GameServiceGetSessionHistoryProcedure, false, policy.TierSearch},
 		"get users public profiles": {
 			authv1connect.AuthServiceGetUsersPublicProfilesProcedure, false, policy.TierStandard,
 		},

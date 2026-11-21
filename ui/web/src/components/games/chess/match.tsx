@@ -38,6 +38,7 @@ function reason(game: Session) {
   if (game.timedOut) return "Time's up";
   if (game.resigned) return "Resignation";
   if (game.agreedDraw) return "Draw agreed";
+  if (game.moveLimit) return "Move limit";
   return endings[game.chess?.end ?? ChessEnd.UNSPECIFIED] ?? "";
 }
 
