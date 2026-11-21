@@ -67,6 +67,8 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
 extension Session {
     var kind: GameKind { GameKind(game: game) }
 
+    var isSupported: Bool { GameKind(rawValue: game) != nil }
+
     var revisionValue: UInt32 { hasRevision ? revision : ply }
 
     var isFinished: Bool { status == .won || status == .draw }
