@@ -53,8 +53,8 @@ final class LobbyViewModel {
             async let ownTask = services.game.mySessions()
             async let liveTask = services.game.liveSessions(nil)
             let (own, current) = try await (ownTask, liveTask)
-            mine = own.sorted(by: Self.newestFirst)
-            live = current.filter { !$0.playerIds.contains(me) }.sorted(by: Self.newestFirst)
+            mine = own.filter(\.isSupported).sorted(by: Self.newestFirst)
+            live = current.filter { $0.isSupported && !$0.playerIds.contains(me) }.sorted(by: Self.newestFirst)
             error = nil
         } catch let failure as APIError {
             error = Self.message(failure)

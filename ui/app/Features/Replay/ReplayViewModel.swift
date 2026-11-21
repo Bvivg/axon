@@ -60,6 +60,10 @@ final class ReplayViewModel {
         defer { isLoading = false }
         do {
             let history = try await game.history(id: sessionID)
+            guard history.session.isSupported else {
+                error = GameViewModel.unsupportedGame
+                return
+            }
             session = history.session
             frames = history.frames.sorted { $0.ply < $1.ply }
             index = lastIndex
