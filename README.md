@@ -40,7 +40,7 @@ npm run start:dev
 ```
 
 This single command prepares the development environment, installs native web
-dependencies, generates missing contracts, applies migrations, and starts
+dependencies, regenerates contract code when the contracts changed, applies migrations, and starts
 Next.js plus all implemented Go services (`auth`, `chat`, `game`, `gateway`)
 directly on the device. Shared modules compile with the services. The SwiftUI
 client has not been implemented yet. The web client supports hot reload; restart
@@ -77,7 +77,7 @@ dev processes. The following commands manage the Docker stack:
 
 ```sh
 make env     # create core/deploy/.env from the example
-make up      # start the stack and wait for it to report healthy
+make up      # generate contract code if needed, start the stack and wait for it to report healthy
 make check   # gofmt, go vet and unit tests
 make ps      # what is running
 make down    # stop, keeping data (make reset also drops volumes)
@@ -92,14 +92,15 @@ Host ports default to 55432 (Postgres) and 56379 (Redis) rather than the usual
 ## Working on it
 
 ```sh
-make proto        # regenerate Go and TypeScript from the contracts
+make proto        # regenerate Go and TypeScript when the contracts changed
 make lint         # golangci-lint, containerised and version-pinned
 make test         # unit tests with the race detector
 make fmt          # gofmt
 ```
 
 Generated code is not committed: `core/shared/gen/` and `ui/web/src/gen/` are
-git-ignored and rebuilt with `make proto`.
+git-ignored and rebuilt with `make proto`, which `make up`, `startup.sh` and
+`npm run start:dev` run first.
 
 ## Design notes
 

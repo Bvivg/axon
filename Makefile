@@ -3,6 +3,7 @@ SHELL := /bin/bash
 COMPOSE       := docker compose -f core/deploy/docker-compose.yml
 COMPOSE_TOOLS := docker compose -f core/deploy/docker-compose.tools.yml
 COMPOSE_E2E   := docker compose -f core/deploy/docker-compose.e2e.yml
+PROTO_STAMP   := core/shared/gen/.stamp
 GO_MODULES    := ./shared/... ./services/auth/... ./services/chat/... ./services/gateway/... ./services/game/... ./services/rating/... ./services/analysis/... ./services/tournament/...
 
 -include core/deploy/.env
@@ -29,7 +30,7 @@ env: ## Create core/deploy/.env from the example (does not overwrite)
 	fi
 
 .PHONY: up
-up: ## Start the stack and wait until dependencies report healthy
+up: proto ## Start the stack and wait until dependencies report healthy
 	$(COMPOSE) up -d --wait
 
 .PHONY: down
@@ -125,8 +126,12 @@ migrate-new: ## Create an empty migration pair (make migrate-new S=auth NAME=add
 	$(COMPOSE) run --rm migrate -dir=/migrations create -ext sql -seq $(NAME)
 
 .PHONY: proto
-proto: ## Generate Go and TypeScript code from the contracts
-	$(COMPOSE_TOOLS) run --rm buf generate
+proto: ## Generate Go and TypeScript code from the contracts when they changed
+	@if [ -f $(PROTO_STAMP) ] && [ -d ui/web/src/gen ] && [ -z "$$(find core/shared/proto buf.yaml buf.gen.yaml -newer $(PROTO_STAMP) -print -quit)" ]; then \
+		echo "generated code is up to date"; \
+	else \
+		$(COMPOSE_TOOLS) run --rm buf generate && touch $(PROTO_STAMP); \
+	fi
 
 .PHONY: proto-lint
 proto-lint: ## Lint the contracts

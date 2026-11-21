@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -146,8 +146,12 @@ async function main() {
       await launch("install", npm, ["ci", "--include=optional", "--no-audit", "--no-fund"], { cwd: web }).completed;
       writeFileSync(stamp, fingerprint);
     }
-    if (!existsSync(join(root, "core/shared/gen/go/axon/auth/v1/auth.pb.go")) || !existsSync(join(web, "src/gen/axon/auth/v1/auth_pb.ts"))) {
+    const protoStamp = join(root, "core/shared/gen/.stamp");
+    const contracts = join(root, "core/shared/proto");
+    const protoSources = [join(root, "buf.yaml"), join(root, "buf.gen.yaml"), contracts, ...readdirSync(contracts, { recursive: true }).map((name) => join(contracts, name))];
+    if (!existsSync(protoStamp) || !existsSync(join(web, "src/gen")) || protoSources.some((file) => statSync(file).mtimeMs > statSync(protoStamp).mtimeMs)) {
       await launch("proto", npm, ["exec", "--yes", "--package=@bufbuild/buf@1.75.0", "--", "buf", "generate"]).completed;
+      writeFileSync(protoStamp, "");
     }
     const pgHost = env.DEV_POSTGRES_HOST || "127.0.0.1";
     const localDSN = (value) => {
