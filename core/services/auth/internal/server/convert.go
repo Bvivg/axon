@@ -153,3 +153,28 @@ func fromProtoProvider(p authv1.OauthProvider) (domain.Provider, bool) {
 		return "", false
 	}
 }
+
+func toProtoProviders(providers []domain.Provider) []authv1.OauthProvider {
+	out := make([]authv1.OauthProvider, 0, len(providers))
+	for _, p := range providers {
+		if v, ok := toProtoProvider(p); ok {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func toProtoProvider(p domain.Provider) (authv1.OauthProvider, bool) {
+	switch p {
+	case domain.ProviderGoogle:
+		return authv1.OauthProvider_OAUTH_PROVIDER_GOOGLE, true
+	case domain.ProviderGitHub:
+		return authv1.OauthProvider_OAUTH_PROVIDER_GITHUB, true
+	case domain.ProviderApple:
+		return authv1.OauthProvider_OAUTH_PROVIDER_APPLE, true
+	case domain.ProviderFake:
+		return authv1.OauthProvider_OAUTH_PROVIDER_FAKE, true
+	default:
+		return authv1.OauthProvider_OAUTH_PROVIDER_UNSPECIFIED, false
+	}
+}
