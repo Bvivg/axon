@@ -1,0 +1,54 @@
+x-game-runner: &game-runner
+  image: golang:1.27.4-alpine
+  profiles: ["load"]
+  working_dir: /src/core/services/game
+  environment:
+    GAME_POSTGRES_DSN: ${GAME_POSTGRES_DSN:-postgres://game_service:game@postgres:5432/axon?sslmode=disable&search_path=game}
+    GOWORK: "off"
+    GOFLAGS: -mod=mod
+  volumes:
+    - ../..:/src
+    - loadgen-go-mod:/go/pkg/mod
+    - loadgen-go-build:/root/.cache/go-build
+    - loadgen-results:/results
+  depends_on:
+    game:
+      condition: service_healthy
+
+services:
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  kafka:
+    ports: !reset []
+
+  minio:
+    ports: !reset []
+
+  auth:
+    ports: !reset []
+    healthcheck:
+      test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/readyz"]
+
+  game:
+    environment:
+      APP_ENV: test
+      GAME_TEST_HOOKS: "true"
+
+  loadgen:
+    <<: *game-runner
+    entrypoint: ["go", "run", "./cmd/loadgen"]
+    networks: [app]
+
+  reconcile:
+    <<: *game-runner
+    entrypoint: ["go", "run", "./cmd/reconcile"]
+    networks: [data]
+
+volumes:
+  loadgen-go-mod:
+  loadgen-go-build:
+  loadgen-results:

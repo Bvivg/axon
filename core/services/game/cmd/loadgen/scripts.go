@@ -1,7 +1,9 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -132,10 +134,17 @@ type legend struct {
 	UCI    []string `json:"uci"`
 }
 
+//go:embed legends.json
+var bundledLegends []byte
+
 func chessScripts(games *engine.Registry, path string) ([]script, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec
-	if err != nil {
-		return nil, err
+	raw := bundledLegends
+	if path != "" {
+		read, err := os.ReadFile(path) //nolint:gosec
+		if err != nil {
+			return nil, err
+		}
+		raw = read
 	}
 	var legends []legend
 	if err := json.Unmarshal(raw, &legends); err != nil {
@@ -172,7 +181,7 @@ func chessScripts(games *engine.Registry, path string) ([]script, error) {
 		out = append(out, s)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("no playable chess games in %s", path)
+		return nil, errors.New("no playable chess games in the legends")
 	}
 	return out, nil
 }

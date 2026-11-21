@@ -14,7 +14,16 @@ case "${1:-}" in
     echo "$2 started"
     exit 0
     ;;
-  *) echo "usage: $0 postgres-latency | redis-outage | restart <container>" >&2; exit 2 ;;
+  kill)
+    [ -n "${2:-}" ] || { echo "usage: $0 kill <container>" >&2; exit 2; }
+    docker kill "$2" >/dev/null
+    echo "$2 killed"
+    sleep "${DOWN:-5}"
+    docker start "$2" >/dev/null
+    echo "$2 started"
+    exit 0
+    ;;
+  *) echo "usage: $0 postgres-latency | redis-outage | restart <container> | kill <container>" >&2; exit 2 ;;
 esac
 trap '"$here/toxic.sh" reset' EXIT
 sleep "$hold"

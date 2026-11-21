@@ -43,6 +43,7 @@ type config struct {
 	timeout     time.Duration
 	seed        uint64
 	redials     int
+	players     int
 }
 
 type stats struct {
@@ -76,7 +77,7 @@ func main() {
 	var cfg config
 	flag.StringVar(&cfg.target, "target", "http://game:8083", "game service base URL")
 	flag.StringVar(&cfg.users, "users", "users.json", "JSON array of user ids")
-	flag.StringVar(&cfg.legends, "legends", "games.json", "chess games with uci moves")
+	flag.StringVar(&cfg.legends, "legends", "", "chess games with uci moves (default: the bundled legends.json)")
 	flag.StringVar(&cfg.out, "out", "results.json", "where to write per-match results")
 	flag.IntVar(&cfg.matches, "matches", 50000, "matches to play")
 	flag.IntVar(&cfg.concurrency, "concurrency", 1000, "matches in flight")
@@ -84,6 +85,7 @@ func main() {
 	flag.DurationVar(&cfg.timeout, "timeout", 3*time.Minute, "per-match timeout")
 	flag.Uint64Var(&cfg.seed, "seed", 1, "random seed")
 	flag.IntVar(&cfg.redials, "redials", 20, "socket reconnects allowed per player and match")
+	flag.IntVar(&cfg.players, "players", 0, "generate this many user ids from the seed instead of reading -users")
 	flag.Parse()
 	if err := run(cfg); err != nil {
 		slog.Error("loadgen failed", "error", err)
@@ -92,12 +94,8 @@ func main() {
 }
 
 func run(cfg config) error {
-	raw, err := os.ReadFile(cfg.users)
+	users, err := players(cfg)
 	if err != nil {
-		return err
-	}
-	var users []uuid.UUID
-	if err := json.Unmarshal(raw, &users); err != nil {
 		return err
 	}
 	if len(users) < 2 {
@@ -168,6 +166,25 @@ func run(cfg config) error {
 	reporter.Stop()
 	elapsed := time.Since(started)
 	return st.report(cfg, elapsed, results)
+}
+
+func players(cfg config) ([]uuid.UUID, error) {
+	if cfg.players > 0 {
+		users := make([]uuid.UUID, cfg.players)
+		for i := range users {
+			users[i] = uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "axon-loadgen/%d/%d", cfg.seed, i))
+		}
+		return users, nil
+	}
+	raw, err := os.ReadFile(cfg.users)
+	if err != nil {
+		return nil, err
+	}
+	var users []uuid.UUID
+	if err := json.Unmarshal(raw, &users); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func avg(scripts []script) float64 {
