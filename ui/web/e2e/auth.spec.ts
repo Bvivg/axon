@@ -5,6 +5,7 @@ import {
   fakeAuthorizeUrl,
   gatewayHost,
   goToProfile,
+  goToSessions,
   newEmail,
   open,
   password,
@@ -65,6 +66,33 @@ test("the fake provider carries the browser through to Chats", async ({
     seen.some((url) => url.includes("/auth/callback/fake?")),
     "the provider never returned the browser to the callback route",
   ).toBe(true);
+});
+
+test("a password account connects the test provider and then signs in with it", async ({ page }) => {
+  const email = newEmail("connect");
+  const subject = `connected-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  await page.route(`${fakeAuthorizeUrl}**`, (route) => {
+    const url = new URL(route.request().url());
+    url.searchParams.set("sub", subject);
+    return route.continue({ url: url.toString() });
+  });
+
+  await register(page, email);
+  await goToSessions(page);
+
+  const methods = page.getByRole("region", { name: "Sign-in methods" });
+  await methods.getByRole("button", { name: "Connect Test provider" }).click();
+
+  await expect(page).toHaveURL(/\/profile\/sessions$/, { timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Sign-in methods" }).getByText("Connected")).toBeVisible();
+
+  await signOut(page);
+  await page.getByRole("button", { name: "Continue with the test provider" }).click();
+
+  await expectHome(page);
+  await goToProfile(page);
+  await expect(page.getByLabel("Email")).toHaveValue(email);
 });
 
 test("a reload keeps the session", async ({ page }) => {

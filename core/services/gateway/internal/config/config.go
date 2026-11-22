@@ -26,6 +26,8 @@ type Config struct {
 
 	TournamentServiceURL string
 
+	RatingServiceURL string
+
 	GameSocketURL string
 
 	ChatSocketURL string
@@ -80,6 +82,8 @@ type RateLimitConfig struct {
 
 	SensitivePerMinute int
 
+	AdminPerMinute int
+
 	UploadsPerMinute int
 
 	UploadPartsPerMinute int
@@ -121,6 +125,7 @@ func Load() (Config, error) {
 		GameServiceURL:       l.StringDefault("GAME_SERVICE_URL", "http://game:8083"),
 		AnalysisServiceURL:   l.StringDefault("ANALYSIS_SERVICE_URL", "http://analysis:8085"),
 		TournamentServiceURL: l.StringDefault("TOURNAMENT_SERVICE_URL", "http://tournament:8086"),
+		RatingServiceURL:     l.StringDefault("RATING_SERVICE_URL", "http://rating:8084"),
 		JWKSURL:              l.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		JWKSRefreshInterval:  l.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
 		UpstreamTimeout:      l.DurationDefault("UPSTREAM_TIMEOUT", 10*time.Second),
@@ -134,6 +139,7 @@ func Load() (Config, error) {
 			SearchPerMinute:    l.IntDefault("RATE_LIMIT_SEARCH_PER_MINUTE", 60),
 			StandardPerMinute:  l.IntDefault("RATE_LIMIT_PER_MINUTE", 120),
 			SensitivePerMinute: l.IntDefault("RATE_LIMIT_AUTH_PER_MINUTE", 10),
+			AdminPerMinute:     l.IntDefault("RATE_LIMIT_ADMIN_PER_MINUTE", 120),
 			UploadsPerMinute:   l.IntDefault("RATE_LIMIT_UPLOADS_PER_MINUTE", 60),
 
 			UploadPartsPerMinute: l.IntDefault("RATE_LIMIT_UPLOAD_PARTS_PER_MINUTE", 600),
@@ -189,7 +195,7 @@ func (c Config) validate() error {
 	}
 
 	if c.Environment.IsProduction() {
-		if c.RateLimit.SearchPerMinute <= 0 || c.RateLimit.StandardPerMinute <= 0 || c.RateLimit.SensitivePerMinute <= 0 || c.RateLimit.SocketsPerMinute <= 0 || c.RateLimit.SocketsPerUser <= 0 {
+		if c.RateLimit.SearchPerMinute <= 0 || c.RateLimit.StandardPerMinute <= 0 || c.RateLimit.SensitivePerMinute <= 0 || c.RateLimit.AdminPerMinute <= 0 || c.RateLimit.SocketsPerMinute <= 0 || c.RateLimit.SocketsPerUser <= 0 {
 			return errors.New("config: rate limits must be positive in production")
 		}
 		if c.HTTP.ReadTimeout <= 0 || c.HTTP.IdleTimeout <= 0 || c.HTTP.MaxListItems <= 0 {

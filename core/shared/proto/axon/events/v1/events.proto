@@ -145,3 +145,33 @@ message TournamentFinished {
   repeated TournamentStanding standings = 5;
   google.protobuf.Timestamp finished_at = 6;
 }
+
+enum AdminOutcome {
+  ADMIN_OUTCOME_UNSPECIFIED = 0;
+  ADMIN_OUTCOME_SUCCEEDED = 1;
+  ADMIN_OUTCOME_DENIED = 2;
+  ADMIN_OUTCOME_FAILED = 3;
+}
+
+message AdminAction {
+  string event_id = 1;
+  string service = 2;
+  string action = 3;
+  AdminOutcome outcome = 4;
+  string actor_id = 5;
+  string target_type = 6;
+  string target_id = 7;
+  string reason = 8;
+  string correlation_id = 9;
+  string client_ip = 10;
+  string user_agent = 11;
+  map<string, string> details = 12;
+  google.protobuf.Timestamp occurred_at = 13;
+  repeated AdminFieldChange changes = 14;
+}
+
+message AdminFieldChange {
+  string field = 1;
+  string before = 2;
+  string after = 3;
+}

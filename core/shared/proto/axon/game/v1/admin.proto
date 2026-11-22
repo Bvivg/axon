@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package axon.game.v1;
+
+import "axon/game/v1/game.proto";
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+service GameAdminService {
+  rpc ListGameSessions(ListGameSessionsRequest) returns (ListGameSessionsResponse);
+  rpc CancelGameSession(CancelGameSessionRequest) returns (CancelGameSessionResponse);
+  rpc GetGameSession(GetGameSessionRequest) returns (GetGameSessionResponse);
+  rpc ListMatchQueue(ListMatchQueueRequest) returns (ListMatchQueueResponse);
+  rpc RemoveFromMatchQueue(RemoveFromMatchQueueRequest) returns (RemoveFromMatchQueueResponse);
+}
+
+enum GameSessionFilter {
+  GAME_SESSION_FILTER_UNSPECIFIED = 0;
+  GAME_SESSION_FILTER_LIVE = 1;
+  GAME_SESSION_FILTER_WAITING = 2;
+  GAME_SESSION_FILTER_FINISHED = 3;
+}
+
+message ListGameSessionsRequest {
+  string game = 1;
+  GameSessionFilter status = 2;
+  string player_id = 3;
+  string tournament_id = 4;
+  string cursor = 5;
+  int32 page_size = 6;
+}
+
+message ListGameSessionsResponse {
+  repeated Session sessions = 1;
+  string next_cursor = 2;
+  int64 total = 3;
+}
+
+message CancelGameSessionRequest {
+  string session_id = 1;
+  string reason = 2;
+}
+
+message CancelGameSessionResponse {}
+
+message AdminMove {
+  int32 ply = 1;
+  string player_id = 2;
+  string data = 3;
+  google.protobuf.Timestamp played_at = 4;
+}
+
+message GetGameSessionRequest {
+  string session_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetGameSessionResponse {
+  Session session = 1;
+  repeated AdminMove moves = 2;
+}
+
+message QueueEntry {
+  string user_id = 1;
+  string game = 2;
+  int32 rating = 3;
+  google.protobuf.Timestamp joined_at = 4;
+  google.protobuf.Timestamp last_seen_at = 5;
+  string session_id = 6;
+}
+
+message ListMatchQueueRequest {
+  string game = 1;
+}
+
+message ListMatchQueueResponse {
+  repeated QueueEntry entries = 1;
+}
+
+message RemoveFromMatchQueueRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string game = 2 [(buf.validate.field).string.min_len = 1];
+  string reason = 3 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+}
+
+message RemoveFromMatchQueueResponse {}

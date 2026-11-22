@@ -9,10 +9,12 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
@@ -143,7 +145,15 @@ func (h *Handler) GetMe(
 		return nil, translateError(ctx, h.log, err)
 	}
 
-	return connect.NewResponse(&authv1.GetMeResponse{User: toProtoUser(user, h.avatarURLs)}), nil
+	linked, err := h.svc.LinkedProviders(ctx, claims.UserID)
+	if err != nil {
+		return nil, translateError(ctx, h.log, err)
+	}
+
+	return connect.NewResponse(&authv1.GetMeResponse{
+		User:            toProtoUser(user, h.avatarURLs),
+		LinkedProviders: toProtoProviders(linked),
+	}), nil
 }
 
 func (h *Handler) StartOAuth(
@@ -155,7 +165,24 @@ func (h *Handler) StartOAuth(
 		return nil, translateError(ctx, h.log, domain.ErrProviderUnsupported)
 	}
 
-	started, err := h.svc.StartOAuth(ctx, provider, req.Msg.GetReturnTo())
+	var linkUserID *uuid.UUID
+	if req.Msg.GetLink() {
+		claims, err := h.authenticate(req.Header())
+		if err != nil {
+			return nil, translateError(ctx, h.log, err)
+		}
+		linkUserID = &claims.UserID
+	}
+
+	var (
+		started service.StartOAuthResult
+		err     error
+	)
+	if req.Msg.AppChallenge != nil {
+		started, err = h.svc.StartAppOAuth(ctx, provider, req.Msg.GetAppChallenge(), linkUserID)
+	} else {
+		started, err = h.svc.StartOAuth(ctx, provider, req.Msg.GetReturnTo(), linkUserID)
+	}
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
@@ -180,10 +207,19 @@ func (h *Handler) CompleteOAuth(
 		Code:        req.Msg.GetCode(),
 		State:       req.Msg.GetState(),
 		DisplayName: req.Msg.GetDisplayName(),
+		AppVerifier: req.Msg.GetAppVerifier(),
 		Device:      deviceFrom(req.Header()),
+		CallerID:    h.callerID(req.Header()),
 	})
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
+	}
+
+	if completed.Linked {
+		return connect.NewResponse(&authv1.CompleteOAuthResponse{
+			User:   toProtoUser(completed.User, h.avatarURLs),
+			Linked: proto.Bool(true),
+		}), nil
 	}
 
 	return connect.NewResponse(&authv1.CompleteOAuthResponse{
@@ -402,7 +438,14 @@ func (h *Handler) AssignRole(
 		return nil, translateError(ctx, h.log, domain.ErrRoleNotFound)
 	}
 
-	if err := h.svc.AssignRole(ctx, claims.UserID, userID, roleID); err != nil {
+	reason := ""
+	if req.Msg.Reason != nil {
+		if reason, err = authz.Reason(req.Msg.GetReason()); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := h.svc.AssignRole(ctx, claims.UserID, userID, roleID, reason); err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
@@ -427,7 +470,14 @@ func (h *Handler) RevokeRole(
 		return nil, translateError(ctx, h.log, domain.ErrRoleNotFound)
 	}
 
-	if err := h.svc.RevokeRole(ctx, claims.UserID, userID, roleID); err != nil {
+	reason := ""
+	if req.Msg.Reason != nil {
+		if reason, err = authz.Reason(req.Msg.GetReason()); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := h.svc.RevokeRole(ctx, claims.UserID, userID, roleID, reason); err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
@@ -439,6 +489,17 @@ func deviceFrom(headers http.Header) domain.Device {
 		UserAgent: headers.Get("User-Agent"),
 		IP:        headers.Get(authn.ClientIPHeader),
 	}
+}
+
+func (h *Handler) callerID(headers http.Header) *uuid.UUID {
+	if headers.Get(authn.Header) == "" {
+		return nil
+	}
+	claims, err := h.authenticate(headers)
+	if err != nil {
+		return nil
+	}
+	return &claims.UserID
 }
 
 func (h *Handler) authenticate(headers http.Header) (authn.Claims, error) {

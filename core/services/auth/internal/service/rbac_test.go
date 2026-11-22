@@ -119,8 +119,8 @@ func TestListRolesSucceedsForAnAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoles: %v", err)
 	}
-	if len(roles) != 2 {
-		t.Fatalf("got %d roles, want 2 (user, admin)", len(roles))
+	if len(roles) != 3 {
+		t.Fatalf("got %d roles, want 3 (admin, moderator, user)", len(roles))
 	}
 }
 
@@ -129,7 +129,7 @@ func TestAssignRoleRequiresRbacMutate(t *testing.T) {
 	caller := h.register(t, "ada@example.com", validPassword)
 	target := h.register(t, "eve@example.com", validPassword)
 
-	err := h.svc.AssignRole(context.Background(), caller.User.ID, target.User.ID, domain.RoleAdmin)
+	err := h.svc.AssignRole(context.Background(), caller.User.ID, target.User.ID, domain.RoleAdmin, "")
 	if !errors.Is(err, domain.ErrPermissionDenied) {
 		t.Fatalf("err = %v, want ErrPermissionDenied", err)
 	}
@@ -144,7 +144,7 @@ func TestAdminCanAssignAndRevokeRoles(t *testing.T) {
 		t.Fatalf("assign admin directly: %v", err)
 	}
 
-	if err := h.svc.AssignRole(context.Background(), admin.User.ID, target.User.ID, domain.RoleAdmin); err != nil {
+	if err := h.svc.AssignRole(context.Background(), admin.User.ID, target.User.ID, domain.RoleAdmin, ""); err != nil {
 		t.Fatalf("AssignRole: %v", err)
 	}
 
@@ -156,7 +156,7 @@ func TestAdminCanAssignAndRevokeRoles(t *testing.T) {
 		t.Fatalf("target roles = %v, want 2", names)
 	}
 
-	if err := h.svc.RevokeRole(context.Background(), admin.User.ID, target.User.ID, domain.RoleAdmin); err != nil {
+	if err := h.svc.RevokeRole(context.Background(), admin.User.ID, target.User.ID, domain.RoleAdmin, ""); err != nil {
 		t.Fatalf("RevokeRole: %v", err)
 	}
 
@@ -178,7 +178,7 @@ func TestRevokeRoleUnknownReturnsErrRoleNotFound(t *testing.T) {
 		t.Fatalf("assign admin directly: %v", err)
 	}
 
-	err := h.svc.RevokeRole(context.Background(), admin.User.ID, target.User.ID, domain.RoleAdmin)
+	err := h.svc.RevokeRole(context.Background(), admin.User.ID, target.User.ID, domain.RoleAdmin, "")
 	if !errors.Is(err, domain.ErrRoleNotFound) {
 		t.Fatalf("err = %v, want ErrRoleNotFound", err)
 	}
@@ -188,7 +188,7 @@ func TestRevokeRoleRequiresRbacMutate(t *testing.T) {
 	h := newHarness(t)
 	caller := h.register(t, "ada@example.com", validPassword)
 
-	err := h.svc.RevokeRole(context.Background(), caller.User.ID, uuid.New(), domain.RoleUser)
+	err := h.svc.RevokeRole(context.Background(), caller.User.ID, uuid.New(), domain.RoleUser, "")
 	if !errors.Is(err, domain.ErrPermissionDenied) {
 		t.Fatalf("err = %v, want ErrPermissionDenied", err)
 	}

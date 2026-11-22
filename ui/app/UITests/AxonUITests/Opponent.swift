@@ -10,6 +10,7 @@ enum OpponentError: Error, CustomStringConvertible {
     case rpc(method: String, status: Int, body: String)
     case socketClosed(String, Error?)
     case sessionError(Axon_Game_V1_SessionError, String)
+    case chatError(String, String)
     case timedOut(String)
 
     var description: String {
@@ -22,6 +23,8 @@ enum OpponentError: Error, CustomStringConvertible {
             "game socket closed while waiting for \(waiting): \(error.map { "\($0)" } ?? "no error")"
         case let .sessionError(error, waiting):
             "game socket error \(error) while waiting for \(waiting)"
+        case let .chatError(code, waiting):
+            "chat socket error \(code) while waiting for \(waiting)"
         case .timedOut(let waiting):
             "timed out waiting for \(waiting)"
         }
@@ -40,12 +43,12 @@ enum E2EGateway {
         return url
     }
 
-    static func socketURL(_ base: URL) throws -> URL {
+    static func socketURL(_ base: URL, path: String = "/ws/game") throws -> URL {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw OpponentError.invalidGateway(base.absoluteString)
         }
         components.scheme = components.scheme == "https" ? "wss" : "ws"
-        components.path = "/ws/game"
+        components.path = path
         guard let url = components.url else {
             throw OpponentError.invalidGateway(base.absoluteString)
         }
@@ -78,6 +81,7 @@ actor Opponent {
     let account: TestAccount
     private(set) var userID = ""
     private var accessToken = ""
+    var callEndpoint = Axon_Calls_V1_EndpointRef()
     private let http: URLSession
 
     init(baseURL: URL, account: TestAccount = .random(prefix: "opp")) {
@@ -138,12 +142,43 @@ actor Opponent {
         return socket
     }
 
+    func rooms() async throws -> [Axon_Chat_V1_Room] {
+        let response: Axon_Chat_V1_ListRoomsResponse = try await call("axon.chat.v1.ChatService/ListRooms", Axon_Chat_V1_ListRoomsRequest())
+        return response.rooms
+    }
+
+    func room(withLastMessage body: String, timeout: Duration = .seconds(20)) async throws -> Axon_Chat_V1_Room {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if let room = try await rooms().first(where: { $0.hasLastMessage && $0.lastMessage.body == body }) {
+                return room
+            }
+            try await Task.sleep(for: .milliseconds(300))
+        }
+        throw OpponentError.timedOut("a room whose last message is \(body)")
+    }
+
+    func connectChat() async throws -> ChatPeerSocket {
+        let socket = ChatPeerSocket(url: try E2EGateway.socketURL(baseURL, path: "/ws/chat"), token: accessToken, session: http)
+        await socket.start()
+        return socket
+    }
+
+    func profile(username: String) async throws -> Axon_Auth_V1_PublicProfile {
+        var request = Axon_Auth_V1_GetPublicProfileByUsernameRequest()
+        request.username = username
+        let response: Axon_Auth_V1_GetPublicProfileByUsernameResponse = try await call(
+            "axon.auth.v1.AuthService/GetPublicProfileByUsername", request
+        )
+        return response.user
+    }
+
     private func adopt(_ user: Axon_Auth_V1_User, _ tokens: Axon_Auth_V1_TokenPair) {
         userID = user.id
         accessToken = tokens.accessToken
     }
 
-    private func call<Request: SwiftProtobuf.Message, Response: SwiftProtobuf.Message>(
+    func call<Request: SwiftProtobuf.Message, Response: SwiftProtobuf.Message>(
         _ method: String,
         _ message: Request
     ) async throws -> Response {

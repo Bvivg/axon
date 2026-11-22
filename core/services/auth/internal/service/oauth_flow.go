@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -17,7 +18,7 @@ type StartOAuthResult struct {
 	State string
 }
 
-func (s *Service) StartOAuth(ctx context.Context, id domain.Provider, returnTo string) (StartOAuthResult, error) {
+func (s *Service) StartOAuth(ctx context.Context, id domain.Provider, returnTo string, linkUserID *uuid.UUID) (StartOAuthResult, error) {
 	if s.oauth == nil {
 		return StartOAuthResult{}, domain.ErrProviderUnsupported
 	}
@@ -37,16 +38,68 @@ func (s *Service) StartOAuth(ctx context.Context, id domain.Provider, returnTo s
 		return StartOAuthResult{}, err
 	}
 
+	var redirect string
+	if strings.TrimSpace(returnTo) != "" {
+		redirect = s.oauth.providers.Callback(id, oauth.OriginOf(destination))
+	}
+
 	state, err := s.oauth.states.Put(ctx, oauth.State{
-		Provider: id,
-		Verifier: verifier,
-		ReturnTo: destination,
+		Provider:   id,
+		Verifier:   verifier,
+		ReturnTo:   destination,
+		LinkUserID: linkUserID,
+		Redirect:   redirect,
 	})
 	if err != nil {
 		return StartOAuthResult{}, err
 	}
 
-	s.log.InfoContext(ctx, "oauth sign-in started", "provider", id)
+	if linkUserID != nil {
+		s.log.InfoContext(ctx, "oauth linking started", "provider", id, "user_id", *linkUserID)
+	} else {
+		s.log.InfoContext(ctx, "oauth sign-in started", "provider", id)
+	}
+
+	return StartOAuthResult{
+		AuthorizationURL: oauth.Redirected(provider, redirect).AuthorizationURL(state, oauth.Challenge(verifier)),
+		State:            state,
+	}, nil
+}
+
+func (s *Service) StartAppOAuth(ctx context.Context, id domain.Provider, challenge string, linkUserID *uuid.UUID) (StartOAuthResult, error) {
+	if s.oauth == nil {
+		return StartOAuthResult{}, domain.ErrProviderUnsupported
+	}
+
+	if !oauth.ValidChallenge(challenge) {
+		return StartOAuthResult{}, domain.ErrOauthChallengeInvalid
+	}
+
+	provider, err := s.oauth.providers.App(id)
+	if err != nil {
+		return StartOAuthResult{}, err
+	}
+
+	verifier, err := oauth.NewVerifier()
+	if err != nil {
+		return StartOAuthResult{}, err
+	}
+
+	state, err := s.oauth.states.Put(ctx, oauth.State{
+		Provider:     id,
+		Verifier:     verifier,
+		AppChallenge: challenge,
+		LinkUserID:   linkUserID,
+	})
+	if err != nil {
+		return StartOAuthResult{}, err
+	}
+
+	if linkUserID != nil {
+		s.log.InfoContext(ctx, "oauth app linking started", "provider", id, "user_id", *linkUserID)
+	} else {
+		s.log.InfoContext(ctx, "oauth app sign-in started", "provider", id)
+	}
 
 	return StartOAuthResult{
 		AuthorizationURL: provider.AuthorizationURL(state, oauth.Challenge(verifier)),
@@ -59,6 +112,8 @@ type CompleteOAuthResult struct {
 
 	Created bool
 
+	Linked bool
+
 	ReturnTo string
 }
 
@@ -69,7 +124,11 @@ type CompleteOAuthInput struct {
 
 	DisplayName string
 
+	AppVerifier string
+
 	Device domain.Device
+
+	CallerID *uuid.UUID
 }
 
 func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (CompleteOAuthResult, error) {
@@ -95,7 +154,24 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
 	}
 
-	profile, err := provider.Exchange(ctx, in.Code, stored.Verifier)
+	if stored.AppChallenge != "" {
+		if !oauth.VerifierMatches(in.AppVerifier, stored.AppChallenge) {
+			s.log.WarnContext(ctx, "oauth app state completed without its verifier", "provider", id)
+			return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
+		}
+		provider, err = s.oauth.providers.App(id)
+		if err != nil {
+			return CompleteOAuthResult{}, err
+		}
+	}
+
+	if stored.LinkUserID != nil && (in.CallerID == nil || *in.CallerID != *stored.LinkUserID) {
+		s.log.WarnContext(ctx, "oauth linking completed by someone other than the account that started it",
+			"provider", id, "user_id", *stored.LinkUserID)
+		return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
+	}
+
+	profile, err := oauth.Redirected(provider, stored.Redirect).Exchange(ctx, in.Code, stored.Verifier)
 	if err != nil {
 
 		if errors.Is(err, domain.ErrOauthEmailUnverified) || errors.Is(err, domain.ErrOauthProfileIncomplete) ||
@@ -104,6 +180,10 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		}
 		s.log.ErrorContext(ctx, "oauth code exchange failed", "provider", id, "error", err)
 		return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
+	}
+
+	if stored.LinkUserID != nil {
+		return s.linkProvider(ctx, *stored.LinkUserID, id, profile, stored.ReturnTo)
 	}
 
 	if profile.DisplayName == "" {
@@ -141,6 +221,65 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		Created:  created,
 		ReturnTo: stored.ReturnTo,
 	}, nil
+}
+
+func (s *Service) linkProvider(
+	ctx context.Context,
+	userID uuid.UUID,
+	id domain.Provider,
+	profile domain.ProviderProfile,
+	returnTo string,
+) (CompleteOAuthResult, error) {
+	user, err := s.store.UserByID(ctx, userID)
+	if err != nil {
+		return CompleteOAuthResult{}, err
+	}
+
+	if err := s.store.LinkOauthAccount(ctx, domain.OauthAccount{
+		Provider:       id,
+		ProviderUserID: profile.ProviderUserID,
+		UserID:         userID,
+		Email:          domain.NormalizeEmail(profile.Email),
+	}); err != nil {
+		if errors.Is(err, domain.ErrOauthIdentityClaimed) {
+			s.log.WarnContext(ctx, "provider identity is already linked to another account",
+				"provider", id, "user_id", userID)
+		}
+		return CompleteOAuthResult{}, err
+	}
+
+	s.log.InfoContext(ctx, "provider linked by its owner", "provider", id, "user_id", userID)
+
+	s.audit(ctx, domain.SecurityEvent{
+		Action:  domain.SecurityProviderLinked,
+		UserID:  userID,
+		ActorID: userID,
+		Subject: id.String(),
+	})
+
+	return CompleteOAuthResult{
+		Result:   Result{User: s.attachRoles(ctx, user)},
+		Linked:   true,
+		ReturnTo: returnTo,
+	}, nil
+}
+
+func (s *Service) LinkedProviders(ctx context.Context, userID uuid.UUID) ([]domain.Provider, error) {
+	accounts, err := s.store.OauthAccountsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[domain.Provider]struct{}, len(accounts))
+	providers := make([]domain.Provider, 0, len(accounts))
+	for _, account := range accounts {
+		if _, ok := seen[account.Provider]; ok {
+			continue
+		}
+		seen[account.Provider] = struct{}{}
+		providers = append(providers, account.Provider)
+	}
+	return providers, nil
 }
 
 func (s *Service) resolveOauthUser(

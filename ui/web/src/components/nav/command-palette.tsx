@@ -15,7 +15,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { showChatSidebar, SidebarMode } from "@/components/chat/sidebar-store";
-import { adminNavItems, chatNavItems, navItems } from "@/components/nav/items";
+import { adminConsoleItem, chatNavItems, navItems } from "@/components/nav/items";
+import { useAdminAccess } from "@/lib/admin/access";
 import { setPaletteOpen, usePaletteOpen } from "@/components/nav/palette-store";
 import { Kbd, KbdCombo } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -61,7 +62,8 @@ function PaletteBody() {
   const router = useRouter();
   const mod = useModKey();
   const { signOut, user } = useSession();
-  const admin = user?.roles.includes("admin");
+  const access = useAdminAccess();
+  const staff = access.staff || access.admin;
   const resolved = useResolvedTheme();
 
   const [query, setQuery] = useState("");
@@ -78,7 +80,7 @@ function PaletteBody() {
     );
 
     const navigation: Command[] = [
-      ...[...navItems, ...chatNavItems, ...(admin ? adminNavItems : [])].map((item) => ({
+      ...[...navItems, ...chatNavItems].map((item) => ({
         id: `go-${item.href}`,
         group: "Go to",
         label: item.label,
@@ -86,6 +88,10 @@ function PaletteBody() {
         keys: item.keys,
         run: go(item.href),
       })),
+      ...(staff ? [{ id: "go-admin", group: "Go to", label: adminConsoleItem.label, icon: icon(adminConsoleItem.icon), keywords: "admin console moderation", run: () => {
+        setPaletteOpen(false);
+        window.location.assign(adminConsoleItem.href);
+      } }] : []),
       { id: "go-profile", group: "Go to", label: "Personal info", icon: icon(IdCard), keywords: "profile account", run: go("/profile/my") },
       { id: "go-sessions", group: "Go to", label: "Sessions", icon: icon(MonitorSmartphone), keywords: "devices", run: go("/profile/sessions") },
       { id: "go-appearance", group: "Go to", label: "Appearance", icon: icon(Palette), keywords: "theme", run: go("/profile/appearance") },
@@ -127,7 +133,7 @@ function PaletteBody() {
     };
 
     return [...navigation, ...actions].filter(matches);
-  }, [admin, needle, resolved, mod, router, signOut]);
+  }, [staff, needle, resolved, mod, router, signOut]);
 
   const current = Math.min(active, Math.max(commands.length - 1, 0));
   const activeID = commands[current] ? `palette-${commands[current].id}` : undefined;

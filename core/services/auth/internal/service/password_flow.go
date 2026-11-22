@@ -121,6 +121,9 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (Result, error) {
 	if !ok {
 		return Result{}, s.passwordLoginFailed(ctx, user.ID, email, account)
 	}
+	if user.Suspended() {
+		return Result{}, domain.ErrAccountSuspended
+	}
 
 	s.noteLoginSuccess(ctx, account)
 	s.rehashIfNeeded(ctx, user.ID, in.Password, credential.PasswordHash)

@@ -2,7 +2,9 @@
 
 import { Crown, Eye, Play, Trophy } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
+import { ConfirmAction } from "@/components/ui/confirm-action";
 import { TournamentStatusBadge } from "@/components/games/tournaments/list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +62,17 @@ function Actions({ tournament }: { tournament: Tournament }) {
   const registered = tournament.registrations.some(r => r.userId === me && !r.returned);
   const open = tournament.status === TournamentStatus.REGISTRATION;
   const live = tournament.status === TournamentStatus.RUNNING || tournament.status === TournamentStatus.SEEDING;
-  const run = (next: TournamentAction) => action.mutate(next);
+  const [asking, setAsking] = useState(TournamentAction.Start);
+  const [confirming, setConfirming] = useState(false);
+  const overrides = (next: TournamentAction) => admin && (!creator || (next === TournamentAction.Cancel && live));
+  const run = (next: TournamentAction) => {
+    if (!overrides(next)) {
+      action.mutate({ action: next });
+      return;
+    }
+    setAsking(next);
+    setConfirming(true);
+  };
   return (
     <div className="flex flex-wrap items-center gap-2">
       {open && !registered && tournament.playerCount < tournament.capacity ? (
@@ -77,7 +89,16 @@ function Actions({ tournament }: { tournament: Tournament }) {
       {(open && (creator || admin)) || (live && admin) ? (
         <Button variant="destructive-outline" size="sm" disabled={action.isPending} onClick={() => run(TournamentAction.Cancel)}>Cancel tournament</Button>
       ) : null}
-      {action.isError ? <p role="alert" className="w-full text-sm text-destructive">That did not work. Try again.</p> : null}
+      {action.isError && !confirming ? <p role="alert" className="w-full text-sm text-destructive">That did not work. Try again.</p> : null}
+      <ConfirmAction
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={asking === TournamentAction.Cancel ? `Cancel ${tournament.name}?` : `Start ${tournament.name} now?`}
+        consequence={asking === TournamentAction.Cancel ? "Games in progress are stopped and the tournament ends without a winner." : "Registration closes and the first round is paired with the players already registered."}
+        confirmLabel={asking === TournamentAction.Cancel ? "Cancel tournament" : "Start tournament"}
+        destructive={asking === TournamentAction.Cancel}
+        onConfirm={(reason) => action.mutateAsync({ action: asking, reason })}
+      />
     </div>
   );
 }

@@ -49,6 +49,7 @@ type Interceptor struct {
 	search    *ratelimit.Limiter
 	standard  *ratelimit.Limiter
 	sensitive *ratelimit.Limiter
+	admin     *ratelimit.Limiter
 	network   *ratelimit.Limiter
 	log       *slog.Logger
 }
@@ -61,6 +62,7 @@ type Config struct {
 	Search    *ratelimit.Limiter
 	Standard  *ratelimit.Limiter
 	Sensitive *ratelimit.Limiter
+	Admin     *ratelimit.Limiter
 	Network   *ratelimit.Limiter
 
 	Logger *slog.Logger
@@ -70,7 +72,7 @@ func New(cfg Config) (*Interceptor, error) {
 	switch {
 	case cfg.Verifier == nil:
 		return nil, errors.New("guard: verifier is required")
-	case cfg.Search == nil || cfg.Standard == nil || cfg.Sensitive == nil:
+	case cfg.Search == nil || cfg.Standard == nil || cfg.Sensitive == nil || cfg.Admin == nil:
 		return nil, errors.New("guard: all rate limiters are required")
 	case cfg.Logger == nil:
 		return nil, errors.New("guard: logger is required")
@@ -81,6 +83,7 @@ func New(cfg Config) (*Interceptor, error) {
 		search:    cfg.Search,
 		standard:  cfg.Standard,
 		sensitive: cfg.Sensitive,
+		admin:     cfg.Admin,
 		network:   cfg.Network,
 		log:       cfg.Logger,
 	}, nil
@@ -130,6 +133,8 @@ func (i *Interceptor) apply(ctx context.Context, procedure string, headers http.
 		limiter = i.sensitive
 	case policy.TierSearch:
 		limiter = i.search
+	case policy.TierAdmin:
+		limiter = i.admin
 	case policy.TierRenewal:
 		limiter = i.sensitive
 		if anonymous && i.network != nil {

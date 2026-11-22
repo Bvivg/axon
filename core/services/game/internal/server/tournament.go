@@ -80,8 +80,10 @@ func (h *Handler) AbortSession(ctx context.Context, req *connect.Request[gamev1.
 	if err != nil {
 		return nil, err
 	}
-	if _, err := h.owner.Abort(ctx, id); err != nil {
+	game, err := h.owner.Abort(ctx, id)
+	if err != nil {
 		return nil, ownerError(err)
 	}
-	return connect.NewResponse(&gamev1.AbortSessionResponse{}), nil
+	cancelled := aborted(game)
+	return connect.NewResponse(&gamev1.AbortSessionResponse{Cancelled: &cancelled}), nil
 }

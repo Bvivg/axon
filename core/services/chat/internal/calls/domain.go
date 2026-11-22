@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 )
 
 var (
@@ -117,6 +119,7 @@ type Command struct {
 	Generation            int64
 	Ready                 bool
 	Reason                string
+	Audit                 *authz.Action
 }
 
 func (cmd Command) StartsDirect() bool {
