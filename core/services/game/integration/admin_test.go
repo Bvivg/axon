@@ -156,7 +156,7 @@ func TestAdminQueueListsAndRemovesOnlyWaitingPlayers(t *testing.T) {
 		user uuid.UUID
 		game engine.Key
 	}{{matched, quoridor.Key}, {first, quoridor.Key}, {other, tictactoe.Key}} {
-		if _, err := store.FindMatch(ctx, join.user, uuid.New(), join.game); err != nil {
+		if _, err := store.FindMatch(ctx, join.user, uuid.New(), join.game, session.Table{}); err != nil {
 			t.Fatal(err)
 		}
 	}
