@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	eventsv1 "github.com/bvivg/axon/core/shared/gen/go/axon/events/v1"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 
@@ -82,6 +83,29 @@ func TestAdminRoomsFilterAndPageNewestFirst(t *testing.T) {
 	if _, _, _, err := r.AdminRooms(t.Context(), domain.AdminRoomFilter{Cursor: "not-a-cursor", Limit: 10}); err == nil {
 		t.Error("a broken cursor was accepted")
 	}
+
+	second := int32(1)
+	paged, next, total, err := r.AdminRooms(t.Context(), domain.AdminRoomFilter{Query: marker, Limit: 25, List: adminquery.Request{
+		Filter: "kind = open AND members = 1 AND messages = 0", OrderBy: "created", Offset: &second, PageSize: 1,
+	}})
+	if err != nil || next != "" || total != 3 || len(paged) != 1 || paged[0].Room.ID != made[1] {
+		t.Fatalf("second oldest room = %+v, %q, %d, %v; want %s of 3", paged, next, total, err, made[1])
+	}
+
+	first := int32(0)
+	everyField := `id != ` + made[0].String() + ` OR title:"Week" OR kind = group OR members >= 2 OR messages > 0 OR created >= 2000-01-01 OR ` +
+		`last_activity >= 2000-01-01 OR created_by = ` + owner.String() + ` OR member = ` + members[0].String()
+	grouped, _, total, err := r.AdminRooms(t.Context(), domain.AdminRoomFilter{Member: &members[0], Limit: 25, List: adminquery.Request{
+		Filter: everyField, OrderBy: "members desc, messages desc, last_activity, title, created desc", Offset: &first, PageSize: 10,
+	}})
+	if err != nil || total != 1 || len(grouped) != 1 || grouped[0].Room.ID != group.ID {
+		t.Fatalf("rooms matching every field = %+v (%d), %v; want the group", grouped, total, err)
+	}
+
+	var invalid *adminquery.Error
+	if _, _, _, err := r.AdminRooms(t.Context(), domain.AdminRoomFilter{Limit: 10, List: adminquery.Request{OrderBy: "title"}}); !errors.As(err, &invalid) || invalid.Field != "order_by" {
+		t.Errorf("order_by without offset = %v, want an order_by error", err)
+	}
 }
 
 func TestAdminUploadsShowWhereEachOneWasSentNewestFirst(t *testing.T) {
@@ -121,7 +145,7 @@ func TestAdminUploadsShowWhereEachOneWasSentNewestFirst(t *testing.T) {
 	var seen []domain.AdminUpload
 	cursor := ""
 	for page := 0; page < 3; page++ {
-		uploads, next, err := r.AdminUploads(t.Context(), domain.AdminUploadFilter{Uploader: &uploader, Cursor: cursor, Limit: 2})
+		uploads, next, _, err := r.AdminUploads(t.Context(), domain.AdminUploadFilter{Uploader: &uploader, Cursor: cursor, Limit: 2})
 		if err != nil {
 			t.Fatalf("AdminUploads: %v", err)
 		}
@@ -156,7 +180,7 @@ func TestAdminUploadsShowWhereEachOneWasSentNewestFirst(t *testing.T) {
 		"files in the room": {domain.AdminUploadFilter{Room: &room.ID, Kind: domain.MessageKindAttachment, Limit: 10}, []uuid.UUID{document.ID}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			uploads, next, err := r.AdminUploads(t.Context(), tt.filter)
+			uploads, next, _, err := r.AdminUploads(t.Context(), tt.filter)
 			if err != nil || next != "" || len(uploads) != len(tt.want) {
 				t.Fatalf("AdminUploads = %+v, %q, %v; want %v", uploads, next, err, tt.want)
 			}
@@ -168,8 +192,38 @@ func TestAdminUploadsShowWhereEachOneWasSentNewestFirst(t *testing.T) {
 		})
 	}
 
-	if _, _, err := r.AdminUploads(t.Context(), domain.AdminUploadFilter{Cursor: "not-a-cursor", Limit: 10}); err == nil {
+	if _, _, _, err := r.AdminUploads(t.Context(), domain.AdminUploadFilter{Cursor: "not-a-cursor", Limit: 10}); err == nil {
 		t.Error("a broken cursor was accepted")
+	}
+
+	first, second := int32(0), int32(1)
+	everyField := `id != ` + uuid.NewString() + ` OR kind = voice OR name:"report" OR size >= 0 OR uploaded >= 2000-01-01 OR ` +
+		`uploader = ` + uploader.String() + ` OR room = ` + room.ID.String()
+	for name, tt := range map[string]struct {
+		filter domain.AdminUploadFilter
+		want   []uuid.UUID
+		total  int64
+	}{
+		"largest first": {domain.AdminUploadFilter{Uploader: &uploader, List: adminquery.Request{
+			Filter: "size > 0", OrderBy: "size desc", Offset: &first, PageSize: 1}}, []uuid.UUID{document.ID}, 2},
+		"the next largest": {domain.AdminUploadFilter{Uploader: &uploader, List: adminquery.Request{
+			Filter: "size > 0", OrderBy: "size desc", Offset: &second, PageSize: 1}}, []uuid.UUID{photo.ID}, 2},
+		"a named file sent in the room": {domain.AdminUploadFilter{Uploader: &uploader, List: adminquery.Request{
+			Filter: `name:"report" AND kind = attachment AND room = ` + room.ID.String(), Offset: &first}}, []uuid.UUID{document.ID}, 1},
+		"every field": {domain.AdminUploadFilter{Uploader: &uploader, List: adminquery.Request{
+			Filter: everyField, OrderBy: "name, size desc, uploaded", Offset: &first, PageSize: 10}}, []uuid.UUID{photo.ID, voice.ID, document.ID}, 3},
+	} {
+		t.Run(name, func(t *testing.T) {
+			uploads, next, total, err := r.AdminUploads(t.Context(), tt.filter)
+			if err != nil || next != "" || total == nil || *total != tt.total || len(uploads) != len(tt.want) {
+				t.Fatalf("AdminUploads = %+v, %q, %v, %v; want %v of %d", uploads, next, total, err, tt.want, tt.total)
+			}
+			for i, id := range tt.want {
+				if uploads[i].ID != id {
+					t.Errorf("upload %d = %s, want %s", i, uploads[i].ID, id)
+				}
+			}
+		})
 	}
 }
 
@@ -241,8 +295,22 @@ func TestAModeratorEndsALiveCallOnceAndAuditsIt(t *testing.T) {
 	call := mustCall(t, r, a, calls.Command{Action: "start", RoomID: directCallRoom(t, a, b), Mode: "video"})
 
 	page, err := svc.AdminCalls(t.Context(), calls.AdminFilter{ActiveOnly: true, User: &b.actor.UserID})
-	if err != nil || len(page.Calls) != 1 || page.Calls[0].ID != call.ID || page.ActiveTotal < 1 {
+	if err != nil || len(page.Calls) != 1 || page.Calls[0].ID != call.ID || page.ActiveTotal < 1 || page.Total != nil {
 		t.Fatalf("active calls of the callee = %+v, %v", page, err)
+	}
+
+	first := int32(0)
+	live := `user = ` + b.actor.UserID.String() + ` AND active = true AND state != ended AND kind = direct AND mode = video AND ` +
+		`participants = 2 AND started >= 2000-01-01 AND room = ` + call.RoomID.String() + ` AND id = ` + call.ID.String()
+	filtered, err := svc.AdminCalls(t.Context(), calls.AdminFilter{List: adminquery.Request{
+		Filter: live, OrderBy: "started desc, duration, ended, participants desc", Offset: &first, PageSize: 10,
+	}})
+	if err != nil || filtered.Next != "" || filtered.Total == nil || *filtered.Total != 1 || len(filtered.Calls) != 1 || filtered.Calls[0].ID != call.ID {
+		t.Fatalf("filtered live calls = %+v, %v; want the one call", filtered, err)
+	}
+	var invalid *adminquery.Error
+	if _, err := svc.AdminCalls(t.Context(), calls.AdminFilter{List: adminquery.Request{OrderBy: "duration"}}); !errors.As(err, &invalid) || invalid.Field != "order_by" {
+		t.Errorf("order_by without offset = %v, want an order_by error", err)
 	}
 
 	ended, err := svc.Terminate(t.Context(), call.ID, adminAction("call_terminated", "call", call.ID.String()))
@@ -264,6 +332,12 @@ func TestAModeratorEndsALiveCallOnceAndAuditsIt(t *testing.T) {
 	active, err := svc.AdminCalls(t.Context(), calls.AdminFilter{ActiveOnly: true, User: &b.actor.UserID})
 	if err != nil || len(active.Calls) != 0 {
 		t.Errorf("active calls after termination = %+v, %v", active.Calls, err)
+	}
+	finished, err := svc.AdminCalls(t.Context(), calls.AdminFilter{List: adminquery.Request{
+		Filter: `user = ` + a.actor.UserID.String() + ` AND state = ended AND active = false AND ended >= 2000-01-01`, OrderBy: "ended desc", Offset: &first,
+	}})
+	if err != nil || finished.Total == nil || *finished.Total != 1 || len(finished.Calls) != 1 || finished.Calls[0].ID != call.ID {
+		t.Errorf("ended calls of the caller = %+v, %v; want the terminated call", finished, err)
 	}
 	if _, err := svc.AdminCalls(t.Context(), calls.AdminFilter{Cursor: "%%%"}); !errors.Is(err, calls.ErrInvalid) {
 		t.Errorf("broken cursor = %v, want ErrInvalid", err)

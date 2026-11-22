@@ -9,24 +9,27 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/bvivg/axon/core/services/analysis/internal/server"
 	"github.com/bvivg/axon/core/services/analysis/internal/store"
 	analysisv1 "github.com/bvivg/axon/core/shared/gen/go/axon/analysis/v1"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 )
 
 type listing struct {
 	reports []store.Report
+	total   *int64
 	err     error
 	asked   *store.ReportFilter
 }
 
-func (l *listing) List(_ context.Context, f store.ReportFilter) ([]store.Report, string, error) {
+func (l *listing) List(_ context.Context, f store.ReportFilter) (store.ReportPage, error) {
 	l.asked = &f
 	if l.err != nil {
-		return nil, "", l.err
+		return store.ReportPage{}, l.err
 	}
-	return l.reports, "page-2", nil
+	return store.ReportPage{Reports: l.reports, Next: "page-2", Total: l.total}, nil
 }
 
 func TestListAnalysisReports(t *testing.T) {
@@ -38,6 +41,8 @@ func TestListAnalysisReports(t *testing.T) {
 		FinishedAt: finished, StartedAt: started, CompletedAt: &completed, Duration: 1500 * time.Millisecond, Err: "uci: engine exited",
 	}
 	pending := store.Report{Session: uuid.New(), Status: store.Pending, Depth: 12, Engine: "Stockfish 17.1", Moves: 3, FinishedAt: finished, StartedAt: started}
+	total, offset := int64(31), int32(10)
+	invalid := &adminquery.Error{Field: "order_by", Message: "needs offset paging"}
 
 	tests := []struct {
 		name    string
@@ -51,7 +56,7 @@ func TestListAnalysisReports(t *testing.T) {
 			name:    "a failed report keeps its error and timings",
 			request: &analysisv1.ListAnalysisReportsRequest{Status: "failed", Cursor: "page-1", PageSize: 10},
 			listing: &listing{reports: []store.Report{failed}},
-			asked:   &store.ReportFilter{Status: store.Failed, Cursor: "page-1", Limit: 10},
+			asked:   &store.ReportFilter{Status: store.Failed, Cursor: "page-1", Limit: 10, List: adminquery.Request{PageSize: 10}},
 			want: []*analysisv1.AnalysisReportEntry{{
 				SessionId: failed.Session.String(), Status: "failed", Engine: "Stockfish 17.1", Depth: 12, Moves: 40, DurationMs: 1500, Error: "uci: engine exited",
 			}},
@@ -67,8 +72,24 @@ func TestListAnalysisReports(t *testing.T) {
 			name:    "a page too large is capped",
 			request: &analysisv1.ListAnalysisReportsRequest{Status: "ready", PageSize: 5000},
 			listing: &listing{},
-			asked:   &store.ReportFilter{Status: store.Ready, Limit: server.MaxLimit},
+			asked:   &store.ReportFilter{Status: store.Ready, Limit: server.MaxLimit, List: adminquery.Request{PageSize: 5000}},
 			want:    []*analysisv1.AnalysisReportEntry{},
+		},
+		{
+			name:    "an offset page carries the query and the total",
+			request: &analysisv1.ListAnalysisReportsRequest{Filter: proto.String("status = failed"), OrderBy: proto.String("finished desc"), Offset: &offset, PageSize: 10},
+			listing: &listing{reports: []store.Report{failed}, total: &total},
+			asked:   &store.ReportFilter{Limit: 10, List: adminquery.Request{Filter: "status = failed", OrderBy: "finished desc", Offset: &offset, PageSize: 10}},
+			want: []*analysisv1.AnalysisReportEntry{{
+				SessionId: failed.Session.String(), Status: "failed", Engine: "Stockfish 17.1", Depth: 12, Moves: 40, DurationMs: 1500, Error: "uci: engine exited",
+			}},
+		},
+		{
+			name:    "an invalid query",
+			request: &analysisv1.ListAnalysisReportsRequest{OrderBy: proto.String("started")},
+			listing: &listing{err: invalid},
+			code:    connect.CodeInvalidArgument,
+			asked:   &store.ReportFilter{Limit: server.DefaultLimit, List: adminquery.Request{OrderBy: "started"}},
 		},
 		{name: "an unknown status", request: &analysisv1.ListAnalysisReportsRequest{Status: "done"}, listing: &listing{}, code: connect.CodeInvalidArgument},
 		{
@@ -100,6 +121,9 @@ func TestListAnalysisReports(t *testing.T) {
 			}
 			if tt.code != 0 {
 				return
+			}
+			if (got.Msg.Total == nil) != (tt.listing.total == nil) || tt.listing.total != nil && got.Msg.GetTotal() != *tt.listing.total {
+				t.Fatalf("total = %v, want %v", got.Msg.Total, tt.listing.total)
 			}
 			if got.Msg.GetNextCursor() != "page-2" || len(got.Msg.GetReports()) != len(tt.want) {
 				t.Fatalf("response = %v", got.Msg)

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package axon.rating.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 service RatingAdminService {
@@ -24,11 +25,18 @@ message ListRatingChangesRequest {
   string user_id = 2;
   string cursor = 3;
   int32 page_size = 4;
+  optional string filter = 5 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 6 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 7 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
 }
 
 message ListRatingChangesResponse {
   repeated RatingChangeEntry changes = 1;
   string next_cursor = 2;
+  optional int64 total = 3;
 }
 
 message RatingEntry {
@@ -49,9 +57,16 @@ message ListRatingsRequest {
   string user_id = 2;
   string cursor = 3;
   int32 page_size = 4;
+  optional string filter = 5 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 6 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 7 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
 }
 
 message ListRatingsResponse {
   repeated RatingEntry ratings = 1;
   string next_cursor = 2;
+  optional int64 total = 3;
 }

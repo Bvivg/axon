@@ -1,6 +1,6 @@
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 
-const appLocale = "en-GB";
+export const appLocale = "en-GB";
 
 export function initials(name: string): string {
   const words = name

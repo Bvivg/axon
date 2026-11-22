@@ -6,9 +6,9 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useMemo, useState } from "react";
 
-import { AdminListPage, Mono, Person, When } from "@/components/admin/admin-ui";
-import { DataTable } from "@/components/admin/data-table";
-import { ChipFilter, SelectFilter, TextFilter, Toolbar } from "@/components/admin/filters";
+import { AdminListPage, count, Mono, Person, When } from "@/components/admin/admin-ui";
+import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { ListToolbar } from "@/components/admin/list-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -16,19 +16,14 @@ import { ErrorCard } from "@/components/ui/error-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuditOutcome, type AuditEvent } from "@/gen/axon/auth/v1/admin_pb";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
-import { useUrlState } from "@/lib/admin/url-state";
+import { useAdminList, useListState } from "@/lib/admin/list";
+import { FilterKind } from "@/lib/admin/list-query";
 import { describe } from "@/lib/errors";
 import { shortID } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { flatten, OutcomeFilter, useAdminProfiles, useAuditEvents, useExportAudit, type AuditFilters } from "@/lib/query/admin";
-
-const keys = ["service", "action", "outcome", "actor", "targetType", "target", "since", "until"] as const;
+import { adminKeys, flatten, loadAudit, useAdminProfiles, useAuditEvents, useExportAudit, type AuditFilters } from "@/lib/query/admin";
 
 const blank: AuditFilters = { service: "", action: "", outcome: "", actor: "", targetType: "", target: "", since: "", until: "" };
-
-const serviceOptions = [{ value: "", label: "All services" }, ...["auth", "chat", "game", "rating", "tournament"].map((value) => ({ value, label: value }))];
-
-const targetOptions = [{ value: "", label: "Any target" }, ...["user", "role", "room", "message", "call", "game_session", "tournament", "procedure"].map((value) => ({ value, label: value }))];
 
 export function exportFileName(at: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -68,11 +63,14 @@ function Changes({ event }: { event: AuditEvent }) {
 }
 
 const outcomeOptions = [
-  { value: OutcomeFilter.All, label: "All" },
-  { value: OutcomeFilter.Succeeded, label: "Succeeded" },
-  { value: OutcomeFilter.Denied, label: "Denied" },
-  { value: OutcomeFilter.Failed, label: "Failed" },
+  { value: "succeeded", label: "Succeeded" },
+  { value: "denied", label: "Denied" },
+  { value: "failed", label: "Failed" },
 ];
+
+const serviceOptions = ["auth", "chat", "game", "rating", "tournament"].map((value) => ({ value, label: value }));
+
+const targetOptions = ["user", "role", "room", "message", "call", "game_session", "tournament", "procedure"].map((value) => ({ value, label: value }));
 
 export function OutcomeBadge({ outcome }: { outcome: AuditOutcome }) {
   if (outcome === AuditOutcome.DENIED) return <Badge variant="warning">denied</Badge>;
@@ -139,77 +137,107 @@ function EventDialog({ event, profiles, onClose }: { event?: AuditEvent; profile
   );
 }
 
-export function AuditTable() {
-  const [state, update, clear] = useUrlState(keys);
-  const events = useAuditEvents(state);
-  const rows = useMemo(() => flatten(events.data), [events.data]);
-  const ids = useMemo(() => profileIDs(rows), [rows]);
-  const profiles = useAdminProfiles(ids);
-  const [open, setOpen] = useState<AuditEvent>();
-  const filtered = keys.some((key) => !!state[key]);
-  const exporter = useExportAudit();
-
-  const exportCsv = async () => {
-    try {
-      const result = await exporter.mutateAsync(state);
-      download(result.csv, exportFileName(new Date()));
-      if (result.truncated) toast.warning(`Exported the newest ${result.rows.toLocaleString()} events. Narrow the filters to export the rest.`);
-      else toast.success(`Exported ${result.rows.toLocaleString()} event${result.rows === 1 ? "" : "s"}`);
-    } catch (err) {
-      toast.error(`Export failed · ${describe(err)}`);
-    }
-  };
-
-  const columns = useMemo<ColumnDef<AuditEvent, unknown>[]>(() => [
-    { id: "when", header: "When", cell: ({ row }) => <When at={row.original.occurredAt} /> },
-    { id: "service", header: "Service", cell: ({ row }) => <Badge variant="mono">{row.original.service}</Badge> },
+function auditColumns(profiles: Map<string, PublicProfile> | undefined, onOpen: (event: AuditEvent) => void): ColumnDef<AuditEvent, unknown>[] {
+  return [
+    {
+      id: "when",
+      header: "When",
+      meta: { sort: "when", filter: { field: "when", label: "When", kind: FilterKind.Date }, mobile: MobileSlot.Meta },
+      cell: ({ row }) => <When at={row.original.occurredAt} />,
+    },
+    {
+      id: "service",
+      header: "Service",
+      meta: { sort: "service", filter: { field: "service", label: "Service", kind: FilterKind.Choice, options: serviceOptions } },
+      cell: ({ row }) => <Badge variant="mono">{row.original.service}</Badge>,
+    },
     {
       id: "action",
       header: "Action",
+      meta: { sort: "action", filter: { field: "action", label: "Action", kind: FilterKind.Text }, mobile: MobileSlot.Title },
       cell: ({ row }) => (
         <span className="flex items-center gap-1.5">
-          <Button variant="link" size="sm" className="font-mono text-xs" onClick={() => setOpen(row.original)}>{row.original.action}</Button>
+          <Button variant="link" size="sm" className="font-mono text-xs" onClick={() => onOpen(row.original)}>{row.original.action}</Button>
           {row.original.changes.length ? <Badge variant="mono" title={row.original.changes.map((c) => c.field).join(", ")}>{row.original.changes.length} Δ</Badge> : null}
         </span>
       ),
     },
-    { id: "outcome", header: "Outcome", cell: ({ row }) => <OutcomeBadge outcome={row.original.outcome} /> },
-    { id: "actor", header: "Actor", cell: ({ row }) => <Person id={row.original.actorId} profiles={profiles.data} /> },
-    { id: "target", header: "Target", cell: ({ row }) => <Target event={row.original} profiles={profiles.data} /> },
-    { id: "reason", header: "Reason", cell: ({ row }) => <span className="line-clamp-2 max-w-[18rem] text-muted-foreground" title={row.original.reason}>{row.original.reason || "—"}</span> },
-  ], [profiles.data]);
+    {
+      id: "outcome",
+      header: "Outcome",
+      meta: { sort: "outcome", filter: { field: "outcome", label: "Outcome", kind: FilterKind.Choice, options: outcomeOptions }, mobile: MobileSlot.Subtitle },
+      cell: ({ row }) => <OutcomeBadge outcome={row.original.outcome} />,
+    },
+    {
+      id: "actor",
+      header: "Actor",
+      meta: { filter: { field: "actor", label: "Actor", kind: FilterKind.Person } },
+      cell: ({ row }) => <Person id={row.original.actorId} profiles={profiles} />,
+    },
+    {
+      id: "target",
+      header: "Target",
+      meta: {
+        sort: "target_type",
+        label: "Target type",
+        filter: [
+          { field: "target_type", label: "Target type", kind: FilterKind.Choice, options: targetOptions },
+          { field: "target", label: "Target ID", kind: FilterKind.Text },
+        ],
+      },
+      cell: ({ row }) => <Target event={row.original} profiles={profiles} />,
+    },
+    {
+      id: "reason",
+      header: "Reason",
+      meta: {
+        filter: [
+          { field: "reason", label: "Reason", kind: FilterKind.Text },
+          { field: "client_ip", label: "IP address", kind: FilterKind.Text },
+        ],
+      },
+      cell: ({ row }) => <span className="line-clamp-2 max-w-[18rem] text-muted-foreground" title={row.original.reason}>{row.original.reason || "—"}</span>,
+    },
+  ];
+}
+
+const rowKey = (row: AuditEvent) => row.id;
+
+export function AuditTable() {
+  const defs = useMemo(() => columnFilters(auditColumns(undefined, () => {})), []);
+  const sorts = useMemo(() => columnSorts(auditColumns(undefined, () => {})), []);
+  const state = useListState(defs);
+  const list = useAdminList([...adminKeys.audit, "list"], state, loadAudit, rowKey);
+  const profiles = useAdminProfiles(useMemo(() => profileIDs(list.rows), [list.rows]));
+  const [open, setOpen] = useState<AuditEvent>();
+  const columns = useMemo(() => auditColumns(profiles.data, setOpen), [profiles.data]);
+  const exporter = useExportAudit();
+
+  const exportCsv = async () => {
+    try {
+      const result = await exporter.mutateAsync({ filter: state.filter, orderBy: state.orderBy });
+      download(result.csv, exportFileName(new Date()));
+      if (result.truncated) toast.warning(`Exported the newest ${result.rows.toLocaleString()} events. Narrow the filters to export the rest.`);
+      else toast.success(`Exported ${result.rows.toLocaleString()} event${result.rows === 1 ? "" : "s"}`);
+    } catch (err) {
+      toast.error(`Export failed: ${describe(err)}`);
+    }
+  };
 
   return (
     <AdminListPage
       title="Audit log"
-      actions={<Button variant="outline" size="sm" onClick={() => void exportCsv()} disabled={exporter.isPending} aria-busy={exporter.isPending}><Download aria-hidden /> {exporter.isPending ? "Exporting…" : "Export CSV"}</Button>}
-      toolbar={
-        <Toolbar>
-          <SelectFilter label="Service" value={state.service} options={serviceOptions} onChange={(service) => update({ service })} />
-          <ChipFilter label="Outcome" value={state.outcome} options={outcomeOptions} onChange={(outcome) => update({ outcome })} />
-          <TextFilter label="Action" value={state.action} onChange={(action) => update({ action })} placeholder="user_suspended" />
-          <TextFilter label="Actor" value={state.actor} onChange={(actor) => update({ actor })} placeholder="user id" />
-          <SelectFilter label="Target" value={state.targetType} options={targetOptions} onChange={(targetType) => update({ targetType })} />
-          <TextFilter label="Target ID" value={state.target} onChange={(target) => update({ target })} placeholder="id" />
-          <TextFilter label="From" type="date" value={state.since} onChange={(since) => update({ since })} />
-          <TextFilter label="To" type="date" value={state.until} onChange={(until) => update({ until })} />
-        </Toolbar>
-      }
+      subtitle={count(list.total, "event")}
+      actions={<Button variant="outline" size="sm" className="pointer-coarse:h-11" onClick={() => void exportCsv()} disabled={exporter.isPending} aria-busy={exporter.isPending}><Download aria-hidden /> {exporter.isPending ? "Exporting…" : "Export CSV"}</Button>}
+      toolbar={<ListToolbar state={state} sorts={sorts} />}
     >
       <DataTable
         label="Audit events"
         columns={columns}
-        rows={rows}
-        rowKey={(row) => row.id}
-        status={events.status}
-        error={events.error}
-        onRetry={() => void events.refetch()}
-        filtered={filtered}
-        onClearFilters={clear}
+        list={list}
+        state={state}
+        rowKey={rowKey}
         empty={{ icon: ScrollText, title: "No audit events yet" }}
-        hasMore={events.hasNextPage}
-        loadingMore={events.isFetchingNextPage}
-        onLoadMore={() => void events.fetchNextPage()}
       />
       <EventDialog event={open} profiles={profiles.data} onClose={() => setOpen(undefined)} />
     </AdminListPage>

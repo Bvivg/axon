@@ -11,6 +11,8 @@ import (
 
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
@@ -32,7 +34,7 @@ const (
 
 type adminStore interface {
 	AdminSession(ctx context.Context, id uuid.UUID, limit int) (session.Session, []session.MoveRecord, error)
-	MatchQueue(ctx context.Context, game engine.Key, limit int) ([]session.QueueEntry, error)
+	MatchQueue(ctx context.Context, f session.QueueFilter) (session.QueuePage, error)
 	LeaveQueue(ctx context.Context, user uuid.UUID, game engine.Key) error
 }
 
@@ -67,8 +69,19 @@ func optionalID(field, raw string) (*uuid.UUID, error) {
 	return &id, nil
 }
 
+func invalidQuery(err error) error {
+	var invalid *adminquery.Error
+	if errors.As(err, &invalid) {
+		return admincrud.QueryError(err)
+	}
+	return nil
+}
+
 func (a *Admin) ListGameSessions(ctx context.Context, req *connect.Request[gamev1.ListGameSessionsRequest]) (*connect.Response[gamev1.ListGameSessionsResponse], error) {
-	filter := session.AdminFilter{Game: engine.Key(req.Msg.GetGame()), Cursor: req.Msg.GetCursor(), Limit: int(req.Msg.GetPageSize())}
+	filter := session.AdminFilter{
+		Game: engine.Key(req.Msg.GetGame()), Cursor: req.Msg.GetCursor(), Limit: int(req.Msg.GetPageSize()),
+		List: adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: req.Msg.Offset, PageSize: req.Msg.GetPageSize()},
+	}
 	if filter.Game != "" {
 		if err := a.knownGame(filter.Game); err != nil {
 			return nil, err
@@ -97,6 +110,9 @@ func (a *Admin) ListGameSessions(ctx context.Context, req *connect.Request[gamev
 	}
 
 	page, err := a.h.store.Replica().AdminList(ctx, filter)
+	if invalid := invalidQuery(err); invalid != nil {
+		return nil, invalid
+	}
 	if errors.Is(err, session.ErrInvalidCursor) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("cursor is not valid"))
 	}
@@ -194,13 +210,19 @@ func (a *Admin) ListMatchQueue(ctx context.Context, req *connect.Request[gamev1.
 			return nil, err
 		}
 	}
-	entries, err := a.store.MatchQueue(ctx, game, session.AdminQueueLimit)
+	page, err := a.store.MatchQueue(ctx, session.QueueFilter{
+		Game: game, Limit: session.AdminQueueLimit,
+		List: adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: req.Msg.Offset, PageSize: req.Msg.GetPageSize()},
+	})
+	if invalid := invalidQuery(err); invalid != nil {
+		return nil, invalid
+	}
 	if err != nil {
 		a.log.ErrorContext(ctx, "could not list the match queue for an administrator", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not load the queue"))
 	}
-	out := &gamev1.ListMatchQueueResponse{Entries: make([]*gamev1.QueueEntry, len(entries))}
-	for i, entry := range entries {
+	out := &gamev1.ListMatchQueueResponse{Total: page.Total, Entries: make([]*gamev1.QueueEntry, len(page.Entries))}
+	for i, entry := range page.Entries {
 		out.Entries[i] = &gamev1.QueueEntry{
 			UserId: entry.User.String(), Game: string(entry.Game), Rating: int32(entry.Rating),
 			JoinedAt: timestamppb.New(entry.JoinedAt), LastSeenAt: timestamppb.New(entry.LastSeenAt),

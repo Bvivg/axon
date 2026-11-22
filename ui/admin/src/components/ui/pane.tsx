@@ -77,7 +77,7 @@ export function Pane({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PaneHeader title={title} titleAs={titleAs} subtitle={subtitle} leading={leading} actions={actions} back={back} backLabel={backLabel} />
       <ScrollArea className="min-h-0 flex-1">
-        <main
+        <div
           className={cn(
             "mx-auto w-full space-y-4 px-4 py-5 sm:px-6",
             width === "narrow" && "max-w-[720px]",
@@ -86,7 +86,7 @@ export function Pane({
           )}
         >
           {children}
-        </main>
+        </div>
       </ScrollArea>
     </div>
   );
@@ -94,7 +94,7 @@ export function Pane({
 
 export function PaneSection({ id, title, aside, children, className }: { id: string; title: ReactNode; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section aria-labelledby={id} className={cn("flex flex-col gap-4 rounded-[14px] border border-line bg-surface p-4", className)}>
+    <section aria-labelledby={id} className={cn("flex flex-col gap-4 rounded-xl border border-line bg-surface p-4", className)}>
       <div className="flex items-center justify-between gap-3">
         <h2 id={id} className="text-sm font-semibold">{title}</h2>
         {aside}

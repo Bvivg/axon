@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 )
 
@@ -17,12 +18,14 @@ type AdminFilter struct {
 	User       *uuid.UUID
 	Cursor     string
 	Limit      int
+	List       adminquery.Request
 }
 
 type AdminPage struct {
 	Calls       []Call
 	Next        string
 	ActiveTotal int64
+	Total       *int64
 }
 
 type AdminStore interface {
