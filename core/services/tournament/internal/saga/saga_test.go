@@ -395,3 +395,49 @@ func TestSwissRoundsAreCappedByThePlayers(t *testing.T) {
 		t.Fatalf("total rounds = %d, want 2", tour.TotalRounds)
 	}
 }
+
+func TestRevise(t *testing.T) {
+	ids := users(5)
+	swiss := saga.Spec{Name: "League", Game: "chess", Format: saga.Swiss, Capacity: 10, Rounds: 4}
+	for _, tt := range []struct {
+		name    string
+		spec    saga.Spec
+		players int
+		change  func(saga.Spec) saga.Spec
+		field   string
+		changed bool
+	}{
+		{"rename", swiss, 2, func(s saga.Spec) saga.Spec { s.Name = "  Spring league "; return s }, "", true},
+		{"same values", swiss, 2, func(s saga.Spec) saga.Spec { return s }, "", false},
+		{"shrink below registered", swiss, 5, func(s saga.Spec) saga.Spec { s.Capacity = 4; s.Rounds = 3; return s }, "capacity", false},
+		{"rounds not below capacity", swiss, 2, func(s saga.Spec) saga.Spec { s.Capacity = 4; return s }, "rounds", false},
+		{"bracket size", elimination, 2, func(s saga.Spec) saga.Spec { s.Capacity = 6; return s }, "capacity", false},
+		{"blank name", elimination, 2, func(s saga.Spec) saga.Spec { s.Name = " "; return s }, "name", false},
+		{"format stays", elimination, 2, func(s saga.Spec) saga.Spec { s.Format = saga.Swiss; s.Game = "go"; s.Capacity = 16; return s }, "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tour := open(t, tt.spec, ids[:tt.players])
+			next, changed, err := tour.Revise(tt.change(tour.Spec))
+			var spec *saga.SpecError
+			if tt.field != "" {
+				if !errors.As(err, &spec) || spec.Field != tt.field || !errors.Is(err, saga.ErrInvalid) {
+					t.Fatalf("Revise error = %v, want field %s", err, tt.field)
+				}
+				return
+			}
+			if err != nil || changed != tt.changed {
+				t.Fatalf("Revise = %v, %v", changed, err)
+			}
+			if next.Spec.Game != tour.Spec.Game || next.Spec.Format != tour.Spec.Format || next.TotalRounds != next.Spec.Rounds {
+				t.Fatalf("revised spec = %+v total %d", next.Spec, next.TotalRounds)
+			}
+			if tt.name == "rename" && next.Spec.Name != "Spring league" {
+				t.Fatalf("name = %q", next.Spec.Name)
+			}
+		})
+	}
+	started, _ := start(t, open(t, elimination, ids[:4]))
+	if _, _, err := started.Revise(started.Spec); !errors.Is(err, saga.ErrClosed) {
+		t.Fatalf("revise after start = %v", err)
+	}
+}

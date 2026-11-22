@@ -3,27 +3,23 @@ package server
 import (
 	"context"
 
-	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
-	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
-	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
-	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 )
 
-type AuthRoles struct {
-	client authv1connect.AuthServiceClient
+type AuthModerators struct {
+	cache *authz.Cache
 }
 
-func NewAuthRoles(client connect.HTTPClient, url string, opts ...connect.ClientOption) *AuthRoles {
-	return &AuthRoles{client: authv1connect.NewAuthServiceClient(client, url, opts...)}
+func NewAuthModerators(cache *authz.Cache) *AuthModerators {
+	return &AuthModerators{cache: cache}
 }
 
-func (a *AuthRoles) Roles(ctx context.Context, authorization string) ([]string, error) {
-	req := connect.NewRequest(&authv1.GetMeRequest{})
-	req.Header().Set(authn.Header, authorization)
-	res, err := a.client.GetMe(ctx, req)
+func (a *AuthModerators) Moderator(ctx context.Context, user uuid.UUID, authorization string) (bool, error) {
+	set, err := a.cache.Permissions(ctx, user, authorization)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	return res.Msg.GetUser().GetRoles(), nil
+	return set.Has(authz.GamesModerate), nil
 }

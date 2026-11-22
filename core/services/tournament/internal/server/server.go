@@ -17,12 +17,12 @@ import (
 	tournamentv1 "github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 )
 
 const (
 	DefaultListLimit = 30
 	MaxListLimit     = 100
-	AdminRole        = "admin"
 )
 
 type Tournaments interface {
@@ -40,22 +40,28 @@ type Verifier interface {
 	Verify(raw string) (authn.Claims, error)
 }
 
-type Roles interface {
-	Roles(ctx context.Context, authorization string) ([]string, error)
+type Moderators interface {
+	Moderator(ctx context.Context, user uuid.UUID, authorization string) (bool, error)
 }
 
 type Handler struct {
 	tournaments Tournaments
 	verifier    Verifier
-	roles       Roles
+	moderators  Moderators
 	games       []string
 	log         *slog.Logger
+	recorder    authz.Recorder
 }
 
 var _ tournamentv1connect.TournamentServiceHandler = (*Handler)(nil)
 
-func New(tournaments Tournaments, verifier Verifier, roles Roles, games []string, log *slog.Logger) *Handler {
-	return &Handler{tournaments: tournaments, verifier: verifier, roles: roles, games: games, log: log}
+func New(tournaments Tournaments, verifier Verifier, moderators Moderators, games []string, log *slog.Logger) *Handler {
+	return &Handler{tournaments: tournaments, verifier: verifier, moderators: moderators, games: games, log: log}
+}
+
+func (h *Handler) WithAudit(record authz.Recorder) *Handler {
+	h.recorder = record
+	return h
 }
 
 var (
@@ -167,34 +173,75 @@ func (h *Handler) WithdrawFromTournament(ctx context.Context, req *connect.Reque
 	return connect.NewResponse(&tournamentv1.WithdrawFromTournamentResponse{Tournament: Present(t, h.tournaments.NoShow())}), nil
 }
 
-func (h *Handler) admin(ctx context.Context, headers http.Header) (bool, error) {
-	roles, err := h.roles.Roles(ctx, headers.Get(authn.Header))
+func (h *Handler) admin(ctx context.Context, user uuid.UUID, headers http.Header) (bool, error) {
+	moderator, err := h.moderators.Moderator(ctx, user, headers.Get(authn.Header))
 	if err != nil {
-		h.log.WarnContext(ctx, "role lookup failed", "error", err)
+		h.log.WarnContext(ctx, "permission lookup failed", "error", err)
 		return false, connect.NewError(connect.CodeUnavailable, errUnavailable)
 	}
-	return slices.Contains(roles, AdminRole), nil
+	return moderator, nil
 }
 
-func (h *Handler) manager(ctx context.Context, headers http.Header, id uuid.UUID, cancelling bool) (bool, error) {
+type management struct {
+	user     uuid.UUID
+	admin    bool
+	override bool
+	game     string
+}
+
+func (h *Handler) manager(ctx context.Context, headers http.Header, id uuid.UUID, cancelling bool, name, reason string) (management, error) {
 	user, err := h.caller(headers)
 	if err != nil {
-		return false, err
+		return management{}, err
 	}
 	current, err := h.tournaments.Get(ctx, id)
 	if err != nil {
-		return false, h.fail(ctx, "get", err)
+		return management{}, h.fail(ctx, "get", err)
 	}
-	admin := false
+	m := management{user: user, game: current.Spec.Game}
 	if current.Creator != user || cancelling && current.Started() && !current.Over() {
-		if admin, err = h.admin(ctx, headers); err != nil {
-			return false, err
+		if m.admin, err = h.admin(ctx, user, headers); err != nil {
+			return management{}, err
 		}
 	}
-	if current.Creator != user && !admin {
-		return false, connect.NewError(connect.CodePermissionDenied, errManage)
+	if current.Creator != user && !m.admin {
+		h.record(ctx, headers, m, name, id, reason, authz.Denied)
+		return management{}, connect.NewError(connect.CodePermissionDenied, errManage)
 	}
-	return admin, nil
+	m.override = m.admin && (current.Creator != user || cancelling && current.Started() && !current.Over())
+	if m.override && reason == "" {
+		_, err := authz.Reason(reason)
+		return management{}, err
+	}
+	return m, nil
+}
+
+func optionalReason(raw *string) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	return authz.Reason(*raw)
+}
+
+func (h *Handler) audit(ctx context.Context, headers http.Header, m management, name string, id uuid.UUID, reason string) {
+	if m.override {
+		h.record(ctx, headers, m, name, id, reason, authz.Succeeded)
+	}
+}
+
+func (h *Handler) record(ctx context.Context, headers http.Header, m management, name string, id uuid.UUID, reason string, outcome authz.Outcome) {
+	if h.recorder == nil {
+		return
+	}
+	action := authz.NewAction(ctx, "tournament", name, "tournament", id.String(), reason)
+	action.Outcome = outcome
+	action.ActorID = m.user
+	action.ClientIP = headers.Get(authn.ClientIPHeader)
+	action.UserAgent = headers.Get("User-Agent")
+	action.Details = map[string]string{"game": m.game}
+	if err := h.recorder(context.WithoutCancel(ctx), action); err != nil {
+		h.log.ErrorContext(ctx, "could not record a tournament moderation", "tournament_id", id, "error", err)
+	}
 }
 
 func (h *Handler) StartTournament(ctx context.Context, req *connect.Request[tournamentv1.StartTournamentRequest]) (*connect.Response[tournamentv1.StartTournamentResponse], error) {
@@ -202,13 +249,19 @@ func (h *Handler) StartTournament(ctx context.Context, req *connect.Request[tour
 	if err != nil {
 		return nil, err
 	}
-	if _, err := h.manager(ctx, req.Header(), id, false); err != nil {
+	reason, err := optionalReason(req.Msg.Reason)
+	if err != nil {
+		return nil, err
+	}
+	m, err := h.manager(ctx, req.Header(), id, false, "tournament_started", reason)
+	if err != nil {
 		return nil, err
 	}
 	t, err := h.tournaments.Start(ctx, id)
 	if err != nil {
 		return nil, h.fail(ctx, "start", err)
 	}
+	h.audit(ctx, req.Header(), m, "tournament_started", id, reason)
 	return connect.NewResponse(&tournamentv1.StartTournamentResponse{Tournament: Present(t, h.tournaments.NoShow())}), nil
 }
 
@@ -217,14 +270,19 @@ func (h *Handler) CancelTournament(ctx context.Context, req *connect.Request[tou
 	if err != nil {
 		return nil, err
 	}
-	admin, err := h.manager(ctx, req.Header(), id, true)
+	reason, err := optionalReason(req.Msg.Reason)
 	if err != nil {
 		return nil, err
 	}
-	t, err := h.tournaments.Cancel(ctx, id, admin)
+	m, err := h.manager(ctx, req.Header(), id, true, "tournament_cancelled", reason)
+	if err != nil {
+		return nil, err
+	}
+	t, err := h.tournaments.Cancel(ctx, id, m.admin)
 	if err != nil {
 		return nil, h.fail(ctx, "cancel", err)
 	}
+	h.audit(ctx, req.Header(), m, "tournament_cancelled", id, reason)
 	return connect.NewResponse(&tournamentv1.CancelTournamentResponse{Tournament: Present(t, h.tournaments.NoShow())}), nil
 }
 
