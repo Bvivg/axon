@@ -28,6 +28,12 @@ message ListGameSessionsRequest {
   string tournament_id = 4;
   string cursor = 5;
   int32 page_size = 6;
+  optional string filter = 7 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 8 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 9 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
 }
 
 message ListGameSessionsResponse {
@@ -70,10 +76,18 @@ message QueueEntry {
 
 message ListMatchQueueRequest {
   string game = 1;
+  optional string filter = 2 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 3 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
+  int32 page_size = 5;
 }
 
 message ListMatchQueueResponse {
   repeated QueueEntry entries = 1;
+  optional int64 total = 2;
 }
 
 message RemoveFromMatchQueueRequest {
