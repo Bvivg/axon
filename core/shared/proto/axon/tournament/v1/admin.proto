@@ -9,6 +9,26 @@ import "google/protobuf/field_mask.proto";
 service TournamentAdminService {
   rpc UpdateTournament(UpdateTournamentRequest) returns (UpdateTournamentResponse);
   rpc RemoveTournamentPlayer(RemoveTournamentPlayerRequest) returns (RemoveTournamentPlayerResponse);
+  rpc ListAdminTournaments(ListAdminTournamentsRequest) returns (ListAdminTournamentsResponse);
+}
+
+message ListAdminTournamentsRequest {
+  string query = 1 [(buf.validate.field).string.max_len = 100];
+  optional string filter = 2 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 3 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
+  int32 page_size = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message ListAdminTournamentsResponse {
+  repeated Tournament tournaments = 1;
+  int64 total = 2;
 }
 
 message UpdateTournamentRequest {

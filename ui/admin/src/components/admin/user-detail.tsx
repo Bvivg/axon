@@ -75,7 +75,7 @@ export function UserDetail({ id }: { id: string }) {
   const sessions = detail.data.sessions;
   const linked = detail.data.linkedAccounts;
   const editRoles = access.can(Permission.RolesMutate) && access.can(Permission.UsersRead);
-  const auditHref = activity === Activity.On ? `/audit?targetType=user&target=${user.id}` : `/audit?actor=${user.id}`;
+  const auditHref = activity === Activity.On ? `/audit?f.target_type=user&f.target=${user.id}` : `/audit?f.actor=${user.id}`;
 
   return (
     <RecordPage

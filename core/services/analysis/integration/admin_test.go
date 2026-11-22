@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bvivg/axon/core/services/analysis/internal/store"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 )
 
 func TestReportsAreListedNewestFirstAndByStatus(t *testing.T) {
@@ -33,18 +34,18 @@ func TestReportsAreListedNewestFirstAndByStatus(t *testing.T) {
 		var all []store.Report
 		cursor := ""
 		for range 1000 {
-			page, next, err := reports.List(ctx, store.ReportFilter{Status: status, Cursor: cursor, Limit: 2})
+			page, err := reports.List(ctx, store.ReportFilter{Status: status, Cursor: cursor, Limit: 2})
 			if err != nil {
 				t.Fatalf("List(%q): %v", status, err)
 			}
-			if len(page) > 2 {
-				t.Fatalf("a page of %d reports, want at most 2", len(page))
+			if len(page.Reports) > 2 || page.Total != nil {
+				t.Fatalf("a page of %d reports with total %v, want at most 2 and no total", len(page.Reports), page.Total)
 			}
-			all = append(all, page...)
-			if next == "" {
+			all = append(all, page.Reports...)
+			if page.Next == "" {
 				return all
 			}
-			cursor = next
+			cursor = page.Next
 		}
 		t.Fatal("paging never ended")
 		return nil
@@ -98,7 +99,28 @@ func TestReportsAreListedNewestFirstAndByStatus(t *testing.T) {
 	if full, err := reports.Get(ctx, ready.Session); err != nil || !full.FinishedAt.Equal(ready.FinishedAt) {
 		t.Fatalf("Get = %+v, %v; want the game finish time", full, err)
 	}
-	if _, _, err := reports.List(ctx, store.ReportFilter{Cursor: "%%%", Limit: 10}); !errors.Is(err, store.ErrInvalidCursor) {
+	if _, err := reports.List(ctx, store.ReportFilter{Cursor: "%%%", Limit: 10}); !errors.Is(err, store.ErrInvalidCursor) {
 		t.Fatalf("broken cursor = %v", err)
+	}
+
+	mine := "(session = " + ready.Session.String() + " OR session = " + failed.Session.String() + " OR session = " + pending.Session.String() + ")"
+	done, err := reports.List(ctx, store.ReportFilter{Limit: 10, List: adminquery.Request{Filter: mine + " AND status != pending"}})
+	if err != nil || len(done.Reports) != 2 || done.Next != "" || done.Reports[0].Session != failed.Session || done.Reports[1].Session != ready.Session {
+		t.Fatalf("finished reports by cursor = %+v, %v", done, err)
+	}
+	offset := int32(1)
+	paged, err := reports.List(ctx, store.ReportFilter{List: adminquery.Request{
+		Filter: mine + " AND started >= 2000-01-01", OrderBy: "started", Offset: &offset, PageSize: 1,
+	}})
+	if err != nil || paged.Total == nil || *paged.Total != 3 || paged.Next != "" || len(paged.Reports) != 1 || paged.Reports[0].Session != failed.Session {
+		t.Fatalf("offset page = %+v, %v", paged, err)
+	}
+	completed, err := reports.List(ctx, store.ReportFilter{Status: store.Ready, List: adminquery.Request{Filter: mine + " AND finished >= 2000-01-01", OrderBy: "finished desc", Offset: new(int32)}})
+	if err != nil || *completed.Total != 1 || completed.Reports[0].Session != ready.Session {
+		t.Fatalf("completed ready reports = %+v, %v", completed, err)
+	}
+	var invalid *adminquery.Error
+	if _, err := reports.List(ctx, store.ReportFilter{Limit: 10, List: adminquery.Request{OrderBy: "started"}}); !errors.As(err, &invalid) || invalid.Field != "order_by" {
+		t.Fatalf("order without offset = %v", err)
 	}
 }

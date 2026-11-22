@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
+
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/quoridor"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
@@ -77,6 +79,29 @@ func TestAdminListFiltersAndPagesSessions(t *testing.T) {
 	if _, err := store.AdminList(ctx, session.AdminFilter{Cursor: "%%%", Limit: 10}); !errors.Is(err, session.ErrInvalidCursor) {
 		t.Fatalf("broken cursor = %v", err)
 	}
+
+	others, err := store.AdminList(ctx, session.AdminFilter{Tournament: &tournament, Limit: 10, List: adminquery.Request{Filter: "player != " + player.String()}})
+	if err != nil || others.Total != 2 || len(others.Sessions) != 2 || others.Sessions[0].ID != made[2].ID || others.Sessions[1].ID != made[0].ID {
+		t.Fatalf("cursor list without one player = %+v, %v", others, err)
+	}
+	offset := int32(1)
+	paged, err := store.AdminList(ctx, session.AdminFilter{Tournament: &tournament, Limit: 10, List: adminquery.Request{
+		Filter: "status = live AND moves >= 4 AND rated = false AND game = quoridor", OrderBy: "updated", Offset: &offset, PageSize: 1,
+	}})
+	if err != nil || paged.Total != 3 || paged.Next != "" || len(paged.Sessions) != 1 || paged.Sessions[0].ID != made[1].ID {
+		t.Fatalf("offset page = %+v, %v", paged, err)
+	}
+	none, err := store.AdminList(ctx, session.AdminFilter{Tournament: &tournament, List: adminquery.Request{Filter: "moves > 4 OR status = won", Offset: &offset}})
+	if err != nil || none.Total != 0 || len(none.Sessions) != 0 {
+		t.Fatalf("no game past ply 4 = %+v, %v", none, err)
+	}
+	var invalid *adminquery.Error
+	if _, err := store.AdminList(ctx, session.AdminFilter{Limit: 10, List: adminquery.Request{OrderBy: "moves"}}); !errors.As(err, &invalid) || invalid.Field != "order_by" {
+		t.Fatalf("order without offset = %v", err)
+	}
+	if _, err := store.AdminList(ctx, session.AdminFilter{Limit: 10, List: adminquery.Request{Filter: "creator_id = x", Offset: &offset}}); !errors.As(err, &invalid) || invalid.Field != "filter" {
+		t.Fatalf("column name as a field = %v", err)
+	}
 }
 
 func TestAdminSessionReadsTheRecordedMovesInOrder(t *testing.T) {
@@ -140,20 +165,38 @@ func TestAdminQueueListsAndRemovesOnlyWaitingPlayers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	all, err := store.MatchQueue(ctx, "", session.AdminQueueLimit)
-	if err != nil || len(all) != 3 {
-		t.Fatalf("queue = %+v, %v", all, err)
+	queue := func(game engine.Key, limit int, list adminquery.Request) session.QueuePage {
+		t.Helper()
+		page, err := store.MatchQueue(ctx, session.QueueFilter{Game: game, Limit: limit, List: list})
+		if err != nil {
+			t.Fatalf("queue %q %+v: %v", game, list, err)
+		}
+		return page
+	}
+	all := queue("", session.AdminQueueLimit, adminquery.Request{}).Entries
+	if len(all) != 3 {
+		t.Fatalf("queue = %+v", all)
 	}
 	if all[0].User != first || all[1].User != other || all[2].User != matched || all[2].Session == nil || *all[2].Session != game ||
 		all[0].Session != nil || all[0].Game != quoridor.Key || all[0].Rating == 0 || all[0].LastSeenAt.Before(all[0].JoinedAt) {
 		t.Fatalf("queue order = %+v", all)
 	}
-	quoridorQueue, err := store.MatchQueue(ctx, quoridor.Key, session.AdminQueueLimit)
-	if err != nil || len(quoridorQueue) != 2 {
-		t.Fatalf("quoridor queue = %+v, %v", quoridorQueue, err)
+	if quoridorQueue := queue(quoridor.Key, session.AdminQueueLimit, adminquery.Request{}); len(quoridorQueue.Entries) != 2 || quoridorQueue.Total != nil {
+		t.Fatalf("quoridor queue = %+v", quoridorQueue)
 	}
-	if capped, err := store.MatchQueue(ctx, "", 1); err != nil || len(capped) != 1 || capped[0].User != first {
-		t.Fatalf("capped queue = %+v, %v", capped, err)
+	if capped := queue("", 1, adminquery.Request{}).Entries; len(capped) != 1 || capped[0].User != first {
+		t.Fatalf("capped queue = %+v", capped)
+	}
+	if waitingOnly := queue("", session.AdminQueueLimit, adminquery.Request{Filter: "matched = false AND user != " + other.String()}).Entries; len(waitingOnly) != 1 || waitingOnly[0].User != first {
+		t.Fatalf("waiting quoridor players = %+v", waitingOnly)
+	}
+	offset := int32(1)
+	paged := queue(quoridor.Key, session.AdminQueueLimit, adminquery.Request{Filter: "rating > 0 AND joined >= 2000-01-01", OrderBy: "joined desc", Offset: &offset, PageSize: 1})
+	if paged.Total == nil || *paged.Total != 2 || len(paged.Entries) != 1 || paged.Entries[0].User != matched {
+		t.Fatalf("offset queue page = %+v", paged)
+	}
+	if matchedOnly := queue("", session.AdminQueueLimit, adminquery.Request{Filter: "matched = true", Offset: new(int32)}); matchedOnly.Total == nil || *matchedOnly.Total != 1 || matchedOnly.Entries[0].User != matched {
+		t.Fatalf("matched players = %+v", matchedOnly)
 	}
 
 	conn, err := pool.Acquire(ctx)
@@ -186,8 +229,8 @@ func TestAdminQueueListsAndRemovesOnlyWaitingPlayers(t *testing.T) {
 	if err := store.LeaveQueue(ctx, other, quoridor.Key); !errors.Is(err, session.ErrNotSearching) {
 		t.Fatalf("removal from a game the player is not queued for = %v", err)
 	}
-	left, err := store.MatchQueue(ctx, "", session.AdminQueueLimit)
-	if err != nil || len(left) != 2 || left[0].User != other || left[1].User != matched {
-		t.Fatalf("queue after removal = %+v, %v", left, err)
+	left := queue("", session.AdminQueueLimit, adminquery.Request{}).Entries
+	if len(left) != 2 || left[0].User != other || left[1].User != matched {
+		t.Fatalf("queue after removal = %+v", left)
 	}
 }

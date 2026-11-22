@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
+
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 )
 
@@ -81,9 +83,14 @@ const auditColumns = `id, occurred_at, service, action, outcome, actor_id, targe
 
 func (r *Repository) ExportAuditEvents(ctx context.Context, f domain.AuditFilter, limit int) ([]domain.AuditEvent, error) {
 	filter := auditWhere(f)
+	listed, err := auditSchema.Compile(f.List.Filter, f.List.OrderBy)
+	if err != nil {
+		return nil, err
+	}
+	filter.addQuery(listed)
 	filter.args = append(filter.args, limit)
 	query := `SELECT ` + auditColumns + ` FROM audit_log` + filter.sql() + `
-		ORDER BY occurred_at DESC, id DESC
+		ORDER BY ` + listed.Order + `
 		LIMIT $` + strconv.Itoa(len(filter.args))
 	return r.auditEvents(ctx, query, filter.args)
 }
@@ -125,8 +132,44 @@ func (r *Repository) auditEvents(ctx context.Context, query string, args []any) 
 	return events, nil
 }
 
+var auditSchema = adminquery.NewSchema(`occurred_at DESC, id DESC`, `id DESC`,
+	adminquery.Field{Name: "when", Column: "occurred_at", Kind: adminquery.Time, Sortable: true},
+	adminquery.Field{Name: "service", Column: "service", Kind: adminquery.String, Sortable: true},
+	adminquery.Field{Name: "action", Column: "action", Kind: adminquery.String, Sortable: true},
+	adminquery.Field{Name: "outcome", Column: "outcome", Kind: adminquery.Enum, Sortable: true, Values: map[string]string{
+		"succeeded": "outcome = 'succeeded'",
+		"denied":    "outcome = 'denied'",
+		"failed":    "outcome = 'failed'",
+	}},
+	adminquery.Field{Name: "actor", Column: "actor_id", Kind: adminquery.UUID},
+	adminquery.Field{Name: "target_type", Column: "target_type", Kind: adminquery.String, Sortable: true},
+	adminquery.Field{Name: "target", Column: "target_id", Kind: adminquery.String},
+	adminquery.Field{Name: "reason", Column: "reason", Kind: adminquery.String},
+	adminquery.Field{Name: "client_ip", Column: "client_ip", Kind: adminquery.String},
+)
+
 func (r *Repository) ListAuditEvents(ctx context.Context, f domain.AuditFilter) (domain.AuditPage, error) {
 	filter := auditWhere(f)
+	listed, err := filter.prepare(auditSchema, f.List)
+	if err != nil {
+		return domain.AuditPage{}, err
+	}
+	if f.List.Paged() {
+		var total int64
+		if err := r.q.QueryRow(ctx, `SELECT count(*) FROM audit_log`+filter.sql(), filter.args...).Scan(&total); err != nil {
+			return domain.AuditPage{}, fmt.Errorf("repository: count audit events: %w", err)
+		}
+		limit, offset := f.List.Page()
+		filter.args = append(filter.args, limit, offset)
+		query := `SELECT ` + auditColumns + ` FROM audit_log` + filter.sql() + `
+			ORDER BY ` + listed.Order + `
+			LIMIT $` + strconv.Itoa(len(filter.args)-1) + ` OFFSET $` + strconv.Itoa(len(filter.args))
+		events, err := r.auditEvents(ctx, query, filter.args)
+		if err != nil {
+			return domain.AuditPage{}, err
+		}
+		return domain.AuditPage{Events: events, Total: &total}, nil
+	}
 	if f.Cursor != "" {
 		var c auditCursor
 		if err := decodeCursor(f.Cursor, &c); err != nil {

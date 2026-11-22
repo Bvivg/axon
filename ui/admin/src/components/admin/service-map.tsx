@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { publicServices } from "@/lib/operations/contracts";
 import { edges, layers, nodes, type NodeId } from "@/lib/operations/topology";
@@ -21,7 +22,13 @@ const coordinates = new Map<NodeId, [number, number]>(layers.flatMap((layer, row
 
 type Selection = { node: NodeId } | { edge: number };
 const catalog = Object.keys(nodes) as NodeId[];
-const optionClass = "min-h-11 rounded-lg border border-input bg-card px-2 text-sm";
+const serviceTypes = [
+  { value: "all", label: "All service types" },
+  { value: "Client", label: "Client" },
+  { value: "Edge", label: "Edge" },
+  { value: "Service", label: "Service" },
+  { value: "Infrastructure", label: "Infrastructure" },
+];
 
 export function ServiceMap() {
   const [filter, setFilter] = useState("all");
@@ -35,7 +42,7 @@ export function ServiceMap() {
   const activeEdge = "edge" in selection ? edges[selection.edge] : undefined;
 
   return (
-    <WorkspacePage title="Service map" back="/profile" backLabel="Back to profile" width="wide">
+    <WorkspacePage title="Service map" back="/" backLabel="Back to administration" width="wide">
       <Tabs defaultValue="code" className="space-y-4">
         <TabsList className="flex h-auto max-w-full flex-wrap">
           <TabsTrigger className="min-h-9" value="code">Code topology</TabsTrigger>
@@ -45,18 +52,12 @@ export function ServiceMap() {
         <TabsContent value="code">
           <dl className="mb-4 grid grid-cols-3 gap-2">
             {[["Services", catalog.length], ["Connections", edges.length], ["Contracts", publicServices.length]].map(([label, count]) => (
-              <div key={label} className="rounded-[14px] border border-line bg-surface p-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-xl font-semibold">{count}</dd></div>
+              <div key={label} className="rounded-xl border border-line bg-surface p-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-xl font-semibold">{count}</dd></div>
             ))}
           </dl>
           <div className="mb-4 flex flex-wrap gap-2">
-            <Input type="search" aria-label="Find a service" placeholder="Find a service" className="min-h-11 w-full sm:max-w-xs" value={query} onChange={(event) => setQuery(event.target.value)} />
-            <select className={optionClass} aria-label="Service type" value={filter} onChange={(event) => setFilter(event.target.value)}>
-              <option value="all">All service types</option>
-              <option value="Client">Client</option>
-              <option value="Edge">Edge</option>
-              <option value="Service">Service</option>
-              <option value="Infrastructure">Infrastructure</option>
-            </select>
+            <Input type="search" aria-label="Find a service" placeholder="Find a service" className="w-full sm:max-w-xs" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <Select label="Service type" hideLabel value={filter} options={serviceTypes} onChange={setFilter} className="w-full sm:w-52" />
           </div>
           <div className="grid items-start gap-4 min-[1151px]:grid-cols-[minmax(0,1fr)_minmax(238px,290px)]">
             <Card className="min-w-0">

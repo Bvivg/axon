@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package axon.chat.v1;
 
+import "buf/validate/validate.proto";
 import "axon/chat/v1/chat.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -26,6 +27,12 @@ message ListChatRoomsRequest {
   string member_id = 3;
   string cursor = 4;
   int32 page_size = 5;
+  optional string filter = 6 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 7 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 8 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
 }
 
 message ListChatRoomsResponse {
@@ -90,9 +97,16 @@ message ListChatUploadsRequest {
   string kind = 3;
   string cursor = 4;
   int32 page_size = 5;
+  optional string filter = 6 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 7 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 8 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
 }
 
 message ListChatUploadsResponse {
   repeated AdminUpload uploads = 1;
   string next_cursor = 2;
+  optional int64 total = 3;
 }
