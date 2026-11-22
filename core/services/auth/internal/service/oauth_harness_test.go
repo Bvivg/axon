@@ -58,6 +58,13 @@ func (s providerSet) Get(id domain.Provider) (oauth.Provider, error) {
 	return s.registry.Get(id)
 }
 
+func (s providerSet) App(id domain.Provider) (oauth.Provider, error) {
+	if p, ok := s.scripted[id]; ok {
+		return p, nil
+	}
+	return s.registry.App(id)
+}
+
 func withOAuth(t *testing.T) harnessOption {
 	t.Helper()
 
@@ -139,7 +146,7 @@ func (h *harness) trySignInWith(
 ) (service.CompleteOAuthResult, error) {
 	t.Helper()
 
-	started, err := h.svc.StartOAuth(t.Context(), provider, "")
+	started, err := h.svc.StartOAuth(t.Context(), provider, "", nil)
 	if err != nil {
 		return service.CompleteOAuthResult{}, err
 	}
@@ -155,7 +162,7 @@ func (h *harness) trySignInWith(
 func (h *harness) trySignInFake(t *testing.T, identity url.Values) (service.CompleteOAuthResult, error) {
 	t.Helper()
 
-	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "")
+	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "", nil)
 	if err != nil {
 		return service.CompleteOAuthResult{}, err
 	}
@@ -188,6 +195,16 @@ func scriptedCode(t *testing.T, identity url.Values) string {
 func (h *harness) follow(t *testing.T, authorizationURL string, identity url.Values) string {
 	t.Helper()
 
+	code := h.callback(t, authorizationURL, identity).Query().Get("code")
+	if code == "" {
+		t.Fatal("the callback carried no code")
+	}
+	return code
+}
+
+func (h *harness) callback(t *testing.T, authorizationURL string, identity url.Values) *url.URL {
+	t.Helper()
+
 	target := authorizationURL
 	if len(identity) > 0 {
 		target += "&" + identity.Encode()
@@ -218,12 +235,7 @@ func (h *harness) follow(t *testing.T, authorizationURL string, identity url.Val
 	if err != nil {
 		t.Fatalf("parse the callback URL: %v", err)
 	}
-
-	code := location.Query().Get("code")
-	if code == "" {
-		t.Fatal("the callback carried no code")
-	}
-	return code
+	return location
 }
 
 func identity(subject, email string) url.Values {

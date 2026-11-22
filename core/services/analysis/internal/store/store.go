@@ -52,6 +52,7 @@ type Report struct {
 	Depth       int
 	Engine      string
 	Moves       int
+	FinishedAt  time.Time
 	StartedAt   time.Time
 	CompletedAt *time.Time
 	Duration    time.Duration
@@ -134,9 +135,9 @@ func (s *Postgres) Get(ctx context.Context, session uuid.UUID) (Report, error) {
 	var duration *int64
 	var errText *string
 	err := pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `SELECT session_id, event_id, status, depth, engine, moves, started_at, completed_at, duration_ms, error
+		err := tx.QueryRow(ctx, `SELECT session_id, event_id, status, depth, engine, moves, game_finished_at, started_at, completed_at, duration_ms, error
 			FROM analysis.reports WHERE session_id = $1`, session).Scan(&report.Session, &report.Event, &report.Status, &report.Depth, &report.Engine,
-			&report.Moves, &report.StartedAt, &report.CompletedAt, &duration, &errText)
+			&report.Moves, &report.FinishedAt, &report.StartedAt, &report.CompletedAt, &duration, &errText)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}

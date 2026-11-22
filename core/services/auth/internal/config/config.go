@@ -34,6 +34,8 @@ type Config struct {
 	InternalKey   config.Secret
 
 	ClientIPPeers []string
+
+	KafkaBrokers []string
 }
 
 type AvatarConfig struct {
@@ -97,6 +99,8 @@ func Load() (Config, error) {
 		Avatar:        loadAvatar(l),
 
 		ClientIPPeers: l.StringSlice("CLIENT_IP_TRUSTED_PEERS", []string{"gateway"}),
+
+		KafkaBrokers: l.StringSlice("KAFKA_BROKERS", nil),
 	}
 	refuseDefaultAvatarSecret(l, cfg.Base, cfg.Avatar)
 

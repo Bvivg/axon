@@ -1,0 +1,27 @@
+.console-shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); height: 100dvh; background: var(--color-canvas); }
+.console-sidebar { display: flex; min-height: 0; flex-direction: column; gap: 12px; padding: 14px 10px 10px; border-right: 1px solid var(--color-line); background: var(--color-sidebar); }
+.console-main { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--color-background); }
+.console-topbar { display: none; }
+.console-nav-group { display: flex; flex-direction: column; gap: 1px; }
+.console-nav-heading { padding: 10px 10px 4px; font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--color-muted-foreground); }
+.console-nav-link { display: flex; align-items: center; gap: 9px; height: 32px; padding-inline: 10px; border-radius: 8px; font-size: 13px; color: var(--color-muted-foreground); transition: background .15s, color .15s; }
+.console-nav-link svg { width: 16px; height: 16px; flex: none; }
+.console-nav-link:hover { background: var(--color-surface-raised); color: var(--color-foreground); }
+.console-nav-link[aria-current="page"] { background: var(--color-accent); color: var(--color-foreground); font-weight: 550; }
+.console-nav-link[aria-current="page"] svg { color: var(--color-signal); }
+.console-page-header { display: flex; position: relative; flex: none; align-items: center; min-height: 52px; gap: 8px; padding-inline: 16px; background: var(--color-surface); border-bottom: 1px solid var(--color-line); }
+@media (max-width: 860px) {
+  .console-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .console-sidebar { display: none; }
+  .console-topbar { display: flex; align-items: center; gap: 8px; min-height: 48px; padding-inline: 8px; border-bottom: 1px solid var(--color-line); background: var(--color-sidebar); }
+  .console-page-header { padding-inline: 12px; }
+}
+.service-graph { position: relative; min-height: 350px; overflow: hidden; border: 1px solid var(--color-line); border-radius: 12px; background: radial-gradient(circle, var(--color-line) 1px, transparent 1px) 0 0 / 16px 16px, var(--color-canvas); }
+.service-graph > svg { display: block; position: absolute; inset: 0; }
+.service-graph-node { position: absolute; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 72px; min-height: 36px; transform: translate(-50%, -50%); padding: 4px 8px; background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 9px; font-size: 11px; }
+.service-graph-node svg { flex-shrink: 0; color: var(--color-signal); }
+.service-graph-node[aria-pressed="true"], .service-graph-node:hover { border-color: var(--color-signal); color: var(--color-signal); }
+.service-graph-node[data-filtered="true"] { opacity: .42; }
+@media (max-width: 540px) {
+  .service-graph { display: none; }
+}

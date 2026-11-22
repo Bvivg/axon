@@ -2,8 +2,29 @@ import Foundation
 import Observation
 
 enum Route: Hashable, Sendable {
+    case lobby(GameKind)
     case game(String)
     case replay(String)
+    case profile(ProfilePage)
+    case room(String)
+    case person(String)
+    case roomInfo(String)
+    case roomMedia(String)
+}
+
+enum ProfilePage: String, Hashable, Sendable, CaseIterable {
+    case account
+    case personal
+    case sessions
+    case notifications
+    case appearance
+}
+
+enum AppTab: String, Hashable, Sendable, CaseIterable {
+    case games
+    case calls
+    case chats
+    case profile
 }
 
 @MainActor
@@ -19,7 +40,8 @@ final class AppModel {
 
     private(set) var phase: Phase = .launching
     private(set) var services: Services
-    var path: [Route] = []
+    var tab: AppTab = .games
+    var paths: [AppTab: [Route]] = [:]
     let settings: GatewaySettings
     @ObservationIgnored private let vault: TokenVault
     @ObservationIgnored private let build: ServicesBuilder
@@ -47,14 +69,35 @@ final class AppModel {
     }
 
     func signedIn(_ user: User) {
-        path = []
+        resetNavigation()
         phase = .signedIn(user)
     }
 
     func signOut() async {
         await services.auth.logout()
-        path = []
+        resetNavigation()
         phase = .signedOut
+    }
+
+    func open(_ route: Route) {
+        paths[tab, default: []].append(route)
+    }
+
+    func openChat(_ room: String) {
+        tab = .chats
+        if paths[.chats]?.last != .room(room) {
+            paths[.chats] = [.room(room)]
+        }
+    }
+
+    func replaceUser(_ user: User) {
+        guard case .signedIn(let current) = phase, current.id == user.id else { return }
+        phase = .signedIn(user)
+    }
+
+    private func resetNavigation() {
+        tab = .games
+        paths = [:]
     }
 
     func updateGateway(_ address: GatewayAddress) async {
@@ -65,7 +108,7 @@ final class AppModel {
         await vault.clear()
         settings.update(address)
         services = build(settings, vault)
-        path = []
+        resetNavigation()
         phase = .signedOut
         watch()
     }
@@ -76,7 +119,7 @@ final class AppModel {
         watcher = Task { [weak self] in
             for await _ in signals {
                 guard let self else { return }
-                self.path = []
+                self.resetNavigation()
                 self.phase = .signedOut
             }
         }

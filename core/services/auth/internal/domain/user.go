@@ -28,7 +28,12 @@ type User struct {
 	UpdatedAt time.Time
 
 	LastSeenAt *time.Time
+
+	SuspendedAt     *time.Time
+	SuspendedReason string
 }
+
+func (u User) Suspended() bool { return u.SuspendedAt != nil }
 
 type PublicProfile struct {
 	User   User

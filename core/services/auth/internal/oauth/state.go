@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
@@ -26,6 +27,10 @@ type State struct {
 	Verifier string `json:"verifier"`
 
 	ReturnTo string `json:"return_to"`
+
+	LinkUserID *uuid.UUID `json:"link_user_id,omitempty"`
+
+	AppChallenge string `json:"app_challenge,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 }

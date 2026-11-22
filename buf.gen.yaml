@@ -2,6 +2,8 @@ version: v2
 
 managed:
   enabled: true
+  disable:
+    - module: buf.build/bufbuild/protovalidate
   override:
     - file_option: go_package_prefix
       value: github.com/bvivg/axon/core/shared/gen/go
@@ -19,6 +21,12 @@ plugins:
   - remote: buf.build/bufbuild/es:v2.10.0
     out: ui/web/src/gen
     opt: target=ts
+    include_imports: true
+
+  - remote: buf.build/bufbuild/es:v2.10.0
+    out: ui/admin/src/gen
+    opt: target=ts
+    include_imports: true
 
   - remote: buf.build/apple/swift:v1.41.0
     out: ui/app/Gen

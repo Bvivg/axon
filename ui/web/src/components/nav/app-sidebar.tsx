@@ -15,8 +15,7 @@ export function AppSidebar() {
   const section = sectionFor(usePathname());
   const { unread } = useRoomDirectory();
   const { user } = useSession();
-  const current = section === Section.Gateway || section === Section.ServiceMap || section === Section.Admin ? Section.Profile
-    : section === Section.Contacts || section === Section.Media ? Section.Chats : section;
+  const current = section === Section.Contacts || section === Section.Media ? Section.Chats : section;
 
   return (
     <aside className="workspace-rail call-app-tabbar">

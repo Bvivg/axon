@@ -68,6 +68,12 @@ func (s *Service) Refresh(ctx context.Context, presented string, device domain.D
 	if err != nil {
 		return Result{}, err
 	}
+	if user.Suspended() {
+		if _, err := s.store.RevokeFamily(ctx, stored.FamilyID, now); err != nil {
+			s.log.ErrorContext(ctx, "could not revoke a suspended account's family", "user_id", user.ID, "error", err)
+		}
+		return Result{}, domain.ErrRefreshTokenInvalid
+	}
 
 	access, expiresAt, err := s.issuer.Issue(user.ID, user.Email, stored.FamilyID)
 	if err != nil {
@@ -175,6 +181,9 @@ func (s *Service) LogoutEverywhere(ctx context.Context, userID uuid.UUID) error 
 func (s *Service) issueTokens(
 	ctx context.Context, user domain.User, familyID uuid.UUID, device domain.Device,
 ) (domain.TokenPair, error) {
+	if user.Suspended() {
+		return domain.TokenPair{}, domain.ErrAccountSuspended
+	}
 	refresh, err := token.New()
 	if err != nil {
 		return domain.TokenPair{}, fmt.Errorf("service: generate refresh token: %w", err)

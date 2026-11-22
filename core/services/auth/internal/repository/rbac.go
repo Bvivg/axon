@@ -136,6 +136,7 @@ func (r *Repository) UserHasPermission(ctx context.Context, userID uuid.UUID, na
 		SELECT EXISTS (
 			SELECT 1
 			FROM user_roles ur
+			JOIN users u ON u.id = ur.user_id AND u.suspended_at IS NULL
 			JOIN role_permissions rp ON rp.role_id = ur.role_id
 			JOIN ancestors a ON a.id = rp.permission_id
 			WHERE ur.user_id = $1

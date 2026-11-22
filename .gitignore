@@ -38,6 +38,7 @@ pnpm-debug.log*
 # Generated protobuf output (regenerated via `make proto`)
 /core/shared/gen/
 /ui/web/src/gen/
+/ui/admin/src/gen/
 /ui/app/Gen/
 /ui/app/Axon.xcodeproj/
 
@@ -52,5 +53,6 @@ DerivedData/
 /.local/
 /.playwright-mcp/
 /ui/web/test-results/
+/ui/admin/test-results/
 /ui/web/public/calls-sw.js
 /core/deploy/k8s/charts/*/charts/

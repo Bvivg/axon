@@ -257,6 +257,7 @@ services:
       GATEWAY_ADMIN_URL: http://gateway:9090
 
       GATEWAY_SOCKET_URL: ws://gateway:8080/ws/chat
+      ADMIN_POSTGRES_DSN: postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth
       GOWORK: "off"
       GOFLAGS: -mod=mod
     volumes:

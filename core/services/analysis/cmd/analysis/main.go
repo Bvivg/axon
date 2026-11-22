@@ -21,7 +21,9 @@ import (
 	"github.com/bvivg/axon/core/services/analysis/internal/store"
 	"github.com/bvivg/axon/core/services/analysis/internal/uci"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/analysis/v1/analysisv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
@@ -52,6 +54,7 @@ type settings struct {
 	timeout     time.Duration
 	hashMB      int
 	maxPlies    int
+	authURL     string
 	jwksURL     string
 	jwksRefresh time.Duration
 	issuer      string
@@ -78,6 +81,7 @@ func load() (settings, error) {
 		timeout:     loader.DurationDefault("ANALYSIS_POSITION_TIMEOUT", 10*time.Second),
 		hashMB:      loader.IntDefault("ANALYSIS_ENGINE_HASH_MB", 16),
 		maxPlies:    loader.IntDefault("ANALYSIS_MAX_PLIES", consumer.DefaultMaxPlies),
+		authURL:     loader.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
 		jwksURL:     loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
 		jwksRefresh: loader.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
 		issuer:      loader.StringDefault("JWT_ISSUER", "https://auth.axon.local"),
@@ -134,6 +138,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	permissions := authz.NewCache(authz.NewRemote(&http.Client{Timeout: 5 * time.Second, Transport: telemetry.Transport(mtls.Internal(identity))}, cfg.authURL), authz.DefaultTTL)
 
 	metrics := middleware.NewMetrics(cfg.base.Service)
 	restarts := prometheus.NewCounter(prometheus.CounterOpts{Name: "analysis_engine_restarts_total", Help: "Stockfish processes replaced after they exited or stopped answering."})
@@ -176,6 +181,11 @@ func run() error {
 	api := http.NewServeMux()
 	api.Handle(analysisv1connect.NewAnalysisServiceHandler(server.New(reports, verifier, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
+	)))
+	api.Handle(analysisv1connect.NewAnalysisAdminServiceHandler(server.NewAdmin(reports, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
+		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
+		authz.NewInterceptor(authz.Config{Service: "analysis", Verifier: verifier, Cache: permissions, Rules: server.AdminRules, Logger: log}),
+		admincrud.Validator(),
 	)))
 	public := graceful.Serve(&http.Server{
 		Addr:              cfg.base.HTTPAddr,

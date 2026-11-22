@@ -143,11 +143,19 @@ func (s *Store) CancelMatch(ctx context.Context, user uuid.UUID, game engine.Key
 			}
 			return item, nil
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM game.match_queue WHERE user_id=$1 AND game=$2 AND session_id IS NULL`, user, game); err != nil {
+		if _, err := dequeue(ctx, tx, user, game); err != nil {
 			return queued{}, err
 		}
 		return queued{}, ErrNotSearching
 	})
+}
+
+func dequeue(ctx context.Context, tx pgx.Tx, user uuid.UUID, game engine.Key) (bool, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM game.match_queue WHERE user_id=$1 AND game=$2 AND session_id IS NULL`, user, game)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 func (s *Store) MatchRound(ctx context.Context) ([]Pairing, error) {

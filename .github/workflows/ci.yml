@@ -310,11 +310,14 @@ jobs:
           cosign attest --yes --type spdxjson --predicate "sbom-${{ matrix.service }}.spdx.json" "${{ steps.push.outputs.ref }}"
 
   web:
-    name: Web client
+    name: Web client (${{ matrix.app }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [web, admin]
     defaults:
       run:
-        working-directory: ui/web
+        working-directory: ui/${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
 
@@ -322,7 +325,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: ui/web/package-lock.json
+          cache-dependency-path: ui/${{ matrix.app }}/package-lock.json
 
       - uses: bufbuild/buf-setup-action@v1
         with:
