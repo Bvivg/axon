@@ -41,7 +41,7 @@ export function AdminOverview() {
       </section>
       {access.can(Permission.AuditRead) ? (
         <PaneSection id="recent" title="Recent admin activity" aside={<Link href="/audit" className={buttonVariants({ variant: "link", size: "sm" })}>Audit log</Link>}>
-          <AuditList filters={{}} />
+          <AuditList filters={{}} showTarget />
         </PaneSection>
       ) : null}
       <nav aria-label="Administration sections" className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2 min-[721px]:hidden">
