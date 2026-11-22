@@ -226,3 +226,41 @@ func TestTheAppVariantRedirectsUnderTheProviderRoute(t *testing.T) {
 		t.Errorf("App(apple) = %v, want ErrProviderUnsupported", err)
 	}
 }
+
+func TestTheCallbackFollowsTheSignInOrigin(t *testing.T) {
+	registry, err := oauth.NewRegistry(oauth.RegistryConfig{
+		RedirectBaseURL: "http://localhost:3003/auth/callback/",
+		GitHub:          oauth.ProviderConfig{ClientID: "id", ClientSecret: "secret"},
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+
+	for _, tc := range []struct {
+		id     domain.Provider
+		origin string
+		want   string
+	}{
+		{domain.ProviderGitHub, "https://axon.test", "https://axon.test/auth/callback/github"},
+		{domain.ProviderGitHub, "https://axon.test:3443/", "https://axon.test:3443/auth/callback/github"},
+		{domain.ProviderGitHub, "", ""},
+		{domain.ProviderApple, "https://axon.test", ""},
+	} {
+		if got := registry.Callback(tc.id, tc.origin); got != tc.want {
+			t.Errorf("Callback(%s, %q) = %q, want %q", tc.id, tc.origin, got, tc.want)
+		}
+	}
+}
+
+func TestARelativeRedirectBaseStillFollowsTheSignInOrigin(t *testing.T) {
+	registry, err := oauth.NewRegistry(oauth.RegistryConfig{
+		RedirectBaseURL: "/auth/callback",
+		GitHub:          oauth.ProviderConfig{ClientID: "id", ClientSecret: "secret"},
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if got, want := registry.Callback(domain.ProviderGitHub, "https://axon.test"), "https://axon.test/auth/callback/github"; got != want {
+		t.Errorf("Callback = %q, want %q", got, want)
+	}
+}

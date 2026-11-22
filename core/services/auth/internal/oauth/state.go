@@ -32,6 +32,8 @@ type State struct {
 
 	AppChallenge string `json:"app_challenge,omitempty"`
 
+	Redirect string `json:"redirect,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 
