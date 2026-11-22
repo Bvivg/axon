@@ -83,7 +83,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if watch := first.GetWatch(); watch != nil {
-		h.watchFeed(ctx, watch, write, commands(ctx, cancel, conn, read, invalidCommand))
+		h.watchFeed(ctx, r.Header, watch, write, commands(ctx, cancel, conn, read, invalidCommand))
 		return
 	}
 	id, err := sessionID(first.GetSubscribe())
@@ -303,22 +303,7 @@ func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, inco
 		_ = client.Close(StatusMoved, "game moved")
 		return
 	}
-	header := http.Header{}
-	header.Set("Authorization", incoming.Get("Authorization"))
-	header.Set(HopHeader, "1")
-	if user := incoming.Get(TestUserHeader); user != "" && h.hooks {
-		header.Set(TestUserHeader, user)
-	}
-	socketScheme := "ws"
-	if h.scheme == "https" {
-		socketScheme = "wss"
-	}
-	upstream, err := ws.Dial(ctx, socketScheme+"://"+address+"/ws", ws.DialOptions{
-		HTTPClient:   h.sockets,
-		Subprotocols: []string{Protocol},
-		Header:       header,
-		Options:      ws.Options{ReadLimit: ws.LargeMessageReadLimit},
-	})
+	upstream, err := h.dialOwner(ctx, address, incoming)
 	if err != nil {
 		_ = client.Close(StatusMoved, "game moved")
 		return
@@ -329,6 +314,25 @@ func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, inco
 		return
 	}
 	join(ctx, client, upstream)
+}
+
+func (h *Handler) dialOwner(ctx context.Context, address string, incoming http.Header) (*ws.Conn, error) {
+	header := http.Header{}
+	header.Set("Authorization", incoming.Get("Authorization"))
+	header.Set(HopHeader, "1")
+	if user := incoming.Get(TestUserHeader); user != "" && h.hooks {
+		header.Set(TestUserHeader, user)
+	}
+	socketScheme := "ws"
+	if h.scheme == "https" {
+		socketScheme = "wss"
+	}
+	return ws.Dial(ctx, socketScheme+"://"+address+"/ws", ws.DialOptions{
+		HTTPClient:   h.sockets,
+		Subprotocols: []string{Protocol},
+		Header:       header,
+		Options:      ws.Options{ReadLimit: ws.LargeMessageReadLimit},
+	})
 }
 
 func join(ctx context.Context, client, upstream *ws.Conn) {

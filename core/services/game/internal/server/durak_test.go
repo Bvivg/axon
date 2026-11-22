@@ -87,7 +87,12 @@ func newStand(t *testing.T) *stand {
 			t.Fatal(err)
 		}
 	}
-	h := New(Config{Store: session.NewStore(nil, games), Owner: own, TestHooks: true})
+	return host(t, own, Config{Store: session.NewStore(nil, games), Owner: own, TestHooks: true})
+}
+
+func host(t *testing.T, own *owner.Owner, cfg Config) *stand {
+	t.Helper()
+	h := New(cfg)
 	own.Listen(h)
 	mux := http.NewServeMux()
 	mux.Handle(gamev1connect.NewGameServiceHandler(h))

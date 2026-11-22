@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,9 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/durak"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
+	"github.com/bvivg/axon/core/services/game/internal/journal"
+	"github.com/bvivg/axon/core/services/game/internal/owner"
+	"github.com/bvivg/axon/core/services/game/internal/route"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
 )
@@ -25,6 +30,24 @@ func (s *stand) start(t *testing.T, game engine.Key) string {
 		t.Fatal(err)
 	}
 	return id
+}
+
+func (s *stand) peer(t *testing.T) *stand {
+	t.Helper()
+	games := cardGames(t)
+	address := strings.TrimPrefix(s.server.URL, "http://")
+	routes := route.New(func(context.Context) (map[int32]string, error) {
+		owners := map[int32]string{}
+		for partition := range s.owner.Partitions() {
+			owners[partition] = address
+		}
+		return owners, nil
+	})
+	if err := routes.Refresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	own := owner.New(owner.Config{ID: "b", Address: "b", Log: journal.NewMemory(s.owner.Partitions()), Model: emptyModel{}, Rules: session.NewRules(games)})
+	return host(t, own, Config{Store: session.NewStore(nil, games), Owner: own, Routes: routes, Self: "b", TestHooks: true})
 }
 
 func (s *stand) full(t *testing.T, id string) session.Session {
@@ -70,6 +93,22 @@ func (w *watcher) reach(id string, revision uint32) []frame {
 			return seen
 		}
 	}
+}
+
+func (w *watcher) reachAll(want map[string]uint32) []frame {
+	w.t.Helper()
+	var seen []frame
+	for len(want) > 0 {
+		f := w.next()
+		if f.session == nil {
+			w.t.Fatalf("unexpected error %v", f.err)
+		}
+		seen = append(seen, f)
+		if revision, ok := want[f.session.GetId()]; ok && f.session.GetRevision() >= revision {
+			delete(want, f.session.GetId())
+		}
+	}
+	return seen
 }
 
 func (w *watcher) failure(want gamev1.SessionError) {
@@ -153,6 +192,45 @@ func TestFeedSwitchesGamesAndReleasesTheOldOnes(t *testing.T) {
 		if f.session.GetId() == first {
 			t.Fatal("a released game still streams to the feed")
 		}
+	}
+}
+
+func TestFeedFollowsGamesOwnedByAnotherInstance(t *testing.T) {
+	home := newStand(t)
+	away := home.peer(t)
+	board, cards := home.start(t, tictactoe.Key), home.start(t, durak.Key)
+	created, err := home.client.CreateSession(t.Context(), asUser(uuid.New(), &gamev1.CreateSessionRequest{Game: string(tictactoe.Key), RequestId: uuid.NewString()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := created.Msg.GetSession().GetId()
+	game := home.full(t, board)
+	player := home.watch(t, uuid.MustParse(string(game.State.Players[0])), board)
+	viewer := away.feed(t, uuid.New(), board, cards, open)
+	hand := home.full(t, cards)
+	seen := viewer.reachAll(map[string]uint32{board: game.Revision, cards: hand.Revision})
+	waitSpectators(t, player, 1)
+
+	moved := home.play(t, board, tictactoe.New(), tictactoe.Key)
+	seen = append(seen, viewer.reach(board, moved.Revision)...)
+	for _, f := range seen {
+		switch f.session.GetId() {
+		case open:
+			t.Fatal("the feed showed a game that is still waiting for an opponent")
+		case cards:
+			checkHidden(t, fmt.Sprintf("relayed frame %d", f.session.GetRevision()), f.raw, f.session, hand.State, engine.NoSeat)
+			if len(f.session.GetDurak().GetLegalMoves()) > 0 {
+				t.Fatalf("a feed viewer got legal moves %v", f.session.GetDurak().GetLegalMoves())
+			}
+		}
+	}
+
+	viewer.send(&gamev1.SessionCommand{Action: &gamev1.SessionCommand_Move{Move: &gamev1.TicTacToeMove{Ply: 1, Cell: 4}}})
+	viewer.failure(gamev1.SessionError_SESSION_ERROR_SPECTATOR)
+	viewer.send(watchCommand(cards))
+	waitSpectators(t, player, 0)
+	if after := home.full(t, board); after.Revision != moved.Revision {
+		t.Fatalf("a feed viewer changed the game to revision %d", after.Revision)
 	}
 }
 
