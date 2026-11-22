@@ -65,7 +65,8 @@ func (s *Postgres) List(ctx context.Context, f ReportFilter) (ReportPage, error)
 		return ReportPage{}, err
 	}
 	var page ReportPage
-	order, limit, paging := reportOrder, f.Limit, ""
+	order, limit := reportOrder, f.Limit
+	var paging string
 	if f.List.Paged() {
 		var total int64
 		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM analysis.reports`+where.SQL(), where.Args()...).Scan(&total); err != nil {

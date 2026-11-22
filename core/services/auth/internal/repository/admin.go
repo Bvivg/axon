@@ -177,7 +177,7 @@ func (r *Repository) ListUsers(ctx context.Context, f domain.UserFilter, at time
 	page.args = append([]any(nil), filter.args...)
 	order := `u.created_at DESC, u.id DESC`
 	limit := domain.PageSize(f.Limit)
-	paging := ""
+	var paging string
 	if f.List.Paged() {
 		order = listed.Order
 		var offset int

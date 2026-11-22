@@ -115,7 +115,8 @@ func (s *Store) AdminList(ctx context.Context, f AdminFilter) (AdminPage, error)
 		return AdminPage{}, fmt.Errorf("session: count for admin: %w", err)
 	}
 
-	order, limit, paging := adminOrder, f.Limit, ""
+	order, limit := adminOrder, f.Limit
+	var paging string
 	if f.List.Paged() {
 		var offset int
 		limit, offset = f.List.Page()
@@ -234,7 +235,8 @@ func (s *Store) MatchQueue(ctx context.Context, f QueueFilter) (QueuePage, error
 		return QueuePage{}, err
 	}
 	var page QueuePage
-	order, paging := queueOrder, ""
+	order := queueOrder
+	var paging string
 	if f.List.Paged() {
 		var total int64
 		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM game.match_queue`+where.SQL(), where.Args()...).Scan(&total); err != nil {

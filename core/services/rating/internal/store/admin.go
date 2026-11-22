@@ -77,7 +77,8 @@ func (s *Postgres) Changes(ctx context.Context, f ChangeFilter) (ChangePage, err
 		return ChangePage{}, err
 	}
 	var page ChangePage
-	order, limit, paging := changeOrder, f.Limit, ""
+	order, limit := changeOrder, f.Limit
+	var paging string
 	if f.List.Paged() {
 		var total int64
 		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM rating.changes`+where.SQL(), where.Args()...).Scan(&total); err != nil {
@@ -165,7 +166,8 @@ func (s *Postgres) Ratings(ctx context.Context, f RatingFilter) (RatingPage, err
 		return RatingPage{}, err
 	}
 	var page RatingPage
-	order, limit, paging := ratingOrder, f.Limit, ""
+	order, limit := ratingOrder, f.Limit
+	var paging string
 	if f.List.Paged() {
 		var total int64
 		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM rating.ratings`+where.SQL(), where.Args()...).Scan(&total); err != nil {
