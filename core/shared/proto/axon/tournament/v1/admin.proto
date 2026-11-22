@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package axon.tournament.v1;
+
+import "axon/tournament/v1/tournament.proto";
+import "buf/validate/validate.proto";
+import "google/protobuf/field_mask.proto";
+
+service TournamentAdminService {
+  rpc UpdateTournament(UpdateTournamentRequest) returns (UpdateTournamentResponse);
+  rpc RemoveTournamentPlayer(RemoveTournamentPlayerRequest) returns (RemoveTournamentPlayerResponse);
+}
+
+message UpdateTournamentRequest {
+  string tournament_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      min_len: 1
+      max_len: 64
+    }
+  ];
+  uint32 capacity = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32 = {
+      gte: 3
+      lte: 64
+    }
+  ];
+  uint32 rounds = 4 [(buf.validate.field).uint32.lte = 9];
+  google.protobuf.FieldMask update_mask = 5 [(buf.validate.field).required = true];
+  string etag = 6 [(buf.validate.field).string.min_len = 1];
+  string reason = 7 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+}
+
+message UpdateTournamentResponse {
+  Tournament tournament = 1;
+}
+
+message RemoveTournamentPlayerRequest {
+  string tournament_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  string reason = 3 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+}
+
+message RemoveTournamentPlayerResponse {
+  Tournament tournament = 1;
+}

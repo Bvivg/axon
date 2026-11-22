@@ -6,6 +6,7 @@ struct GameBoard: View {
     let chess: ChessBoardState
     let quoridor: QuoridorBoardState
     let checkers: CheckersBoardState
+    let durak: DurakBoardState
     let perspective: Int
     let interactive: Bool
     var onCell: (Int) -> Void = { _ in }
@@ -17,6 +18,7 @@ struct GameBoard: View {
         chess = session.chess
         quoridor = session.quoridor
         checkers = session.checkers
+        durak = session.durak
         self.perspective = perspective
         self.interactive = interactive
         self.onCell = onCell
@@ -29,6 +31,7 @@ struct GameBoard: View {
         chess = frame.chess
         quoridor = frame.quoridor
         checkers = frame.checkers
+        durak = frame.durak
         perspective = 0
         interactive = false
     }
@@ -43,37 +46,42 @@ struct GameBoard: View {
             QuoridorBoardView(board: quoridor, perspective: perspective, interactive: interactive, onMove: onMove)
         case .checkers:
             CheckersBoardView(board: checkers, perspective: perspective, interactive: interactive, onMove: onMove)
+        case .durak:
+            DurakBoardView(board: durak, perspective: perspective, interactive: interactive, onMove: onMove)
         }
     }
 }
 
 struct AdaptiveGameLayout<Board: View, Panel: View>: View {
     @ViewBuilder var board: () -> Board
-    @ViewBuilder var panel: () -> Panel
+    @ViewBuilder var panel: (_ wide: Bool) -> Panel
 
     var body: some View {
         GeometryReader { proxy in
             if proxy.size.width >= 760 {
                 HStack(alignment: .top, spacing: 24) {
                     board()
-                        .frame(maxWidth: min(proxy.size.height - 32, proxy.size.width * 0.62))
+                        .frame(maxWidth: min(proxy.size.height - 40, proxy.size.width * 0.62))
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 16) { panel() }
+                        VStack(alignment: .leading, spacing: 16) { panel(true) }
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(minWidth: 260, maxWidth: 380)
+                    .frame(minWidth: 280, maxWidth: 400)
                 }
-                .padding(16)
+                .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 14) {
                         board()
-                        panel()
+                        panel(false)
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 32)
                 }
             }
         }
+        .background(Brand.page)
     }
 }

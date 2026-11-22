@@ -22,6 +22,20 @@ type Provider interface {
 	Exchange(ctx context.Context, code, verifier string) (domain.ProviderProfile, error)
 }
 
+type Redirectable interface {
+	WithRedirect(redirectURL string) Provider
+}
+
+func Redirected(provider Provider, redirectURL string) Provider {
+	if redirectURL == "" {
+		return provider
+	}
+	if redirectable, ok := provider.(Redirectable); ok {
+		return redirectable.WithRedirect(redirectURL)
+	}
+	return provider
+}
+
 const exchangeTimeout = 10 * time.Second
 
 type fetchProfile func(ctx context.Context, client *http.Client) (domain.ProviderProfile, error)
@@ -33,6 +47,12 @@ type httpProvider struct {
 }
 
 func (p *httpProvider) ID() domain.Provider { return p.id }
+
+func (p *httpProvider) WithRedirect(redirectURL string) Provider {
+	cfg := *p.cfg
+	cfg.RedirectURL = redirectURL
+	return &httpProvider{id: p.id, cfg: &cfg, profile: p.profile}
+}
 
 func (p *httpProvider) AuthorizationURL(state, challenge string) string {
 	return p.cfg.AuthCodeURL(state,

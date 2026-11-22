@@ -48,15 +48,25 @@ const (
 )
 
 var (
-	ErrInvalid      = errors.New("saga: invalid tournament")
-	ErrClosed       = errors.New("saga: registration is closed")
-	ErrFull         = errors.New("saga: the tournament is full")
-	ErrTooFew       = errors.New("saga: not enough players to start")
-	ErrNotRunning   = errors.New("saga: the tournament is not running")
-	ErrFinal        = errors.New("saga: the tournament is already over")
-	ErrUnknownMatch = errors.New("saga: no match plays this session")
-	ErrMismatch     = errors.New("saga: the game was played by other players")
+	ErrInvalid       = errors.New("saga: invalid tournament")
+	ErrClosed        = errors.New("saga: registration is closed")
+	ErrFull          = errors.New("saga: the tournament is full")
+	ErrTooFew        = errors.New("saga: not enough players to start")
+	ErrNotRunning    = errors.New("saga: the tournament is not running")
+	ErrFinal         = errors.New("saga: the tournament is already over")
+	ErrUnknownMatch  = errors.New("saga: no match plays this session")
+	ErrMismatch      = errors.New("saga: the game was played by other players")
+	ErrNotRegistered = errors.New("saga: the player is not registered")
 )
+
+type SpecError struct {
+	Field  string
+	Reason string
+}
+
+func (e *SpecError) Error() string { return ErrInvalid.Error() + ": " + e.Reason }
+
+func (e *SpecError) Unwrap() error { return ErrInvalid }
 
 var EliminationSizes = []int{4, 8, 16}
 
@@ -108,6 +118,7 @@ type Tournament struct {
 	Players     []Player
 	Rounds      []Round
 	Matches     []Match
+	Version     int64
 	CreatedAt   time.Time
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
@@ -118,25 +129,25 @@ func ValidSpec(spec Spec) (Spec, error) {
 	spec.Name = strings.TrimSpace(spec.Name)
 	switch {
 	case spec.Name == "" || utf8.RuneCountInString(spec.Name) > MaxNameLength:
-		return Spec{}, fmt.Errorf("%w: the name must be 1 to %d characters", ErrInvalid, MaxNameLength)
+		return Spec{}, &SpecError{Field: "name", Reason: fmt.Sprintf("the name must be 1 to %d characters", MaxNameLength)}
 	case spec.Game == "":
-		return Spec{}, fmt.Errorf("%w: no game", ErrInvalid)
+		return Spec{}, &SpecError{Field: "game", Reason: "no game"}
 	}
 	switch spec.Format {
 	case SingleElimination:
 		if !slices.Contains(EliminationSizes, spec.Capacity) {
-			return Spec{}, fmt.Errorf("%w: a bracket holds 4, 8 or 16 players", ErrInvalid)
+			return Spec{}, &SpecError{Field: "capacity", Reason: "a bracket holds 4, 8 or 16 players"}
 		}
 		spec.Rounds = 0
 	case Swiss:
 		if spec.Capacity < MinPlayers+1 || spec.Capacity > MaxSwissPlayers {
-			return Spec{}, fmt.Errorf("%w: a swiss tournament holds 3 to %d players", ErrInvalid, MaxSwissPlayers)
+			return Spec{}, &SpecError{Field: "capacity", Reason: fmt.Sprintf("a swiss tournament holds 3 to %d players", MaxSwissPlayers)}
 		}
 		if spec.Rounds < 1 || spec.Rounds > MaxSwissRounds || spec.Rounds >= spec.Capacity {
-			return Spec{}, fmt.Errorf("%w: a swiss tournament plays 1 to %d rounds, fewer than its players", ErrInvalid, MaxSwissRounds)
+			return Spec{}, &SpecError{Field: "rounds", Reason: fmt.Sprintf("a swiss tournament plays 1 to %d rounds, fewer than its players", MaxSwissRounds)}
 		}
 	default:
-		return Spec{}, fmt.Errorf("%w: format %q", ErrInvalid, spec.Format)
+		return Spec{}, &SpecError{Field: "format", Reason: fmt.Sprintf("format %q", spec.Format)}
 	}
 	return spec, nil
 }
@@ -205,6 +216,27 @@ func (t Tournament) Withdraw(user uuid.UUID) (Tournament, bool, error) {
 	}
 	next := t.clone()
 	next.Players = slices.DeleteFunc(next.Players, func(p Player) bool { return p.User == user })
+	return next, true, nil
+}
+
+func (t Tournament) Revise(spec Spec) (Tournament, bool, error) {
+	if t.Status != Registration {
+		return t, false, ErrClosed
+	}
+	spec.Game, spec.Format = t.Spec.Game, t.Spec.Format
+	valid, err := ValidSpec(spec)
+	if err != nil {
+		return t, false, err
+	}
+	if registered := len(t.Registered()); valid.Capacity < registered {
+		return t, false, &SpecError{Field: "capacity", Reason: fmt.Sprintf("%d players are already registered", registered)}
+	}
+	if valid == t.Spec {
+		return t, false, nil
+	}
+	next := t.clone()
+	next.Spec = valid
+	next.TotalRounds = valid.Rounds
 	return next, true, nil
 }
 

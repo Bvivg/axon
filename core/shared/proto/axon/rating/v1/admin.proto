@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package axon.rating.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service RatingAdminService {
+  rpc ListRatingChanges(ListRatingChangesRequest) returns (ListRatingChangesResponse);
+  rpc ListRatings(ListRatingsRequest) returns (ListRatingsResponse);
+}
+
+message RatingChangeEntry {
+  string session_id = 1;
+  string user_id = 2;
+  string game = 3;
+  double rating_before = 4;
+  double rating_after = 5;
+  double deviation_after = 6;
+  google.protobuf.Timestamp finished_at = 7;
+}
+
+message ListRatingChangesRequest {
+  string game = 1;
+  string user_id = 2;
+  string cursor = 3;
+  int32 page_size = 4;
+}
+
+message ListRatingChangesResponse {
+  repeated RatingChangeEntry changes = 1;
+  string next_cursor = 2;
+}
+
+message RatingEntry {
+  string user_id = 1;
+  string game = 2;
+  double rating = 3;
+  double deviation = 4;
+  double volatility = 5;
+  int32 games = 6;
+  int32 wins = 7;
+  int32 losses = 8;
+  int32 draws = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message ListRatingsRequest {
+  string game = 1;
+  string user_id = 2;
+  string cursor = 3;
+  int32 page_size = 4;
+}
+
+message ListRatingsResponse {
+  repeated RatingEntry ratings = 1;
+  string next_cursor = 2;
+}

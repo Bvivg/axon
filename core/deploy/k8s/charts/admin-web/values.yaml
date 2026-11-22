@@ -1,0 +1,45 @@
+global: {}
+name: admin-web
+image: axon/admin-web
+replicas: 1
+ports:
+  http: 3000
+probes:
+  port: http
+  livePath: /admin
+  readyPath: /admin
+database: {}
+migrations:
+  enabled: false
+mtls:
+  enabled: false
+  env: {}
+  plainEnv: {}
+service:
+  type: ClusterIP
+  nodePorts: {}
+hpa:
+  enabled: false
+pdb:
+  minAvailable: 1
+serviceMonitor:
+  enabled: false
+terminationGracePeriodSeconds: 20
+securityContext:
+  runAsUser: 1000
+writablePaths:
+  - /tmp
+  - /app/.next/cache
+resources:
+  requests:
+    cpu: 20m
+    memory: 96Mi
+  limits:
+    memory: 384Mi
+fieldEnv: []
+secretEnv: {}
+env:
+  HOSTNAME: 0.0.0.0
+  AXON_GATEWAY_RPC_URL: http://gateway:8080
+  AXON_GATEWAY_METRICS_URL: http://gateway:9090
+  AXON_GATEWAY_ENVIRONMENT: Kind

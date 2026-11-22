@@ -29,43 +29,33 @@ func (s *Service) ListRoles(ctx context.Context, callerID uuid.UUID) ([]domain.R
 	return s.store.ListRoles(ctx)
 }
 
-func (s *Service) AssignRole(ctx context.Context, callerID, userID, roleID uuid.UUID) error {
-	if err := s.requirePermission(ctx, callerID, rbacNamespace, "mutate"); err != nil {
-		return err
-	}
-
-	if err := s.store.AssignRole(ctx, userID, roleID); err != nil {
-		return err
-	}
-
-	s.log.InfoContext(ctx, "role assigned", "user_id", userID, "role_id", roleID, "granted_by", callerID)
-
-	s.audit(ctx, domain.SecurityEvent{
-		Action:  domain.SecurityRoleAssigned,
-		UserID:  userID,
-		ActorID: callerID,
-		Subject: roleID.String(),
-	})
-	return nil
+func (s *Service) AssignRole(ctx context.Context, callerID, userID, roleID uuid.UUID, reason string) error {
+	return s.changeRole(ctx, callerID, userID, roleID, reason, true)
 }
 
-func (s *Service) RevokeRole(ctx context.Context, callerID, userID, roleID uuid.UUID) error {
+func (s *Service) RevokeRole(ctx context.Context, callerID, userID, roleID uuid.UUID, reason string) error {
+	return s.changeRole(ctx, callerID, userID, roleID, reason, false)
+}
+
+func (s *Service) changeRole(ctx context.Context, callerID, userID, roleID uuid.UUID, reason string, grant bool) error {
 	if err := s.requirePermission(ctx, callerID, rbacNamespace, "mutate"); err != nil {
 		return err
 	}
+	if !grant && roleID == domain.RoleAdmin && callerID == userID {
+		return domain.ErrSelfAction
+	}
 
-	if err := s.store.RevokeRole(ctx, userID, roleID); err != nil {
+	name := actionRevoke
+	if grant {
+		name = actionGrant
+	}
+	action := s.adminAction(ctx, callerID, name, userID, reason)
+	action.Details = map[string]string{"role_id": roleID.String()}
+	if err := s.store.ChangeRole(ctx, userID, roleID, grant, action); err != nil {
 		return err
 	}
 
-	s.log.InfoContext(ctx, "role revoked", "user_id", userID, "role_id", roleID, "revoked_by", callerID)
-
-	s.audit(ctx, domain.SecurityEvent{
-		Action:  domain.SecurityRoleRevoked,
-		UserID:  userID,
-		ActorID: callerID,
-		Subject: roleID.String(),
-	})
+	s.log.InfoContext(ctx, "role changed", "user_id", userID, "role_id", roleID, "granted", grant, "actor_id", callerID)
 	return nil
 }
 

@@ -21,12 +21,17 @@ typealias QuoridorBoardState = Axon_Game_V1_QuoridorBoard
 typealias CheckersBoardState = Axon_Game_V1_CheckersBoard
 typealias CheckersPieceCode = Axon_Game_V1_CheckersPiece
 typealias CheckersEnd = Axon_Game_V1_CheckersEnd
+typealias DurakBoardState = Axon_Game_V1_DurakBoard
+typealias DurakHand = Axon_Game_V1_DurakHand
+typealias DurakPair = Axon_Game_V1_DurakPair
+typealias DurakEnd = Axon_Game_V1_DurakEnd
 
 enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
     case ticTacToe = "tictactoe"
     case chess
     case quoridor
     case checkers
+    case durak
 
     var id: String { rawValue }
 
@@ -40,6 +45,7 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .chess: "Chess"
         case .quoridor: "Quoridor"
         case .checkers: "Checkers"
+        case .durak: "Durak"
         }
     }
 
@@ -47,8 +53,9 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
         switch self {
         case .ticTacToe: "number"
         case .chess: "crown"
-        case .quoridor: "square.grid.3x3.middle.filled"
-        case .checkers: "checkerboard.rectangle"
+        case .quoridor: "square.grid.3x3"
+        case .checkers: "smallcircle.filled.circle"
+        case .durak: "suit.spade.fill"
         }
     }
 
@@ -58,13 +65,14 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .chess: ["White", "Black"]
         case .quoridor: ["Violet", "Green"]
         case .checkers: ["Black", "White"]
+        case .durak: ["North", "South"]
         }
     }
 
     var defaultClock: Duration {
         switch self {
         case .ticTacToe: .seconds(300)
-        case .chess, .quoridor, .checkers: .seconds(600)
+        case .chess, .quoridor, .checkers, .durak: .seconds(600)
         }
     }
 

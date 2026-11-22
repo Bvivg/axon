@@ -2,6 +2,7 @@ import Foundation
 
 struct ReconnectPolicy: Equatable, Sendable {
     static let standard = ReconnectPolicy()
+    static let persistent = ReconnectPolicy(maxAttempts: .max)
 
     var base: Duration = .seconds(1)
     var cap: Duration = .seconds(15)

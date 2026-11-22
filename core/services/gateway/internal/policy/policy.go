@@ -8,6 +8,7 @@ const (
 	TierSensitive
 	TierSearch
 	TierRenewal
+	TierAdmin
 )
 
 type Rule struct {
@@ -106,6 +107,48 @@ var procedures = map[string]Rule{
 	"/axon.chat.v1.ChatService/GetPushKey":      {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/SubscribePush":   {Public: false, Tier: TierStandard},
 	"/axon.chat.v1.ChatService/UnsubscribePush": {Public: false, Tier: TierStandard},
+
+	"/axon.auth.v1.AuthAdminService/GetMyPermissions":   {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthAdminService/ListUsers":          {Public: false, Tier: TierSearch},
+	"/axon.auth.v1.AuthAdminService/GetUser":            {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthAdminService/SuspendUser":        {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/RestoreUser":        {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/RevokeUserSessions": {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/ListAuditEvents":    {Public: false, Tier: TierSearch},
+	"/axon.auth.v1.AuthAdminService/ExportAuditEvents":  {Public: false, Tier: TierSensitive},
+	"/axon.auth.v1.AuthAdminService/UpdateUserProfile":  {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/SetUserRoles":       {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/UnlinkOAuthAccount": {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/ListPermissions":    {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthAdminService/ListAdminRoles":     {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthAdminService/GetRole":            {Public: false, Tier: TierStandard},
+	"/axon.auth.v1.AuthAdminService/CreateRole":         {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/UpdateRole":         {Public: false, Tier: TierAdmin},
+	"/axon.auth.v1.AuthAdminService/DeleteRole":         {Public: false, Tier: TierAdmin},
+
+	"/axon.game.v1.GameAdminService/ListGameSessions":     {Public: false, Tier: TierSearch},
+	"/axon.game.v1.GameAdminService/CancelGameSession":    {Public: false, Tier: TierAdmin},
+	"/axon.game.v1.GameAdminService/GetGameSession":       {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameAdminService/ListMatchQueue":       {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameAdminService/RemoveFromMatchQueue": {Public: false, Tier: TierAdmin},
+
+	"/axon.chat.v1.ChatAdminService/ListChatRooms":        {Public: false, Tier: TierSearch},
+	"/axon.chat.v1.ChatAdminService/GetChatRoom":          {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatAdminService/ListChatRoomMessages": {Public: false, Tier: TierStandard},
+	"/axon.chat.v1.ChatAdminService/DeleteChatMessage":    {Public: false, Tier: TierAdmin},
+	"/axon.chat.v1.ChatAdminService/RemoveChatMember":     {Public: false, Tier: TierAdmin},
+	"/axon.chat.v1.ChatAdminService/ListChatUploads":      {Public: false, Tier: TierSearch},
+
+	"/axon.calls.v1.CallsAdminService/ListAllCalls":  {Public: false, Tier: TierSearch},
+	"/axon.calls.v1.CallsAdminService/TerminateCall": {Public: false, Tier: TierAdmin},
+
+	"/axon.rating.v1.RatingAdminService/ListRatingChanges": {Public: false, Tier: TierSearch},
+	"/axon.rating.v1.RatingAdminService/ListRatings":       {Public: false, Tier: TierSearch},
+
+	"/axon.tournament.v1.TournamentAdminService/UpdateTournament":       {Public: false, Tier: TierAdmin},
+	"/axon.tournament.v1.TournamentAdminService/RemoveTournamentPlayer": {Public: false, Tier: TierAdmin},
+
+	"/axon.analysis.v1.AnalysisAdminService/ListAnalysisReports": {Public: false, Tier: TierSearch},
 
 	"/axon.chat.v1.ChatService/CreateRoom":      {Public: false, Tier: TierSensitive},
 	"/axon.chat.v1.ChatService/CreateGroup":     {Public: false, Tier: TierSensitive},

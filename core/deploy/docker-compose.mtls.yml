@@ -64,7 +64,7 @@ services:
   auth:
     environment:
       <<: *mtls
-      MTLS_ALLOWED_CLIENTS: gateway,chat,game,analysis,tournament
+      MTLS_ALLOWED_CLIENTS: gateway,chat,game,analysis,tournament,rating
     volumes:
       - certs-auth:/etc/axon/tls:ro
     depends_on: *certs-ready
@@ -84,6 +84,7 @@ services:
       <<: *mtls
       MTLS_ALLOWED_CLIENTS: gateway,game
       GAME_ADMIN_ADDR: ":9093"
+      AUTH_SERVICE_URL: https://auth:8081
       JWKS_URL: https://auth:8081/.well-known/jwks.json
     volumes:
       - certs-game:/etc/axon/tls:ro
@@ -95,6 +96,8 @@ services:
     environment:
       <<: *mtls
       MTLS_ALLOWED_CLIENTS: gateway
+      AUTH_SERVICE_URL: https://auth:8081
+      JWKS_URL: https://auth:8081/.well-known/jwks.json
     volumes:
       - certs-rating:/etc/axon/tls:ro
     depends_on: *certs-ready
@@ -103,6 +106,7 @@ services:
     environment:
       <<: *mtls
       MTLS_ALLOWED_CLIENTS: gateway
+      AUTH_SERVICE_URL: https://auth:8081
       JWKS_URL: https://auth:8081/.well-known/jwks.json
     volumes:
       - certs-analysis:/etc/axon/tls:ro
@@ -126,6 +130,7 @@ services:
       GAME_SERVICE_URL: https://game:8083
       ANALYSIS_SERVICE_URL: https://analysis:8085
       TOURNAMENT_SERVICE_URL: https://tournament:8086
+      RATING_SERVICE_URL: https://rating:8084
       JWKS_URL: https://auth:8081/.well-known/jwks.json
     volumes:
       - certs-gateway:/etc/axon/tls:ro

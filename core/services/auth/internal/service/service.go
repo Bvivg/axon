@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/shared/pkg/authz"
+
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
@@ -42,6 +44,7 @@ type Store interface {
 
 	OauthAccountByProviderID(ctx context.Context, p domain.Provider, providerUserID string) (domain.OauthAccount, error)
 	LinkOauthAccount(ctx context.Context, a domain.OauthAccount) error
+	OauthAccountsForUser(ctx context.Context, userID uuid.UUID) ([]domain.OauthAccount, error)
 
 	ListRoles(ctx context.Context) ([]domain.Role, error)
 	RoleNamesForUser(ctx context.Context, userID uuid.UUID) ([]string, error)
@@ -53,6 +56,28 @@ type Store interface {
 	UsersByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.User, error)
 
 	RecordSecurityEvent(ctx context.Context, e domain.SecurityEvent) error
+
+	Permissions(ctx context.Context, userID uuid.UUID) ([]string, error)
+	ListUsers(ctx context.Context, f domain.UserFilter, at time.Time) (domain.UserPage, error)
+	AdminUser(ctx context.Context, id uuid.UUID, at time.Time) (domain.AdminUser, error)
+	SuspendUser(ctx context.Context, userID uuid.UUID, reason string, at time.Time, action authz.Action) (domain.User, error)
+	RestoreUser(ctx context.Context, userID uuid.UUID, at time.Time, action authz.Action) (domain.User, error)
+	RevokeUserSessions(ctx context.Context, userID uuid.UUID, at time.Time, action authz.Action) (int64, error)
+	ChangeRole(ctx context.Context, userID, roleID uuid.UUID, grant bool, action authz.Action) error
+	RecordAdminAction(ctx context.Context, action authz.Action) error
+	ListAuditEvents(ctx context.Context, f domain.AuditFilter) (domain.AuditPage, error)
+	ExportAuditEvents(ctx context.Context, f domain.AuditFilter, limit int) ([]domain.AuditEvent, error)
+
+	PermissionCatalog(ctx context.Context) ([]domain.Permission, error)
+	AdminRoles(ctx context.Context) ([]domain.AdminRole, error)
+	AdminRole(ctx context.Context, id uuid.UUID) (domain.AdminRole, error)
+	CreateRole(ctx context.Context, role domain.AdminRole, at time.Time, action authz.Action, dryRun bool) (domain.AdminRole, error)
+	UpdateRole(ctx context.Context, id uuid.UUID, version int64, fields domain.RoleFields, next domain.AdminRole, at time.Time, action authz.Action, diff func(before, after domain.AdminRole) []authz.Change, dryRun bool) (domain.AdminRole, error)
+	DeleteRole(ctx context.Context, id uuid.UUID, version int64, at time.Time, action authz.Action, diff func(before, after domain.AdminRole) []authz.Change) error
+	SetUserRoles(ctx context.Context, userID uuid.UUID, names []string, action authz.Action) error
+	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, version int64, name string, at time.Time, action authz.Action) error
+	LinkedAccounts(ctx context.Context, userID uuid.UUID) ([]domain.LinkedAccount, bool, error)
+	UnlinkOAuthAccount(ctx context.Context, userID uuid.UUID, provider domain.Provider, action authz.Action) error
 }
 
 type PresenceChecker interface {
@@ -92,6 +117,8 @@ type Config struct {
 
 type OAuthProviders interface {
 	Get(id domain.Provider) (oauth.Provider, error)
+	App(id domain.Provider) (oauth.Provider, error)
+	Callback(id domain.Provider, origin string) string
 }
 
 type OAuthConfig struct {

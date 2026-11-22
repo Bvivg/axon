@@ -33,12 +33,77 @@ final class FakeAuth: AuthAPI, @unchecked Sendable {
         try loginResult.get()
     }
 
+    var oauthStart: Result<OAuthStart, APIError> = .failure(APIError(.unavailable))
+    var oauthResult: Result<User, APIError> = .failure(APIError(.invalidArgument))
+    var oauthChallenges: [String] = []
+    var oauthCompletions: [OAuthCompletion] = []
+
+    func startOAuth(_ provider: OAuthProvider, challenge: String) async throws(APIError) -> OAuthStart {
+        oauthChallenges.append(challenge)
+        return try oauthStart.get()
+    }
+
+    func completeOAuth(_ provider: OAuthProvider, code: String, state: String, verifier: String) async throws(APIError) -> User {
+        oauthCompletions.append(OAuthCompletion(provider: provider, code: code, state: state, verifier: verifier))
+        return try oauthResult.get()
+    }
+
     func logout() async { logoutCount += 1 }
 
     func profiles(ids: [String]) async throws(APIError) -> [String: PublicProfile] {
         profileRequests.append(ids)
         return profileMap.filter { ids.contains($0.key) }
     }
+
+    var accountResult: Result<Account, APIError> = .failure(APIError(.unavailable))
+    var updateResult: Result<User, APIError> = .failure(APIError(.unavailable))
+    var updates: [ProfileChanges] = []
+    var sessionList: Result<[SignInSession], APIError> = .success([])
+    var revoked: [String] = []
+    var revokeFailure: APIError?
+    var linkStart: Result<OAuthStart, APIError> = .failure(APIError(.unavailable))
+    var linkResult: Result<User, APIError> = .failure(APIError(.invalidArgument))
+    var linkChallenges: [String] = []
+    var linkCompletions: [OAuthCompletion] = []
+
+    func account() async throws(APIError) -> Account {
+        try accountResult.get()
+    }
+
+    func updateProfile(_ changes: ProfileChanges) async throws(APIError) -> User {
+        updates.append(changes)
+        return try updateResult.get()
+    }
+
+    func sessions() async throws(APIError) -> [SignInSession] {
+        try sessionList.get()
+    }
+
+    func revokeSession(id: String) async throws(APIError) {
+        if let revokeFailure { throw revokeFailure }
+        revoked.append(id)
+    }
+
+    func startLink(_ provider: OAuthProvider, challenge: String) async throws(APIError) -> OAuthStart {
+        linkChallenges.append(challenge)
+        return try linkStart.get()
+    }
+
+    var people: [PublicProfile] = []
+
+    func searchUsers(_ query: String) async throws(APIError) -> [PublicProfile] { people }
+
+    func completeLink(_ provider: OAuthProvider, code: String, state: String, verifier: String) async throws(APIError) -> User {
+        linkCompletions.append(OAuthCompletion(provider: provider, code: code, state: state, verifier: verifier))
+        return try linkResult.get()
+    }
+}
+
+struct OAuthCompletion: Equatable {
+    let provider: OAuthProvider
+    let code: String
+    let state: String
+    let verifier: String
 }
 
 final class FakeGame: GameAPI, @unchecked Sendable {
@@ -104,6 +169,19 @@ final class FakeGame: GameAPI, @unchecked Sendable {
         guard let historyResult else { throw APIError(.notFound) }
         return historyResult
     }
+
+    var ratings: [GameKind: Rating] = [:]
+    var ratingFailure: APIError?
+    var ratingRequests: [GameKind] = []
+
+    func rating(_ game: GameKind, user: String) async throws(APIError) -> Rating {
+        ratingRequests.append(game)
+        if let ratingFailure { throw ratingFailure }
+        return ratings[game] ?? Rating.with {
+            $0.userID = user
+            $0.rating = Rating.starting
+        }
+    }
 }
 
 final class FakeChannel: GameChannel, @unchecked Sendable {
@@ -148,8 +226,19 @@ struct FakeWorld {
     let auth = FakeAuth()
     let game = FakeGame()
     let channels = FakeChannels()
+    let chat = FakeChat()
+    let calls = FakeCalls()
 
-    var services: Services { Services(auth: auth, game: game, channels: channels) }
+    let sockets = FakeChatSockets()
+    let media = FakeMedia()
+    let tournaments = FakeTournaments()
+    let analysis = FakeAnalysis()
+    var services: Services {
+        Services(
+            auth: auth, game: game, chat: chat, calls: calls, channels: channels, chatSocket: sockets, media: media,
+            tournaments: tournaments, analysis: analysis
+        )
+    }
 }
 
 enum GameFixtures {
