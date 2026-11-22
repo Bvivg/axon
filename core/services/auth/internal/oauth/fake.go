@@ -27,6 +27,10 @@ func newFake(authorizeURL, redirectURL string) Provider {
 
 func (p *fakeProvider) ID() domain.Provider { return domain.ProviderFake }
 
+func (p *fakeProvider) WithRedirect(redirectURL string) Provider {
+	return &fakeProvider{authorizeURL: p.authorizeURL, redirectURL: redirectURL}
+}
+
 func (p *fakeProvider) AuthorizationURL(state, challenge string) string {
 	query := url.Values{
 		"state":                 {state},

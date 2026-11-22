@@ -118,6 +118,7 @@ type Config struct {
 type OAuthProviders interface {
 	Get(id domain.Provider) (oauth.Provider, error)
 	App(id domain.Provider) (oauth.Provider, error)
+	Callback(id domain.Provider, origin string) string
 }
 
 type OAuthConfig struct {

@@ -57,6 +57,14 @@ func (p *ReturnToPolicy) Resolve(returnTo string) (string, error) {
 	return returnTo, nil
 }
 
+func OriginOf(destination string) string {
+	parsed, err := url.Parse(destination)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host)
+}
+
 func normaliseOrigin(raw string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {

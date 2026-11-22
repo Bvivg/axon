@@ -41,8 +41,9 @@ type RegistryConfig struct {
 }
 
 type Registry struct {
-	providers map[domain.Provider]Provider
-	apps      map[domain.Provider]Provider
+	providers    map[domain.Provider]Provider
+	apps         map[domain.Provider]Provider
+	callbackPath string
 }
 
 const AppCallbackSuffix = "/app"
@@ -89,7 +90,27 @@ func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 		apps[domain.ProviderFake] = newFake(cfg.FakeAuthorizeURL, callback(domain.ProviderFake)+AppCallbackSuffix)
 	}
 
-	return &Registry{providers: providers, apps: apps}, nil
+	path, err := callbackPath(base)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Registry{providers: providers, apps: apps, callbackPath: path}, nil
+}
+
+func callbackPath(base string) (string, error) {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("oauth: redirect base URL: %w", err)
+	}
+	return strings.TrimSuffix(parsed.EscapedPath(), "/"), nil
+}
+
+func (r *Registry) Callback(id domain.Provider, origin string) string {
+	if origin == "" || id == domain.ProviderApple {
+		return ""
+	}
+	return strings.TrimSuffix(origin, "/") + r.callbackPath + "/" + id.String()
 }
 
 func fakeAllowed(cfg RegistryConfig) error {
