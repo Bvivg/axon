@@ -16,7 +16,9 @@ import (
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/kafka"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
@@ -384,11 +386,27 @@ func run() error {
 		CheckerName: "media",
 		Fn:          func(context.Context) error { return mediaTools.Check() },
 	}
+	permissions := authz.NewCache(authz.NewRemote(&http.Client{Timeout: 5 * time.Second, Transport: telemetry.Transport(mtls.Internal(tlsIdentity))}, cfg.Auth.ServiceURL), authz.DefaultTTL)
+	admin := adminHandlers{
+		chat: server.NewChatAdmin(handler),
+		guard: authz.NewInterceptor(authz.Config{
+			Service:  "chat",
+			Verifier: verifier,
+			Cache:    permissions,
+			Rules:    server.AdminRules,
+			Record:   repo.RecordAdminAction,
+			Logger:   log,
+		}),
+	}
+	if callHandler != nil {
+		admin.calls = server.NewCallsAdmin(callHandler)
+	}
+
 	checks := health.New(log, []health.Checker{pool, cache, mediaCheck})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
 	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           withMediaAdmission(publicHandler(handler, callHandler, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log, rpclimit.Handler(cfg.RPCReadMaxBytes)), mediaHandler, rpclimit.Handler(cfg.RPCReadMaxBytes)),
+		Handler:           withMediaAdmission(publicHandler(handler, callHandler, admin, socket, presenceSocket, attachmentUpload, uploadSessions, metrics, log, rpclimit.Handler(cfg.RPCReadMaxBytes)), mediaHandler, rpclimit.Handler(cfg.RPCReadMaxBytes)),
 		ReadHeaderTimeout: 10 * time.Second,
 		Protocols:         mtls.ServerProtocols(tlsIdentity),
 	})
@@ -454,9 +472,16 @@ func buildEvents(cfg config.Config, log *slog.Logger) (service.Events, func(), e
 	}, nil
 }
 
+type adminHandlers struct {
+	chat  *server.ChatAdmin
+	calls *server.CallsAdmin
+	guard connect.Interceptor
+}
+
 func publicHandler(
 	handler *server.Handler,
 	callHandler *server.CallsHandler,
+	admin adminHandlers,
 	socket *chatws.Handler,
 	presenceSocket *chatpresence.Handler,
 	attachmentUpload *server.AttachmentHandler,
@@ -484,6 +509,20 @@ func publicHandler(
 			middleware.NewLoggingInterceptor(log),
 		),
 	))
+
+	adminInterceptors := connect.WithInterceptors(
+		telemetry.Interceptor(),
+		middleware.NewCorrelationInterceptor(),
+		middleware.NewRecoveryInterceptor(log),
+		metrics.Interceptor(),
+		middleware.NewLoggingInterceptor(log),
+		admin.guard,
+		admincrud.Validator(),
+	)
+	mux.Handle(chatv1connect.NewChatAdminServiceHandler(admin.chat, limits, adminInterceptors))
+	if admin.calls != nil {
+		mux.Handle(callsv1connect.NewCallsAdminServiceHandler(admin.calls, limits, adminInterceptors))
+	}
 
 	return middleware.Chain(
 		middleware.Correlation,
