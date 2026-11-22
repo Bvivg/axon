@@ -86,7 +86,7 @@ func TestSecurityEventsPerFlow(t *testing.T) {
 			name: "oauth sign-in",
 			opts: func(t *testing.T) []harnessOption { return []harnessOption{withOAuth(t)} },
 			run: func(t *testing.T, h *harness) []domain.SecurityEvent {
-				started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "")
+				started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "", nil)
 				if err != nil {
 					t.Fatalf("StartOAuth: %v", err)
 				}

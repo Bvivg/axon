@@ -139,7 +139,7 @@ func (h *harness) trySignInWith(
 ) (service.CompleteOAuthResult, error) {
 	t.Helper()
 
-	started, err := h.svc.StartOAuth(t.Context(), provider, "")
+	started, err := h.svc.StartOAuth(t.Context(), provider, "", nil)
 	if err != nil {
 		return service.CompleteOAuthResult{}, err
 	}
@@ -155,7 +155,7 @@ func (h *harness) trySignInWith(
 func (h *harness) trySignInFake(t *testing.T, identity url.Values) (service.CompleteOAuthResult, error) {
 	t.Helper()
 
-	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "")
+	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "", nil)
 	if err != nil {
 		return service.CompleteOAuthResult{}, err
 	}

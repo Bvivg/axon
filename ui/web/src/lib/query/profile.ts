@@ -2,11 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { Session } from "@/gen/axon/auth/v1/auth_pb";
+import type { OauthProvider, Session } from "@/gen/axon/auth/v1/auth_pb";
 import { apiClient } from "@/lib/connect/clients";
 
 export const profileKeys = {
   sessions: ["profile", "sessions"] as const,
+  linkedProviders: ["profile", "linked-providers"] as const,
 };
 
 export interface ProfilePatch {
@@ -39,6 +40,16 @@ export function useSessions() {
       return resp.sessions;
     },
     refetchInterval: sessionsRefetchInterval,
+  });
+}
+
+export function useLinkedProviders() {
+  return useQuery({
+    queryKey: profileKeys.linkedProviders,
+    queryFn: async (): Promise<OauthProvider[]> => {
+      const resp = await apiClient.getMe({});
+      return resp.linkedProviders;
+    },
   });
 }
 

@@ -4,6 +4,7 @@ import { Monitor, Smartphone } from "lucide-react";
 import { useState } from "react";
 
 import { ProfilePage, ProfileSection } from "@/components/profile/profile-page";
+import { SignInMethods } from "@/components/profile/sign-in-methods";
 import { Alert } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +75,7 @@ export function Sessions() {
       }
     >
       <div className="flex flex-col gap-3">
+        <SignInMethods />
         {revoke.isError ? <Alert>{describe(revoke.error)}</Alert> : null}
         <div role="status">{ended ? <p className="rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-sm font-medium">{ended}</p> : null}</div>
 
