@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type APIResponse, type Browser, type BrowserContextOptions, type Page } from "@playwright/test";
+import { expect, test, type APIResponse, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from "@playwright/test";
 import pg from "pg";
 
 import { gatewayUrl, newEmail, newUsername, password } from "./support";
@@ -47,6 +47,14 @@ async function order(page: Page): Promise<string[]> {
   return page.locator("[data-tv-slide]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-tv-slide") ?? ""));
 }
 
+async function settled(page: Page, id: string) {
+  await expect(active(page)).toHaveAttribute("data-tv-slide", id);
+  await expect.poll(() => page.getByLabel("Live games").evaluate((viewport, id) => {
+    const target = viewport.querySelector(`[data-tv-slide="${id}"]`);
+    return target ? Math.abs(target.getBoundingClientRect().top - viewport.getBoundingClientRect().top) : Infinity;
+  }, id)).toBeLessThan(1);
+}
+
 async function showWithKeys(page: Page, id: string) {
   const ids = await order(page);
   const target = ids.indexOf(id);
@@ -57,7 +65,20 @@ async function showWithKeys(page: Page, id: string) {
     await page.keyboard.press(current < target ? "ArrowDown" : "ArrowUp");
     await expect(active(page)).toHaveAttribute("data-tv-slide", ids[current + (current < target ? 1 : -1)]!);
   }
-  await expect(slide(page, id)).toBeInViewport({ ratio: 0.9 });
+  await settled(page, id);
+}
+
+async function swipeUp(page: Page, context: BrowserContext) {
+  const box = (await page.getByLabel("Live games").boundingBox())!;
+  const x = Math.round(box.x + box.width / 2);
+  const from = Math.round(box.y + box.height * 0.85);
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: from }] });
+  for (let step = 1; step <= 12; step++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: from - Math.round(box.height * 0.6 * step / 12) }] });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
 }
 
 const grid = (page: Page) => page.getByRole("grid", { name: "Tic-Tac-Toe board", includeHidden: true });
@@ -124,9 +145,9 @@ test("Axon TV streams live games of several kinds, keeps Durak hands hidden and 
     await watcher.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     const step = at + 1 < ids.length ? 1 : -1;
     await watcher.page.mouse.wheel(0, step * box.height);
-    await expect(active(watcher.page)).toHaveAttribute("data-tv-slide", ids[at + step]!);
+    await settled(watcher.page, ids[at + step]!);
     await watcher.page.getByRole("button", { name: step === 1 ? "Previous game" : "Next game" }).click();
-    await expect(active(watcher.page)).toHaveAttribute("data-tv-slide", chess);
+    await settled(watcher.page, chess);
     await showWithKeys(watcher.page, board);
 
     for (const [step, cell] of [[1, 0], [2, 1], [3, 2], [4, 7]] as const) {
@@ -171,14 +192,10 @@ test("Axon TV fits a 375 px phone and swipes one game at a time", async ({ brows
     expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(375);
     await watcher.page.screenshot({ path: testInfo.outputPath("tv-phone.png"), animations: "disabled" });
 
-    const feed = watcher.page.getByLabel("Live games");
-    const box = (await feed.boundingBox())!;
-    const cdp = await watcher.context.newCDPSession(watcher.page);
-    await cdp.send("Input.synthesizeScrollGesture", { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height * 0.85), yDistance: -Math.round(box.height * 0.6), gestureSourceType: "touch", speed: 1600, preventFling: false });
+    await swipeUp(watcher.page, watcher.context);
     const ids = await order(watcher.page);
     const following = ids[ids.indexOf(quoridor) + 1]!;
-    await expect(active(watcher.page)).toHaveAttribute("data-tv-slide", following);
-    await expect(slide(watcher.page, following)).toBeInViewport({ ratio: 0.9 });
+    await settled(watcher.page, following);
     await expect(slide(watcher.page, following).locator("[data-tv-board]")).toBeInViewport();
 
     await first.getByRole("link", { name: "Open game" }).evaluate(link => link.scrollIntoView());
