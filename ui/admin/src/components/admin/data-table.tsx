@@ -369,7 +369,7 @@ export function DataTable<T>({ label, columns, list, state, rowKey, rowHref, emp
             >
               {select ? <div className="flex h-6 items-center">{flexRender(select.column.columnDef.cell, select.getContext())}</div> : null}
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <div className="flex min-w-0 flex-col">
+                <div className="flex min-w-0 flex-col gap-1">
                   {slot(MobileSlot.Title).map((cell) => <div key={cell.id} className="min-w-0 font-medium">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div>)}
                   {slot(MobileSlot.Subtitle).map((cell) => <div key={cell.id} className="min-w-0 text-sm text-muted-foreground">{flexRender(cell.column.columnDef.cell, cell.getContext())}</div>)}
                 </div>

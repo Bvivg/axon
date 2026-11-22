@@ -11,7 +11,7 @@ const glyphs: Partial<Record<string, LucideIcon>> = {
 };
 
 export function GameIcon({ game, className }: { game: string; className?: string }) {
-  const tile = cn("flex shrink-0 items-center justify-center rounded-[9px] bg-accent text-signal size-7", className);
+  const tile = cn("flex shrink-0 items-center justify-center rounded-[8px] bg-accent text-signal size-6", className);
   if (game === GameKey.TicTacToe) {
     return (
       <span aria-hidden className={cn(tile, "gap-px")}>
@@ -35,7 +35,7 @@ export function gameName(game: string): string {
 
 export function GameName({ game, className, iconClassName }: { game: string; className?: string; iconClassName?: string }) {
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-2.5", className)}>
+    <span className={cn("inline-flex min-w-0 items-center gap-2", className)}>
       <GameIcon game={game} className={iconClassName} />
       <span className="truncate">{gameName(game)}</span>
     </span>
