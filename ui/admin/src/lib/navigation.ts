@@ -1,4 +1,4 @@
-import { Cpu, Gamepad2, Hourglass, KeyRound, LayoutDashboard, MessagesSquare, Network, Paperclip, PhoneCall, Route, ScrollText, Trophy, TrendingUp, UserCog, type LucideIcon } from "lucide-react";
+import { Cpu, Gamepad2, Hourglass, KeyRound, LayoutDashboard, MessagesSquare, Network, Paperclip, PhoneCall, Route, ScrollText, Trophy, TrendingUp, Tv, UserCog, type LucideIcon } from "lucide-react";
 
 import { Permission } from "@/lib/admin/permissions";
 
@@ -32,6 +32,7 @@ export const navItems: NavItem[] = [
   { group: NavGroup.People, href: "/users", label: "Users", icon: UserCog, permission: Permission.UsersRead },
   { group: NavGroup.People, href: "/roles", label: "Roles", icon: KeyRound, permission: Permission.RolesRead },
   { group: NavGroup.Play, href: "/games", label: "Games", icon: Gamepad2, permission: Permission.GamesRead },
+  { group: NavGroup.Play, href: "/games/tv", label: "Axon TV", icon: Tv, permission: Permission.GamesRead },
   { group: NavGroup.Play, href: "/queue", label: "Match queue", icon: Hourglass, permission: Permission.GamesRead },
   { group: NavGroup.Play, href: "/tournaments", label: "Tournaments", icon: Trophy, permission: Permission.GamesRead },
   { group: NavGroup.Play, href: "/ratings", label: "Ratings", icon: TrendingUp, permission: Permission.GamesRead },
@@ -44,6 +45,9 @@ export const navItems: NavItem[] = [
   { group: NavGroup.System, href: "/gateway", label: "Gateway", icon: Route, adminOnly: true },
 ];
 
+const within = (href: string, pathname: string) => pathname === href || pathname.startsWith(`${href}/`);
+
 export function isActive(href: string, pathname: string): boolean {
-  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+  if (href === "/") return pathname === "/";
+  return within(href, pathname) && !navItems.some(item => item.href.startsWith(`${href}/`) && within(item.href, pathname));
 }

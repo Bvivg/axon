@@ -17,6 +17,7 @@ describe("contentSecurityPolicy", () => {
     expect(policy.get("object-src")).toEqual(["'none'"]);
     expect(policy.get("base-uri")).toEqual(["'self'"]);
     expect(policy.get("frame-ancestors")).toEqual(["'none'"]);
+    expect(policy.get("frame-src")).toEqual(["'self'"]);
     expect(policy.get("form-action")).toEqual(["'self'"]);
   });
 

@@ -36,7 +36,7 @@ export function contentSecurityPolicy(nonce: string, { gateway, assets, developm
     `connect-src ${list("'self'", api, api && socketOrigin(api))}`,
     `worker-src 'self' blob:`,
     `manifest-src 'self'`,
-    `frame-src 'none'`,
+    `frame-src 'self'`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
