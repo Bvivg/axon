@@ -2,7 +2,7 @@
 
 import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
 import { Check, Minus } from "lucide-react";
-import { useId, type ComponentProps } from "react";
+import { useId, type ComponentProps, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -32,11 +32,12 @@ export function Checkbox({ className, ...props }: Omit<ComponentProps<typeof Bas
   );
 }
 
-export function CheckboxField({ label, hint, className, ...props }: Omit<ComponentProps<typeof Checkbox>, "children"> & { label: string; hint?: string }) {
+export function CheckboxField({ label, hint, leading, className, ...props }: Omit<ComponentProps<typeof Checkbox>, "children"> & { label: string; hint?: string; leading?: ReactNode }) {
   const id = useId();
   return (
     <label className={cn("flex min-h-9 cursor-pointer items-center gap-2.5 text-sm pointer-coarse:min-h-11 has-[[data-disabled]]:cursor-not-allowed", className)}>
       <Checkbox aria-labelledby={`${id}-label`} aria-describedby={hint ? `${id}-hint` : undefined} {...props} />
+      {leading}
       <span className="flex min-w-0 flex-col">
         <span id={`${id}-label`}>{label}</span>
         {hint ? <span id={`${id}-hint`} className="text-xs text-muted-foreground">{hint}</span> : null}

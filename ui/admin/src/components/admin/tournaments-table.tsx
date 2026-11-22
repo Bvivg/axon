@@ -5,9 +5,10 @@ import { ExternalLink, Play, Trophy, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { AdminListPage, count, gameOptions, gameTitle, Person, When } from "@/components/admin/admin-ui";
+import { AdminListPage, count, gameOptions, Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
 import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { GameName } from "@/components/admin/game-icon";
 import { ListToolbar } from "@/components/admin/list-toolbar";
 import { TournamentStatusBadge } from "@/components/admin/tournaments/tournament-detail";
 import { DropdownMenuItem, DropdownMenuLinkItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -58,7 +59,7 @@ function tournamentColumns(profiles?: Map<string, PublicProfile>): ColumnDef<Tou
       id: "game",
       header: "Game",
       meta: { filter: { field: "game", label: "Game", kind: FilterKind.Choice, options: games }, mobile: MobileSlot.Subtitle },
-      cell: ({ row }) => gameTitle(row.original.game),
+      cell: ({ row }) => <GameName game={row.original.game} />,
     },
     {
       id: "format",

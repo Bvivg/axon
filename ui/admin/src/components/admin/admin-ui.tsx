@@ -12,7 +12,9 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { AccessStatus, Permission, useAdminAccess } from "@/lib/admin/access";
 import { calendarDate, clockTime, fromTimestamp, initials, profileName, shortID } from "@/lib/format";
+import { GameIcon, gameName } from "@/components/admin/game-icon";
 import { games, gameKeys } from "@/lib/games/catalog";
+import type { Option } from "@/lib/admin/list-query";
 import { cn } from "@/lib/utils";
 
 export function AdminListPage({ title, subtitle, actions, toolbar, children }: { title: string; subtitle?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode }) {
@@ -95,10 +97,10 @@ export function Mono({ children, className }: { children: ReactNode; className?:
   return <span className={cn("font-mono text-xs text-muted-foreground", className)}>{children}</span>;
 }
 
-export const gameOptions = [{ value: "", label: "All games" }, ...gameKeys.map((key) => ({ value: key, label: games[key].title }))];
+export const gameOptions: Option[] = [{ value: "", label: "All games" }, ...gameKeys.map((key) => ({ value: key, label: games[key].title, icon: <GameIcon game={key} className="size-5 rounded-md" /> }))];
 
 export function gameTitle(key: string): string {
-  return gameKeys.find((candidate) => candidate === key) ? games[key as keyof typeof games].title : key;
+  return gameName(key);
 }
 
 export function count(total: number | bigint | undefined, noun: string): string | undefined {

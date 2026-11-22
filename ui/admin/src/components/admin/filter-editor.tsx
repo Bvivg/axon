@@ -84,7 +84,7 @@ function ChoiceEditor({ def, value, onChange }: EditorProps) {
   return (
     <div role="group" aria-label={def.label} className="flex flex-col">
       {(def.options ?? []).map((option) => (
-        <CheckboxField key={option.value} label={option.label} checked={picked.has(option.value)} onCheckedChange={(on) => toggle(option.value, on)} />
+        <CheckboxField key={option.value} label={option.label} leading={option.icon} checked={picked.has(option.value)} onCheckedChange={(on) => toggle(option.value, on)} />
       ))}
     </div>
   );

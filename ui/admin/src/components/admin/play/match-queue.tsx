@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { AdminListPage, gameOptions, gameTitle, Mono, Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
 import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { GameName } from "@/components/admin/game-icon";
 import { ListToolbar } from "@/components/admin/list-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -34,7 +35,7 @@ function queueColumns(profiles?: Map<string, PublicProfile>): ColumnDef<QueueEnt
       id: "game",
       header: "Game",
       meta: { filter: { field: "game", label: "Game", kind: FilterKind.Choice, options: games }, mobile: MobileSlot.Subtitle },
-      cell: ({ row }) => gameTitle(row.original.game),
+      cell: ({ row }) => <GameName game={row.original.game} />,
     },
     {
       id: "rating",

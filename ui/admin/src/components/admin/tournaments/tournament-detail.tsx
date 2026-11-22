@@ -6,8 +6,9 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { AuditList } from "@/components/admin/audit-table";
-import { gameTitle, Person, When } from "@/components/admin/admin-ui";
+import { Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
+import { GameName } from "@/components/admin/game-icon";
 import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordIcon, RecordLoading, RecordNote, RecordPage, RecordRow, RecordRows, RecordSection, RecordState } from "@/components/admin/record";
 import { TournamentForm } from "@/components/admin/tournaments/tournament-form";
 import { Sheet } from "@/components/ui/sheet";
@@ -87,7 +88,7 @@ export function TournamentDetail({ id }: { id: string }) {
       title={t.name}
       lines={
         <>
-          <span>{gameTitle(t.game)}</span>
+          <GameName game={t.game} iconClassName="size-5 rounded-md" className="gap-1.5" />
           <span>{t.format === TournamentFormat.SWISS ? "Swiss" : "Single elimination"}</span>
           <span className="tabular-nums">{t.playerCount} of {t.capacity} places taken</span>
         </>

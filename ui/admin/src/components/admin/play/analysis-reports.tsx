@@ -6,11 +6,13 @@ import Link from "next/link";
 
 import { AdminListPage, count, Mono, When } from "@/components/admin/admin-ui";
 import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { GameIcon } from "@/components/admin/game-icon";
 import { ListToolbar } from "@/components/admin/list-toolbar";
 import { Badge } from "@/components/ui/badge";
 import type { AnalysisReportEntry } from "@/gen/axon/analysis/v1/admin_pb";
 import { useAdminList, useListState } from "@/lib/admin/list";
 import { FilterKind } from "@/lib/admin/list-query";
+import { GameKey } from "@/lib/games/catalog";
 import { shortID } from "@/lib/format";
 import { loadAnalysis, playKeys } from "@/lib/query/play";
 
@@ -31,7 +33,7 @@ const columns: ColumnDef<AnalysisReportEntry, unknown>[] = [
     id: "session",
     header: "Game",
     meta: { filter: { field: "session", label: "Game ID", kind: FilterKind.Id }, mobile: MobileSlot.Title },
-    cell: ({ row }) => <Link href={`/games/${row.original.sessionId}`} className="hover:underline"><Mono>{shortID(row.original.sessionId)}</Mono></Link>,
+    cell: ({ row }) => <span className="inline-flex items-center gap-2.5"><GameIcon game={GameKey.Chess} /><Link href={`/games/${row.original.sessionId}`} className="hover:underline"><Mono>{shortID(row.original.sessionId)}</Mono></Link></span>,
   },
   {
     id: "status",

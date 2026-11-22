@@ -5,8 +5,9 @@ import { TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 
-import { AdminListPage, count, gameOptions, gameTitle, Mono, Person, When } from "@/components/admin/admin-ui";
+import { AdminListPage, count, gameOptions, Mono, Person, When } from "@/components/admin/admin-ui";
 import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { GameName } from "@/components/admin/game-icon";
 import { ListToolbar } from "@/components/admin/list-toolbar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
@@ -60,7 +61,7 @@ function standingColumns(profiles?: Map<string, PublicProfile>): ColumnDef<Ratin
       id: "game",
       header: "Game",
       meta: { filter: { field: "game", label: "Game", kind: FilterKind.Choice, options: games }, mobile: MobileSlot.Subtitle },
-      cell: ({ row }) => gameTitle(row.original.game),
+      cell: ({ row }) => <GameName game={row.original.game} />,
     },
     {
       id: "rating",
@@ -128,7 +129,7 @@ function changeColumns(profiles?: Map<string, PublicProfile>): ColumnDef<RatingC
       id: "game",
       header: "Game",
       meta: { filter: { field: "game", label: "Game", kind: FilterKind.Choice, options: games } },
-      cell: ({ row }) => gameTitle(row.original.game),
+      cell: ({ row }) => <GameName game={row.original.game} />,
     },
     {
       id: "before",

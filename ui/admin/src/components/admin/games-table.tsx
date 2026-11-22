@@ -9,6 +9,7 @@ import { AdminListPage, gameOptions, gameTitle, Mono, Person, When } from "@/com
 import { bulkApply } from "@/components/admin/bulk-bar";
 import { ConfirmAction } from "@/components/admin/confirm-action";
 import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { GameName } from "@/components/admin/game-icon";
 import { ListToolbar } from "@/components/admin/list-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,7 @@ function gameColumns(profiles?: Map<string, PublicProfile>): ColumnDef<Session, 
       id: "game",
       header: "Game",
       meta: { filter: { field: "game", label: "Game", kind: FilterKind.Choice, options: gameOptions.filter((option) => option.value) }, mobile: MobileSlot.Title },
-      cell: ({ row }) => <span className="font-medium">{gameTitle(row.original.game)}</span>,
+      cell: ({ row }) => <GameName game={row.original.game} className="font-medium" />,
     },
     {
       id: "status",
