@@ -10,11 +10,13 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 	"github.com/bvivg/axon/core/services/game/internal/games/tictactoe"
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	gamev1 "github.com/bvivg/axon/core/shared/gen/go/axon/game/v1"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 )
@@ -23,11 +25,13 @@ type fakeAdminStore struct {
 	game    session.Session
 	moves   []session.MoveRecord
 	entries []session.QueueEntry
+	total   *int64
 	err     error
 
 	askedID    uuid.UUID
 	askedLimit int
 	askedGame  engine.Key
+	askedList  adminquery.Request
 	left       []uuid.UUID
 }
 
@@ -36,9 +40,9 @@ func (s *fakeAdminStore) AdminSession(_ context.Context, id uuid.UUID, limit int
 	return s.game, s.moves, s.err
 }
 
-func (s *fakeAdminStore) MatchQueue(_ context.Context, game engine.Key, limit int) ([]session.QueueEntry, error) {
-	s.askedGame, s.askedLimit = game, limit
-	return s.entries, s.err
+func (s *fakeAdminStore) MatchQueue(_ context.Context, f session.QueueFilter) (session.QueuePage, error) {
+	s.askedGame, s.askedLimit, s.askedList = f.Game, f.Limit, f.List
+	return session.QueuePage{Entries: s.entries, Total: s.total}, s.err
 }
 
 func (s *fakeAdminStore) LeaveQueue(_ context.Context, user uuid.UUID, game engine.Key) error {
@@ -126,20 +130,29 @@ func TestAdminListMatchQueue(t *testing.T) {
 		{User: waiting, Game: tictactoe.Key, Rating: 1210, JoinedAt: joined, LastSeenAt: joined.Add(5 * time.Second)},
 		{User: matched, Game: tictactoe.Key, Rating: 1190, JoinedAt: joined.Add(-time.Minute), LastSeenAt: joined, Session: &game},
 	}
+	total, offset := int64(42), int32(20)
 	tests := []struct {
-		name  string
-		game  string
-		store *fakeAdminStore
-		code  connect.Code
+		name    string
+		request *gamev1.ListMatchQueueRequest
+		store   *fakeAdminStore
+		code    connect.Code
+		list    adminquery.Request
 	}{
-		{name: "every game", store: &fakeAdminStore{entries: entries}},
-		{name: "one game", game: string(tictactoe.Key), store: &fakeAdminStore{entries: entries}},
-		{name: "unknown game", game: "go", store: &fakeAdminStore{}, code: connect.CodeInvalidArgument},
-		{name: "store down", store: &fakeAdminStore{err: errors.New("postgres down")}, code: connect.CodeInternal},
+		{name: "every game", request: &gamev1.ListMatchQueueRequest{}, store: &fakeAdminStore{entries: entries}},
+		{name: "one game", request: &gamev1.ListMatchQueueRequest{Game: string(tictactoe.Key)}, store: &fakeAdminStore{entries: entries}},
+		{
+			name:    "a filtered page carries the query and the total",
+			request: &gamev1.ListMatchQueueRequest{Filter: proto.String("matched = false"), OrderBy: proto.String("rating desc"), Offset: &offset, PageSize: 10},
+			store:   &fakeAdminStore{entries: entries, total: &total},
+			list:    adminquery.Request{Filter: "matched = false", OrderBy: "rating desc", Offset: &offset, PageSize: 10},
+		},
+		{name: "unknown game", request: &gamev1.ListMatchQueueRequest{Game: "go"}, store: &fakeAdminStore{}, code: connect.CodeInvalidArgument},
+		{name: "invalid query", request: &gamev1.ListMatchQueueRequest{Filter: proto.String("colour = red")}, store: &fakeAdminStore{err: &adminquery.Error{Field: "filter", Message: "cannot filter by \"colour\""}}, code: connect.CodeInvalidArgument},
+		{name: "store down", request: &gamev1.ListMatchQueueRequest{}, store: &fakeAdminStore{err: errors.New("postgres down")}, code: connect.CodeInternal},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			response, err := testAdmin(t, tt.store, &recorded{}).ListMatchQueue(context.Background(), connect.NewRequest(&gamev1.ListMatchQueueRequest{Game: tt.game}))
+			response, err := testAdmin(t, tt.store, &recorded{}).ListMatchQueue(context.Background(), connect.NewRequest(tt.request))
 			if tt.code != 0 {
 				if connect.CodeOf(err) != tt.code {
 					t.Fatalf("code = %v, want %v (%v)", connect.CodeOf(err), tt.code, err)
@@ -149,8 +162,15 @@ func TestAdminListMatchQueue(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(tt.store.askedGame) != tt.game || tt.store.askedLimit != session.AdminQueueLimit {
+			if string(tt.store.askedGame) != tt.request.GetGame() || tt.store.askedLimit != session.AdminQueueLimit {
 				t.Fatalf("asked %q with limit %d", tt.store.askedGame, tt.store.askedLimit)
+			}
+			if asked := tt.store.askedList; asked.Filter != tt.list.Filter || asked.OrderBy != tt.list.OrderBy || asked.PageSize != tt.list.PageSize ||
+				asked.Paged() != tt.list.Paged() || asked.Paged() && *asked.Offset != *tt.list.Offset {
+				t.Fatalf("asked list %+v, want %+v", asked, tt.list)
+			}
+			if (response.Msg.Total == nil) != (tt.store.total == nil) || tt.store.total != nil && response.Msg.GetTotal() != *tt.store.total {
+				t.Fatalf("total = %v, want %v", response.Msg.Total, tt.store.total)
 			}
 			out := response.Msg.Entries
 			if len(out) != 2 {

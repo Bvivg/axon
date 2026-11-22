@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 
 	"github.com/bvivg/axon/core/services/game/internal/engine"
 )
@@ -32,6 +32,7 @@ type AdminFilter struct {
 	Tournament *uuid.UUID
 	Cursor     string
 	Limit      int
+	List       adminquery.Request
 }
 
 type AdminPage struct {
@@ -47,57 +48,91 @@ type adminCursor struct {
 	ID uuid.UUID `json:"i"`
 }
 
-func (s *Store) AdminList(ctx context.Context, f AdminFilter) (AdminPage, error) {
-	var (
-		clauses []string
-		args    []any
-	)
-	add := func(clause string, values ...any) {
-		for _, v := range values {
-			args = append(args, v)
-			clause = strings.Replace(clause, "?", "$"+strconv.Itoa(len(args)), 1)
-		}
-		clauses = append(clauses, clause)
+const (
+	liveSession     = "opponent_id IS NOT NULL AND state->>'status' = 'in_progress'"
+	waitingSession  = "opponent_id IS NULL"
+	finishedSession = "opponent_id IS NOT NULL AND state->>'status' <> 'in_progress'"
+	adminOrder      = "updated_at DESC, id DESC"
+)
+
+var sessionSchema = adminquery.NewSchema(adminOrder, "id DESC",
+	adminquery.Field{Name: "id", Column: "id", Kind: adminquery.UUID},
+	adminquery.Field{Name: "game", Column: "game", Kind: adminquery.String},
+	adminquery.Field{Name: "status", Kind: adminquery.Enum, Values: map[string]string{
+		"live":     liveSession,
+		"waiting":  waitingSession,
+		"finished": finishedSession,
+		"won":      "opponent_id IS NOT NULL AND state->>'status' = 'win'",
+		"draw":     "opponent_id IS NOT NULL AND state->>'status' = 'draw'",
+	}},
+	adminquery.Field{Name: "player", Kind: adminquery.Custom, Build: playerCondition},
+	adminquery.Field{Name: "tournament", Column: "tournament_id", Kind: adminquery.UUID},
+	adminquery.Field{Name: "rated", Column: "rated", Kind: adminquery.Bool},
+	adminquery.Field{Name: "moves", Column: "COALESCE((state->>'ply')::integer, 0)", Kind: adminquery.Int, Sortable: true},
+	adminquery.Field{Name: "updated", Column: "updated_at", Kind: adminquery.Time, Sortable: true},
+)
+
+func playerCondition(op adminquery.Op, value string) (adminquery.Condition, error) {
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return adminquery.Condition{}, fmt.Errorf("needs a UUID for %q", "player")
 	}
+	switch op {
+	case adminquery.OpEq, adminquery.OpHas:
+		return adminquery.Condition{SQL: "(creator_id = ? OR opponent_id IS NOT DISTINCT FROM ?)", Args: []any{id, id}}, nil
+	case adminquery.OpNe:
+		return adminquery.Condition{SQL: "(creator_id <> ? AND opponent_id IS DISTINCT FROM ?)", Args: []any{id, id}}, nil
+	}
+	return adminquery.Condition{}, fmt.Errorf("does not support %q on %q", op, "player")
+}
+
+func (s *Store) AdminList(ctx context.Context, f AdminFilter) (AdminPage, error) {
+	var where adminquery.Where
 	if f.Game != "" {
-		add("game = ?", string(f.Game))
+		where.Add("game = ?", string(f.Game))
 	}
 	switch f.State {
 	case AdminLive:
-		add("opponent_id IS NOT NULL AND state->>'status' = 'in_progress'")
+		where.Add(liveSession)
 	case AdminWaiting:
-		add("opponent_id IS NULL")
+		where.Add(waitingSession)
 	case AdminFinished:
-		add("opponent_id IS NOT NULL AND state->>'status' <> 'in_progress'")
+		where.Add(finishedSession)
 	}
 	if f.Player != nil {
-		add("(creator_id = ? OR opponent_id = ?)", *f.Player, *f.Player)
+		where.Add("(creator_id = ? OR opponent_id = ?)", *f.Player, *f.Player)
 	}
 	if f.Tournament != nil {
-		add("tournament_id = ?", *f.Tournament)
+		where.Add("tournament_id = ?", *f.Tournament)
 	}
-	where := ""
-	if len(clauses) > 0 {
-		where = " WHERE " + strings.Join(clauses, " AND ")
+	listed, err := sessionSchema.Prepare(f.List, &where)
+	if err != nil {
+		return AdminPage{}, err
 	}
 
 	var total int64
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM game.sessions`+where, args...).Scan(&total); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM game.sessions`+where.SQL(), where.Args()...).Scan(&total); err != nil {
 		return AdminPage{}, fmt.Errorf("session: count for admin: %w", err)
 	}
 
-	if f.Cursor != "" {
-		raw, err := base64.RawURLEncoding.DecodeString(f.Cursor)
-		var c adminCursor
-		if err != nil || json.Unmarshal(raw, &c) != nil {
-			return AdminPage{}, ErrInvalidCursor
+	order, limit := adminOrder, f.Limit
+	var paging string
+	if f.List.Paged() {
+		var offset int
+		limit, offset = f.List.Page()
+		order, paging = listed.Order, where.Paginate(limit, offset)
+	} else {
+		if f.Cursor != "" {
+			raw, err := base64.RawURLEncoding.DecodeString(f.Cursor)
+			var c adminCursor
+			if err != nil || json.Unmarshal(raw, &c) != nil {
+				return AdminPage{}, ErrInvalidCursor
+			}
+			where.Add("(updated_at, id) < (?, ?)", c.At, c.ID)
 		}
-		add("(updated_at, id) < (?, ?)", c.At, c.ID)
-		where = " WHERE " + strings.Join(clauses, " AND ")
+		paging = " LIMIT " + where.Arg(limit+1)
 	}
-	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT `+Columns+` FROM game.sessions`+where+
-		` ORDER BY updated_at DESC, id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
+	rows, err := s.pool.Query(ctx, `SELECT `+Columns+` FROM game.sessions`+where.SQL()+` ORDER BY `+order+paging, where.Args()...)
 	if err != nil {
 		return AdminPage{}, fmt.Errorf("session: list for admin: %w", err)
 	}
@@ -114,9 +149,9 @@ func (s *Store) AdminList(ctx context.Context, f AdminFilter) (AdminPage, error)
 	if err := rows.Err(); err != nil {
 		return AdminPage{}, fmt.Errorf("session: list for admin: %w", err)
 	}
-	if len(page.Sessions) > f.Limit {
-		page.Sessions = page.Sessions[:f.Limit]
-		last := page.Sessions[f.Limit-1]
+	if !f.List.Paged() && len(page.Sessions) > limit {
+		page.Sessions = page.Sessions[:limit]
+		last := page.Sessions[limit-1]
 		raw, _ := json.Marshal(adminCursor{At: last.UpdatedAt, ID: last.ID})
 		page.Next = base64.RawURLEncoding.EncodeToString(raw)
 	}
@@ -169,22 +204,64 @@ type QueueEntry struct {
 	Session    *uuid.UUID
 }
 
-func (s *Store) MatchQueue(ctx context.Context, game engine.Key, limit int) ([]QueueEntry, error) {
-	rows, err := s.pool.Query(ctx, `SELECT user_id, game, rating, joined_at, last_seen_at, session_id FROM game.match_queue
-		WHERE ($1 = '' OR game = $1)
-		ORDER BY session_id IS NOT NULL, joined_at, user_id LIMIT $2`, string(game), limit)
-	if err != nil {
-		return nil, fmt.Errorf("session: match queue: %w", err)
+type QueueFilter struct {
+	Game  engine.Key
+	Limit int
+	List  adminquery.Request
+}
+
+type QueuePage struct {
+	Entries []QueueEntry
+	Total   *int64
+}
+
+const queueOrder = "session_id IS NOT NULL, joined_at, user_id"
+
+var queueSchema = adminquery.NewSchema(queueOrder+", game", "user_id, game",
+	adminquery.Field{Name: "user", Column: "user_id", Kind: adminquery.UUID},
+	adminquery.Field{Name: "game", Column: "game", Kind: adminquery.String},
+	adminquery.Field{Name: "rating", Column: "rating", Kind: adminquery.Int, Sortable: true},
+	adminquery.Field{Name: "joined", Column: "joined_at", Kind: adminquery.Time, Sortable: true},
+	adminquery.Field{Name: "matched", Column: "(session_id IS NOT NULL)", Kind: adminquery.Bool},
+)
+
+func (s *Store) MatchQueue(ctx context.Context, f QueueFilter) (QueuePage, error) {
+	var where adminquery.Where
+	if f.Game != "" {
+		where.Add("game = ?", string(f.Game))
 	}
-	entries, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (QueueEntry, error) {
+	listed, err := queueSchema.Prepare(f.List, &where)
+	if err != nil {
+		return QueuePage{}, err
+	}
+	var page QueuePage
+	order := queueOrder
+	var paging string
+	if f.List.Paged() {
+		var total int64
+		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM game.match_queue`+where.SQL(), where.Args()...).Scan(&total); err != nil {
+			return QueuePage{}, fmt.Errorf("session: count match queue: %w", err)
+		}
+		page.Total = &total
+		limit, offset := f.List.Page()
+		order, paging = listed.Order, where.Paginate(limit, offset)
+	} else {
+		paging = " LIMIT " + where.Arg(f.Limit)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT user_id, game, rating, joined_at, last_seen_at, session_id FROM game.match_queue`+
+		where.SQL()+` ORDER BY `+order+paging, where.Args()...)
+	if err != nil {
+		return QueuePage{}, fmt.Errorf("session: match queue: %w", err)
+	}
+	page.Entries, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (QueueEntry, error) {
 		var e QueueEntry
 		err := row.Scan(&e.User, &e.Game, &e.Rating, &e.JoinedAt, &e.LastSeenAt, &e.Session)
 		return e, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("session: match queue: %w", err)
+		return QueuePage{}, fmt.Errorf("session: match queue: %w", err)
 	}
-	return entries, nil
+	return page, nil
 }
 
 func (s *Store) LeaveQueue(ctx context.Context, user uuid.UUID, game engine.Key) error {

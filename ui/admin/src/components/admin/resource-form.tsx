@@ -10,6 +10,7 @@ import { reasonMax, reasonMin } from "@/components/admin/confirm-action";
 import { Alert, FieldError } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberField as Stepper } from "@/components/ui/number-field";
 import { Field, FieldHint, Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { describe, fieldErrors, isConflict } from "@/lib/errors";
@@ -157,17 +158,17 @@ export function NumberField({ field, label, hint, server, min, max, onEdit }: { 
   return (
     <FormField field={field} label={label} hint={hint} server={server}>
       {(props) => (
-        <Input
-          {...props}
-          type="number"
-          inputMode="numeric"
+        <Stepper
+          id={props.id}
+          name={props.name}
+          invalid={props["aria-invalid"]}
+          describedBy={props["aria-describedby"]}
+          onBlur={props.onBlur}
           min={min}
           max={max}
-          value={String(field.state.value)}
-          className="w-32"
-          onChange={(event) => {
-            const value = Number(event.target.value);
-            field.handleChange(Number.isFinite(value) ? Math.trunc(value) : 0);
+          value={Number(field.state.value)}
+          onValueChange={(value) => {
+            field.handleChange(value === null ? 0 : Math.trunc(value));
             onEdit?.();
           }}
         />
@@ -239,6 +240,7 @@ export function ResourceForm({
   submitting,
   canSubmit = true,
   framed = true,
+  sticky = false,
   onCancel,
   children,
 }: {
@@ -250,6 +252,7 @@ export function ResourceForm({
   submitting: boolean;
   canSubmit?: boolean;
   framed?: boolean;
+  sticky?: boolean;
   onCancel?: () => void;
   children: ReactNode;
 }) {
@@ -259,13 +262,19 @@ export function ResourceForm({
     onSubmit();
   };
   return (
-    <form aria-label={label} noValidate onSubmit={submit} className={cn("flex flex-col gap-4", framed && "rounded-[14px] border border-line bg-surface p-4")}>
+    <form aria-label={label} noValidate onSubmit={submit} className={cn("flex flex-col gap-4", framed && "rounded-xl border border-line bg-surface p-4", sticky && !framed && "flex-1")}>
       {notice}
       {children}
       {error ? <Alert>{describe(error)}</Alert> : null}
-      <div className="flex justify-end gap-2">
-        {onCancel ? <Button variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button> : null}
-        <Button type="submit" disabled={submitting || !canSubmit} aria-busy={submitting}>{submitting ? "Saving…" : submitLabel}</Button>
+      <div
+        className={cn(
+          "flex justify-end gap-2",
+          sticky && "sticky bottom-0 z-10 mt-auto border-t border-line py-3",
+          sticky && (framed ? "-mx-4 -mb-4 rounded-b-xl bg-surface px-4" : "-mx-5 -mb-5 bg-popover px-5"),
+        )}
+      >
+        {onCancel ? <Button variant="outline" className="pointer-coarse:h-11" onClick={onCancel} disabled={submitting}>Cancel</Button> : null}
+        <Button type="submit" className="pointer-coarse:h-11" disabled={submitting || !canSubmit} aria-busy={submitting}>{submitting ? "Saving…" : submitLabel}</Button>
       </div>
     </form>
   );

@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 )
 
 type AdminRoomFilter struct {
@@ -12,6 +14,7 @@ type AdminRoomFilter struct {
 	Member *uuid.UUID
 	Cursor string
 	Limit  int
+	List   adminquery.Request
 }
 
 type AdminRoom struct {
@@ -26,6 +29,7 @@ type AdminUploadFilter struct {
 	Kind     MessageKind
 	Cursor   string
 	Limit    int
+	List     adminquery.Request
 }
 
 type AdminUpload struct {

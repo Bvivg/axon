@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/outbox"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
@@ -89,6 +90,24 @@ func (w *where) add(clause string, args ...any) {
 	w.clauses = append(w.clauses, clause)
 }
 
+func (w *where) addQuery(q adminquery.Query) {
+	if q.Where != nil {
+		w.add("("+q.Where.SQL+")", q.Where.Args...)
+	}
+}
+
+func (w *where) prepare(schema *adminquery.Schema, r adminquery.Request) (adminquery.Query, error) {
+	q, err := schema.Compile(r.Filter, r.OrderBy)
+	if err != nil {
+		return adminquery.Query{}, err
+	}
+	if !r.Paged() && r.OrderBy != "" {
+		return adminquery.Query{}, &adminquery.Error{Field: "order_by", Message: "needs offset paging"}
+	}
+	w.addQuery(q)
+	return q, nil
+}
+
 func (w *where) sql() string {
 	if len(w.clauses) == 0 {
 		return ""
@@ -99,6 +118,34 @@ func (w *where) sql() string {
 const adminUserColumns = `u.id, u.email, u.email_verified, u.username, u.display_name, u.avatar_url, ` +
 	`u.first_name, u.last_name, u.nickname, u.avatar_is_custom, u.created_at, u.updated_at, u.last_seen_at, ` +
 	`u.suspended_at, u.suspended_reason`
+
+const sessionCount = `(SELECT count(DISTINCT t.family_id) FROM refresh_tokens t
+				WHERE t.user_id = u.id AND t.revoked_at IS NULL AND t.expires_at > now())`
+
+var userSchema = adminquery.NewSchema(`u.created_at DESC, u.id DESC`, `u.id DESC`,
+	adminquery.Field{Name: "id", Column: "u.id", Kind: adminquery.UUID},
+	adminquery.Field{Name: "name", Column: `lower(COALESCE(NULLIF(u.display_name, ''), NULLIF(u.username, ''), u.email))`, Kind: adminquery.String, Sortable: true},
+	adminquery.Field{Name: "username", Column: "u.username", Kind: adminquery.String, Sortable: true},
+	adminquery.Field{Name: "email", Column: "u.email", Kind: adminquery.String, Sortable: true},
+	adminquery.Field{Name: "email_verified", Column: "u.email_verified", Kind: adminquery.Bool, Sortable: true},
+	adminquery.Field{Name: "status", Column: "(u.suspended_at IS NOT NULL)", Kind: adminquery.Enum, Sortable: true, Values: map[string]string{
+		"active":    "u.suspended_at IS NULL",
+		"suspended": "u.suspended_at IS NOT NULL",
+	}},
+	adminquery.Field{Name: "role", Kind: adminquery.Custom, Build: func(op adminquery.Op, value string) (adminquery.Condition, error) {
+		exists := `EXISTS (SELECT 1 FROM user_roles fr JOIN roles rr ON rr.id = fr.role_id WHERE fr.user_id = u.id AND rr.name = ?)`
+		switch op {
+		case adminquery.OpEq, adminquery.OpHas:
+			return adminquery.Condition{SQL: exists, Args: []any{value}}, nil
+		case adminquery.OpNe:
+			return adminquery.Condition{SQL: "NOT " + exists, Args: []any{value}}, nil
+		}
+		return adminquery.Condition{}, fmt.Errorf("does not support %q on \"role\"", op)
+	}},
+	adminquery.Field{Name: "sessions", Column: sessionCount, Kind: adminquery.Int, Sortable: true},
+	adminquery.Field{Name: "joined", Column: "u.created_at", Kind: adminquery.Time, Sortable: true},
+	adminquery.Field{Name: "last_seen", Column: "u.last_seen_at", Kind: adminquery.Time, Sortable: true},
+)
 
 func (r *Repository) ListUsers(ctx context.Context, f domain.UserFilter, at time.Time) (domain.UserPage, error) {
 	var filter where
@@ -115,6 +162,10 @@ func (r *Repository) ListUsers(ctx context.Context, f domain.UserFilter, at time
 	case domain.UserStatusSuspended:
 		filter.add(`u.suspended_at IS NOT NULL`)
 	}
+	listed, err := filter.prepare(userSchema, f.List)
+	if err != nil {
+		return domain.UserPage{}, err
+	}
 
 	var total int64
 	if err := r.q.QueryRow(ctx, `SELECT count(*) FROM users u`+filter.sql(), filter.args...).Scan(&total); err != nil {
@@ -122,39 +173,51 @@ func (r *Repository) ListUsers(ctx context.Context, f domain.UserFilter, at time
 	}
 
 	page := filter
+	page.clauses = append([]string(nil), filter.clauses...)
+	page.args = append([]any(nil), filter.args...)
 	order := `u.created_at DESC, u.id DESC`
-	if f.Cursor != "" {
-		var c userCursor
-		if err := decodeCursor(f.Cursor, &c); err != nil {
-			return domain.UserPage{}, err
+	limit := domain.PageSize(f.Limit)
+	var paging string
+	if f.List.Paged() {
+		order = listed.Order
+		var offset int
+		limit, offset = f.List.Page()
+		page.args = append(page.args, limit, offset)
+		paging = ` LIMIT $` + strconv.Itoa(len(page.args)-1) + ` OFFSET $` + strconv.Itoa(len(page.args))
+	} else {
+		if f.Cursor != "" {
+			var c userCursor
+			if err := decodeCursor(f.Cursor, &c); err != nil {
+				return domain.UserPage{}, err
+			}
+			switch f.Sort {
+			case domain.UserSortOldest:
+				page.add(`(u.created_at, u.id) > (?, ?)`, c.Created, c.ID)
+			case domain.UserSortEmail:
+				page.add(`u.email > ?`, c.Email)
+			default:
+				page.add(`(u.created_at, u.id) < (?, ?)`, c.Created, c.ID)
+			}
 		}
 		switch f.Sort {
 		case domain.UserSortOldest:
-			page.add(`(u.created_at, u.id) > (?, ?)`, c.Created, c.ID)
+			order = `u.created_at, u.id`
 		case domain.UserSortEmail:
-			page.add(`u.email > ?`, c.Email)
-		default:
-			page.add(`(u.created_at, u.id) < (?, ?)`, c.Created, c.ID)
+			order = `u.email`
 		}
-	}
-	switch f.Sort {
-	case domain.UserSortOldest:
-		order = `u.created_at, u.id`
-	case domain.UserSortEmail:
-		order = `u.email`
+		page.args = append(page.args, limit+1)
+		paging = ` LIMIT $` + strconv.Itoa(len(page.args))
 	}
 
-	limit := domain.PageSize(f.Limit)
-	page.args = append(page.args, at, limit+1)
-	atArg, limitArg := len(page.args)-1, len(page.args)
+	page.args = append(page.args, at)
+	atArg := len(page.args)
 	query := `SELECT ` + adminUserColumns + `,
 			ARRAY(SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id ORDER BY r.name),
 			(SELECT count(DISTINCT t.family_id) FROM refresh_tokens t
 				WHERE t.user_id = u.id AND t.revoked_at IS NULL AND t.expires_at > $` + strconv.Itoa(atArg) + `),
 			u.version
 		FROM users u` + page.sql() + `
-		ORDER BY ` + order + `
-		LIMIT $` + strconv.Itoa(limitArg)
+		ORDER BY ` + order + paging
 
 	rows, err := r.q.Query(ctx, query, page.args...)
 	if err != nil {
@@ -180,7 +243,7 @@ func (r *Repository) ListUsers(ctx context.Context, f domain.UserFilter, at time
 		return domain.UserPage{}, fmt.Errorf("repository: list users: %w", err)
 	}
 
-	if len(out.Users) > limit {
+	if !f.List.Paged() && len(out.Users) > limit {
 		out.Users = out.Users[:limit]
 		last := out.Users[limit-1].User
 		out.Next = encodeCursor(userCursor{Created: last.CreatedAt, Email: last.Email, ID: last.ID})

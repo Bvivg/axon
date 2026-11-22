@@ -52,3 +52,7 @@ func (o *Orchestrator) Remove(ctx context.Context, id, user uuid.UUID, audit Aud
 		return next, tx.Publish(ctx, audit(t, next))
 	})
 }
+
+func (o *Orchestrator) AdminList(ctx context.Context, f store.AdminFilter) (store.AdminPage, error) {
+	return o.store.AdminList(ctx, f)
+}

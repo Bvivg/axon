@@ -3,16 +3,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AnalysisReportEntry } from "@/gen/axon/analysis/v1/admin_pb";
-import type { AdminUpload } from "@/gen/axon/chat/v1/admin_pb";
-import type { RatingEntry } from "@/gen/axon/rating/v1/admin_pb";
-import { analysisAdminClient, chatAdminClient, gameAdminClient, ratingAdminClient, tournamentAdminClient, tournamentClient } from "@/lib/connect/clients";
-import { adminKeys, adminPageSize, useCursorList } from "@/lib/query/admin";
+import type { QueueEntry } from "@/gen/axon/game/v1/admin_pb";
+import type { RatingChangeEntry, RatingEntry } from "@/gen/axon/rating/v1/admin_pb";
+import type { Tournament } from "@/gen/axon/tournament/v1/tournament_pb";
+import type { ListPage, ListRequest } from "@/lib/admin/list";
+import { analysisAdminClient, gameAdminClient, ratingAdminClient, tournamentAdminClient, tournamentClient } from "@/lib/connect/clients";
+import { adminKeys } from "@/lib/query/admin";
+
+const page = (request: ListRequest) => ({ filter: request.filter, orderBy: request.orderBy, offset: request.offset, pageSize: request.pageSize });
 
 export const playKeys = {
   tournament: (id: string) => [...adminKeys.tournaments, "detail", id] as const,
   game: (id: string) => [...adminKeys.games, "detail", id] as const,
   queue: [...adminKeys.games, "queue"] as const,
   standings: [...adminKeys.ratings, "standings"] as const,
+  changes: [...adminKeys.ratings, "changes"] as const,
   uploads: [...adminKeys.rooms, "uploads"] as const,
   analysis: ["admin", "analysis"] as const,
 };
@@ -73,12 +78,9 @@ export function useAdminGame(id: string) {
   });
 }
 
-export function useMatchQueue(game: string) {
-  return useQuery({
-    queryKey: [...playKeys.queue, game],
-    queryFn: async ({ signal }) => (await gameAdminClient.listMatchQueue({ game }, { signal })).entries,
-    refetchInterval: 10_000,
-  });
+export async function loadQueue(request: ListRequest, signal: AbortSignal): Promise<ListPage<QueueEntry>> {
+  const resp = await gameAdminClient.listMatchQueue({ game: "", ...page(request) }, { signal });
+  return { items: resp.entries, total: Number(resp.total ?? resp.entries.length) };
 }
 
 export function useRemoveFromQueue() {
@@ -89,23 +91,22 @@ export function useRemoveFromQueue() {
   });
 }
 
-export function useStandings(filters: { game: string; user: string }, enabled = true) {
-  return useCursorList<RatingEntry>([...playKeys.standings, filters], async (cursor, signal) => {
-    const resp = await ratingAdminClient.listRatings({ game: filters.game, userId: filters.user.trim(), cursor, pageSize: adminPageSize }, { signal });
-    return { items: resp.ratings, next: resp.nextCursor };
-  }, enabled);
+export async function loadStandings(request: ListRequest, signal: AbortSignal): Promise<ListPage<RatingEntry>> {
+  const resp = await ratingAdminClient.listRatings({ game: "", userId: "", cursor: "", ...page(request) }, { signal });
+  return { items: resp.ratings, total: Number(resp.total ?? 0) };
 }
 
-export function useChatUploads(filters: { uploader: string; room: string; kind: string }, enabled = true) {
-  return useCursorList<AdminUpload>([...playKeys.uploads, filters], async (cursor, signal) => {
-    const resp = await chatAdminClient.listChatUploads({ uploaderId: filters.uploader.trim(), roomId: filters.room.trim(), kind: filters.kind, cursor, pageSize: adminPageSize }, { signal });
-    return { items: resp.uploads, next: resp.nextCursor };
-  }, enabled);
+export async function loadRatingChanges(request: ListRequest, signal: AbortSignal): Promise<ListPage<RatingChangeEntry>> {
+  const resp = await ratingAdminClient.listRatingChanges({ game: "", userId: "", cursor: "", ...page(request) }, { signal });
+  return { items: resp.changes, total: Number(resp.total ?? 0) };
 }
 
-export function useAnalysisReports(filters: { status: string }, enabled = true) {
-  return useCursorList<AnalysisReportEntry>([...playKeys.analysis, filters], async (cursor, signal) => {
-    const resp = await analysisAdminClient.listAnalysisReports({ status: filters.status, cursor, pageSize: adminPageSize }, { signal });
-    return { items: resp.reports, next: resp.nextCursor };
-  }, enabled);
+export async function loadAnalysis(request: ListRequest, signal: AbortSignal): Promise<ListPage<AnalysisReportEntry>> {
+  const resp = await analysisAdminClient.listAnalysisReports({ status: "", cursor: "", ...page(request) }, { signal });
+  return { items: resp.reports, total: Number(resp.total ?? 0) };
+}
+
+export async function loadTournaments(request: ListRequest, query: string, signal: AbortSignal): Promise<ListPage<Tournament>> {
+  const resp = await tournamentAdminClient.listAdminTournaments({ query, ...page(request) }, { signal });
+  return { items: resp.tournaments, total: Number(resp.total) };
 }
