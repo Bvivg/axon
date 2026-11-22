@@ -75,7 +75,7 @@ test("an administrator suspends and restores an account, and the audit log recor
     await confirmWithReason(page, "Restore account", "appeal accepted after review");
     await expect(page.getByText("Active", { exact: true }).first()).toBeVisible();
 
-    await page.goto(`/admin/audit?targetType=user&target=${userID}`);
+    await page.goto(`/admin/audit?f.target_type=user&f.target=${userID}`);
     const audit = page.getByRole("table", { name: "Audit events" });
     await expect(async () => {
       await page.reload();
@@ -87,11 +87,22 @@ test("an administrator suspends and restores an account, and the audit log recor
     await expect(event.getByText("spam reported by three people")).toBeVisible();
     await event.getByRole("button", { name: "Close" }).click();
 
-    await page.getByLabel("Outcome").getByRole("button", { name: "Denied" }).click();
-    await expect(page).toHaveURL(/outcome=denied/);
+    await audit.getByRole("columnheader", { name: /^Outcome/ }).getByRole("button").click();
+    await page.getByRole("group", { name: "Outcome" }).getByRole("checkbox", { name: "Denied" }).check();
+    await expect(page).toHaveURL(/f\.outcome=denied/);
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("heading", { name: "Nothing matches these filters" })).toBeVisible();
     await page.getByRole("button", { name: "Clear filters" }).click();
     await expect(page).toHaveURL(/\/admin\/audit$/);
+
+    await page.goto("/admin/users");
+    const everyone = page.getByRole("table", { name: "Users" });
+    await everyone.getByRole("columnheader", { name: /^Joined/ }).getByRole("button").click();
+    await page.getByRole("button", { name: "Ascending" }).click();
+    await expect(page).toHaveURL(/sort=joined/);
+    await expect(everyone.getByRole("columnheader", { name: /^Joined/ })).toHaveAttribute("aria-sort", "ascending");
+    const pages = page.getByRole("navigation", { name: "Pages" });
+    await expect(pages.getByText(/^1–\d+ of [\d,]+$/)).toBeVisible();
 
     for (const [path, title] of [["/admin/games", "Games"], ["/admin/queue", "Match queue"], ["/admin/tournaments", "Tournaments"], ["/admin/ratings", "Ratings"], ["/admin/ratings?view=changes", "Ratings"], ["/admin/analysis", "Analysis"], ["/admin/chats", "Chats"], ["/admin/uploads", "Uploads"], ["/admin/calls", "Calls"], ["/admin/roles", "Roles"]] as const) {
       await page.goto(path);
@@ -166,7 +177,7 @@ test("an administrator creates, edits and deletes a role, with field errors and 
     await expect(page.getByRole("heading", { name: "Support desk, days", level: 1 })).toBeVisible();
 
     const roleID = roleURL.split("/").pop();
-    await page.goto(`/admin/audit?targetType=role&target=${roleID}&action=role_updated`);
+    await page.goto(`/admin/audit?f.target_type=role&f.target=${roleID}&f.action=role_updated`);
     const audit = page.getByRole("table", { name: "Audit events" });
     await expect(async () => {
       await page.reload();

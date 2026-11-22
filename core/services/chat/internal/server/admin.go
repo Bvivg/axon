@@ -12,6 +12,8 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	chatv1 "github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 
 	"github.com/bvivg/axon/core/services/chat/internal/calls"
@@ -46,6 +48,7 @@ func (a *ChatAdmin) ListChatRooms(ctx context.Context, req *connect.Request[chat
 		Query:  req.Msg.GetQuery(),
 		Cursor: req.Msg.GetCursor(),
 		Limit:  int(req.Msg.GetPageSize()),
+		List:   adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: req.Msg.Offset, PageSize: req.Msg.GetPageSize()},
 	}
 	switch req.Msg.GetKind() {
 	case chatv1.RoomKind_ROOM_KIND_OPEN:
@@ -64,7 +67,7 @@ func (a *ChatAdmin) ListChatRooms(ctx context.Context, req *connect.Request[chat
 	}
 	rooms, next, total, err := a.h.svc.AdminRooms(ctx, filter)
 	if err != nil {
-		return nil, translateError(ctx, a.h.log, err)
+		return nil, translateError(ctx, a.h.log, admincrud.QueryError(err))
 	}
 	out := &chatv1.ListChatRoomsResponse{NextCursor: next, Total: total, Rooms: make([]*chatv1.AdminRoom, len(rooms))}
 	for i, room := range rooms {
@@ -157,6 +160,7 @@ func (a *ChatAdmin) ListChatUploads(ctx context.Context, req *connect.Request[ch
 		Kind:   domain.MessageKind(req.Msg.GetKind()),
 		Cursor: req.Msg.GetCursor(),
 		Limit:  int(req.Msg.GetPageSize()),
+		List:   adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: req.Msg.Offset, PageSize: req.Msg.GetPageSize()},
 	}
 	if raw := req.Msg.GetUploaderId(); raw != "" {
 		uploader, err := parseID("uploader_id", raw)
@@ -172,11 +176,11 @@ func (a *ChatAdmin) ListChatUploads(ctx context.Context, req *connect.Request[ch
 		}
 		filter.Room = &room
 	}
-	uploads, next, err := a.h.svc.AdminUploads(ctx, filter)
+	uploads, next, total, err := a.h.svc.AdminUploads(ctx, filter)
 	if err != nil {
-		return nil, translateError(ctx, a.h.log, err)
+		return nil, translateError(ctx, a.h.log, admincrud.QueryError(err))
 	}
-	out := &chatv1.ListChatUploadsResponse{NextCursor: next, Uploads: make([]*chatv1.AdminUpload, len(uploads))}
+	out := &chatv1.ListChatUploadsResponse{NextCursor: next, Total: total, Uploads: make([]*chatv1.AdminUpload, len(uploads))}
 	for i, upload := range uploads {
 		out.Uploads[i] = toProtoAdminUpload(upload)
 	}
@@ -222,7 +226,12 @@ func NewCallsAdmin(h *CallsHandler) *CallsAdmin {
 }
 
 func (a *CallsAdmin) ListAllCalls(ctx context.Context, req *connect.Request[callv1.ListAllCallsRequest]) (*connect.Response[callv1.ListAllCallsResponse], error) {
-	filter := calls.AdminFilter{ActiveOnly: req.Msg.GetActiveOnly(), Cursor: req.Msg.GetCursor(), Limit: int(req.Msg.GetPageSize())}
+	filter := calls.AdminFilter{
+		ActiveOnly: req.Msg.GetActiveOnly(),
+		Cursor:     req.Msg.GetCursor(),
+		Limit:      int(req.Msg.GetPageSize()),
+		List:       adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: req.Msg.Offset, PageSize: req.Msg.GetPageSize()},
+	}
 	if raw := req.Msg.GetUserId(); raw != "" {
 		user, err := uuid.Parse(raw)
 		if err != nil {
@@ -232,9 +241,12 @@ func (a *CallsAdmin) ListAllCalls(ctx context.Context, req *connect.Request[call
 	}
 	page, err := a.service.AdminCalls(ctx, filter)
 	if err != nil {
+		if errors.As(err, new(*adminquery.Error)) {
+			return nil, admincrud.QueryError(err)
+		}
 		return nil, a.failure(ctx, err)
 	}
-	out := &callv1.ListAllCallsResponse{NextCursor: page.Next, ActiveTotal: page.ActiveTotal, Calls: make([]*callv1.Call, len(page.Calls))}
+	out := &callv1.ListAllCallsResponse{NextCursor: page.Next, ActiveTotal: page.ActiveTotal, Total: page.Total, Calls: make([]*callv1.Call, len(page.Calls))}
 	for i, call := range page.Calls {
 		out.Calls[i] = calls.ToProto(call)
 	}

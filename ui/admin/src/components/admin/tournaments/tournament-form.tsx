@@ -113,6 +113,8 @@ export function TournamentForm({ tournament, onDone }: { tournament: Tournament;
       submitLabel="Save changes"
       submitting={submitting}
       canSubmit={paths.length > 0}
+      framed={false}
+      sticky
       onCancel={onDone}
       notice={failure.conflict ? (
         <ConflictNotice differences={theirs ? differences(theirs, values) : []} reloading={remote.isFetching} onReload={() => void reload(false)} onDiscard={() => void reload(true)} />

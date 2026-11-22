@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 )
 
 type UserStatusFilter int
@@ -34,6 +36,7 @@ type UserFilter struct {
 	Sort   UserSort
 	Cursor string
 	Limit  int
+	List   adminquery.Request
 }
 
 type AdminUser struct {
@@ -90,11 +93,13 @@ type AuditFilter struct {
 	Until      *time.Time
 	Cursor     string
 	Limit      int
+	List       adminquery.Request
 }
 
 type AuditPage struct {
 	Events []AuditEvent
 	Next   string
+	Total  *int64
 }
 
 func PageSize(requested int) int {

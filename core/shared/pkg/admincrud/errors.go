@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 )
 
 const Domain = "axon"
@@ -53,4 +55,12 @@ func withInfo(code connect.Code, message, reason string, metadata map[string]str
 func UniqueViolation(err error, constraint string) bool {
 	var pg *pgconn.PgError
 	return errors.As(err, &pg) && pg.Code == "23505" && (constraint == "" || pg.ConstraintName == constraint)
+}
+
+func QueryError(err error) error {
+	var qe *adminquery.Error
+	if errors.As(err, &qe) {
+		return Invalid(qe.Field, "query", qe.Error())
+	}
+	return err
 }

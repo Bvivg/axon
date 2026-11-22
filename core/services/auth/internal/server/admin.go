@@ -11,6 +11,7 @@ import (
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/admincrud"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
@@ -92,6 +93,7 @@ func (a *Admin) ListUsers(ctx context.Context, req *connect.Request[authv1.ListU
 		Role:   req.Msg.GetRole(),
 		Cursor: req.Msg.GetCursor(),
 		Limit:  int(req.Msg.GetPageSize()),
+		List:   adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: req.Msg.Offset, PageSize: req.Msg.GetPageSize()},
 	}
 	switch req.Msg.GetStatus() {
 	case authv1.UserStatus_USER_STATUS_ACTIVE:
@@ -107,7 +109,7 @@ func (a *Admin) ListUsers(ctx context.Context, req *connect.Request[authv1.ListU
 	}
 	page, err := a.Handler.svc.ListUsers(ctx, filter)
 	if err != nil {
-		return nil, translateError(ctx, a.Handler.log, err)
+		return nil, translateError(ctx, a.Handler.log, admincrud.QueryError(err))
 	}
 	out := &authv1.ListUsersResponse{NextCursor: page.Next, Total: page.Total, Users: make([]*authv1.AdminUser, len(page.Users))}
 	for i, user := range page.Users {
@@ -200,6 +202,7 @@ func auditFilter(msg *authv1.ListAuditEventsRequest) (domain.AuditFilter, error)
 		Action:     msg.GetAction(),
 		Cursor:     msg.GetCursor(),
 		Limit:      int(msg.GetPageSize()),
+		List:       adminquery.Request{Filter: msg.GetFilter(), OrderBy: msg.GetOrderBy(), Offset: msg.Offset, PageSize: msg.GetPageSize()},
 	}
 	if raw := msg.GetActorId(); raw != "" {
 		actor, err := uuid.Parse(raw)
@@ -234,9 +237,9 @@ func (a *Admin) ListAuditEvents(ctx context.Context, req *connect.Request[authv1
 	}
 	page, err := a.Handler.svc.ListAuditEvents(ctx, filter)
 	if err != nil {
-		return nil, translateError(ctx, a.Handler.log, err)
+		return nil, translateError(ctx, a.Handler.log, admincrud.QueryError(err))
 	}
-	out := &authv1.ListAuditEventsResponse{NextCursor: page.Next, Events: make([]*authv1.AuditEvent, len(page.Events))}
+	out := &authv1.ListAuditEventsResponse{NextCursor: page.Next, Total: page.Total, Events: make([]*authv1.AuditEvent, len(page.Events))}
 	for i, event := range page.Events {
 		out.Events[i] = toProtoAuditEvent(event)
 	}

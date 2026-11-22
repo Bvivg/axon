@@ -1,43 +1,41 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Play, Trophy, XCircle } from "lucide-react";
+import { ExternalLink, Play, Trophy, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { AdminListPage, gameTitle, Person, When } from "@/components/admin/admin-ui";
+import { AdminListPage, count, gameOptions, Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
+import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { GameName } from "@/components/admin/game-icon";
+import { ListToolbar } from "@/components/admin/list-toolbar";
 import { TournamentStatusBadge } from "@/components/admin/tournaments/tournament-detail";
-import { DataTable } from "@/components/admin/data-table";
-import { ChipFilter, Toolbar } from "@/components/admin/filters";
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem, DropdownMenuLinkItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { TournamentFormat, TournamentStatus, type Tournament } from "@/gen/axon/tournament/v1/tournament_pb";
 import { Permission, useAdminAccess } from "@/lib/admin/access";
-import { useUrlState } from "@/lib/admin/url-state";
-import { useAdminProfiles, useAdminTournaments, useCancelTournament, useStartTournament } from "@/lib/query/admin";
+import { useAdminList, useListState } from "@/lib/admin/list";
+import { FilterKind } from "@/lib/admin/list-query";
+import { adminKeys, useAdminProfiles, useCancelTournament, useStartTournament } from "@/lib/query/admin";
+import { loadTournaments } from "@/lib/query/play";
 
-enum StatusFilter {
-  All = "",
-  Registration = "registration",
-  Running = "running",
-  Finished = "finished",
-  Cancelled = "cancelled",
-}
-
-const statuses: Record<string, TournamentStatus> = {
-  [StatusFilter.Registration]: TournamentStatus.REGISTRATION,
-  [StatusFilter.Running]: TournamentStatus.RUNNING,
-  [StatusFilter.Finished]: TournamentStatus.FINISHED,
-  [StatusFilter.Cancelled]: TournamentStatus.CANCELLED,
-};
+const extra = ["query"] as const;
 
 const statusOptions = [
-  { value: StatusFilter.All, label: "All" },
-  { value: StatusFilter.Registration, label: "Registration" },
-  { value: StatusFilter.Running, label: "Running" },
-  { value: StatusFilter.Finished, label: "Finished" },
-  { value: StatusFilter.Cancelled, label: "Cancelled" },
+  { value: "registration", label: "Registration" },
+  { value: "seeding", label: "Seeding" },
+  { value: "running", label: "Running" },
+  { value: "finished", label: "Finished" },
+  { value: "cancelled", label: "Cancelled" },
 ];
+
+const formatOptions = [
+  { value: "single_elimination", label: "Single elimination" },
+  { value: "swiss", label: "Swiss" },
+];
+
+const games = gameOptions.filter((option) => option.value);
 
 const open = (status: TournamentStatus) => status === TournamentStatus.REGISTRATION || status === TournamentStatus.SEEDING || status === TournamentStatus.RUNNING;
 
@@ -46,67 +44,124 @@ enum Change {
   Cancel = "cancel",
 }
 
+const tournamentHref = (id: string) => `/tournaments/${id}`;
+const rowKey = (row: Tournament) => row.id;
+
+function tournamentColumns(profiles?: Map<string, PublicProfile>): ColumnDef<Tournament, unknown>[] {
+  return [
+    {
+      id: "name",
+      header: "Tournament",
+      meta: { label: "Name", sort: "name", filter: { field: "name", label: "Name", kind: FilterKind.Text }, mobile: MobileSlot.Title },
+      cell: ({ row }) => <Link href={tournamentHref(row.original.id)} className="font-medium hover:underline">{row.original.name}</Link>,
+    },
+    {
+      id: "game",
+      header: "Game",
+      meta: { filter: { field: "game", label: "Game", kind: FilterKind.Choice, options: games }, mobile: MobileSlot.Subtitle },
+      cell: ({ row }) => <GameName game={row.original.game} />,
+    },
+    {
+      id: "format",
+      header: "Format",
+      meta: { filter: { field: "format", label: "Format", kind: FilterKind.Choice, options: formatOptions } },
+      cell: ({ row }) => row.original.format === TournamentFormat.SWISS ? "Swiss" : "Single elimination",
+    },
+    {
+      id: "status",
+      header: "Status",
+      meta: { filter: { field: "status", label: "Status", kind: FilterKind.Choice, options: statusOptions } },
+      cell: ({ row }) => <TournamentStatusBadge status={row.original.status} />,
+    },
+    {
+      id: "players",
+      header: "Players",
+      meta: {
+        sort: "players",
+        filter: [
+          { field: "players", label: "Players", kind: FilterKind.Number },
+          { field: "capacity", label: "Capacity", kind: FilterKind.Number },
+        ],
+        align: "end",
+      },
+      cell: ({ row }) => <span className="tabular-nums">{row.original.playerCount}/{row.original.capacity}</span>,
+    },
+    {
+      id: "round",
+      header: "Round",
+      meta: { align: "end" },
+      cell: ({ row }) => <span className="tabular-nums">{row.original.currentRound}/{row.original.totalRounds || "—"}</span>,
+    },
+    {
+      id: "creator",
+      header: "Creator",
+      meta: { filter: { field: "creator", label: "Creator", kind: FilterKind.Person } },
+      cell: ({ row }) => <Person id={row.original.creatorId} profiles={profiles} />,
+    },
+    { id: "winner", header: "Winner", cell: ({ row }) => <Person id={row.original.winnerId} profiles={profiles} /> },
+    {
+      id: "created",
+      header: "Created",
+      meta: { sort: "created", filter: { field: "created", label: "Created", kind: FilterKind.Date } },
+      cell: ({ row }) => <When at={row.original.createdAt} />,
+    },
+    {
+      id: "started",
+      header: "Started",
+      meta: { sort: "started", filter: { field: "started", label: "Started", kind: FilterKind.Date } },
+      cell: ({ row }) => row.original.startedAt ? <When at={row.original.startedAt} /> : <span className="text-muted-foreground">—</span>,
+    },
+  ];
+}
+
 export function TournamentsTable() {
   const access = useAdminAccess();
-  const [state, update, clear] = useUrlState(["status"] as const);
-  const tournaments = useAdminTournaments(statuses[state.status]);
-  const rows = useMemo(() => tournaments.data ?? [], [tournaments.data]);
-  const profiles = useAdminProfiles(useMemo(() => rows.flatMap((row) => [row.creatorId, row.winnerId ?? ""]).filter(Boolean), [rows]));
+  const defs = useMemo(() => columnFilters(tournamentColumns()), []);
+  const sorts = useMemo(() => columnSorts(tournamentColumns()), []);
+  const state = useListState(defs, extra);
+  const query = state.state.query ?? "";
+  const list = useAdminList([...adminKeys.tournaments, "list", query], state, (request, signal) => loadTournaments(request, query, signal), rowKey);
+  const profiles = useAdminProfiles(useMemo(() => list.rows.flatMap((row) => [row.creatorId, row.winnerId ?? ""]), [list.rows]));
+  const columns = useMemo(() => tournamentColumns(profiles.data), [profiles.data]);
   const start = useStartTournament();
   const cancel = useCancelTournament();
   const [target, setTarget] = useState<{ tournament: Tournament; change: Change }>();
   const [confirming, setConfirming] = useState(false);
   const moderate = access.can(Permission.GamesModerate);
-
-  const columns = useMemo<ColumnDef<Tournament, unknown>[]>(() => [
-    { id: "name", header: "Tournament", cell: ({ row }) => <Link href={`/tournaments/${row.original.id}`} className="font-medium hover:underline">{row.original.name}</Link> },
-    { id: "game", header: "Game", cell: ({ row }) => gameTitle(row.original.game) },
-    { id: "format", header: "Format", cell: ({ row }) => row.original.format === TournamentFormat.SWISS ? "Swiss" : "Single elimination" },
-    {
-      id: "status",
-      header: "Status",
-      cell: ({ row }) => <TournamentStatusBadge status={row.original.status} />,
-    },
-    { id: "players", header: "Players", cell: ({ row }) => <span className="tabular-nums">{row.original.playerCount}/{row.original.capacity}</span> },
-    { id: "round", header: "Round", cell: ({ row }) => <span className="tabular-nums">{row.original.currentRound}/{row.original.totalRounds || "—"}</span> },
-    { id: "creator", header: "Creator", cell: ({ row }) => <Person id={row.original.creatorId} profiles={profiles.data} /> },
-    { id: "winner", header: "Winner", cell: ({ row }) => <Person id={row.original.winnerId} profiles={profiles.data} /> },
-    { id: "created", header: "Created", cell: ({ row }) => <When at={row.original.createdAt} /> },
-    ...(moderate ? [{
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => (
-        <span className="flex gap-1.5">
-          {row.original.status === TournamentStatus.REGISTRATION ? (
-            <Button variant="outline" size="sm" disabled={row.original.playerCount < 2} onClick={() => { setTarget({ tournament: row.original, change: Change.Start }); setConfirming(true); }}><Play aria-hidden /> Start</Button>
-          ) : null}
-          {open(row.original.status) ? (
-            <Button variant="destructive-outline" size="sm" onClick={() => { setTarget({ tournament: row.original, change: Change.Cancel }); setConfirming(true); }}><XCircle aria-hidden /> Cancel</Button>
-          ) : null}
-        </span>
-      ),
-    } satisfies ColumnDef<Tournament, unknown>] : []),
-  ], [profiles.data, moderate]);
-
   const name = target?.tournament.name ?? "";
+  const pick = (tournament: Tournament, change: Change) => {
+    setTarget({ tournament, change });
+    setConfirming(true);
+  };
 
   return (
     <AdminListPage
       title="Tournaments"
-      toolbar={<Toolbar><ChipFilter label="Status" value={state.status} options={statusOptions} onChange={(status) => update({ status })} /></Toolbar>}
+      subtitle={count(list.total, "tournament")}
+      toolbar={<ListToolbar state={state} search={{ label: "Search by tournament name", key: "query" }} sorts={sorts} />}
     >
       <DataTable
         label="Tournaments"
         columns={columns}
-        rows={rows}
-        rowKey={(row) => row.id}
-        rowHref={(row) => `/tournaments/${row.id}`}
-        status={tournaments.status}
-        error={tournaments.error}
-        onRetry={() => void tournaments.refetch()}
-        filtered={!!state.status}
-        onClearFilters={clear}
+        list={list}
+        state={state}
+        rowKey={rowKey}
+        rowHref={(row) => tournamentHref(row.id)}
         empty={{ icon: Trophy, title: "No tournaments yet" }}
+        rowActions={(row) => (
+          <>
+            <DropdownMenuLinkItem render={<Link href={tournamentHref(row.id)} />}><ExternalLink aria-hidden /> Open</DropdownMenuLinkItem>
+            {moderate && open(row.status) ? (
+              <>
+                <DropdownMenuSeparator />
+                {row.status === TournamentStatus.REGISTRATION ? (
+                  <DropdownMenuItem disabled={row.playerCount < 2} onClick={() => pick(row, Change.Start)}><Play aria-hidden /> Start now</DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem className="text-destructive" onClick={() => pick(row, Change.Cancel)}><XCircle aria-hidden /> Cancel</DropdownMenuItem>
+              </>
+            ) : null}
+          </>
+        )}
       />
       <ConfirmAction
         open={confirming && target?.change === Change.Start}
