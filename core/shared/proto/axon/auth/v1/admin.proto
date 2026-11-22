@@ -1,0 +1,303 @@
+syntax = "proto3";
+
+package axon.auth.v1;
+
+import "axon/auth/v1/auth.proto";
+import "buf/validate/validate.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+service AuthAdminService {
+  rpc GetMyPermissions(GetMyPermissionsRequest) returns (GetMyPermissionsResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc SuspendUser(SuspendUserRequest) returns (SuspendUserResponse);
+  rpc RestoreUser(RestoreUserRequest) returns (RestoreUserResponse);
+  rpc RevokeUserSessions(RevokeUserSessionsRequest) returns (RevokeUserSessionsResponse);
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+  rpc ExportAuditEvents(ExportAuditEventsRequest) returns (ExportAuditEventsResponse);
+  rpc UpdateUserProfile(UpdateUserProfileRequest) returns (UpdateUserProfileResponse);
+  rpc SetUserRoles(SetUserRolesRequest) returns (SetUserRolesResponse);
+  rpc UnlinkOAuthAccount(UnlinkOAuthAccountRequest) returns (UnlinkOAuthAccountResponse);
+  rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
+  rpc ListAdminRoles(ListAdminRolesRequest) returns (ListAdminRolesResponse);
+  rpc GetRole(GetRoleRequest) returns (GetRoleResponse);
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse);
+  rpc UpdateRole(UpdateRoleRequest) returns (UpdateRoleResponse);
+  rpc DeleteRole(DeleteRoleRequest) returns (DeleteRoleResponse);
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_SUSPENDED = 2;
+}
+
+enum UserSort {
+  USER_SORT_UNSPECIFIED = 0;
+  USER_SORT_NEWEST = 1;
+  USER_SORT_OLDEST = 2;
+  USER_SORT_EMAIL = 3;
+}
+
+message AdminUser {
+  User user = 1;
+  UserStatus status = 2;
+  optional google.protobuf.Timestamp suspended_at = 3;
+  string suspended_reason = 4;
+  optional google.protobuf.Timestamp last_seen_at = 5;
+  int32 active_sessions = 6;
+  string etag = 7;
+}
+
+message LinkedAccount {
+  string provider = 1;
+  string email = 2;
+  google.protobuf.Timestamp linked_at = 3;
+}
+
+message GetMyPermissionsRequest {}
+
+message GetMyPermissionsResponse {
+  repeated string permissions = 1;
+}
+
+message ListUsersRequest {
+  string query = 1;
+  string role = 2;
+  UserStatus status = 3;
+  UserSort sort = 4;
+  string cursor = 5;
+  int32 page_size = 6;
+}
+
+message ListUsersResponse {
+  repeated AdminUser users = 1;
+  string next_cursor = 2;
+  int64 total = 3;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  AdminUser user = 1;
+  repeated Session sessions = 2;
+  repeated LinkedAccount linked_accounts = 3;
+  bool has_password = 4;
+}
+
+message SuspendUserRequest {
+  string user_id = 1;
+  string reason = 2;
+}
+
+message SuspendUserResponse {
+  AdminUser user = 1;
+}
+
+message RestoreUserRequest {
+  string user_id = 1;
+  string reason = 2;
+}
+
+message RestoreUserResponse {
+  AdminUser user = 1;
+}
+
+message RevokeUserSessionsRequest {
+  string user_id = 1;
+  string reason = 2;
+}
+
+message RevokeUserSessionsResponse {
+  int64 revoked = 1;
+}
+
+enum AuditOutcome {
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+  AUDIT_OUTCOME_SUCCEEDED = 1;
+  AUDIT_OUTCOME_DENIED = 2;
+  AUDIT_OUTCOME_FAILED = 3;
+}
+
+message AuditEvent {
+  string id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  string service = 3;
+  string action = 4;
+  AuditOutcome outcome = 5;
+  string actor_id = 6;
+  string target_type = 7;
+  string target_id = 8;
+  string reason = 9;
+  string correlation_id = 10;
+  string client_ip = 11;
+  string user_agent = 12;
+  map<string, string> details = 13;
+  repeated AuditChange changes = 14;
+}
+
+message AuditChange {
+  string field = 1;
+  string before = 2;
+  string after = 3;
+}
+
+message ListAuditEventsRequest {
+  string actor_id = 1;
+  string target_type = 2;
+  string target_id = 3;
+  string service = 4;
+  string action = 5;
+  AuditOutcome outcome = 6;
+  optional google.protobuf.Timestamp since = 7;
+  optional google.protobuf.Timestamp until = 8;
+  string cursor = 9;
+  int32 page_size = 10;
+}
+
+message ListAuditEventsResponse {
+  repeated AuditEvent events = 1;
+  string next_cursor = 2;
+}
+
+message ExportAuditEventsRequest {
+  ListAuditEventsRequest filter = 1;
+}
+
+message ExportAuditEventsResponse {
+  bytes csv = 1;
+  int32 rows = 2;
+  bool truncated = 3;
+}
+
+message UpdateUserProfileRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string display_name = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string etag = 3 [(buf.validate.field).string.min_len = 1];
+  string reason = 4 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+}
+
+message UpdateUserProfileResponse {
+  AdminUser user = 1;
+}
+
+message SetUserRolesRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  repeated string roles = 2 [(buf.validate.field).repeated = {
+    unique: true
+    max_items: 16
+  }];
+  string reason = 3 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+}
+
+message SetUserRolesResponse {
+  AdminUser user = 1;
+}
+
+message UnlinkOAuthAccountRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string provider = 2 [(buf.validate.field).string.min_len = 1];
+  string reason = 3 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+}
+
+message UnlinkOAuthAccountResponse {
+  repeated LinkedAccount linked_accounts = 1;
+}
+
+message PermissionInfo {
+  string name = 1;
+  string namespace = 2;
+  string action = 3;
+}
+
+message ListPermissionsRequest {}
+
+message ListPermissionsResponse {
+  repeated PermissionInfo permissions = 1;
+}
+
+message AdminRole {
+  string id = 1;
+  string name = 2 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9_]{1,31}$"];
+  string title = 3 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 64
+  }];
+  repeated string permissions = 4 [(buf.validate.field).repeated = {
+    unique: true
+    max_items: 64
+  }];
+  bool system = 5;
+  int64 member_count = 6;
+  string etag = 7;
+  google.protobuf.Timestamp create_time = 8;
+  google.protobuf.Timestamp update_time = 9;
+}
+
+message ListAdminRolesRequest {}
+
+message ListAdminRolesResponse {
+  repeated AdminRole roles = 1;
+}
+
+message GetRoleRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetRoleResponse {
+  AdminRole role = 1;
+}
+
+message CreateRoleRequest {
+  AdminRole role = 1 [(buf.validate.field).required = true];
+  string reason = 2 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+  string request_id = 3 [(buf.validate.field).string.uuid = true];
+  bool validate_only = 4;
+}
+
+message CreateRoleResponse {
+  AdminRole role = 1;
+}
+
+message UpdateRoleRequest {
+  AdminRole role = 1 [(buf.validate.field).required = true];
+  google.protobuf.FieldMask update_mask = 2 [(buf.validate.field).required = true];
+  string reason = 3 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+  bool validate_only = 4;
+}
+
+message UpdateRoleResponse {
+  AdminRole role = 1;
+}
+
+message DeleteRoleRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+  string etag = 2 [(buf.validate.field).string.min_len = 1];
+  string reason = 3 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 500
+  }];
+}
+
+message DeleteRoleResponse {}

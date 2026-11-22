@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package axon.chat.v1;
+
+import "axon/chat/v1/chat.proto";
+import "google/protobuf/timestamp.proto";
+
+service ChatAdminService {
+  rpc ListChatRooms(ListChatRoomsRequest) returns (ListChatRoomsResponse);
+  rpc GetChatRoom(GetChatRoomRequest) returns (GetChatRoomResponse);
+  rpc ListChatRoomMessages(ListChatRoomMessagesRequest) returns (ListChatRoomMessagesResponse);
+  rpc DeleteChatMessage(DeleteChatMessageRequest) returns (DeleteChatMessageResponse);
+  rpc RemoveChatMember(RemoveChatMemberRequest) returns (RemoveChatMemberResponse);
+  rpc ListChatUploads(ListChatUploadsRequest) returns (ListChatUploadsResponse);
+}
+
+message AdminRoom {
+  Room room = 1;
+  optional google.protobuf.Timestamp last_activity_at = 2;
+  int64 last_seq = 3;
+}
+
+message ListChatRoomsRequest {
+  string query = 1;
+  RoomKind kind = 2;
+  string member_id = 3;
+  string cursor = 4;
+  int32 page_size = 5;
+}
+
+message ListChatRoomsResponse {
+  repeated AdminRoom rooms = 1;
+  string next_cursor = 2;
+  int64 total = 3;
+}
+
+message GetChatRoomRequest {
+  string room_id = 1;
+}
+
+message GetChatRoomResponse {
+  AdminRoom room = 1;
+  repeated Member members = 2;
+}
+
+message ListChatRoomMessagesRequest {
+  string room_id = 1;
+  string reason = 2;
+  optional int64 before_seq = 3;
+  int32 page_size = 4;
+}
+
+message ListChatRoomMessagesResponse {
+  repeated Message messages = 1;
+  optional int64 next_before_seq = 2;
+}
+
+message DeleteChatMessageRequest {
+  string message_id = 1;
+  string reason = 2;
+}
+
+message DeleteChatMessageResponse {
+  Message message = 1;
+}
+
+message RemoveChatMemberRequest {
+  string room_id = 1;
+  string user_id = 2;
+  string reason = 3;
+}
+
+message RemoveChatMemberResponse {}
+
+message AdminUpload {
+  string id = 1;
+  string uploader_id = 2;
+  string kind = 3;
+  string name = 4;
+  string content_type = 5;
+  int64 size_bytes = 6;
+  google.protobuf.Timestamp created_at = 7;
+  string room_id = 8;
+  string message_id = 9;
+}
+
+message ListChatUploadsRequest {
+  string uploader_id = 1;
+  string room_id = 2;
+  string kind = 3;
+  string cursor = 4;
+  int32 page_size = 5;
+}
+
+message ListChatUploadsResponse {
+  repeated AdminUpload uploads = 1;
+  string next_cursor = 2;
+}

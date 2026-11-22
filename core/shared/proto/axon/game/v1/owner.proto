@@ -28,4 +28,6 @@ message AbortSessionRequest {
   string session_id = 1;
 }
 
-message AbortSessionResponse {}
+message AbortSessionResponse {
+  optional bool cancelled = 1;
+}
