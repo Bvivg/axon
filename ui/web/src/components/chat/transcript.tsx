@@ -263,13 +263,16 @@ export const Transcript = memo(function Transcript({
     if (element) element.scrollTop = element.scrollHeight;
   }, []);
 
+  const pinnedSends = useRef(new Set<string>());
   const lastPendingID = pending.at(-1)?.message.id;
+  const lastPendingClientID = pending.at(-1)?.item.frame.client_id;
   useLayoutEffect(() => {
     if (!lastPendingID) return;
+    if (lastPendingClientID) pinnedSends.current.add(lastPendingClientID);
     userMoved.current = true;
     atBottom.current = true;
     pinToBottom();
-  }, [lastPendingID, pinToBottom]);
+  }, [lastPendingID, lastPendingClientID, pinToBottom]);
 
   const measureBottom = useCallback(() => {
     const element = viewport.current;
@@ -363,18 +366,20 @@ export const Transcript = memo(function Transcript({
   );
 
   const lastMine = messages.at(-1)?.author_id === selfID;
+  const lastClientID = messages.at(-1)?.client_id;
   const shownLastID = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (lastID === null || !settled) return;
     const arrived = shownLastID.current !== null && shownLastID.current !== lastID;
     shownLastID.current = lastID;
-    if (atBottom.current || (arrived && lastMine)) {
+    const echoed = lastClientID !== undefined && pinnedSends.current.delete(lastClientID);
+    if (atBottom.current || (arrived && lastMine && !echoed)) {
       atBottom.current = true;
       setAway(false);
       pinToBottom();
     }
     reportVisible();
-  }, [lastID, lastMine, settled, pinToBottom, reportVisible]);
+  }, [lastID, lastMine, lastClientID, settled, pinToBottom, reportVisible]);
 
   useLayoutEffect(() => {
     if (settled || !hasMessages) return;

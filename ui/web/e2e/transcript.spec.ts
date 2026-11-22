@@ -9,11 +9,46 @@ const onScreen = (locator: Locator) =>
     return box.bottom > 0 && box.top < window.innerHeight;
   });
 
+const scrollSettled = (locator: Locator) =>
+  locator.evaluate(
+    (element) =>
+      new Promise<void>((resolve) => {
+        let top = element.scrollTop;
+        let still = 0;
+        const tick = () => {
+          still = element.scrollTop === top ? still + 1 : 0;
+          top = element.scrollTop;
+          if (still >= 30) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+
 const tall = (n: number) => [`note ${String.fromCharCode(64 + n)}`, "second line", "third line", "fourth line", "fifth line", "sixth line"].join("\n");
 
 test("a chat opens at the first unread message, and the latest is one click away", async ({ browser }) => {
   const ada = await newPerson(browser, "transcript", "Ada");
   const grace = await newPerson(browser, "transcript-peer", "Grace");
+  const reply = "back to the start";
+  const echoes: { type: string; release: () => void }[] = [];
+  let replyID: string | undefined;
+  let holding = true;
+  await ada.page.routeWebSocket("**/ws/chat", (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((raw) => {
+      const frame = JSON.parse(String(raw));
+      if (frame.type === "send" && frame.body === reply) replyID = frame.client_id;
+      server.send(raw);
+    });
+    server.onMessage((raw) => {
+      const frame = JSON.parse(String(raw));
+      const clientID = frame.type === "ack" ? frame.client_id : frame.type === "message" ? frame.message.client_id : undefined;
+      if (holding && clientID !== undefined && clientID === replyID) echoes.push({ type: frame.type, release: () => socket.send(raw) });
+      else socket.send(raw);
+    });
+  });
+  await ada.page.reload();
 
   await startChat(ada.page, { email: grace.email, username: grace.username, name: "Grace" }, "hello there");
   await goToChats(ada.page);
@@ -38,12 +73,19 @@ test("a chat opens at the first unread message, and the latest is one click away
   await expect(messageWith(ada.page, "note L")).toBeInViewport();
   await expect(ada.page.getByRole("button", { name: /^Scroll to latest/ })).toHaveCount(0);
 
-  await say(ada.page, "back to the start");
-  await expect(messageWith(ada.page, "back to the start")).toBeInViewport();
+  await say(ada.page, reply);
+  await expect(messageWith(ada.page, reply)).toBeInViewport();
+  await expect.poll(() => ["ack", "message"].every((type) => echoes.some((echo) => echo.type === type))).toBe(true);
   const original = ada.page.getByRole("article", { name: "Message from Grace" }).filter({ hasText: "note A" });
   await expect.poll(async () => (await original.count()) === 0 || !(await onScreen(original))).toBe(true);
 
-  await messageWith(ada.page, "back to the start").getByRole("button", { name: "Replying to Grace" }).click();
+  await messageWith(ada.page, reply).getByRole("button", { name: "Replying to Grace" }).click();
+  await expect(original).toBeInViewport();
+  await scrollSettled(log);
+
+  holding = false;
+  for (const echo of echoes.splice(0)) echo.release();
+  await expect.poll(() => ada.page.locator('[data-id^="pending-"]').count()).toBe(0);
   await expect(original).toBeInViewport();
 });
 
