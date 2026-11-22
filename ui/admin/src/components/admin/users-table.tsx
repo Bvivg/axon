@@ -37,7 +37,7 @@ const statusOptions = [
 ];
 
 export function StatusBadge({ user }: { user: AdminUser }) {
-  return user.status === UserStatus.SUSPENDED ? <Badge variant="destructive" dot>Suspended</Badge> : <Badge variant="success" dot>Active</Badge>;
+  return user.status === UserStatus.SUSPENDED ? <Badge variant="destructive" dot>Suspended</Badge> : <span className="text-muted-foreground">Active</span>;
 }
 
 const columns: ColumnDef<AdminUser, unknown>[] = [

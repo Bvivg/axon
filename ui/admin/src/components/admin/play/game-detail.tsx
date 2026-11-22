@@ -3,32 +3,25 @@
 import { Code } from "@connectrpc/connect";
 import { ExternalLink, Gamepad2, Square } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { AuditList } from "@/components/admin/audit-table";
 import { gameTitle, Mono, Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
+import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordIcon, RecordLoading, RecordPage, RecordSection, RecordState } from "@/components/admin/record";
 import { finished, SessionStatusBadge } from "@/components/admin/games-table";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorCard } from "@/components/ui/error-card";
-import { Pane, PaneSection } from "@/components/ui/pane";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Permission, useAdminAccess } from "@/lib/admin/access";
 import { isCode } from "@/lib/errors";
 import { gameHref } from "@/lib/games/catalog";
 import { useAdminProfiles, useCancelGame } from "@/lib/query/admin";
 import { useAdminGame } from "@/lib/query/play";
 
-function Fact({ term, children }: { term: string; children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{term}</dt>
-      <dd className="min-w-0 text-sm break-words">{children}</dd>
-    </div>
-  );
-}
+const back = { section: "Games", back: "/games", backLabel: "Back to games" };
 
 export function GameDetail({ id }: { id: string }) {
   const access = useAdminAccess();
@@ -38,72 +31,91 @@ export function GameDetail({ id }: { id: string }) {
   const session = game.data?.session;
   const profiles = useAdminProfiles(useMemo(() => session?.playerIds ?? [], [session]));
 
-  if (game.isPending) {
-    return <Pane title="Game" back="/games" width="wide"><div role="status" aria-label="Loading game" className="space-y-3"><Skeleton className="h-28 w-full" /><Skeleton className="h-40 w-full" /></div></Pane>;
-  }
+  if (game.isPending) return <RecordLoading {...back} label="Loading game" />;
   if (game.isError || !session) {
     return (
-      <Pane title="Game" back="/games" width="wide">
+      <RecordState {...back}>
         {isCode(game.error, Code.NotFound) || !session ? <EmptyState icon={Gamepad2} title="This game does not exist" /> : <ErrorCard title="Could not load the game" error={game.error} onRetry={() => void game.refetch()} />}
-      </Pane>
+      </RecordState>
     );
   }
 
   const moves = game.data.moves;
-  const stoppable = access.can(Permission.GamesModerate) && !finished(session) && !session.tournamentId;
+  const done = finished(session);
+  const stoppable = access.can(Permission.GamesModerate) && !done && !session.tournamentId;
 
   return (
-    <Pane
+    <RecordPage
+      {...back}
+      media={<RecordIcon icon={Gamepad2} tone={done ? "muted" : "signal"} />}
       title={`${gameTitle(session.game)} game`}
-      back="/games"
-      backLabel="Back to games"
-      width="wide"
+      lines={session.playerIds.length ? (
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-foreground">
+          {session.playerIds.map((player, i) => (
+            <Fragment key={player}>
+              {i > 0 ? <span className="text-xs text-muted-foreground">vs</span> : null}
+              <Person id={player} profiles={profiles.data} />
+            </Fragment>
+          ))}
+        </span>
+      ) : <span>Waiting for players</span>}
+      tags={
+        <>
+          <SessionStatusBadge session={session} />
+          <Badge>{session.rated ? "Rated" : "Casual"}</Badge>
+          {session.tournamentId ? <Link href={`/tournaments/${session.tournamentId}`}><Badge variant="outline" className="hover:bg-muted">Tournament game</Badge></Link> : null}
+        </>
+      }
       actions={
         <>
           <a href={gameHref(session.id, session.game)} className={buttonVariants({ variant: "ghost", size: "sm" })}><ExternalLink aria-hidden /> Open in Axon</a>
           {stoppable ? <Button variant="destructive-outline" size="sm" onClick={() => setStopping(true)}><Square aria-hidden /> Stop</Button> : null}
         </>
       }
-    >
-      <PaneSection id="session" title="Session" aside={<SessionStatusBadge session={session} />}>
-        <dl className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-6 gap-y-3">
-          {session.playerIds.map((player, i) => <Fact key={player} term={`Player ${i + 1}`}><Person id={player} profiles={profiles.data} /></Fact>)}
+      facts={
+        <Facts>
           <Fact term="Winner"><Person id={session.winnerUserId} profiles={profiles.data} /></Fact>
           <Fact term="Moves"><span className="tabular-nums">{session.ply}</span></Fact>
-          <Fact term="Rated">{session.rated ? "yes" : "no"}</Fact>
           <Fact term="Watching"><span className="tabular-nums">{session.spectators ?? 0}</span></Fact>
           <Fact term="Updated"><When at={session.updatedAt} /></Fact>
-          {session.tournamentId ? <Fact term="Tournament"><Link href={`/tournaments/${session.tournamentId}`} className="hover:underline"><Mono>{session.tournamentId}</Mono></Link></Fact> : null}
-          <Fact term="Session ID"><Mono>{session.id}</Mono></Fact>
-        </dl>
-      </PaneSection>
-
-      <PaneSection id="moves" title={`Moves · ${moves.length}`}>
-        {moves.length === 0 ? <p className="text-sm text-muted-foreground">No moves yet</p> : (
-          <ScrollArea className="max-h-[28rem]" orientation="both">
-            <table aria-label="Moves" className="w-full min-w-[32rem] text-left text-sm">
-              <thead className="sticky top-0 bg-surface text-xs text-muted-foreground">
-                <tr><th scope="col" className="py-2 pr-3 font-medium">Ply</th><th scope="col" className="py-2 pr-3 font-medium">Player</th><th scope="col" className="py-2 pr-3 font-medium">Move</th><th scope="col" className="py-2 font-medium">Played</th></tr>
-              </thead>
-              <tbody>
-                {moves.map((move) => (
-                  <tr key={move.ply} className="border-t border-line">
-                    <td className="py-1.5 pr-3 tabular-nums">{move.ply}</td>
-                    <td className="py-1.5 pr-3"><Person id={move.playerId} profiles={profiles.data} linked={false} /></td>
-                    <td className="max-w-[24rem] truncate py-1.5 pr-3" title={move.data}><Mono>{move.data}</Mono></td>
-                    <td className="py-1.5"><When at={move.playedAt} /></td>
+          {session.tournamentId ? <Fact term="Tournament"><Link href={`/tournaments/${session.tournamentId}`} className="hover:underline"><Mono>{session.tournamentId.slice(0, 8)}</Mono></Link></Fact> : null}
+          <Fact term="Session ID"><CopyID value={session.id} label="session ID" /></Fact>
+        </Facts>
+      }
+    >
+      <RecordSection id="moves" title="Moves" count={moves.length}>
+        <RecordFrame>
+          {moves.length === 0 ? <RecordEmpty>No moves yet</RecordEmpty> : (
+            <ScrollArea className="max-h-[28rem]" orientation="both">
+              <table aria-label="Moves" className="w-full min-w-[32rem] text-left text-sm">
+                <thead className="sticky top-0 z-[1] bg-surface-raised text-xs text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="w-16 px-4 py-2.5 text-right font-medium">Ply</th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">Player</th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">Move</th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">Played</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollArea>
-        )}
-      </PaneSection>
+                </thead>
+                <tbody>
+                  {moves.map((move) => (
+                    <tr key={move.ply} className="border-t border-line">
+                      <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{move.ply}</td>
+                      <td className="px-4 py-2"><Person id={move.playerId} profiles={profiles.data} linked={false} /></td>
+                      <td className="max-w-[24rem] truncate px-4 py-2 font-mono text-xs" title={move.data}>{move.data}</td>
+                      <td className="px-4 py-2 text-muted-foreground"><When at={move.playedAt} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollArea>
+          )}
+        </RecordFrame>
+      </RecordSection>
 
       {access.can(Permission.AuditRead) ? (
-        <PaneSection id="history" title="History">
+        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?targetType=game_session&target=${session.id}`}>Open in audit log</Link>}>
           <AuditList filters={{ targetType: "game_session", target: session.id }} />
-        </PaneSection>
+        </RecordSection>
       ) : null}
 
       <ConfirmAction
@@ -117,6 +129,6 @@ export function GameDetail({ id }: { id: string }) {
           await game.refetch();
         }}
       />
-    </Pane>
+    </RecordPage>
   );
 }
