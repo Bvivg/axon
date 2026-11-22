@@ -120,6 +120,9 @@ targets:
       - path: Gen/axon_game_v1_game.pb.swift
         optional: true
         group: Gen
+      - path: Gen/axon_chat_v1_chat.pb.swift
+        optional: true
+        group: Gen
     dependencies:
       - target: Axon
       - package: SwiftProtobuf
