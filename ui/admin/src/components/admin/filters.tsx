@@ -43,7 +43,7 @@ export function SearchFilter({ label, value, onChange, placeholder, className }:
     <div className={cn("relative min-w-0 flex-[1_1_14rem]", className)}>
       <label htmlFor={id} className="sr-only">{label}</label>
       <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input id={id} type="search" className="pl-8" placeholder={placeholder ?? label} value={text} onChange={(event) => type(event.target.value)} />
+      <Input id={id} type="search" className="pl-8 md:pl-8" placeholder={placeholder ?? label} value={text} onChange={(event) => type(event.target.value)} />
     </div>
   );
 }
