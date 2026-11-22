@@ -263,7 +263,7 @@ func (a *Admin) ExportAuditEvents(ctx context.Context, req *connect.Request[auth
 	}
 	events, truncated, err := a.Handler.svc.ExportAuditEvents(ctx, actorID, filter)
 	if err != nil {
-		return nil, a.fail(ctx, err)
+		return nil, a.fail(ctx, admincrud.QueryError(err))
 	}
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
