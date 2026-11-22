@@ -21,6 +21,8 @@ import (
 
 const webOrigin = "http://localhost:3000"
 
+const otherOrigin = "https://axon.test"
+
 type scriptedProvider struct {
 	id domain.Provider
 }
@@ -65,6 +67,10 @@ func (s providerSet) App(id domain.Provider) (oauth.Provider, error) {
 	return s.registry.App(id)
 }
 
+func (s providerSet) Callback(id domain.Provider, origin string) string {
+	return s.registry.Callback(id, origin)
+}
+
 func withOAuth(t *testing.T) harnessOption {
 	t.Helper()
 
@@ -90,7 +96,7 @@ func withOAuth(t *testing.T) harnessOption {
 		t.Fatalf("NewStateStore: %v", err)
 	}
 
-	returnTo, err := oauth.NewReturnToPolicy([]string{webOrigin})
+	returnTo, err := oauth.NewReturnToPolicy([]string{webOrigin, otherOrigin})
 	if err != nil {
 		t.Fatalf("NewReturnToPolicy: %v", err)
 	}

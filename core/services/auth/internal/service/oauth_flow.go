@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -37,11 +38,17 @@ func (s *Service) StartOAuth(ctx context.Context, id domain.Provider, returnTo s
 		return StartOAuthResult{}, err
 	}
 
+	var redirect string
+	if strings.TrimSpace(returnTo) != "" {
+		redirect = s.oauth.providers.Callback(id, oauth.OriginOf(destination))
+	}
+
 	state, err := s.oauth.states.Put(ctx, oauth.State{
 		Provider:   id,
 		Verifier:   verifier,
 		ReturnTo:   destination,
 		LinkUserID: linkUserID,
+		Redirect:   redirect,
 	})
 	if err != nil {
 		return StartOAuthResult{}, err
@@ -54,7 +61,7 @@ func (s *Service) StartOAuth(ctx context.Context, id domain.Provider, returnTo s
 	}
 
 	return StartOAuthResult{
-		AuthorizationURL: provider.AuthorizationURL(state, oauth.Challenge(verifier)),
+		AuthorizationURL: oauth.Redirected(provider, redirect).AuthorizationURL(state, oauth.Challenge(verifier)),
 		State:            state,
 	}, nil
 }
@@ -164,7 +171,7 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
 	}
 
-	profile, err := provider.Exchange(ctx, in.Code, stored.Verifier)
+	profile, err := oauth.Redirected(provider, stored.Redirect).Exchange(ctx, in.Code, stored.Verifier)
 	if err != nil {
 
 		if errors.Is(err, domain.ErrOauthEmailUnverified) || errors.Is(err, domain.ErrOauthProfileIncomplete) ||

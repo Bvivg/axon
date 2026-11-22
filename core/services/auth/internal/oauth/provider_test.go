@@ -13,8 +13,9 @@ import (
 )
 
 type stubProvider struct {
-	server *httptest.Server
-	routes map[string]any
+	server   *httptest.Server
+	routes   map[string]any
+	redirect string
 }
 
 func newStub(t *testing.T, routes map[string]any) *stubProvider {
@@ -34,6 +35,7 @@ func newStub(t *testing.T, routes map[string]any) *stubProvider {
 			http.Error(w, "code_verifier is missing", http.StatusBadRequest)
 			return
 		}
+		stub.redirect = r.Form.Get("redirect_uri")
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -264,4 +266,35 @@ func exchangeWithGitHubErr(t *testing.T, stub *stubProvider) (domain.ProviderPro
 	pointProviderAt(t, provider, stub)
 
 	return provider.Exchange(context.Background(), "a-code", "a-verifier")
+}
+
+func TestARedirectedProviderUsesItsRedirectForTheCodeAndTheToken(t *testing.T) {
+	stub := newStub(t, map[string]any{
+		"/userinfo": map[string]any{"sub": "google-subject-1", "email": "person@example.com", "email_verified": true},
+	})
+
+	original := googleUserInfoURL
+	googleUserInfoURL = stub.url("/userinfo")
+	t.Cleanup(func() { googleUserInfoURL = original })
+
+	base := newGoogle("client", "secret", "http://localhost:3003/auth/callback/google")
+	pointProviderAt(t, base, stub)
+
+	redirected := Redirected(base, "https://axon.test/auth/callback/google")
+
+	if url := redirected.AuthorizationURL("a-state", "a-challenge"); !strings.Contains(url, "redirect_uri=https%3A%2F%2Faxon.test%2Fauth%2Fcallback%2Fgoogle") {
+		t.Errorf("authorization URL does not carry the new redirect: %s", url)
+	}
+	if _, err := redirected.Exchange(context.Background(), "a-code", "a-verifier"); err != nil {
+		t.Fatalf("Exchange: %v", err)
+	}
+	if stub.redirect != "https://axon.test/auth/callback/google" {
+		t.Errorf("token request redirect_uri = %q, want the redirected one", stub.redirect)
+	}
+	if url := base.AuthorizationURL("a-state", "a-challenge"); !strings.Contains(url, "localhost%3A3003") {
+		t.Errorf("redirecting changed the original provider: %s", url)
+	}
+	if Redirected(base, "") != base {
+		t.Error("an empty redirect must keep the provider as it is")
+	}
 }
