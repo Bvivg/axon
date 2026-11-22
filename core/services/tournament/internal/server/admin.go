@@ -15,6 +15,7 @@ import (
 	tournamentv1 "github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/admincrud"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/outbox"
 )
@@ -22,6 +23,7 @@ import (
 var AdminRules = authz.Rules{
 	tournamentv1connect.TournamentAdminServiceUpdateTournamentProcedure:       authz.GamesModerate,
 	tournamentv1connect.TournamentAdminServiceRemoveTournamentPlayerProcedure: authz.GamesModerate,
+	tournamentv1connect.TournamentAdminServiceListAdminTournamentsProcedure:   authz.GamesRead,
 }
 
 var tournamentFields = admincrud.Fields{
@@ -35,6 +37,7 @@ var diffPaths = map[string]string{"name": "name", "capacity": "capacity", "round
 type AdminTournaments interface {
 	Revise(ctx context.Context, id uuid.UUID, version int64, revise func(saga.Spec) saga.Spec, audit orchestrator.Audit) (saga.Tournament, saga.Tournament, error)
 	Remove(ctx context.Context, id, user uuid.UUID, audit orchestrator.Audit) (saga.Tournament, error)
+	AdminList(ctx context.Context, f store.AdminFilter) (store.AdminPage, error)
 	NoShow() time.Duration
 }
 
@@ -57,7 +60,10 @@ var (
 func (a *Admin) fail(ctx context.Context, op string, err error) error {
 	var spec *saga.SpecError
 	var stale *orchestrator.StaleError
+	var query *adminquery.Error
 	switch {
+	case errors.As(err, &query):
+		return admincrud.QueryError(err)
 	case errors.As(err, &spec):
 		return admincrud.Invalid(spec.Field, "valid", spec.Reason)
 	case errors.As(err, &stale):
@@ -152,4 +158,22 @@ func (a *Admin) RemoveTournamentPlayer(ctx context.Context, req *connect.Request
 		return nil, a.fail(ctx, "remove player", err)
 	}
 	return connect.NewResponse(&tournamentv1.RemoveTournamentPlayerResponse{Tournament: Present(t, a.tournaments.NoShow())}), nil
+}
+
+func (a *Admin) ListAdminTournaments(ctx context.Context, req *connect.Request[tournamentv1.ListAdminTournamentsRequest]) (*connect.Response[tournamentv1.ListAdminTournamentsResponse], error) {
+	offset := req.Msg.GetOffset()
+	page, err := a.tournaments.AdminList(ctx, store.AdminFilter{
+		Query: req.Msg.GetQuery(),
+		List:  adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: &offset, PageSize: req.Msg.GetPageSize()},
+	})
+	if err != nil {
+		return nil, a.fail(ctx, "list", err)
+	}
+	out := &tournamentv1.ListAdminTournamentsResponse{Total: page.Total, Tournaments: make([]*tournamentv1.Tournament, 0, len(page.Tournaments))}
+	for _, s := range page.Tournaments {
+		item := Present(s.Tournament, a.tournaments.NoShow())
+		item.PlayerCount = uint32(s.Players)
+		out.Tournaments = append(out.Tournaments, item)
+	}
+	return connect.NewResponse(out), nil
 }

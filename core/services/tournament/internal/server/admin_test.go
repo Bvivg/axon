@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	"github.com/bvivg/axon/core/services/tournament/internal/orchestrator"
@@ -20,6 +21,8 @@ import (
 	"github.com/bvivg/axon/core/services/tournament/internal/store"
 	eventsv1 "github.com/bvivg/axon/core/shared/gen/go/axon/events/v1"
 	tournamentv1 "github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/outbox"
 )
@@ -28,6 +31,13 @@ type adminFake struct {
 	current saga.Tournament
 	fail    error
 	events  []outbox.Event
+	page    store.AdminPage
+	asked   *store.AdminFilter
+}
+
+func (f *adminFake) AdminList(_ context.Context, filter store.AdminFilter) (store.AdminPage, error) {
+	f.asked = &filter
+	return f.page, f.fail
 }
 
 func (f *adminFake) Revise(_ context.Context, id uuid.UUID, version int64, revise func(saga.Spec) saga.Spec, audit orchestrator.Audit) (saga.Tournament, saga.Tournament, error) {
@@ -208,12 +218,77 @@ func TestRemoveTournamentPlayer(t *testing.T) {
 	}
 }
 
+func TestListAdminTournaments(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	listed := openTournament(t)
+	offset := int32(20)
+	for _, tt := range []struct {
+		name  string
+		req   *tournamentv1.ListAdminTournamentsRequest
+		fail  error
+		code  connect.Code
+		field string
+		want  store.AdminFilter
+	}{
+		{
+			name: "a filtered page",
+			req:  &tournamentv1.ListAdminTournamentsRequest{Query: "league", Filter: proto.String("status = registration"), OrderBy: proto.String("players desc"), Offset: &offset, PageSize: 10},
+			want: store.AdminFilter{Query: "league", List: adminquery.Request{Filter: "status = registration", OrderBy: "players desc", Offset: &offset, PageSize: 10}},
+		},
+		{name: "the first page when the offset is absent", req: &tournamentv1.ListAdminTournamentsRequest{OrderBy: proto.String("name")}, want: store.AdminFilter{List: adminquery.Request{OrderBy: "name", Offset: new(int32)}}},
+		{
+			name:  "an invalid query names its field",
+			req:   &tournamentv1.ListAdminTournamentsRequest{Filter: proto.String("rounds > 2")},
+			fail:  &adminquery.Error{Field: "filter", Message: `cannot filter by "rounds"`},
+			code:  connect.CodeInvalidArgument,
+			field: "filter",
+		},
+		{name: "unexpected", req: &tournamentv1.ListAdminTournamentsRequest{}, fail: errors.New("boom"), code: connect.CodeUnavailable},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &adminFake{fail: tt.fail, page: store.AdminPage{Tournaments: []store.Summary{{Tournament: listed, Players: 5}}, Total: 21}}
+			res, err := server.NewAdmin(f, quiet).ListAdminTournaments(moderator(authz.GamesRead), connect.NewRequest(tt.req))
+			if tt.code == 0 && err != nil || tt.code != 0 && connect.CodeOf(err) != tt.code {
+				t.Fatalf("code = %v (%v), want %v", connect.CodeOf(err), err, tt.code)
+			}
+			if tt.field != "" {
+				violations := errorDetail[*validatepb.Violations](t, err)
+				if got := violations.GetViolations()[0].GetField().GetElements()[0].GetFieldName(); got != tt.field {
+					t.Fatalf("field = %q, want %q", got, tt.field)
+				}
+			}
+			if tt.code != 0 {
+				return
+			}
+			asked := f.asked.List
+			if f.asked.Query != tt.want.Query || asked.Filter != tt.want.List.Filter || asked.OrderBy != tt.want.List.OrderBy ||
+				asked.PageSize != tt.want.List.PageSize || !asked.Paged() || *asked.Offset != *tt.want.List.Offset {
+				t.Fatalf("asked %+v, want %+v", *f.asked, tt.want)
+			}
+			got := res.Msg
+			if got.GetTotal() != 21 || len(got.GetTournaments()) != 1 {
+				t.Fatalf("response = %v", got)
+			}
+			if item := got.GetTournaments()[0]; item.GetId() != listed.ID.String() || item.GetPlayerCount() != 5 || item.GetName() != "League" ||
+				item.GetStatus() != tournamentv1.TournamentStatus_TOURNAMENT_STATUS_REGISTRATION || item.GetFormat() != tournamentv1.TournamentFormat_TOURNAMENT_FORMAT_SWISS ||
+				item.GetEtag() != `W/"4"` {
+				t.Fatalf("tournament = %v", item)
+			}
+		})
+	}
+}
+
 func TestAdminRulesCoverEveryProcedure(t *testing.T) {
+	reads := map[string]bool{tournamentv1connect.TournamentAdminServiceListAdminTournamentsProcedure: true}
 	methods := tournamentv1.File_axon_tournament_v1_admin_proto.Services().ByName("TournamentAdminService").Methods()
 	for i := range methods.Len() {
 		procedure := "/axon.tournament.v1.TournamentAdminService/" + string(methods.Get(i).Name())
-		if server.AdminRules[procedure] != authz.GamesModerate {
-			t.Fatalf("%s has rule %v", procedure, server.AdminRules[procedure])
+		want := authz.GamesModerate
+		if reads[procedure] {
+			want = authz.GamesRead
+		}
+		if server.AdminRules[procedure] != want {
+			t.Fatalf("%s has rule %v, want %v", procedure, server.AdminRules[procedure], want)
 		}
 	}
 }
