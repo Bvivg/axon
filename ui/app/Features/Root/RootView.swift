@@ -3,38 +3,21 @@ import SwiftUI
 struct RootView: View {
     @Bindable var app: AppModel
     @State private var showsSettings = false
+    @AppStorage(Preferences.appearance) private var appearance = AppearanceChoice.system
 
     var body: some View {
         Group {
             switch app.phase {
             case .launching:
-                ProgressView()
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ZStack {
+                    Theme.background.ignoresSafeArea()
+                    AxonAppIcon(size: 72)
+                }
             case .signedOut:
                 AuthView(services: app.services, onSignedIn: app.signedIn, onSettings: { showsSettings = true })
             case .signedIn(let user):
-                AdaptiveNavigation(path: $app.path) {
-                    LobbyView(
-                        services: app.services,
-                        user: user,
-                        onOpen: { app.path.open($0) },
-                        onSettings: { showsSettings = true },
-                        onSignOut: { Task { await app.signOut() } }
-                    )
-                } placeholder: {
-                    ContentUnavailableView("Pick a game", systemImage: "gamecontroller")
-                } destination: { route in
-                    switch route {
-                    case .game(let id):
-                        GameView(sessionID: id, services: app.services, user: user, onReplay: { app.path.append(.replay(id)) })
-                            .id(id)
-                    case .replay(let id):
-                        ReplayView(sessionID: id, services: app.services)
-                            .id(id)
-                    }
-                }
-                .id(user.id)
+                HomeView(app: app, user: user, onSettings: { showsSettings = true })
+                    .id(user.id)
             }
         }
         .sheet(isPresented: $showsSettings) {
@@ -42,6 +25,9 @@ struct RootView: View {
                 await app.updateGateway(address)
             }
         }
+        .font(.axBody)
+        .tint(Theme.primary)
+        .preferredColorScheme(appearance.scheme)
         .task { await app.start() }
     }
 }

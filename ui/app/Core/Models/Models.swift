@@ -47,8 +47,8 @@ enum GameKind: String, CaseIterable, Identifiable, Hashable, Sendable {
         switch self {
         case .ticTacToe: "number"
         case .chess: "crown"
-        case .quoridor: "square.grid.3x3.middle.filled"
-        case .checkers: "checkerboard.rectangle"
+        case .quoridor: "square.grid.3x3"
+        case .checkers: "smallcircle.filled.circle"
         }
     }
 

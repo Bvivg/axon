@@ -44,10 +44,32 @@ struct GatewayAddress: Hashable, Sendable {
         return octets.count == 4 && octets.first == "127" && octets.allSatisfy { UInt8($0) != nil }
     }
 
-    var gameSocketURL: URL {
+    var gameSocketURL: URL { socketURL("/ws/game") }
+
+    var chatSocketURL: URL { socketURL("/ws/chat") }
+
+    var uploadsURL: URL { url.appending(path: "api/uploads") }
+
+    func media(_ raw: String) -> URL? {
+        guard !raw.isEmpty, let link = URL(string: raw, relativeTo: url)?.absoluteURL else { return nil }
+        for prefix in ["/chat-attachments/", "/api/media/"] {
+            guard let range = link.path.range(of: prefix) else { continue }
+            let key = String(link.path[range.upperBound...])
+            guard key.wholeMatch(of: /[0-9a-f-]{36}\/[0-9a-f-]{36}(?:\.[a-z0-9]{1,8}){0,2}/) != nil else { return nil }
+            return url.appending(path: "api/media/\(key)")
+        }
+        guard !sameOrigin(link) else { return nil }
+        return link.scheme == "http" || link.scheme == "https" ? link : nil
+    }
+
+    func sameOrigin(_ link: URL) -> Bool {
+        link.scheme == url.scheme && link.host() == url.host() && link.port == url.port
+    }
+
+    private func socketURL(_ path: String) -> URL {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         components.scheme = components.scheme == "https" ? "wss" : "ws"
-        components.path = "/ws/game"
+        components.path = path
         return components.url!
     }
 }

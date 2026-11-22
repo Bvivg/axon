@@ -339,10 +339,13 @@ struct AppModelTests {
         world.auth.restored = GameFixtures.user()
         let (model, _) = app(world)
         await model.start()
-        model.path = [.game("x")]
+        model.tab = .chats
+        model.open(.game("x"))
+        #expect(model.paths[.chats] == [.game("x")])
         world.auth.signOuts.yield()
         #expect(await eventually { model.phase == .signedOut })
-        #expect(model.path.isEmpty)
+        #expect(model.paths.isEmpty)
+        #expect(model.tab == .games)
     }
 
     @Test func changingTheGatewayRebuildsServicesAndSignsOut() async throws {

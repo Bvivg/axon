@@ -30,6 +30,8 @@ type State struct {
 
 	LinkUserID *uuid.UUID `json:"link_user_id,omitempty"`
 
+	AppChallenge string `json:"app_challenge,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 

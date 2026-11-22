@@ -62,6 +62,17 @@ struct ConnectClient: Sendable {
     static let deviceHeader = "X-Axon-Device"
     static let requestTimeout: TimeInterval = 20
 
+    static let userAgent: String = {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        let system = ProcessInfo.processInfo.operatingSystemVersion
+        #if os(iOS)
+        let platform = "iOS"
+        #else
+        let platform = "macOS"
+        #endif
+        return "Axon/\(version) (\(platform) \(system.majorVersion).\(system.minorVersion))"
+    }()
+
     let vault: TokenVault
 
     static func transport(address: GatewayAddress, deviceID: String) -> ProtocolClient {
@@ -70,6 +81,7 @@ struct ConnectClient: Sendable {
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
+        configuration.httpAdditionalHeaders = ["User-Agent": userAgent]
         return ProtocolClient(
             httpClient: URLSessionHTTPClient(configuration: configuration),
             config: ProtocolClientConfig(

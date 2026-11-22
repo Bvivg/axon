@@ -26,7 +26,7 @@ struct SettingsView: View {
                             .accessibilityIdentifier(AccessibilityID.Settings.error)
                     } else if model.changesAccount {
                         Text("Changing the gateway signs you out.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.muted)
                     }
                 }
             }

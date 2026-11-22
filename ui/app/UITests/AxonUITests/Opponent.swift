@@ -10,6 +10,7 @@ enum OpponentError: Error, CustomStringConvertible {
     case rpc(method: String, status: Int, body: String)
     case socketClosed(String, Error?)
     case sessionError(Axon_Game_V1_SessionError, String)
+    case chatError(String, String)
     case timedOut(String)
 
     var description: String {
@@ -22,6 +23,8 @@ enum OpponentError: Error, CustomStringConvertible {
             "game socket closed while waiting for \(waiting): \(error.map { "\($0)" } ?? "no error")"
         case let .sessionError(error, waiting):
             "game socket error \(error) while waiting for \(waiting)"
+        case let .chatError(code, waiting):
+            "chat socket error \(code) while waiting for \(waiting)"
         case .timedOut(let waiting):
             "timed out waiting for \(waiting)"
         }
@@ -40,12 +43,12 @@ enum E2EGateway {
         return url
     }
 
-    static func socketURL(_ base: URL) throws -> URL {
+    static func socketURL(_ base: URL, path: String = "/ws/game") throws -> URL {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw OpponentError.invalidGateway(base.absoluteString)
         }
         components.scheme = components.scheme == "https" ? "wss" : "ws"
-        components.path = "/ws/game"
+        components.path = path
         guard let url = components.url else {
             throw OpponentError.invalidGateway(base.absoluteString)
         }
@@ -135,6 +138,28 @@ actor Opponent {
         let socket = GameSocket(url: try E2EGateway.socketURL(baseURL), token: accessToken, session: http)
         await socket.start()
         try await socket.subscribe(sessionID)
+        return socket
+    }
+
+    func rooms() async throws -> [Axon_Chat_V1_Room] {
+        let response: Axon_Chat_V1_ListRoomsResponse = try await call("axon.chat.v1.ChatService/ListRooms", Axon_Chat_V1_ListRoomsRequest())
+        return response.rooms
+    }
+
+    func room(withLastMessage body: String, timeout: Duration = .seconds(20)) async throws -> Axon_Chat_V1_Room {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if let room = try await rooms().first(where: { $0.hasLastMessage && $0.lastMessage.body == body }) {
+                return room
+            }
+            try await Task.sleep(for: .milliseconds(300))
+        }
+        throw OpponentError.timedOut("a room whose last message is \(body)")
+    }
+
+    func connectChat() async throws -> ChatPeerSocket {
+        let socket = ChatPeerSocket(url: try E2EGateway.socketURL(baseURL, path: "/ws/chat"), token: accessToken, session: http)
+        await socket.start()
         return socket
     }
 
