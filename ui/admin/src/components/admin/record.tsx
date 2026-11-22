@@ -47,8 +47,8 @@ export function RecordPage({
           {actions ? <div className="flex flex-wrap items-center gap-2 md:max-w-[50%] md:justify-end md:pt-1">{actions}</div> : null}
         </header>
         <div className="grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-          {facts ? <aside aria-label="Details" className="min-w-0 lg:sticky lg:top-0 lg:col-start-2 lg:row-start-1">{facts}</aside> : null}
           <div className="flex min-w-0 flex-col gap-9 lg:col-start-1 lg:row-start-1">{children}</div>
+          {facts ? <aside aria-label="Details" className="min-w-0 lg:sticky lg:top-0 lg:col-start-2 lg:row-start-1">{facts}</aside> : null}
         </div>
       </div>
     </Pane>

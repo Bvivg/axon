@@ -145,6 +145,7 @@ var procedures = map[string]Rule{
 
 	"/axon.tournament.v1.TournamentAdminService/UpdateTournament":       {Public: false, Tier: TierAdmin},
 	"/axon.tournament.v1.TournamentAdminService/RemoveTournamentPlayer": {Public: false, Tier: TierAdmin},
+	"/axon.tournament.v1.TournamentAdminService/ListAdminTournaments":   {Public: false, Tier: TierSearch},
 
 	"/axon.analysis.v1.AnalysisAdminService/ListAnalysisReports": {Public: false, Tier: TierSearch},
 

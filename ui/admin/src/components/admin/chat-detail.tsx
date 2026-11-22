@@ -8,12 +8,13 @@ import { useMemo, useState } from "react";
 import { AuditList } from "@/components/admin/audit-table";
 import { Mono, Person, When } from "@/components/admin/admin-ui";
 import { roomKindLabels, roomTitle } from "@/components/admin/chats-table";
-import { BulkBar, bulkApply } from "@/components/admin/bulk-bar";
+import { bulkApply } from "@/components/admin/bulk-bar";
 import { ConfirmAction } from "@/components/admin/confirm-action";
 import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordIcon, RecordLoading, RecordPage, RecordRow, RecordRows, RecordSection, RecordState } from "@/components/admin/record";
-import { DataTable } from "@/components/admin/data-table";
+import { DataTable, MobileSlot, type TableList } from "@/components/admin/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorCard } from "@/components/ui/error-card";
 import { MemberRole, MessageKind, RoomKind, type Member, type Message } from "@/gen/axon/chat/v1/chat_pb";
@@ -21,6 +22,7 @@ import { Permission, useAdminAccess } from "@/lib/admin/access";
 import { isCode } from "@/lib/errors";
 import { profileName } from "@/lib/format";
 import { bulkLimit } from "@/lib/admin/bulk";
+import { ListMode } from "@/lib/admin/list";
 import { useAdminProfiles, useAdminRoom, useAdminRoomMessages, useDeleteChatMessage, useRemoveChatMember } from "@/lib/query/admin";
 
 const back = { section: "Chats", back: "/chats", backLabel: "Back to chats" };
@@ -68,18 +70,22 @@ export function ChatDetail({ id }: { id: string }) {
   const moderate = access.can(Permission.ChatModerate);
 
   const columns = useMemo<ColumnDef<Message, unknown>[]>(() => [
-    { id: "when", header: "Sent", cell: ({ row }) => <When at={row.original.sentAt} /> },
-    { id: "author", header: "Author", cell: ({ row }) => row.original.kind === MessageKind.SYSTEM ? <Badge variant="mono">system</Badge> : <Person id={row.original.authorId} profiles={profiles.data} /> },
+    { id: "when", header: "Sent", meta: { mobile: MobileSlot.Subtitle }, cell: ({ row }) => <When at={row.original.sentAt} /> },
+    { id: "author", header: "Author", meta: { mobile: MobileSlot.Title }, cell: ({ row }) => row.original.kind === MessageKind.SYSTEM ? <Badge variant="mono">system</Badge> : <Person id={row.original.authorId} profiles={profiles.data} /> },
     { id: "body", header: "Message", cell: ({ row }) => <Body message={row.original} /> },
-    { id: "seq", header: "#", cell: ({ row }) => <Mono>{row.original.seq.toString()}</Mono> },
-    ...(moderate ? [{
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => row.original.deletedAt || row.original.kind === MessageKind.SYSTEM ? null : (
-        <Button variant="ghost" size="icon-sm" aria-label="Delete message" onClick={() => setDeleting(row.original)}><Trash2 /></Button>
-      ),
-    } satisfies ColumnDef<Message, unknown>] : []),
-  ], [profiles.data, moderate]);
+    { id: "seq", header: "#", meta: { mobile: MobileSlot.Hidden, align: "end" }, cell: ({ row }) => <Mono>{row.original.seq.toString()}</Mono> },
+  ], [profiles.data]);
+  const list: TableList<Message> = {
+    mode: ListMode.Infinite,
+    rows,
+    status: messages.status,
+    error: messages.error,
+    refetch: messages.refetch,
+    hasMore: messages.hasNextPage,
+    loadingMore: messages.isFetchingNextPage,
+    loadMore: () => void messages.fetchNextPage(),
+  };
+  const deletable = (row: Message) => !row.deletedAt && row.kind !== MessageKind.SYSTEM;
 
   if (detail.isPending) return <RecordLoading {...back} label="Loading chat" />;
 
@@ -150,24 +156,16 @@ export function ChatDetail({ id }: { id: string }) {
           </RecordFrame>
         ) : (
           <RecordFrame className="flex h-[32rem] flex-col">
-            <BulkBar count={picked.length} limit={bulkLimit} onClear={() => setSelected(new Set())}>
-              <Button variant="destructive-outline" size="sm" onClick={() => setBulkDeleting(true)}><Trash2 aria-hidden /> Delete {picked.length}</Button>
-            </BulkBar>
             <DataTable
               label="Messages"
               columns={columns}
-              rows={rows}
+              list={list}
               rowKey={(row) => row.id}
-              status={messages.status}
-              error={messages.error}
-              onRetry={() => void messages.refetch()}
-              filtered={false}
               empty={{ icon: MessagesSquare, title: "No messages in this chat" }}
-              hasMore={messages.hasNextPage}
-              loadingMore={messages.isFetchingNextPage}
-              onLoadMore={() => void messages.fetchNextPage()}
               rowHeight={56}
-              selection={{ selected, onChange: setSelected, selectable: (row) => !row.deletedAt && row.kind !== MessageKind.SYSTEM, limit: bulkLimit }}
+              selection={{ selected, onChange: setSelected, selectable: deletable, limit: bulkLimit }}
+              bulkActions={<Button variant="destructive-outline" size="sm" className="pointer-coarse:h-11" onClick={() => setBulkDeleting(true)}><Trash2 aria-hidden /> Delete {picked.length}</Button>}
+              rowActions={(row) => deletable(row) ? <DropdownMenuItem className="text-destructive" onClick={() => setDeleting(row)}><Trash2 aria-hidden /> Delete message</DropdownMenuItem> : null}
             />
           </RecordFrame>
         )}

@@ -95,7 +95,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
           <Account />
         </DialogContent>
       </Dialog>
-      <div id="console-content" className="console-main">{children}</div>
+      <main id="console-content" className="console-main">{children}</main>
     </div>
   );
 }

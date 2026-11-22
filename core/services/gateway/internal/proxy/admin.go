@@ -217,6 +217,10 @@ func (p *TournamentAdmin) RemoveTournamentPlayer(ctx context.Context, req *conne
 	return p.client.RemoveTournamentPlayer(ctx, forward(ctx, req))
 }
 
+func (p *TournamentAdmin) ListAdminTournaments(ctx context.Context, req *connect.Request[tournamentv1.ListAdminTournamentsRequest]) (*connect.Response[tournamentv1.ListAdminTournamentsResponse], error) {
+	return p.client.ListAdminTournaments(ctx, forward(ctx, req))
+}
+
 type AnalysisAdmin struct {
 	client analysisv1connect.AnalysisAdminServiceClient
 }

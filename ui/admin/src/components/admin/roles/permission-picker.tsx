@@ -1,5 +1,6 @@
 "use client";
 
+import { CheckboxField } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PermissionInfo } from "@/gen/axon/auth/v1/admin_pb";
 import { groupPermissions } from "@/lib/query/roles";
@@ -30,19 +31,16 @@ export function PermissionPicker({
   return (
     <div role="group" aria-label="Permissions" aria-describedby={describedBy} data-invalid={invalid || undefined} className="grid gap-3 rounded-lg data-[invalid]:outline-1 data-[invalid]:outline-destructive sm:grid-cols-2">
       {groupPermissions(catalog).map(([namespace, permissions]) => (
-        <fieldset key={namespace} className="flex flex-col gap-1.5 rounded-lg border border-line p-3">
+        <fieldset key={namespace} className="flex flex-col rounded-lg border border-line px-3 pt-1.5 pb-2">
           <legend className="px-1 font-mono text-xs text-muted-foreground">{namespace}</legend>
           {permissions.map((permission) => (
-            <label key={permission.name} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-signal"
-                checked={selected.has(permission.name)}
-                disabled={disabled}
-                onChange={(event) => toggle(permission.name, event.target.checked)}
-              />
-              <span>{permission.action}</span>
-            </label>
+            <CheckboxField
+              key={permission.name}
+              label={permission.action}
+              checked={selected.has(permission.name)}
+              disabled={disabled}
+              onCheckedChange={(on) => toggle(permission.name, on)}
+            />
           ))}
         </fieldset>
       ))}

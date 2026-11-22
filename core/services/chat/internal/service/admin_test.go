@@ -18,9 +18,9 @@ type auditedStore struct {
 	asked []domain.AdminUploadFilter
 }
 
-func (s *auditedStore) AdminUploads(_ context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, error) {
+func (s *auditedStore) AdminUploads(_ context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, *int64, error) {
 	s.asked = append(s.asked, f)
-	return []domain.AdminUpload{{ID: uuid.New(), Kind: f.Kind}}, "next", nil
+	return []domain.AdminUpload{{ID: uuid.New(), Kind: f.Kind}}, "next", nil, nil
 }
 
 func TestAdminUploadsChecksTheKindAndBoundsThePage(t *testing.T) {
@@ -45,7 +45,7 @@ func TestAdminUploadsChecksTheKindAndBoundsThePage(t *testing.T) {
 			if err != nil {
 				t.Fatalf("service.New: %v", err)
 			}
-			uploads, next, err := svc.AdminUploads(t.Context(), tt.filter)
+			uploads, next, _, err := svc.AdminUploads(t.Context(), tt.filter)
 			if tt.field != "" {
 				v, ok := domain.AsValidationError(err)
 				if !ok || v.Field != tt.field {
@@ -68,7 +68,7 @@ func TestAdminUploadsChecksTheKindAndBoundsThePage(t *testing.T) {
 
 func TestAdminUploadsNeedAStoreThatCanListThem(t *testing.T) {
 	h := newHarness(t)
-	if _, _, err := h.svc.AdminUploads(t.Context(), domain.AdminUploadFilter{}); !errors.Is(err, service.ErrModerationUnavailable) {
+	if _, _, _, err := h.svc.AdminUploads(t.Context(), domain.AdminUploadFilter{}); !errors.Is(err, service.ErrModerationUnavailable) {
 		t.Fatalf("err = %v, want ErrModerationUnavailable", err)
 	}
 }

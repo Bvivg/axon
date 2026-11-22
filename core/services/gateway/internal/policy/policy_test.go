@@ -300,6 +300,7 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 
 		tournamentv1connect.TournamentAdminServiceUpdateTournamentProcedure:       true,
 		tournamentv1connect.TournamentAdminServiceRemoveTournamentPlayerProcedure: true,
+		tournamentv1connect.TournamentAdminServiceListAdminTournamentsProcedure:   true,
 
 		analysisv1connect.AnalysisAdminServiceListAnalysisReportsProcedure: true,
 	}

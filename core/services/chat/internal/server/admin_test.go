@@ -8,8 +8,10 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
 	chatv1 "github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
 
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
@@ -20,16 +22,20 @@ import (
 type uploadLedger struct {
 	service.Store
 	uploads []domain.AdminUpload
+	total   *int64
 	err     error
 	asked   *domain.AdminUploadFilter
 }
 
-func (l *uploadLedger) AdminUploads(_ context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, error) {
+func (l *uploadLedger) AdminUploads(_ context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, *int64, error) {
 	l.asked = &f
 	if l.err != nil {
-		return nil, "", l.err
+		return nil, "", nil, l.err
 	}
-	return l.uploads, "cursor-2", nil
+	if l.total != nil {
+		return l.uploads, "", l.total, nil
+	}
+	return l.uploads, "cursor-2", nil, nil
 }
 
 func TestListChatUploads(t *testing.T) {
@@ -47,6 +53,7 @@ func TestListChatUploads(t *testing.T) {
 		code    connect.Code
 		asked   *domain.AdminUploadFilter
 		want    []*chatv1.AdminUpload
+		total   *int64
 	}{
 		"filters reach the store and rows map back": {
 			request: &chatv1.ListChatUploadsRequest{UploaderId: uploader.String(), RoomId: room.String(), Kind: "attachment", Cursor: "cursor-1", PageSize: 10},
@@ -56,6 +63,19 @@ func TestListChatUploads(t *testing.T) {
 				Id: linked.ID.String(), UploaderId: uploader.String(), Kind: "attachment", Name: "report.pdf", ContentType: "application/pdf",
 				SizeBytes: 2048, RoomId: room.String(), MessageId: message.String(),
 			}},
+		},
+		"a filtered offset page reports its total": {
+			request: &chatv1.ListChatUploadsRequest{Filter: proto.String("size > 1"), OrderBy: proto.String("size desc"), Offset: proto.Int32(50), PageSize: 10},
+			store:   &uploadLedger{uploads: []domain.AdminUpload{orphan}, total: proto.Int64(51)},
+			asked:   &domain.AdminUploadFilter{Limit: 10, List: adminquery.Request{Filter: "size > 1", OrderBy: "size desc", Offset: proto.Int32(50), PageSize: 10}},
+			want:    []*chatv1.AdminUpload{{Id: orphan.ID.String(), UploaderId: uploader.String(), Kind: "image"}},
+			total:   proto.Int64(51),
+		},
+		"a filter the schema refuses": {
+			request: &chatv1.ListChatUploadsRequest{Filter: proto.String("size > big")},
+			store:   &uploadLedger{err: &adminquery.Error{Field: "filter", Message: "needs a whole number"}},
+			code:    connect.CodeInvalidArgument,
+			asked:   &domain.AdminUploadFilter{Limit: 25, List: adminquery.Request{Filter: "size > big"}},
 		},
 		"an unsent upload has no room or message": {
 			request: &chatv1.ListChatUploadsRequest{},
@@ -112,7 +132,12 @@ func TestListChatUploads(t *testing.T) {
 			if tt.code != 0 {
 				return
 			}
-			if got.Msg.GetNextCursor() != "cursor-2" || len(got.Msg.GetUploads()) != len(tt.want) {
+			wantCursor := "cursor-2"
+			if tt.total != nil {
+				wantCursor = ""
+			}
+			if got.Msg.GetNextCursor() != wantCursor || len(got.Msg.GetUploads()) != len(tt.want) || (got.Msg.Total == nil) != (tt.total == nil) ||
+				(tt.total != nil && got.Msg.GetTotal() != *tt.total) {
 				t.Fatalf("response = %v", got.Msg)
 			}
 			for i, want := range tt.want {
@@ -132,6 +157,8 @@ func sameFilter(have, want *domain.AdminUploadFilter) bool {
 		return have == want
 	}
 	same := func(a, b *uuid.UUID) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+	sameOffset := (have.List.Offset == nil) == (want.List.Offset == nil) && (have.List.Offset == nil || *have.List.Offset == *want.List.Offset)
 	return same(have.Uploader, want.Uploader) && same(have.Room, want.Room) &&
-		have.Kind == want.Kind && have.Cursor == want.Cursor && have.Limit == want.Limit
+		have.Kind == want.Kind && have.Cursor == want.Cursor && have.Limit == want.Limit &&
+		have.List.Filter == want.List.Filter && have.List.OrderBy == want.List.OrderBy && sameOffset
 }
