@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ConflictNotice, FormField, formValidator, protoErrors, ReasonField, reasonError, ResourceForm, TextField, useSubmitFailure, type FieldErrors } from "@/components/admin/resource-form";
+import { CheckboxField } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UpdateUserProfileRequestSchema, type AdminRole, type AdminUser } from "@/gen/axon/auth/v1/admin_pb";
@@ -149,24 +150,20 @@ function RolesForm({ user, roles, lockAdmin, onDone }: { user: AdminUser; roles:
                   const checked = field.state.value.includes(role.name);
                   const locked = lockAdmin && role.name === "admin" && checked;
                   return (
-                    <label key={role.id} className="flex items-center gap-2.5 px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="size-4 accent-signal"
-                        checked={checked}
-                        disabled={locked}
-                        onChange={(event) => {
-                          const next = new Set(field.state.value);
-                          if (event.target.checked) next.add(role.name);
-                          else next.delete(role.name);
-                          field.handleChange([...next].sort());
-                        }}
-                      />
-                      <span className="flex min-w-0 flex-col">
-                        <span className="font-medium">{role.title || role.name}</span>
-                        <span className="font-mono text-xs text-muted-foreground">{role.name} · {role.permissions.length} permissions</span>
-                      </span>
-                    </label>
+                    <CheckboxField
+                      key={role.id}
+                      className="px-3 py-1.5"
+                      label={role.title || role.name}
+                      hint={`${role.name}, ${role.permissions.length} permission${role.permissions.length === 1 ? "" : "s"}`}
+                      checked={checked}
+                      disabled={locked}
+                      onCheckedChange={(on) => {
+                        const next = new Set(field.state.value);
+                        if (on) next.add(role.name);
+                        else next.delete(role.name);
+                        field.handleChange([...next].sort());
+                      }}
+                    />
                   );
                 })}
               </div>

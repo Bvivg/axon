@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package axon.calls.v1;
 
+import "buf/validate/validate.proto";
 import "axon/calls/v1/calls.proto";
 
 service CallsAdminService {
@@ -14,12 +15,19 @@ message ListAllCallsRequest {
   string user_id = 2;
   string cursor = 3;
   int32 page_size = 4;
+  optional string filter = 5 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 6 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 7 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
 }
 
 message ListAllCallsResponse {
   repeated Call calls = 1;
   string next_cursor = 2;
   int64 active_total = 3;
+  optional int64 total = 4;
 }
 
 message TerminateCallRequest {

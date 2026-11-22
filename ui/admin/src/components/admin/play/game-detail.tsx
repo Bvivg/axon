@@ -8,7 +8,8 @@ import { Fragment, useMemo, useState } from "react";
 import { AuditList } from "@/components/admin/audit-table";
 import { gameTitle, Mono, Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
-import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordIcon, RecordLoading, RecordPage, RecordSection, RecordState } from "@/components/admin/record";
+import { GameIcon } from "@/components/admin/game-icon";
+import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordLoading, RecordPage, RecordSection, RecordState } from "@/components/admin/record";
 import { finished, SessionStatusBadge } from "@/components/admin/games-table";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { isCode } from "@/lib/errors";
 import { gameHref } from "@/lib/games/catalog";
 import { useAdminProfiles, useCancelGame } from "@/lib/query/admin";
 import { useAdminGame } from "@/lib/query/play";
+import { cn } from "@/lib/utils";
 
 const back = { section: "Games", back: "/games", backLabel: "Back to games" };
 
@@ -47,7 +49,7 @@ export function GameDetail({ id }: { id: string }) {
   return (
     <RecordPage
       {...back}
-      media={<RecordIcon icon={Gamepad2} tone={done ? "muted" : "signal"} />}
+      media={<GameIcon game={session.game} className={cn("size-16 rounded-2xl border border-signal/25", done && "border-line bg-surface-raised text-muted-foreground")} />}
       title={`${gameTitle(session.game)} game`}
       lines={session.playerIds.length ? (
         <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-foreground">
@@ -113,7 +115,7 @@ export function GameDetail({ id }: { id: string }) {
       </RecordSection>
 
       {access.can(Permission.AuditRead) ? (
-        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?targetType=game_session&target=${session.id}`}>Open in audit log</Link>}>
+        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?f.target_type=game_session&f.target=${session.id}`}>Open in audit log</Link>}>
           <AuditList filters={{ targetType: "game_session", target: session.id }} />
         </RecordSection>
       ) : null}

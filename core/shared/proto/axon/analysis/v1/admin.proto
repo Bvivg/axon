@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package axon.analysis.v1;
 
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 service AnalysisAdminService {
@@ -25,9 +26,16 @@ message ListAnalysisReportsRequest {
   string status = 1;
   string cursor = 2;
   int32 page_size = 3;
+  optional string filter = 4 [(buf.validate.field).string.max_len = 1000];
+  optional string order_by = 5 [(buf.validate.field).string.max_len = 200];
+  optional int32 offset = 6 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100000
+  }];
 }
 
 message ListAnalysisReportsResponse {
   repeated AnalysisReportEntry reports = 1;
   string next_cursor = 2;
+  optional int64 total = 3;
 }

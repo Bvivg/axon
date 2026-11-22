@@ -11,6 +11,8 @@ import (
 	"github.com/bvivg/axon/core/services/analysis/internal/store"
 	analysisv1 "github.com/bvivg/axon/core/shared/gen/go/axon/analysis/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/analysis/v1/analysisv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 )
 
@@ -24,7 +26,7 @@ var AdminRules = authz.Rules{
 }
 
 type Listing interface {
-	List(ctx context.Context, f store.ReportFilter) ([]store.Report, string, error)
+	List(ctx context.Context, f store.ReportFilter) (store.ReportPage, error)
 }
 
 type Admin struct {
@@ -44,7 +46,10 @@ var (
 )
 
 func (a *Admin) ListAnalysisReports(ctx context.Context, req *connect.Request[analysisv1.ListAnalysisReportsRequest]) (*connect.Response[analysisv1.ListAnalysisReportsResponse], error) {
-	filter := store.ReportFilter{Status: store.Status(req.Msg.GetStatus()), Cursor: req.Msg.GetCursor(), Limit: int(req.Msg.GetPageSize())}
+	filter := store.ReportFilter{
+		Status: store.Status(req.Msg.GetStatus()), Cursor: req.Msg.GetCursor(), Limit: int(req.Msg.GetPageSize()),
+		List: adminquery.Request{Filter: req.Msg.GetFilter(), OrderBy: req.Msg.GetOrderBy(), Offset: req.Msg.Offset, PageSize: req.Msg.GetPageSize()},
+	}
 	if filter.Status != "" && !filter.Status.Valid() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errStatus)
 	}
@@ -54,7 +59,11 @@ func (a *Admin) ListAnalysisReports(ctx context.Context, req *connect.Request[an
 	case filter.Limit > MaxLimit:
 		filter.Limit = MaxLimit
 	}
-	reports, next, err := a.reports.List(ctx, filter)
+	page, err := a.reports.List(ctx, filter)
+	var invalid *adminquery.Error
+	if errors.As(err, &invalid) {
+		return nil, admincrud.QueryError(err)
+	}
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errCursor)
 	}
@@ -62,8 +71,8 @@ func (a *Admin) ListAnalysisReports(ctx context.Context, req *connect.Request[an
 		a.log.ErrorContext(ctx, "analysis reports read failed", "error", err)
 		return nil, connect.NewError(connect.CodeUnavailable, errUnavailable)
 	}
-	out := &analysisv1.ListAnalysisReportsResponse{NextCursor: next, Reports: make([]*analysisv1.AnalysisReportEntry, len(reports))}
-	for i, r := range reports {
+	out := &analysisv1.ListAnalysisReportsResponse{NextCursor: page.Next, Total: page.Total, Reports: make([]*analysisv1.AnalysisReportEntry, len(page.Reports))}
+	for i, r := range page.Reports {
 		out.Reports[i] = entry(r)
 	}
 	return connect.NewResponse(out), nil

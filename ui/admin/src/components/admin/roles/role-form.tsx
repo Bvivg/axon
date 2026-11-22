@@ -128,6 +128,7 @@ export function RoleForm({ role }: { role?: AdminRole }) {
       submitLabel={base ? "Save changes" : "Create role"}
       submitting={submitting}
       canSubmit={!base || paths.length > 0}
+      sticky
       onCancel={() => router.push(base ? roleHref(base.id) : "/roles")}
       notice={failure.conflict ? (
         <ConflictNotice

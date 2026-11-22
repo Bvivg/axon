@@ -12,12 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { useSession } from "@/lib/auth/session";
 import { withBasePath } from "@/lib/base-path";
 import { refreshSession } from "@/lib/auth/refresh";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { rpcRoutes } from "@/lib/operations/contracts";
 import type { GatewaySnapshot, RpcMetrics } from "@/lib/operations/telemetry";
+import { clockTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -45,7 +47,10 @@ async function loadSnapshot(signal: AbortSignal): Promise<GatewaySnapshot> {
 
 const format = new Intl.NumberFormat();
 const show = (value?: number) => value === undefined ? "No samples" : format.format(value);
-const selectClass = "min-h-11 max-w-full rounded-lg border border-input bg-card px-2 text-sm";
+const routeSorts = [
+  { value: "method", label: "Sort by route" },
+  { value: "requests", label: "Most requests" },
+];
 
 function sum(values: (number | undefined)[]) {
   const known = values.filter((value) => value !== undefined);
@@ -65,12 +70,12 @@ export function GatewayDashboard({ section }: { section: GatewaySection }) {
   const captured = available ? new Date(available.capturedAt) : undefined;
 
   return (
-    <WorkspacePage title="Gateway" back="/profile" backLabel="Back to profile" width="wide" actions={
+    <WorkspacePage title="Gateway" back="/" backLabel="Back to administration" width="wide" actions={
       <Button variant="ghost" size="icon" aria-label="Refresh" disabled={snapshot.isFetching} onClick={() => void snapshot.refetch()}>
         <RefreshCw aria-hidden className={cn(snapshot.isFetching && "motion-safe:animate-spin")} />
       </Button>
     }>
-      <nav aria-label="Gateway" className="flex flex-wrap gap-1 border-b border-border pb-2">
+      <nav aria-label="Gateway" className="grid grid-cols-2 gap-1 border-b border-border pb-2 sm:flex sm:flex-wrap">
         {sections.map((item) => (
           <Link key={item.key} href={item.href} aria-current={section === item.key ? "page" : undefined}
             className={cn("flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium hover:bg-accent", section === item.key ? "bg-accent text-signal" : "text-muted-foreground")}>
@@ -78,20 +83,11 @@ export function GatewayDashboard({ section }: { section: GatewaySection }) {
           </Link>
         ))}
       </nav>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="grid gap-1 text-xs font-medium text-muted-foreground">Environment
-          <select className={selectClass} defaultValue="connected" aria-label="Environment">
-            <option value="connected">{snapshot.data?.environment ?? "Current environment"}</option>
-          </select>
-        </label>
-        <label className="grid gap-1 text-xs font-medium text-muted-foreground">Time range
-          <select className={selectClass} defaultValue="snapshot" aria-label="Time range">
-            <option value="snapshot">Current snapshot</option>
-            <option disabled>Historical ranges unavailable</option>
-          </select>
-        </label>
-        {captured ? <p className="py-2 text-xs text-muted-foreground">Gateway /metrics · Read <time dateTime={captured.toISOString()}>{captured.toLocaleTimeString()}</time></p> : null}
-      </div>
+      <dl className="flex min-h-5 flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+        <div className="flex gap-1.5"><dt className="text-muted-foreground">Environment</dt><dd className="font-medium">{snapshot.data?.environment ?? "Current environment"}</dd></div>
+        <div className="flex gap-1.5"><dt className="text-muted-foreground">Range</dt><dd className="font-medium">Current snapshot</dd></div>
+        {captured ? <div className="flex gap-1.5"><dt className="text-muted-foreground">Read from /metrics</dt><dd className="font-medium"><time dateTime={captured.toISOString()}>{clockTime(captured)}</time></dd></div> : null}
+      </dl>
       {snapshot.isPending ? <p role="status" className="text-sm text-muted-foreground">Checking telemetry…</p> : null}
       {snapshot.isError ? <Alert>{snapshot.error.message}</Alert> : null}
       {snapshot.data?.state === "unconfigured" && !snapshot.isError ? <Alert variant="warning">Gateway metrics are unavailable in this environment. The route catalog is available from the API contracts.</Alert> : null}
@@ -140,11 +136,8 @@ function RouteTable({ routes }: { routes?: Record<string, RpcMetrics> }) {
       <CardHeader><CardTitle>RPC route table</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
-          <Input type="search" aria-label="Filter RPC routes" placeholder="Filter RPC routes" className="min-h-11 w-full sm:max-w-xs" value={query} onChange={(event) => setQuery(event.target.value)} />
-          <select aria-label="Sort routes" className={selectClass} value={sort} onChange={(event) => setSort(event.target.value)}>
-            <option value="method">Sort by route</option>
-            <option value="requests">Most requests</option>
-          </select>
+          <Input type="search" aria-label="Filter RPC routes" placeholder="Filter RPC routes" className="w-full sm:max-w-xs" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <Select label="Sort routes" hideLabel value={sort} options={routeSorts} onChange={setSort} className="w-full sm:w-44" />
         </div>
         {!visible.length ? <EmptyState icon={Route} title="No routes match this filter" /> : (
           <ul aria-label="RPC procedures" className="divide-y divide-border">

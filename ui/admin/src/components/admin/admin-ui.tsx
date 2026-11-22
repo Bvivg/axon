@@ -6,12 +6,15 @@ import type { ReactNode } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PaneHeader } from "@/components/ui/pane";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { AccessStatus, Permission, useAdminAccess } from "@/lib/admin/access";
 import { calendarDate, clockTime, fromTimestamp, initials, profileName, shortID } from "@/lib/format";
+import { GameIcon, gameName } from "@/components/admin/game-icon";
 import { games, gameKeys } from "@/lib/games/catalog";
+import type { Option } from "@/lib/admin/list-query";
 import { cn } from "@/lib/utils";
 
 export function AdminListPage({ title, subtitle, actions, toolbar, children }: { title: string; subtitle?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode }) {
@@ -24,14 +27,23 @@ export function AdminListPage({ title, subtitle, actions, toolbar, children }: {
   );
 }
 
+export function AccessPending() {
+  return (
+    <div role="status" aria-label="Checking access" className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4"><Skeleton className="h-5 w-40" /></div>
+      <div className="flex flex-col gap-2 p-4">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+    </div>
+  );
+}
+
 export function RequirePermission({ permission, children }: { permission: Permission; children: ReactNode }) {
   const access = useAdminAccess();
-  if (access.status !== AccessStatus.Ready) return null;
+  if (access.status !== AccessStatus.Ready) return <AccessPending />;
   if (!access.can(permission)) {
     return (
-      <main className="flex min-h-0 flex-1 items-center justify-center">
+      <div className="flex min-h-0 flex-1 items-center justify-center">
         <EmptyState icon={ShieldAlert} title="You do not have access to this page" headingLevel="h1" />
-      </main>
+      </div>
     );
   }
   return children;
@@ -39,12 +51,12 @@ export function RequirePermission({ permission, children }: { permission: Permis
 
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const access = useAdminAccess();
-  if (access.status !== AccessStatus.Ready) return null;
+  if (access.status !== AccessStatus.Ready) return <AccessPending />;
   if (!access.admin) {
     return (
-      <main className="flex min-h-0 flex-1 items-center justify-center">
+      <div className="flex min-h-0 flex-1 items-center justify-center">
         <EmptyState icon={ShieldAlert} title="Only administrators can open this page" headingLevel="h1" />
-      </main>
+      </div>
     );
   }
   return children;
@@ -85,13 +97,13 @@ export function Mono({ children, className }: { children: ReactNode; className?:
   return <span className={cn("font-mono text-xs text-muted-foreground", className)}>{children}</span>;
 }
 
-export const gameOptions = [{ value: "", label: "All games" }, ...gameKeys.map((key) => ({ value: key, label: games[key].title }))];
+export const gameOptions: Option[] = [{ value: "", label: "All games" }, ...gameKeys.map((key) => ({ value: key, label: games[key].title, icon: <GameIcon game={key} className="size-5 rounded-md" /> }))];
 
 export function gameTitle(key: string): string {
-  return gameKeys.find((candidate) => candidate === key) ? games[key as keyof typeof games].title : key;
+  return gameName(key);
 }
 
-export function count(total: bigint | undefined, noun: string): string | undefined {
+export function count(total: number | bigint | undefined, noun: string): string | undefined {
   if (total === undefined) return undefined;
   const value = Number(total);
   return `${value.toLocaleString()} ${noun}${value === 1 ? "" : "s"}`;

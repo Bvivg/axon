@@ -5,12 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/shared/pkg/adminquery"
 	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/outbox"
 	"github.com/bvivg/axon/core/shared/pkg/postgres"
@@ -18,12 +18,31 @@ import (
 	"github.com/bvivg/axon/core/services/chat/internal/domain"
 )
 
+const (
+	roomMemberCount  = `(SELECT count(*) FROM room_members rm WHERE rm.room_id = r.id)`
+	roomLastActivity = `(SELECT lm.sent_at FROM messages lm WHERE lm.room_id = r.id ORDER BY lm.seq DESC LIMIT 1)`
+)
+
 const adminRoomSelect = `
 	SELECT r.id, r.name, r.created_by, r.created_at, r.kind, r.direct_user_min, r.direct_user_max,
-		(SELECT count(*) FROM room_members WHERE room_id = r.id),
-		(SELECT sent_at FROM messages WHERE room_id = r.id ORDER BY seq DESC LIMIT 1),
+		` + roomMemberCount + `,
+		` + roomLastActivity + `,
 		r.next_seq - 1
 	FROM rooms r`
+
+var roomSchema = adminquery.NewSchema(`r.created_at DESC, r.id DESC`, `r.id DESC`,
+	adminquery.Field{Name: "id", Column: "r.id", Kind: adminquery.UUID},
+	adminquery.Field{Name: "title", Column: "r.name", Kind: adminquery.String, Sortable: true},
+	adminquery.Field{Name: "kind", Column: "r.kind", Kind: adminquery.Enum, Values: equalsOneOf("r.kind",
+		string(domain.RoomKindOpen), string(domain.RoomKindDirect), string(domain.RoomKindGroup))},
+	adminquery.Field{Name: "members", Column: roomMemberCount, Kind: adminquery.Int, Sortable: true},
+	adminquery.Field{Name: "messages", Column: "(r.next_seq - 1)", Kind: adminquery.Int, Sortable: true},
+	adminquery.Field{Name: "created", Column: "r.created_at", Kind: adminquery.Time, Sortable: true},
+	adminquery.Field{Name: "last_activity", Column: roomLastActivity, Kind: adminquery.Time, Sortable: true},
+	adminquery.Field{Name: "created_by", Column: "r.created_by", Kind: adminquery.UUID},
+	adminquery.Field{Name: "member", Kind: adminquery.Custom,
+		Build: matchesID("member", `EXISTS (SELECT 1 FROM room_members fm WHERE fm.room_id = r.id AND fm.user_id = ?)`)},
+)
 
 type roomCursor struct {
 	At time.Time `json:"t"`
@@ -42,36 +61,33 @@ func scanAdminRoom(row scannable) (domain.AdminRoom, error) {
 }
 
 func (r *Repository) AdminRooms(ctx context.Context, f domain.AdminRoomFilter) ([]domain.AdminRoom, string, int64, error) {
-	var (
-		clauses []string
-		args    []any
-	)
-	add := func(clause string, values ...any) {
-		for _, v := range values {
-			args = append(args, v)
-			clause = strings.Replace(clause, "?", "$"+strconv.Itoa(len(args)), 1)
-		}
-		clauses = append(clauses, clause)
-	}
+	var where adminquery.Where
 	if q := strings.TrimSpace(f.Query); q != "" {
-		add("r.name ILIKE ?", postgres.Containing(q))
+		where.Add("r.name ILIKE ?", postgres.Containing(q))
 	}
 	if f.Kind != "" {
-		add("r.kind = ?", string(f.Kind))
+		where.Add("r.kind = ?", string(f.Kind))
 	}
 	if f.Member != nil {
-		add("EXISTS (SELECT 1 FROM room_members m WHERE m.room_id = r.id AND m.user_id = ?)", *f.Member)
+		where.Add("EXISTS (SELECT 1 FROM room_members m WHERE m.room_id = r.id AND m.user_id = ?)", *f.Member)
 	}
-	where := func() string {
-		if len(clauses) == 0 {
-			return ""
-		}
-		return " WHERE " + strings.Join(clauses, " AND ")
+	listed, err := roomSchema.Prepare(f.List, &where)
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("repository: admin rooms: %w", err)
 	}
 
 	var total int64
-	if err := r.q.QueryRow(ctx, `SELECT count(*) FROM rooms r`+where(), args...).Scan(&total); err != nil {
+	if err := r.q.QueryRow(ctx, `SELECT count(*) FROM rooms r`+where.SQL(), where.Args()...).Scan(&total); err != nil {
 		return nil, "", 0, fmt.Errorf("repository: count rooms: %w", err)
+	}
+	if f.List.Paged() {
+		limit, offset := f.List.Page()
+		paging := where.Paginate(limit, offset)
+		rooms, err := r.adminRooms(ctx, adminRoomSelect+where.SQL()+` ORDER BY `+listed.Order+paging, where.Args())
+		if err != nil {
+			return nil, "", 0, err
+		}
+		return rooms, "", total, nil
 	}
 	if f.Cursor != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(f.Cursor)
@@ -79,25 +95,12 @@ func (r *Repository) AdminRooms(ctx context.Context, f domain.AdminRoomFilter) (
 		if err != nil || json.Unmarshal(raw, &c) != nil {
 			return nil, "", 0, &domain.ValidationError{Field: "cursor", Reason: "is not valid"}
 		}
-		add("(r.created_at, r.id) < (?, ?)", c.At, c.ID)
+		where.Add("(r.created_at, r.id) < (?, ?)", c.At, c.ID)
 	}
-	args = append(args, f.Limit+1)
-	rows, err := r.q.Query(ctx, adminRoomSelect+where()+` ORDER BY r.created_at DESC, r.id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
+	limit := where.Arg(f.Limit + 1)
+	rooms, err := r.adminRooms(ctx, adminRoomSelect+where.SQL()+` ORDER BY r.created_at DESC, r.id DESC LIMIT `+limit, where.Args())
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("repository: admin rooms: %w", err)
-	}
-	defer rows.Close()
-
-	rooms := []domain.AdminRoom{}
-	for rows.Next() {
-		room, err := scanAdminRoom(rows)
-		if err != nil {
-			return nil, "", 0, fmt.Errorf("repository: scan admin room: %w", err)
-		}
-		rooms = append(rooms, room)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, "", 0, fmt.Errorf("repository: admin rooms: %w", err)
+		return nil, "", 0, err
 	}
 	next := ""
 	if len(rooms) > f.Limit {
@@ -107,6 +110,27 @@ func (r *Repository) AdminRooms(ctx context.Context, f domain.AdminRoomFilter) (
 		next = base64.RawURLEncoding.EncodeToString(raw)
 	}
 	return rooms, next, total, nil
+}
+
+func (r *Repository) adminRooms(ctx context.Context, query string, args []any) ([]domain.AdminRoom, error) {
+	rows, err := r.q.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("repository: admin rooms: %w", err)
+	}
+	defer rows.Close()
+
+	rooms := []domain.AdminRoom{}
+	for rows.Next() {
+		room, err := scanAdminRoom(rows)
+		if err != nil {
+			return nil, fmt.Errorf("repository: scan admin room: %w", err)
+		}
+		rooms = append(rooms, room)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repository: admin rooms: %w", err)
+	}
+	return rooms, nil
 }
 
 func (r *Repository) AdminRoom(ctx context.Context, id uuid.UUID) (domain.AdminRoom, error) {
