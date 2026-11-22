@@ -174,7 +174,7 @@ test("Axon TV fits a 375 px phone and swipes one game at a time", async ({ brows
     const feed = watcher.page.getByLabel("Live games");
     const box = (await feed.boundingBox())!;
     const cdp = await watcher.context.newCDPSession(watcher.page);
-    await cdp.send("Input.synthesizeScrollGesture", { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height * 0.7), yDistance: -Math.round(box.height * 0.4), gestureSourceType: "touch", speed: 1600, preventFling: false });
+    await cdp.send("Input.synthesizeScrollGesture", { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height * 0.85), yDistance: -Math.round(box.height * 0.6), gestureSourceType: "touch", speed: 1600, preventFling: false });
     const ids = await order(watcher.page);
     const following = ids[ids.indexOf(quoridor) + 1]!;
     await expect(active(watcher.page)).toHaveAttribute("data-tv-slide", following);
