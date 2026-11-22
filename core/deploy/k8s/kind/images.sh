@@ -5,7 +5,7 @@ root=$(cd "$(dirname "$0")/../../../.." && pwd)
 cluster=${KIND_CLUSTER:-axon}
 tag=${IMAGE_TAG:-local}
 api_url=${WEB_API_BASE_URL:-http://localhost:28080}
-images=${IMAGES:-auth chat game gateway rating analysis tournament web connect toolbox}
+images=${IMAGES:-auth chat game gateway rating analysis tournament web admin-web connect toolbox}
 
 cd "$root"
 
@@ -32,6 +32,10 @@ for image in $images; do
     web)
       docker build -q -f core/deploy/Dockerfile.web --target runtime \
         --build-arg NEXT_PUBLIC_API_BASE_URL="$api_url" --build-arg NEXT_PUBLIC_OAUTH_PROVIDERS=fake -t "axon/web:$tag" ui/web >/dev/null
+      ;;
+    admin-web)
+      docker build -q -f core/deploy/Dockerfile.web --target runtime \
+        --build-arg NEXT_PUBLIC_API_BASE_URL="$api_url" -t "axon/admin-web:$tag" ui/admin >/dev/null
       ;;
     connect)
       docker build -q -f core/deploy/k8s/Dockerfile.connect -t "axon/connect:$tag" core/deploy/k8s >/dev/null

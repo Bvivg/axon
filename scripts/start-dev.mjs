@@ -99,7 +99,7 @@ async function main() {
     for (const tool of ["go", "ffmpeg", "ffprobe", ...(env.AXON_DEV_INFRA === "external" ? [] : ["docker"])]) {
       if (spawnSync(tool, [tool === "docker" ? "--version" : tool === "go" ? "version" : "-version"], { stdio: "ignore" }).status !== 0) throw new Error(`Missing dependency: ${tool}`);
     }
-    const ports = { web: Number(env.DEV_WEB_PORT || 3000), gateway: Number(env.DEV_GATEWAY_PORT || 28080), auth: Number(env.DEV_AUTH_PORT || 28081), chat: Number(env.DEV_CHAT_PORT || 28082), game: Number(env.DEV_GAME_PORT || 28083), rating: Number(env.DEV_RATING_PORT || 28084), analysis: Number(env.DEV_ANALYSIS_PORT || 28085), tournament: Number(env.DEV_TOURNAMENT_PORT || 28086), authAdmin: Number(env.DEV_AUTH_ADMIN_PORT || 29091), chatAdmin: Number(env.DEV_CHAT_ADMIN_PORT || 29092), gatewayAdmin: Number(env.DEV_GATEWAY_ADMIN_PORT || 29090), ratingAdmin: Number(env.DEV_RATING_ADMIN_PORT || 29094), analysisAdmin: Number(env.DEV_ANALYSIS_ADMIN_PORT || 29095), tournamentAdmin: Number(env.DEV_TOURNAMENT_ADMIN_PORT || 29096) };
+    const ports = { web: Number(env.DEV_WEB_PORT || 3000), admin: Number(env.DEV_ADMIN_PORT || 3010), gateway: Number(env.DEV_GATEWAY_PORT || 28080), auth: Number(env.DEV_AUTH_PORT || 28081), chat: Number(env.DEV_CHAT_PORT || 28082), game: Number(env.DEV_GAME_PORT || 28083), rating: Number(env.DEV_RATING_PORT || 28084), analysis: Number(env.DEV_ANALYSIS_PORT || 28085), tournament: Number(env.DEV_TOURNAMENT_PORT || 28086), authAdmin: Number(env.DEV_AUTH_ADMIN_PORT || 29091), chatAdmin: Number(env.DEV_CHAT_ADMIN_PORT || 29092), gatewayAdmin: Number(env.DEV_GATEWAY_ADMIN_PORT || 29090), ratingAdmin: Number(env.DEV_RATING_ADMIN_PORT || 29094), analysisAdmin: Number(env.DEV_ANALYSIS_ADMIN_PORT || 29095), tournamentAdmin: Number(env.DEV_TOURNAMENT_ADMIN_PORT || 29096) };
     if (new Set(Object.values(ports)).size !== Object.values(ports).length) throw new Error("DEV_* ports must be distinct");
     for (const [name, port] of Object.entries(ports)) {
       if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid port for ${name}`);
@@ -139,17 +139,20 @@ async function main() {
     }
 
     const web = join(root, "ui/web");
+    const admin = join(root, "ui/admin");
     const npm = join(dirname(process.execPath), "npm");
-    const fingerprint = `${process.platform}/${process.arch}/${process.versions.node.split(".")[0]}\n${readFileSync(join(web, "package-lock.json"), "utf8")}`;
-    const stamp = join(runtime, "web-dependencies");
-    if (!existsSync(join(web, "node_modules/next/package.json")) || !existsSync(stamp) || readFileSync(stamp, "utf8") !== fingerprint || spawnSync(process.execPath, ["--input-type=module", "-e", "await import('vite')"], { cwd: web, stdio: "ignore" }).status !== 0) {
-      await launch("install", npm, ["ci", "--include=optional", "--no-audit", "--no-fund"], { cwd: web }).completed;
-      writeFileSync(stamp, fingerprint);
+    for (const [name, app] of [["web", web], ["admin", admin]]) {
+      const fingerprint = `${process.platform}/${process.arch}/${process.versions.node.split(".")[0]}\n${readFileSync(join(app, "package-lock.json"), "utf8")}`;
+      const stamp = join(runtime, `${name}-dependencies`);
+      if (!existsSync(join(app, "node_modules/next/package.json")) || !existsSync(stamp) || readFileSync(stamp, "utf8") !== fingerprint || spawnSync(process.execPath, ["--input-type=module", "-e", "await import('vite')"], { cwd: app, stdio: "ignore" }).status !== 0) {
+        await launch(`install-${name}`, npm, ["ci", "--include=optional", "--no-audit", "--no-fund"], { cwd: app }).completed;
+        writeFileSync(stamp, fingerprint);
+      }
     }
     const protoStamp = join(root, "core/shared/gen/.stamp");
     const contracts = join(root, "core/shared/proto");
     const protoSources = [join(root, "buf.yaml"), join(root, "buf.gen.yaml"), contracts, ...readdirSync(contracts, { recursive: true }).map((name) => join(contracts, name))];
-    if (!existsSync(protoStamp) || !existsSync(join(web, "src/gen")) || protoSources.some((file) => statSync(file).mtimeMs > statSync(protoStamp).mtimeMs)) {
+    if (!existsSync(protoStamp) || !existsSync(join(web, "src/gen")) || !existsSync(join(admin, "src/gen")) || protoSources.some((file) => statSync(file).mtimeMs > statSync(protoStamp).mtimeMs)) {
       await launch("proto", npm, ["exec", "--yes", "--package=@bufbuild/buf@1.75.0", "--", "buf", "generate"]).completed;
       writeFileSync(protoStamp, "");
     }
@@ -175,7 +178,7 @@ async function main() {
       ANALYSIS_SERVICE_URL: `http://127.0.0.1:${ports.analysis}`,
       TOURNAMENT_SERVICE_URL: `http://127.0.0.1:${ports.tournament}`,
       JWKS_URL: `http://127.0.0.1:${ports.authAdmin}/.well-known/jwks.json`,
-      CORS_ALLOWED_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
+      CORS_ALLOWED_ORIGINS: `${origin},http://127.0.0.1:${ports.web},http://localhost:${ports.admin}`,
       OAUTH_ALLOWED_RETURN_ORIGINS: `${origin},http://127.0.0.1:${ports.web}`,
       OAUTH_REDIRECT_BASE_URL: `${origin}/auth/callback`,
       OAUTH_FAKE_ENABLED: "true",
@@ -212,11 +215,13 @@ async function main() {
       task.completed.catch(() => {});
       await ready(`http://127.0.0.1:${service === "game" ? ports.game : ports[`${service}Admin`]}/readyz`);
     }
-    const frontend = launch("web", npm, ["run", "dev", "--", "--port", String(ports.web)], { cwd: web, env: { ...common, AXON_GATEWAY_RPC_URL: api, AXON_GATEWAY_METRICS_URL: `http://127.0.0.1:${ports.gatewayAdmin}`, AXON_GATEWAY_ENVIRONMENT: "Local dev", ALLOWED_DEV_ORIGINS: "localhost,127.0.0.1" }, persistent: true });
+    const adminApp = launch("admin", npm, ["run", "dev", "--", "--port", String(ports.admin)], { cwd: admin, env: { ...common, AXON_GATEWAY_RPC_URL: api, AXON_GATEWAY_METRICS_URL: `http://127.0.0.1:${ports.gatewayAdmin}`, AXON_GATEWAY_ENVIRONMENT: "Local dev", ALLOWED_DEV_ORIGINS: "localhost,127.0.0.1" }, persistent: true });
+    adminApp.completed.catch(() => {});
+    const frontend = launch("web", npm, ["run", "dev", "--", "--port", String(ports.web)], { cwd: web, env: { ...common, ADMIN_WEB_URL: `http://127.0.0.1:${ports.admin}`, ALLOWED_DEV_ORIGINS: "localhost,127.0.0.1" }, persistent: true });
     frontend.completed.catch(() => {});
     await ready(`${origin}/login`);
     writeFileSync(join(runtime, "start-dev-pids.json"), JSON.stringify({ supervisor: process.pid, children: [...children].map((child) => child.pid) }));
-    log("dev", `Ready: ${origin} | Gateway: ${api} | Ctrl+C stops all local services.`);
+    log("dev", `Ready: ${origin} | Admin: ${origin}/admin | Gateway: ${api} | Ctrl+C stops all local services.`);
   } catch (error) {
     if (!stopping) { failed = true; log("dev", error.message); }
     await stop(failed ? 1 : 0);

@@ -16,7 +16,7 @@ migrations:
   image: migrate/migrate:v4.20.1
 mtls:
   enabled: true
-  allowedClients: gateway,chat,game,analysis,tournament
+  allowedClients: gateway,chat,game,analysis,tournament,rating
   duration: 1h
   renewBefore: 20m
   env: {}
@@ -63,6 +63,7 @@ env:
   METRICS_ADDR: ":9091"
   SHUTDOWN_DRAIN: 3s
   REDIS_ADDR: "{{ .Values.global.redis.app }}"
+  KAFKA_BROKERS: "{{ .Values.global.kafka.brokers }}"
   JWT_ACTIVE_KEY_ID: dev-1
   JWT_ISSUER: https://auth.axon.local
   JWT_AUDIENCE: axon
