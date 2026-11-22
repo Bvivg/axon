@@ -23,6 +23,7 @@ final class CallsViewModel {
     var filter: CallFilter = .all
     let me: String
     @ObservationIgnored private let services: Services
+    @ObservationIgnored private var pendingRefresh: Task<Void, Never>?
 
     init(services: Services, me: String) {
         self.services = services
@@ -56,7 +57,7 @@ final class CallsViewModel {
     func refresh() async {
         defer { loaded = true }
         do {
-            calls = try await services.calls.history(limit: 50)
+            calls = try await services.calls.history(before: nil, limit: 50).calls
             error = nil
         } catch {
             self.error = error.code == .unavailable ? "The server is unreachable." : "Could not load calls."
@@ -66,6 +67,39 @@ final class CallsViewModel {
         if let profiles = try? await services.auth.profiles(ids: peers) {
             people.merge(profiles) { _, new in new }
         }
+    }
+
+    func scheduleRefresh() {
+        pendingRefresh?.cancel()
+        pendingRefresh = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await self?.refresh()
+        }
+    }
+
+    func remember(_ profile: PublicProfile) {
+        people[profile.id] = profile
+    }
+
+    func peer(of call: Call) -> String? {
+        call.isGroup ? nil : call.peer(for: me)
+    }
+
+    func call(_ id: String) -> Call? {
+        calls.first { $0.id == id }
+    }
+
+    func related(to call: Call) -> [Call] {
+        calls.filter { other in
+            guard other.isGroup == call.isGroup else { return false }
+            return call.isGroup ? other.roomID == call.roomID : peer(of: other) == peer(of: call)
+        }
+    }
+
+    func handle(of call: Call) -> String? {
+        guard let peer = peer(of: call), let profile = people[peer], profile.hasUsername, !profile.username.isEmpty else { return nil }
+        return "@\(profile.username)"
     }
 
     private func matches(_ call: Call) -> Bool {

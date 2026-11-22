@@ -152,6 +152,22 @@ struct CallsViewModelTests {
         model.filter = filter
         #expect(model.visible.map(\.id) == expected)
     }
+
+    @Test func detailListsCallsWithTheSamePerson() async throws {
+        let world = FakeWorld()
+        world.calls.result = .success([
+            SocialFixtures.call("out", caller: GameFixtures.me, peer: GameFixtures.rival),
+            SocialFixtures.call("other", caller: GameFixtures.third, peer: GameFixtures.me),
+            SocialFixtures.call("missed", caller: GameFixtures.rival, peer: GameFixtures.me, ended: "missed"),
+        ])
+        world.auth.profileMap = [GameFixtures.rival: GameFixtures.profile(GameFixtures.rival, "grace")]
+        let model = CallsViewModel(services: world.services, me: GameFixtures.me)
+        await model.refresh()
+        let call = try #require(model.call("missed"))
+        #expect(model.related(to: call).map(\.id) == ["out", "missed"])
+        #expect(model.handle(of: call) == "@grace")
+        #expect(model.call("gone") == nil)
+    }
 }
 
 @MainActor
@@ -182,6 +198,31 @@ struct ProfileViewModelTests {
         #expect(adopted.map(\.lastName) == ["Lovelace"])
         #expect(!model.canSave)
     }
+
+    @Test func uploadsAPhotoAsJPEGAndAdoptsTheNewAvatar() async throws {
+        let world = FakeWorld()
+        world.media.avatarResult = .success(AvatarUpload(
+            url: "https://axon.test/a.jpg",
+            sizes: AvatarUpload.Sizes(small: "s.jpg", medium: "https://axon.test/m.jpg", large: "l.jpg", original: "o.jpg")
+        ))
+        var adopted: [User] = []
+        let model = ProfileViewModel(services: world.services, user: user()) { adopted.append($0) }
+        await model.uploadPhoto(Self.png)
+        #expect(model.photoError == nil)
+        #expect(model.user.avatarLink == URL(string: "https://axon.test/m.jpg"))
+        #expect(adopted.count == 1)
+        await model.uploadPhoto(Data("not an image".utf8))
+        #expect(model.photoError == "That file is not an image we can use.")
+    }
+
+    @Test func convertsPhotosToBoundedJPEG() throws {
+        let jpeg = try #require(AvatarImage.jpeg(from: Self.png))
+        #expect(jpeg.starts(with: [0xFF, 0xD8]))
+    }
+
+    private static let png = Data(
+        base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg=="
+    )!
 
     @Test func showsUsernameErrorsNextToTheField() async {
         let world = FakeWorld()

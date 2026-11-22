@@ -4,7 +4,7 @@ struct ReplayView: View {
     @State private var model: ReplayViewModel
 
     init(sessionID: String, services: Services) {
-        _model = State(initialValue: ReplayViewModel(sessionID: sessionID, game: services.game))
+        _model = State(initialValue: ReplayViewModel(sessionID: sessionID, game: services.game, analysis: services.analysis))
     }
 
     var body: some View {
@@ -12,6 +12,12 @@ struct ReplayView: View {
             if let frame = model.frame {
                 AdaptiveGameLayout {
                     GameBoard(kind: model.kind, frame: frame)
+                        .padding(.leading, model.analysed ? 20 : 0)
+                        .overlay(alignment: .leading) {
+                            if model.analysed {
+                                EvalBar(position: model.currentAnalysis)
+                            }
+                        }
                         .padding(8)
                         .cardBackground()
                 } panel: { wide in
@@ -38,6 +44,9 @@ struct ReplayView: View {
                         }
                     }
                     .card()
+                    if model.analysed {
+                        AnalysisPanel(model: model)
+                    }
                     if !model.moves.isEmpty {
                         MovesCard(moves: model.moves, highlightedPly: model.highlightedPly, layout: MoveListLayout(model.kind), wide: wide)
                     }
@@ -63,7 +72,10 @@ struct ReplayView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .task { await model.load() }
+        .task {
+            await model.load()
+            await model.watchAnalysis()
+        }
     }
 }
 

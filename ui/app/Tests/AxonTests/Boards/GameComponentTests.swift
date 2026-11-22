@@ -57,7 +57,8 @@ struct GameKindTests {
         #expect(GameKind.checkers.seatNames == ["Black", "White"])
         #expect(GameKind.checkers.supportsDrawOffers)
         #expect(!GameKind.quoridor.supportsDrawOffers)
-        #expect(GameKind(game: "durak") == .ticTacToe)
+        #expect(GameKind(game: "go") == .ticTacToe)
+        #expect(GameKind(rawValue: "durak") == .durak)
     }
 }
 

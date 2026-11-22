@@ -35,11 +35,16 @@ enum SessionStatusText {
         switch session.kind {
         case .chess: return session.hasChess ? chessEndings[session.chess.end] : nil
         case .checkers: return session.hasCheckers ? checkersEnding(session) : nil
+        case .durak: return session.hasDurak ? DurakNotation.ending(session.durak.end) : nil
         case .ticTacToe, .quoridor: return nil
         }
     }
 
     static func hint(_ session: Session, me: String) -> String? {
+        if session.kind == .durak {
+            guard session.status == .playing, session.turnUserID == me, let seat = session.seat(of: me) else { return nil }
+            return "Your move · \(DurakNotation.task(session.durak, seat: seat))"
+        }
         guard session.kind == .checkers, session.status == .playing, session.turnUserID == me,
               session.checkers.legalMoves.contains(where: { CheckersMove(notation: $0)?.jump == true })
         else { return nil }

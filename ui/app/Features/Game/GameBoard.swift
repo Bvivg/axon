@@ -6,6 +6,7 @@ struct GameBoard: View {
     let chess: ChessBoardState
     let quoridor: QuoridorBoardState
     let checkers: CheckersBoardState
+    let durak: DurakBoardState
     let perspective: Int
     let interactive: Bool
     var onCell: (Int) -> Void = { _ in }
@@ -17,6 +18,7 @@ struct GameBoard: View {
         chess = session.chess
         quoridor = session.quoridor
         checkers = session.checkers
+        durak = session.durak
         self.perspective = perspective
         self.interactive = interactive
         self.onCell = onCell
@@ -29,6 +31,7 @@ struct GameBoard: View {
         chess = frame.chess
         quoridor = frame.quoridor
         checkers = frame.checkers
+        durak = frame.durak
         perspective = 0
         interactive = false
     }
@@ -43,6 +46,8 @@ struct GameBoard: View {
             QuoridorBoardView(board: quoridor, perspective: perspective, interactive: interactive, onMove: onMove)
         case .checkers:
             CheckersBoardView(board: checkers, perspective: perspective, interactive: interactive, onMove: onMove)
+        case .durak:
+            DurakBoardView(board: durak, perspective: perspective, interactive: interactive, onMove: onMove)
         }
     }
 }

@@ -5,11 +5,15 @@ enum Route: Hashable, Sendable {
     case lobby(GameKind)
     case game(String)
     case replay(String)
+    case practice(GameKind)
+    case tournaments
+    case tournament(String)
     case profile(ProfilePage)
     case room(String)
     case person(String)
     case roomInfo(String)
     case roomMedia(String)
+    case call(String)
 }
 
 enum ProfilePage: String, Hashable, Sendable, CaseIterable {
@@ -42,6 +46,7 @@ final class AppModel {
     private(set) var services: Services
     var tab: AppTab = .games
     var paths: [AppTab: [Route]] = [:]
+    var pendingLink: AppLink?
     let settings: GatewaySettings
     @ObservationIgnored private let vault: TokenVault
     @ObservationIgnored private let build: ServicesBuilder
@@ -74,6 +79,7 @@ final class AppModel {
     }
 
     func signOut() async {
+        Spotlight.clear()
         await services.auth.logout()
         resetNavigation()
         phase = .signedOut
@@ -81,6 +87,22 @@ final class AppModel {
 
     func open(_ route: Route) {
         paths[tab, default: []].append(route)
+    }
+
+    func handle(_ link: AppLink) {
+        pendingLink = link
+    }
+
+    @discardableResult
+    func handle(url: URL) -> Bool {
+        guard let link = AppLink(url: url) else { return false }
+        handle(link)
+        return true
+    }
+
+    func follow(_ tab: AppTab, _ routes: [Route]) {
+        self.tab = tab
+        paths[tab] = routes
     }
 
     func openChat(_ room: String) {

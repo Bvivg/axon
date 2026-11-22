@@ -20,6 +20,7 @@ final class ChatsViewModel {
         didSet { if query != oldValue { search.update(query) } }
     }
     var activeRoom: String?
+    var composing: NewChatSheet.Mode?
     var sceneActive = true
     var sceneVisible = true
     let me: String

@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct AccountView: View {
@@ -95,6 +96,7 @@ struct EmailBadge: View {
 struct PersonalInfoView: View {
     @Bindable var model: ProfileViewModel
     @FocusState private var focus: Field?
+    @State private var photo: PhotosPickerItem?
 
     private enum Field: Hashable {
         case email, username, firstName, lastName, nickname
@@ -103,11 +105,38 @@ struct PersonalInfoView: View {
     var body: some View {
         ProfileScroll(title: ProfilePage.personal.title) {
             ProfileSection("Photo") {
-                HStack(spacing: 16) {
-                    Avatar(name: model.user.personName, url: model.user.avatarLink, size: 64, cornerRadius: 32)
-                    Text(model.user.personName)
-                        .font(.axHeadline)
-                        .foregroundStyle(Theme.foreground)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 16) {
+                        Avatar(name: model.user.personName, url: model.user.avatarLink, size: 64, cornerRadius: 32)
+                            .overlay {
+                                if model.uploadingPhoto {
+                                    ProgressView().frame(width: 64, height: 64).background(.ultraThinMaterial, in: Circle())
+                                }
+                            }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(model.user.personName)
+                                .font(.axHeadline)
+                                .foregroundStyle(Theme.foreground)
+                            let photoLabel = model.user.avatarLink == nil ? "Add photo" : "Change photo"
+                            PhotosPicker(selection: $photo, matching: .images) {
+                                Text(photoLabel)
+                                    .font(.geist(14, .medium, relativeTo: .subheadline))
+                            }
+                            .disabled(model.uploadingPhoto)
+                            .accessibilityIdentifier(AccessibilityID.Profile.photo)
+                        }
+                    }
+                    if let error = model.photoError {
+                        ErrorBanner(text: error)
+                    }
+                }
+                .onChange(of: photo) { _, item in
+                    guard let item else { return }
+                    photo = nil
+                    Task {
+                        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                        await model.uploadPhoto(data)
+                    }
                 }
             }
             ProfileSection("Account") {

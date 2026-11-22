@@ -154,6 +154,10 @@ final class LobbyViewModel {
         open(.replay(id))
     }
 
+    func openPractice(_ game: GameKind) {
+        open(.practice(game))
+    }
+
     private func listen(_ game: GameKind) {
         let channel = services.channels.open(.match(game))
         matchChannel = channel

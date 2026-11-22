@@ -1,3 +1,4 @@
+import CoreSpotlight
 import SwiftUI
 
 struct RootView: View {
@@ -29,5 +30,12 @@ struct RootView: View {
         .tint(Theme.primary)
         .preferredColorScheme(appearance.scheme)
         .task { await app.start() }
+        .onOpenURL { url in app.handle(url: url) }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                  let link = AppLink.searchable(identifier)
+            else { return }
+            app.handle(link)
+        }
     }
 }

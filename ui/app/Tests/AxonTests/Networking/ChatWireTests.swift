@@ -33,6 +33,23 @@ struct ChatWireTests {
         #expect(ChatWire.encode(.watchPresence(user: "u")) == #"{"to_user_id":"u","type":"watch_presence"}"#)
     }
 
+    @Test func wrapsCallFramesAndReadsCallEvents() throws {
+        var frame = CallSocketFrame()
+        frame.eventID = "e1"
+        let ack = object(ChatWire.encode(.call(.ack, frame)))
+        #expect(ack["type"] as? String == "call_ack")
+        #expect((ack["call"] as? [String: Any])?["eventId"] as? String == "e1")
+        let text = #"{"type":"call_event","call":{"eventId":"e2","endpointEpoch":"3","#
+            + #""call":{"id":"c1","state":"CALL_STATE_RINGING"},"later":1}}"#
+        guard case .call(let event) = try #require(ChatWire.event(from: text)) else {
+            Issue.record("not a call event")
+            return
+        }
+        #expect(event.eventID == "e2")
+        #expect(event.endpointEpoch == 3)
+        #expect(event.call.state == .ringing)
+    }
+
     @Test func decodesAMessageWithAnAlbumReplyAndEdit() throws {
         let frame = """
         {"type":"message","message":{"id":"m1","room_id":"r1","author_id":"a1","body":"look","seq":12,
