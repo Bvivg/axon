@@ -198,3 +198,31 @@ func TestEachProviderRedirectsToItsOwnRoute(t *testing.T) {
 		}
 	}
 }
+
+func TestTheAppVariantRedirectsUnderTheProviderRoute(t *testing.T) {
+	registry, err := oauth.NewRegistry(oauth.RegistryConfig{
+		RedirectBaseURL: redirectBase,
+		Google:          configured(),
+		GitHub:          configured(),
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+
+	for id, want := range map[domain.Provider]string{
+		domain.ProviderGoogle: "auth%2Fcallback%2Fgoogle%2Fapp",
+		domain.ProviderGitHub: "auth%2Fcallback%2Fgithub%2Fapp",
+	} {
+		provider, err := registry.App(id)
+		if err != nil {
+			t.Fatalf("App(%q): %v", id, err)
+		}
+		if url := provider.AuthorizationURL("a-state", "a-challenge"); !strings.Contains(url, want) {
+			t.Errorf("%s app redirect_uri is wrong: %s", id, url)
+		}
+	}
+
+	if _, err := registry.App(domain.ProviderApple); !errors.Is(err, domain.ErrProviderUnsupported) {
+		t.Errorf("App(apple) = %v, want ErrProviderUnsupported", err)
+	}
+}

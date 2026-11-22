@@ -3,6 +3,7 @@ package oauth_test
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/bvivg/axon/core/services/auth/internal/oauth"
@@ -66,5 +67,58 @@ func TestChallengeIsDeterministic(t *testing.T) {
 
 	if first, second := oauth.Challenge(verifier), oauth.Challenge(verifier); first != second {
 		t.Errorf("the same verifier produced %q and %q", first, second)
+	}
+}
+
+func TestOnlyTheMatchingVerifierPassesItsChallenge(t *testing.T) {
+	verifier, err := oauth.NewVerifier()
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	other, err := oauth.NewVerifier()
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	challenge := oauth.Challenge(verifier)
+
+	tests := []struct {
+		name      string
+		verifier  string
+		challenge string
+		want      bool
+	}{
+		{"matching", verifier, challenge, true},
+		{"another verifier", other, challenge, false},
+		{"empty verifier", "", challenge, false},
+		{"the challenge itself", challenge, challenge, false},
+		{"short verifier", verifier[:20], oauth.Challenge(verifier[:20]), false},
+		{"malformed challenge", verifier, "not a challenge", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := oauth.VerifierMatches(tt.verifier, tt.challenge); got != tt.want {
+				t.Errorf("VerifierMatches = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChallengesAreS256Shaped(t *testing.T) {
+	verifier, err := oauth.NewVerifier()
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+
+	for challenge, want := range map[string]bool{
+		oauth.Challenge(verifier):     true,
+		"":                            false,
+		"short":                       false,
+		strings.Repeat("a", 42) + "=": false,
+		strings.Repeat("a", 42) + "/": false,
+		strings.Repeat("a", 44):       false,
+	} {
+		if got := oauth.ValidChallenge(challenge); got != want {
+			t.Errorf("ValidChallenge(%q) = %v, want %v", challenge, got, want)
+		}
 	}
 }

@@ -32,6 +32,8 @@ var (
 
 	ErrOauthReturnToNotAllowed = errors.New("auth: return_to is not an allowed destination")
 
+	ErrOauthChallengeInvalid = errors.New("auth: app_challenge must be an S256 PKCE challenge")
+
 	ErrOauthEmailNotAllowed = errors.New("auth: the test provider only vouches for its reserved domain")
 
 	ErrOauthAccountExists = errors.New("auth: an account with this email exists and cannot be linked")

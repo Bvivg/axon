@@ -59,6 +59,47 @@ func (s *Service) StartOAuth(ctx context.Context, id domain.Provider, returnTo s
 	}, nil
 }
 
+func (s *Service) StartAppOAuth(ctx context.Context, id domain.Provider, challenge string, linkUserID *uuid.UUID) (StartOAuthResult, error) {
+	if s.oauth == nil {
+		return StartOAuthResult{}, domain.ErrProviderUnsupported
+	}
+
+	if !oauth.ValidChallenge(challenge) {
+		return StartOAuthResult{}, domain.ErrOauthChallengeInvalid
+	}
+
+	provider, err := s.oauth.providers.App(id)
+	if err != nil {
+		return StartOAuthResult{}, err
+	}
+
+	verifier, err := oauth.NewVerifier()
+	if err != nil {
+		return StartOAuthResult{}, err
+	}
+
+	state, err := s.oauth.states.Put(ctx, oauth.State{
+		Provider:     id,
+		Verifier:     verifier,
+		AppChallenge: challenge,
+		LinkUserID:   linkUserID,
+	})
+	if err != nil {
+		return StartOAuthResult{}, err
+	}
+
+	if linkUserID != nil {
+		s.log.InfoContext(ctx, "oauth app linking started", "provider", id, "user_id", *linkUserID)
+	} else {
+		s.log.InfoContext(ctx, "oauth app sign-in started", "provider", id)
+	}
+
+	return StartOAuthResult{
+		AuthorizationURL: provider.AuthorizationURL(state, oauth.Challenge(verifier)),
+		State:            state,
+	}, nil
+}
+
 type CompleteOAuthResult struct {
 	Result
 
@@ -75,6 +116,8 @@ type CompleteOAuthInput struct {
 	State    string
 
 	DisplayName string
+
+	AppVerifier string
 
 	Device domain.Device
 
@@ -102,6 +145,17 @@ func (s *Service) CompleteOAuth(ctx context.Context, in CompleteOAuthInput) (Com
 		s.log.WarnContext(ctx, "oauth state presented for the wrong provider",
 			"issued_for", stored.Provider, "presented_for", id)
 		return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
+	}
+
+	if stored.AppChallenge != "" {
+		if !oauth.VerifierMatches(in.AppVerifier, stored.AppChallenge) {
+			s.log.WarnContext(ctx, "oauth app state completed without its verifier", "provider", id)
+			return CompleteOAuthResult{}, domain.ErrOauthStateInvalid
+		}
+		provider, err = s.oauth.providers.App(id)
+		if err != nil {
+			return CompleteOAuthResult{}, err
+		}
 	}
 
 	if stored.LinkUserID != nil && (in.CallerID == nil || *in.CallerID != *stored.LinkUserID) {

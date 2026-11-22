@@ -142,6 +142,8 @@ message StartOAuthRequest {
   optional string return_to = 2;
 
   optional bool link = 3;
+
+  optional string app_challenge = 4;
 }
 
 message StartOAuthResponse {
@@ -157,6 +159,8 @@ message CompleteOAuthRequest {
   string state = 3;
 
   optional string display_name = 4;
+
+  optional string app_verifier = 5;
 }
 
 message CompleteOAuthResponse {

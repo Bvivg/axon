@@ -89,8 +89,8 @@ struct MoveListContent: View {
         let rows = MoveListRow.rows(moves, layout: layout)
         if rows.isEmpty {
             Text("No moves yet")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.axCallout)
+                .foregroundStyle(Theme.muted)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
         } else {
@@ -107,7 +107,7 @@ struct MoveListContent: View {
     private func rowView(_ row: MoveListRow) -> some View {
         HStack(spacing: 4) {
             Text("\(row.number).")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.muted)
                 .frame(width: 30, alignment: .leading)
             ForEach(row.entries, id: \.ply) { entry in
                 entryView(entry)
@@ -116,7 +116,7 @@ struct MoveListContent: View {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
             }
         }
-        .font(.system(.callout, design: .monospaced))
+        .font(.axMono(15, relativeTo: .callout))
         .accessibilityElement(children: .combine)
     }
 
@@ -135,5 +135,61 @@ struct MoveListContent: View {
                 }
             }
             .accessibilityAddTraits(highlighted ? .isSelected : [])
+    }
+}
+
+struct MoveStrip: View {
+    let moves: [String]
+    let highlightedPly: Int?
+    let layout: MoveListLayout
+
+    var body: some View {
+        let rows = MoveListRow.rows(moves, layout: layout)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 10) {
+                    ForEach(rows) { row in
+                        HStack(spacing: 3) {
+                            Text("\(row.number).")
+                                .foregroundStyle(Theme.muted)
+                            ForEach(row.entries, id: \.ply) { entry in
+                                chip(entry)
+                            }
+                        }
+                        .id(row.id)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .font(.axMono(14, relativeTo: .subheadline))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .scrollIndicators(.hidden)
+            .onAppear { scroll(proxy, animated: false) }
+            .onChange(of: highlightedPly) { scroll(proxy, animated: true) }
+            .onChange(of: moves.count) { scroll(proxy, animated: true) }
+        }
+        .cardBackground()
+        .accessibilityIdentifier(AccessibilityID.Game.moves)
+    }
+
+    private func chip(_ entry: MoveListEntry) -> some View {
+        let highlighted = entry.ply == highlightedPly
+        return Text(entry.text)
+            .fontWeight(highlighted ? .semibold : .regular)
+            .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(highlighted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.clear), in: .capsule)
+            .accessibilityAddTraits(highlighted ? .isSelected : [])
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, animated: Bool) {
+        guard let target = MoveListRow.scrollTarget(moveCount: moves.count, highlightedPly: highlightedPly, layout: layout) else { return }
+        if animated {
+            withAnimation(.snappy) { proxy.scrollTo(target, anchor: .center) }
+        } else {
+            proxy.scrollTo(target, anchor: .center)
+        }
     }
 }

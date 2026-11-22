@@ -42,7 +42,10 @@ type RegistryConfig struct {
 
 type Registry struct {
 	providers map[domain.Provider]Provider
+	apps      map[domain.Provider]Provider
 }
+
+const AppCallbackSuffix = "/app"
 
 func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 	if strings.TrimSpace(cfg.RedirectBaseURL) == "" {
@@ -57,19 +60,17 @@ func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 
 	base := strings.TrimSuffix(cfg.RedirectBaseURL, "/")
 	providers := make(map[domain.Provider]Provider)
+	apps := make(map[domain.Provider]Provider)
+	callback := func(id domain.Provider) string { return base + "/" + id.String() }
 
 	if cfg.Google.configured() {
-		providers[domain.ProviderGoogle] = newGoogle(
-			cfg.Google.ClientID, cfg.Google.ClientSecret,
-			base+"/"+domain.ProviderGoogle.String(),
-		)
+		providers[domain.ProviderGoogle] = newGoogle(cfg.Google.ClientID, cfg.Google.ClientSecret, callback(domain.ProviderGoogle))
+		apps[domain.ProviderGoogle] = newGoogle(cfg.Google.ClientID, cfg.Google.ClientSecret, callback(domain.ProviderGoogle)+AppCallbackSuffix)
 	}
 
 	if cfg.GitHub.configured() {
-		providers[domain.ProviderGitHub] = newGitHub(
-			cfg.GitHub.ClientID, cfg.GitHub.ClientSecret,
-			base+"/"+domain.ProviderGitHub.String(),
-		)
+		providers[domain.ProviderGitHub] = newGitHub(cfg.GitHub.ClientID, cfg.GitHub.ClientSecret, callback(domain.ProviderGitHub))
+		apps[domain.ProviderGitHub] = newGitHub(cfg.GitHub.ClientID, cfg.GitHub.ClientSecret, callback(domain.ProviderGitHub)+AppCallbackSuffix)
 	}
 
 	if cfg.Apple.configured() {
@@ -84,13 +85,11 @@ func NewRegistry(cfg RegistryConfig) (*Registry, error) {
 		if strings.TrimSpace(cfg.FakeAuthorizeURL) == "" {
 			return nil, errors.New("oauth: the fake provider needs its authorize URL")
 		}
-		providers[domain.ProviderFake] = newFake(
-			cfg.FakeAuthorizeURL,
-			base+"/"+domain.ProviderFake.String(),
-		)
+		providers[domain.ProviderFake] = newFake(cfg.FakeAuthorizeURL, callback(domain.ProviderFake))
+		apps[domain.ProviderFake] = newFake(cfg.FakeAuthorizeURL, callback(domain.ProviderFake)+AppCallbackSuffix)
 	}
 
-	return &Registry{providers: providers}, nil
+	return &Registry{providers: providers, apps: apps}, nil
 }
 
 func fakeAllowed(cfg RegistryConfig) error {
@@ -143,6 +142,14 @@ func newAppleFromConfig(cfg RegistryConfig) (Provider, error) {
 
 func (r *Registry) Get(id domain.Provider) (Provider, error) {
 	provider, ok := r.providers[id]
+	if !ok {
+		return nil, domain.ErrProviderUnsupported
+	}
+	return provider, nil
+}
+
+func (r *Registry) App(id domain.Provider) (Provider, error) {
+	provider, ok := r.apps[id]
 	if !ok {
 		return nil, domain.ErrProviderUnsupported
 	}

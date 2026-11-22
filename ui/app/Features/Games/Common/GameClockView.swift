@@ -59,13 +59,13 @@ struct GameClockView: View {
         let low = ClockReadout.isLow(value, running: running)
         let text = ClockReadout.text(value)
         return Text(text)
-            .font(.system(.title3, design: .monospaced, weight: .medium))
+            .font(.axMono(20, medium: true, relativeTo: .title3))
             .monospacedDigit()
             .foregroundStyle(running || low ? AnyShapeStyle(palette.onAccent) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .frame(minWidth: 84, minHeight: 38)
             .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                Capsule()
                     .fill(low ? AnyShapeStyle(palette.danger) : running ? AnyShapeStyle(palette.violet) : AnyShapeStyle(.quaternary))
             }
             .accessibilityElement(children: .ignore)

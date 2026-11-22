@@ -174,7 +174,15 @@ func (h *Handler) StartOAuth(
 		linkUserID = &claims.UserID
 	}
 
-	started, err := h.svc.StartOAuth(ctx, provider, req.Msg.GetReturnTo(), linkUserID)
+	var (
+		started service.StartOAuthResult
+		err     error
+	)
+	if req.Msg.AppChallenge != nil {
+		started, err = h.svc.StartAppOAuth(ctx, provider, req.Msg.GetAppChallenge(), linkUserID)
+	} else {
+		started, err = h.svc.StartOAuth(ctx, provider, req.Msg.GetReturnTo(), linkUserID)
+	}
 	if err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
@@ -199,6 +207,7 @@ func (h *Handler) CompleteOAuth(
 		Code:        req.Msg.GetCode(),
 		State:       req.Msg.GetState(),
 		DisplayName: req.Msg.GetDisplayName(),
+		AppVerifier: req.Msg.GetAppVerifier(),
 		Device:      deviceFrom(req.Header()),
 		CallerID:    h.callerID(req.Header()),
 	})
