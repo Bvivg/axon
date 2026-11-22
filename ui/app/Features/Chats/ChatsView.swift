@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ChatsView: View {
     @Bindable var model: ChatsViewModel
-    @State private var composing: NewChatSheet.Mode?
     @State private var hiding: Room?
 
     var body: some View {
@@ -59,15 +58,15 @@ struct ChatsView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button("New message", systemImage: "person") { composing = .direct }
-                    Button("New group", systemImage: "person.3") { composing = .group }
+                    Button("New message", systemImage: "person") { model.composing = .direct }
+                    Button("New group", systemImage: "person.3") { model.composing = .group }
                 } label: {
                     Label("New chat", systemImage: "square.and.pencil")
                 }
                 .accessibilityIdentifier(AccessibilityID.Chats.compose)
             }
         }
-        .sheet(item: $composing) { mode in
+        .sheet(item: $model.composing) { mode in
             NewChatSheet(hub: model, mode: mode)
         }
         .confirmationDialog(

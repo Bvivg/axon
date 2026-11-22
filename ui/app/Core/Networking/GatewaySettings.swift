@@ -62,6 +62,14 @@ struct GatewayAddress: Hashable, Sendable {
         return link.scheme == "http" || link.scheme == "https" ? link : nil
     }
 
+    func sfuURL(_ path: String) -> URL? {
+        if let absolute = URL(string: path), let scheme = absolute.scheme, ["ws", "wss"].contains(scheme) { return absolute }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.scheme = components.scheme == "https" ? "wss" : "ws"
+        components.path = "/" + path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return components.url
+    }
+
     func sameOrigin(_ link: URL) -> Bool {
         link.scheme == url.scheme && link.host() == url.host() && link.port == url.port
     }

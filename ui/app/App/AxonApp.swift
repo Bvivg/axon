@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 
 @main
@@ -16,7 +17,9 @@ struct AxonApp: App {
         Theme.configureAppearance()
         let settings = GatewaySettings(storage: storage)
         let vault = TokenVault(store: tokens)
-        _app = State(initialValue: AppModel(settings: settings, vault: vault, build: LiveServices.make))
+        let app = AppModel(settings: settings, vault: vault, build: LiveServices.make)
+        _app = State(initialValue: app)
+        AppDependencyManager.shared.add(dependency: app)
     }
 
     var body: some Scene {
@@ -26,5 +29,6 @@ struct AxonApp: App {
         #if os(macOS)
         .defaultSize(width: 1100, height: 760)
         #endif
+        .commands { AppCommands(app: app) }
     }
 }

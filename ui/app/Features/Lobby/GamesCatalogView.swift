@@ -55,6 +55,19 @@ struct GamesCatalogView: View {
             } header: {
                 Eyebrow("Catalogue")
             }
+            if query.isEmpty || "tournaments".localizedStandardContains(query.trimmingCharacters(in: .whitespaces)) {
+                Section {
+                    NavigationLink(value: Route.tournaments) {
+                        CatalogRow(title: "Tournaments", subtitle: "Brackets and Swiss") {
+                            IconTile { Image(systemName: "trophy").font(.system(size: 16)) }
+                        }
+                    }
+                    .accessibilityIdentifier(AccessibilityID.Tournaments.entry)
+                    .plainRow()
+                } header: {
+                    Eyebrow("Compete")
+                }
+            }
         }
         .listStyle(.plain)
         .themedList(Theme.sidebar)

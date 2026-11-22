@@ -29,6 +29,7 @@ protocol MediaAPI: Sendable {
     func data(_ link: URL) async throws(APIError) -> Data
     func download(_ link: URL, named name: String) async throws(APIError) -> URL
     func playbackHeaders(for link: URL) async -> [String: String]
+    func uploadAvatar(_ image: Data, type: String) async throws(APIError) -> AvatarUpload
 }
 
 struct UploadReady: Decodable, Equatable, Sendable {
@@ -59,6 +60,23 @@ struct UploadSession: Decodable, Equatable, Sendable {
     func missing() -> [Int] {
         let done = Set(parts ?? [])
         return partCount > 0 ? (1...partCount).filter { !done.contains($0) } : []
+    }
+}
+
+struct AvatarUpload: Decodable, Equatable, Sendable {
+    struct Sizes: Decodable, Equatable, Sendable {
+        let small: String
+        let medium: String
+        let large: String
+        let original: String
+    }
+
+    let url: String
+    let sizes: Sizes
+
+    enum CodingKeys: String, CodingKey {
+        case url = "avatar_url"
+        case sizes = "avatar_urls"
     }
 }
 
@@ -265,6 +283,26 @@ final class LiveMediaAPI: MediaAPI, @unchecked Sendable {
             throw failure
         } catch {
             throw Failure(status: nil, body: Data(), retryAfter: nil)
+        }
+    }
+
+    func uploadAvatar(_ image: Data, type: String) async throws(APIError) -> AvatarUpload {
+        var request = URLRequest(url: address.url.appending(path: "api/avatar"))
+        request.httpMethod = "POST"
+        request.setValue(type, forHTTPHeaderField: "Content-Type")
+        request.httpBody = image
+        do {
+            return try await JSONDecoder().decode(AvatarUpload.self, from: send(request))
+        } catch let failure as Failure {
+            switch failure.status {
+            case nil: throw APIError(.unavailable, "Could not reach the server. Check the connection and try again.")
+            case 413: throw APIError(.invalidArgument, "That image is larger than 5 MB.")
+            case 415, 400: throw APIError(.invalidArgument, "That file is not an image we can use.")
+            case 429: throw APIError(.resourceExhausted, "Too many uploads at once. Try again in a moment.")
+            default: throw APIError(.unknown, "Could not upload that image.")
+            }
+        } catch {
+            throw APIError(.unknown, "Could not upload that image.")
         }
     }
 

@@ -161,6 +161,15 @@ private struct StartGameSheet: View {
                     }
                     .accessibilityIdentifier(AccessibilityID.Lobby.create(game.rawValue))
                     StartOption(
+                        title: "Practice offline",
+                        subtitle: game == .durak ? "Against the computer" : "Against the computer or on one device",
+                        systemImage: "cpu"
+                    ) {
+                        dismiss()
+                        lobby.openPractice(game)
+                    }
+                    .accessibilityIdentifier(AccessibilityID.Lobby.practice(game.rawValue))
+                    StartOption(
                         title: "Join with a link",
                         subtitle: "Paste a game link or ID from a friend",
                         systemImage: "arrow.down.left"

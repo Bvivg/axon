@@ -91,7 +91,31 @@ protocol ChatAPI: Sendable {
 }
 
 protocol CallsAPI: Sendable {
-    func history(limit: Int) async throws(APIError) -> [Call]
+    func history(before: String?, limit: Int) async throws(APIError) -> CallPage
+    func register(resume: EndpointRef?) async throws(APIError) -> EndpointRef
+    func capabilities() async throws(APIError) -> CallCapabilities
+    func start(_ target: CallTarget, mode: CallMode, endpoint: EndpointRef, request: String) async throws(APIError) -> Call
+    func accept(_ call: String, endpoint: EndpointRef, request: String) async throws(APIError) -> Call
+    func terminate(_ call: String, _ action: CallTermination, endpoint: EndpointRef, request: String) async throws(APIError) -> Call
+    func credentials(for call: Call, endpoint: EndpointRef) async throws(APIError) -> CallCredentials
+    func report(
+        _ call: Call, _ report: ConnectionReport, mediaVersion: Int64?, endpoint: EndpointRef, request: String
+    ) async throws(APIError) -> Call
+    func cleanup(_ call: Call, mediaVersion: Int64?, endpoint: EndpointRef, request: String) async throws(APIError)
+    func call(_ id: String) async throws(APIError) -> Call
+    func invite(_ user: String, to call: Call, endpoint: EndpointRef, request: String) async throws(APIError) -> Call
+    func remove(_ user: String, from call: String, endpoint: EndpointRef, request: String) async throws(APIError) -> Call
+}
+
+protocol TournamentsAPI: Sendable {
+    func list() async throws(APIError) -> [Tournament]
+    func tournament(_ id: String) async throws(APIError) -> Tournament
+    func create(_ spec: NewTournament, request: String) async throws(APIError) -> Tournament
+    func perform(_ action: TournamentAction, on id: String, reason: String?) async throws(APIError) -> Tournament
+}
+
+protocol AnalysisAPI: Sendable {
+    func analysis(of session: String) async throws(APIError) -> GameAnalysis?
 }
 
 enum GameSubscription: Equatable, Hashable, Sendable {
@@ -131,4 +155,6 @@ struct Services: Sendable {
     let channels: any GameChannelFactory
     let chatSocket: any ChatSocketFactory
     let media: any MediaAPI
+    let tournaments: any TournamentsAPI
+    let analysis: any AnalysisAPI
 }

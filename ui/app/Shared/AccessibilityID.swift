@@ -26,6 +26,8 @@ enum AccessibilityID {
     }
 
     enum Home {
+        static let palette = "home.palette"
+
         static func tab(_ name: String) -> String { "home.tab.\(name)" }
     }
 
@@ -40,6 +42,7 @@ enum AccessibilityID {
         static func game(_ game: String) -> String { "lobby.game.\(game)" }
         static func create(_ game: String) -> String { "lobby.create.\(game)" }
         static func quickMatch(_ game: String) -> String { "lobby.quickMatch.\(game)" }
+        static func practice(_ game: String) -> String { "lobby.practice.\(game)" }
         static func session(_ id: String) -> String { "lobby.session.\(id)" }
     }
 
@@ -78,9 +81,40 @@ enum AccessibilityID {
         static func removeMember(_ id: String) -> String { "chats.members.remove.\(id)" }
     }
 
+    enum Durak {
+        static let take = "durak.take"
+        static let pass = "durak.pass"
+        static let stock = "durak.stock"
+        static let table = "durak.table"
+        static let opponent = "durak.opponent"
+
+        static func card(_ code: String) -> String { "durak.card.\(code)" }
+    }
+
     enum Calls {
         static let root = "calls"
         static let filter = "calls.filter"
+        static let newCall = "calls.new"
+        static let screen = "calls.screen"
+        static let status = "calls.status"
+        static let banner = "calls.banner"
+        static let minimize = "calls.minimize"
+        static let accept = "calls.accept"
+        static let acceptAudio = "calls.acceptAudio"
+        static let decline = "calls.decline"
+        static let mute = "calls.mute"
+        static let camera = "calls.camera"
+        static let add = "calls.add"
+        static let end = "calls.end"
+        static let close = "calls.close"
+        static let callBack = "calls.callBack"
+        static let start = "calls.start"
+        static let startAudio = "calls.start.audio"
+        static let startVideo = "calls.start.video"
+        static let detail = "calls.detail"
+        static let detailAudio = "calls.detail.audio"
+        static let detailVideo = "calls.detail.video"
+        static let detailChat = "calls.detail.chat"
 
         static func call(_ id: String) -> String { "calls.call.\(id)" }
     }
@@ -94,6 +128,7 @@ enum AccessibilityID {
         static let firstName = "profile.firstName"
         static let lastName = "profile.lastName"
         static let nickname = "profile.nickname"
+        static let photo = "profile.photo"
 
         static func page(_ name: String) -> String { "profile.page.\(name)" }
         static func endSession(_ id: String) -> String { "profile.endSession.\(id)" }
@@ -120,6 +155,44 @@ enum AccessibilityID {
         static func quoridorCell(_ cell: String) -> String { "quoridor.cell.\(cell)" }
         static func quoridorWall(_ wall: String) -> String { "quoridor.wall.\(wall)" }
         static func checkersSquare(_ number: Int) -> String { "checkers.square.\(number)" }
+    }
+
+    enum Tournaments {
+        static let entry = "tournaments.entry"
+        static let root = "tournaments"
+        static let create = "tournaments.create"
+        static let name = "tournaments.name"
+        static let submit = "tournaments.submit"
+        static let status = "tournament.status"
+        static let register = "tournament.register"
+        static let withdraw = "tournament.withdraw"
+        static let start = "tournament.start"
+        static let cancel = "tournament.cancel"
+        static let winner = "tournament.winner"
+        static let players = "tournament.players"
+        static let error = "tournament.error"
+
+        static func row(_ id: String) -> String { "tournaments.row.\(id)" }
+        static func match(_ round: Int, _ board: Int) -> String { "tournament.match.\(round).\(board)" }
+    }
+
+    enum Practice {
+        static let root = "practice"
+        static let status = "practice.status"
+        static let opponent = "practice.opponent"
+        static let side = "practice.side"
+        static let undo = "practice.undo"
+        static let restart = "practice.restart"
+        static let again = "practice.again"
+        static let result = "practice.result"
+    }
+
+    enum Analysis {
+        static let panel = "analysis.panel"
+        static let bar = "analysis.bar"
+        static let chart = "analysis.chart"
+        static let evaluation = "analysis.evaluation"
+        static let verdict = "analysis.verdict"
     }
 
     enum Replay {

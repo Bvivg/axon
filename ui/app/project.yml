@@ -27,6 +27,12 @@ packages:
   SwiftProtobuf:
     url: https://github.com/apple/swift-protobuf
     exactVersion: 1.41.0
+  WebRTC:
+    url: https://github.com/stasel/WebRTC
+    exactVersion: 158.0.0
+  LiveKit:
+    url: https://github.com/livekit/client-sdk-swift
+    exactVersion: 2.19.0
 
 targets:
   Axon:
@@ -61,11 +67,34 @@ targets:
       - path: Gen/axon_calls_v1_calls.connect.swift
         optional: true
         group: Gen
+      - path: Gen/axon_tournament_v1_tournament.pb.swift
+        optional: true
+        group: Gen
+      - path: Gen/axon_tournament_v1_tournament.connect.swift
+        optional: true
+        group: Gen
+      - path: Gen/axon_analysis_v1_analysis.pb.swift
+        optional: true
+        group: Gen
+      - path: Gen/axon_analysis_v1_analysis.connect.swift
+        optional: true
+        group: Gen
     dependencies:
+      - target: AxonWidgets
+        platformFilter: iOS
+        embed: true
+        codeSign: true
       - package: Connect
         product: Connect
       - package: SwiftProtobuf
         product: SwiftProtobuf
+      - package: WebRTC
+        product: WebRTC
+      - package: LiveKit
+        product: LiveKit
+      - sdk: CallKit.framework
+        platformFilter: iOS
+      - sdk: AVKit.framework
     settings:
       base:
         PRODUCT_NAME: Axon
@@ -79,8 +108,10 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Axon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.board-games
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Axon connects to a game server on your local network.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Axon records the voice messages you send in chats.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Axon uses the microphone for calls and the voice messages you send in chats.
+        INFOPLIST_KEY_NSCameraUsageDescription: Axon uses the camera for video calls.
         ENABLE_RESOURCE_ACCESS_AUDIO_INPUT[sdk=macosx*]: YES
+        ENABLE_RESOURCE_ACCESS_CAMERA[sdk=macosx*]: YES
         ENABLE_USER_SELECTED_FILES[sdk=macosx*]: readonly
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]: YES
         INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]: YES
@@ -91,6 +122,30 @@ targets:
         ENABLE_OUTGOING_NETWORK_CONNECTIONS[sdk=macosx*]: YES
         ENABLE_HARDENED_RUNTIME[sdk=macosx*]: YES
         ENABLE_PREVIEWS: YES
+
+  AxonWidgets:
+    type: app-extension
+    supportedDestinations: [iOS]
+    sources:
+      - path: Widgets
+      - path: Shared/Activities
+        group: Shared
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+      - sdk: ActivityKit.framework
+    settings:
+      base:
+        PRODUCT_NAME: AxonWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: dev.axon.Axon.Widgets
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: Widgets/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Axon
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
 
   AxonTests:
     type: bundle.unit-test
@@ -121,6 +176,9 @@ targets:
         optional: true
         group: Gen
       - path: Gen/axon_chat_v1_chat.pb.swift
+        optional: true
+        group: Gen
+      - path: Gen/axon_calls_v1_calls.pb.swift
         optional: true
         group: Gen
     dependencies:

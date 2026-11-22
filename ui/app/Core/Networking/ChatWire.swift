@@ -23,6 +23,15 @@ enum ChatCommand: Equatable, Sendable {
     case send(OutgoingDraft)
     case edit(clientID: String, message: String, body: String)
     case delete([String])
+    case call(CallFrameKind, CallSocketFrame)
+}
+
+enum CallFrameKind: String, Sendable {
+    case attach = "call_attach"
+    case heartbeat = "call_heartbeat"
+    case resync = "call_resync"
+    case ack = "call_ack"
+    case signal = "call_signal"
 }
 
 enum ChatEvent: Equatable, Sendable {
@@ -37,6 +46,7 @@ enum ChatEvent: Equatable, Sendable {
     case roomAdded(room: String, message: ChatMessage?)
     case roomRemoved(room: String)
     case failure(code: String, reason: String, clientID: String?)
+    case call(CallSocketEvent)
     case revoked
 }
 
@@ -62,7 +72,25 @@ enum ChatWire {
             ids.count == 1 ? ["type": "delete", "message_id": ids[0]] : ["type": "delete", "message_ids": ids]
         case .send(let draft):
             sendFrame(draft)
+        case .call(let kind, let call):
+            ["type": kind.rawValue, "call": callObject(call)]
         }
+    }
+
+    private static func callObject(_ frame: CallSocketFrame) -> Any {
+        guard let data = try? frame.jsonUTF8Data(),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return [String: Any]() }
+        return object
+    }
+
+    static func callEvent(_ object: Any?) -> CallSocketEvent? {
+        guard let object, JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object)
+        else { return nil }
+        var options = JSONDecodingOptions()
+        options.ignoreUnknownFields = true
+        return try? CallSocketEvent(jsonUTF8Data: data, options: options)
     }
 
     private static func sendFrame(_ draft: OutgoingDraft) -> [String: Any] {
@@ -94,6 +122,8 @@ enum ChatWire {
             return message.map(ChatEvent.updated)
         case "room_added":
             return .roomAdded(room: frame["room_id"] as? String ?? "", message: message)
+        case "call_event":
+            return callEvent(frame["call"]).map(ChatEvent.call)
         default:
             return signal(type, frame)
         }

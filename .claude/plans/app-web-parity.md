@@ -134,3 +134,61 @@
 - Голосовые сообщения не проверены живьём: симулятору нужен доступ к микрофону macOS (системная настройка).
 - XCUITest `ChatFlowTests`: регистрация, поиск собеседника, отправка (доставка подтверждена через `ListRooms`
   собеседника), ответ собеседника по `/ws/chat`, превью в списке комнат.
+
+## Этапы 3–5 — объём и решения (2026-11-22)
+Владелец: «пока что всё остальное сделай, звонки максимально как сможешь вслепую, не забудь интеграцию с Apple-звонками».
+Делается подряд в одной ветке (`feat/app-calls`), на /ship раскладывается по веткам этапов.
+
+**Звонки (этап 3)** — порт `ui/web/src/lib/calls/{channel,manager,p2p,livekit}.ts`:
+- `CallsAPI` на все RPC веба, кроме миграции 1:1 → SFU (endpoint регистрируется с `supportsMigration=false`).
+- Кадры `call_attach/heartbeat(10 с)/ack/resync/signal` и `call_event` по общему сокету `/ws/chat`; endpoint
+  держится на время жизни приложения, при переподключении сокета — `RegisterEndpoint(resume)` + attach.
+- `CallEngine` (порт `CallManager`): версии звонка, «мой» по endpoint id+epoch, бэклог сигналов, `ReportConnection`,
+  `AcknowledgeCleanup`, завершение decline/cancel/end/leave с повтором, отказ по таймауту отключения 15 с.
+- 1:1 — stasel/WebRTC: perfect negotiation (polite = мой userId > peer), очередь ICE до remote description,
+  камера через направление видео-трансивера; группы (до 6) — LiveKit Swift SDK по `GetSfuCredentials`
+  (`url` относительный → ws(s) от адреса шлюза).
+- CallKit (iOS): входящий — `reportNewIncomingCall`, исходящий — `CXStartCallAction`, ответ/сброс/mute из системного
+  UI; аудиосессию активирует CallKit (`useManualAudio`). Только пока приложение живо (без PushKit — решение владельца).
+- Экраны: входящий (Accept / Decline / Answer with audio), звонок (имя, статус, таймер, видео собеседника и своё,
+  mute, камера, смена камеры, вывод звука, участники, завершить), мини-бар при сворачивании, PiP видео собеседника,
+  New call, кнопки звонка в шапке чата, Call back и подгрузка в истории.
+- Не проверить в симуляторе: камеру (её нет), CallKit/PiP — частично; голос — после доступа Simulator к микрофону.
+- Карточка звонка как на вебе (`Route.call`): тап по строке истории → аватар, @username, Audio/Video/Message и
+  звонки с тем же человеком (у групп — той же комнаты), текущий подсвечен.
+
+**Игры (этап 4)** — в main у веба Дурак на 2 места (многоместные столы — в открытых PR #55–#58, сюда не входят):
+Дурак (стол, ходы attack/defend/take/pass, результат), Practice offline (боты chess/quoridor/checkers/tic-tac-toe/
+durak с уровнями как на вебе + игра вдвоём), турниры (`TournamentService`: список, создание Bracket/Swiss, Register,
+Start, Cancel, сетка, standings), анализ шахмат в реплее (`AnalysisService`, eval bar и график), тег «Watching».
+- Разбор запрашивается только у рейтинговой шахматной партии с ходами — бэкенд ставит в очередь только такие
+  (`projection.AnalysisEvent`), иначе панель висела бы в «pending». Оценка округляется целыми десятыми, как
+  `toFixed(1)` на вебе.
+
+**Нативное (этап 5)**: виджет «мои партии», App Intents (Quick match), Spotlight по чатам и партиям, меню и
+клавиши macOS (Cmd-N новый чат, Cmd-K поиск), Share Extension «Поделиться в чат», Live Activity — если позволяет
+Personal Team (App Groups); что не позволяет — фиксируется здесь.
+
+**Нативное (этап 5) — как сделано и ограничения Personal Team (2026-11-23)**:
+- Общая точка входа — диплинки `axon://` (`lobby|quick|practice/<game>`, `game|replay|tournament|chat/<id>`,
+  `tournaments`, `new-chat`, `search`, разделы). Их используют виджет, Spotlight, App Intents и меню.
+- App Intents в самом приложении: Quick Match, Practice Offline, Show Tournaments + App Shortcuts (Siri/Shortcuts);
+  `AppModel` отдаётся интентам через `AppDependencyManager`.
+- Spotlight — `CSSearchableIndex` по партиям и комнатам (домен `dev.axon.content`), переиндексация при изменении
+  списков, очистка при выходе; переход по результату — `CSSearchableItemActionType`.
+- macOS/iPad с клавиатурой: Cmd-N «New Chat» (заменяет New Window), меню Go: Cmd-K палитра, Cmd-1…4 разделы,
+  Cmd-Shift-T турниры. Палитра Cmd-K — поиск по разделам, играм (лобби/quick/practice), турнирам и чатам.
+- Виджет-расширение `AxonWidgets` (только iOS): лаунчер Quick match (small/medium/accessory) и Live Activity звонка
+  (имя, таймер, mute, Dynamic Island), обновляется приложением, пока оно живо.
+- Не сделано из-за Personal Team: виджет «мои партии» с данными и Share Extension «Поделиться в чат» — им нужен общий
+  контейнер или keychain с приложением (App Groups / keychain-access-groups); поддержку этих capability бесплатным
+  аккаунтом подтвердить не удалось, а их добавление может сломать установку на iPhone. Live Activity «ваш ход» —
+  без APNs не обновляется в фоне (сокет закрыт), поэтому не делалась.
+
+**Хвосты чатов/профиля**: загрузка аватара в профиле, Contacts/Media веба — сверить и добить.
+
+Проверка: unit-тесты на движок звонков (фейковые API/сокет/медиа), wire-кодек call-кадров, ботов и Дурака;
+XCUITest — звонок и практика; симулятор против стенда `axon` с вебом вторым участником. `CallFlowTests` проверяет
+оркестрацию без медиа: собеседник звонит по RPC → отклонение в приложении → «Incoming · Declined» в истории →
+карточка звонка → Audio → собеседник отклоняет по RPC → «Outgoing · Declined». Принятый звонок в XCUITest не
+входит: соединение в симуляторе роняет coreaudiod, пока у Simulator нет доступа к микрофону macOS.
