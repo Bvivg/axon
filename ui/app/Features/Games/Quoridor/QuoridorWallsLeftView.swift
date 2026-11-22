@@ -19,7 +19,7 @@ struct QuoridorWallsLeftView: View {
             QuoridorPawn(color: palette.seat(seat))
                 .frame(width: 12, height: 12)
             Text(name)
-                .font(.subheadline.weight(.medium))
+                .font(.axSubheadline.weight(.medium))
             HStack(spacing: 3) {
                 ForEach(0..<Quoridor.wallsEach, id: \.self) { index in
                     Capsule()
@@ -28,8 +28,8 @@ struct QuoridorWallsLeftView: View {
                 }
             }
             Text("\(count)")
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .font(.axMono(13, relativeTo: .footnote))
+                .foregroundStyle(Theme.muted)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), \(count) \(count == 1 ? "wall" : "walls") left")

@@ -42,8 +42,17 @@ export function ListItem({
   subtitle,
   trailing,
   className,
+  external = false,
   ...props
-}: ListItemProps & Omit<ComponentProps<typeof Link>, "title" | "className">) {
+}: ListItemProps & { external?: boolean } & Omit<ComponentProps<typeof Link>, "title" | "className">) {
+  if (external) {
+    return (
+      <a href={String(href)} className={cn(rowClass, "hover:bg-muted", className)}>
+        {leading ? <span className="relative shrink-0">{leading}</span> : null}
+        <Body title={title} meta={meta} subtitle={subtitle} trailing={trailing} />
+      </a>
+    );
+  }
   return (
     <Link
       href={href}

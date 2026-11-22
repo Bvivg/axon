@@ -20,8 +20,10 @@ mtls:
   duration: 1h
   renewBefore: 20m
   env:
+    AUTH_SERVICE_URL: https://auth:8081
     JWKS_URL: https://auth:8081/.well-known/jwks.json
   plainEnv:
+    AUTH_SERVICE_URL: http://auth:8081
     JWKS_URL: http://auth:9091/.well-known/jwks.json
 service:
   type: ClusterIP

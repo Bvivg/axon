@@ -23,6 +23,9 @@ import (
 	"github.com/bvivg/axon/core/services/rating/internal/server"
 	"github.com/bvivg/axon/core/services/rating/internal/store"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/rating/v1/ratingv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
+	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
@@ -59,6 +62,11 @@ type settings struct {
 	topic     string
 	group     string
 	retention time.Duration
+	authURL   string
+	jwksURL   string
+	jwksEvery time.Duration
+	issuer    string
+	audience  string
 }
 
 func load() (settings, error) {
@@ -71,6 +79,11 @@ func load() (settings, error) {
 		topic:     loader.StringDefault("RATING_FINISHED_TOPIC", ledger.FinishedTopic),
 		group:     loader.StringDefault("RATING_CONSUMER_GROUP", consumer.Group),
 		retention: loader.DurationDefault("RATING_OUTBOX_RETENTION", 24*time.Hour),
+		authURL:   loader.StringDefault("AUTH_SERVICE_URL", "http://auth:8081"),
+		jwksURL:   loader.StringDefault("JWKS_URL", "http://auth:9091/.well-known/jwks.json"),
+		jwksEvery: loader.DurationDefault("JWKS_REFRESH_INTERVAL", 5*time.Minute),
+		issuer:    loader.StringDefault("JWT_ISSUER", "https://auth.axon.local"),
+		audience:  loader.StringDefault("JWT_AUDIENCE", "axon"),
 	}
 	return cfg, loader.Err()
 }
@@ -168,14 +181,32 @@ func serve(ctx context.Context, cfg settings, pool *postgres.Pool, cache *redis.
 	checks := health.New(log, []health.Checker{pool, cache, kafkaCheck})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.base.ShutdownTimeout, checks, log)
 
-	api := http.NewServeMux()
-	api.Handle(ratingv1connect.NewRatingServiceHandler(server.New(board, ratings, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
-		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
-	)))
 	identity, err := mtls.LoadEnv()
 	if err != nil {
 		return err
 	}
+	keys, err := authn.NewCache(authn.JWKSConfig{
+		URL: cfg.jwksURL, HTTPClient: mtls.HTTPClient(identity, 10*time.Second), RefreshInterval: cfg.jwksEvery, Logger: log,
+	})
+	if err != nil {
+		return err
+	}
+	go keys.Start(ctx)
+	verifier, err := authn.NewVerifier(authn.Config{Keys: keys, Issuer: cfg.issuer, Audience: cfg.audience})
+	if err != nil {
+		return err
+	}
+	permissions := authz.NewCache(authz.NewRemote(&http.Client{Timeout: 5 * time.Second, Transport: telemetry.Transport(mtls.Internal(identity))}, cfg.authURL), authz.DefaultTTL)
+
+	api := http.NewServeMux()
+	api.Handle(ratingv1connect.NewRatingServiceHandler(server.New(board, ratings, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
+		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
+	)))
+	api.Handle(ratingv1connect.NewRatingAdminServiceHandler(server.NewAdmin(ratings, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
+		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
+		authz.NewInterceptor(authz.Config{Service: "rating", Verifier: verifier, Cache: permissions, Rules: server.AdminRules, Record: authz.OutboxRecorder(pool, ledger.OutboxTable), Logger: log}),
+		admincrud.Validator(),
+	)))
 	public := graceful.Serve(&http.Server{
 		Addr:              cfg.base.HTTPAddr,
 		Handler:           middleware.Chain(middleware.Correlation, middleware.Recovery(log))(api),

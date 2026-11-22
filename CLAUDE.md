@@ -39,6 +39,8 @@ web на Next.js), общающимися через единый API Gateway с
   - shadcn + @base-ui + Tailwind — UI
   - TanStack (query/table/virtualizer) — данные
   - axios — fallback HTTP
+- **`admin/`** — Next.js-админка, отдельное приложение (`basePath: /admin`), web проксирует `/admin` на неё
+  - тот же стек, что у web, плюс TanStack Form + protovalidate: CRUD с update_mask, etag и аудитом
 
 ### Docs (`docs/`)
 - `architecture.md` — архитектура и диаграммы, `adr/` — архитектурные решения, `benchmarks.md` — замеры
@@ -94,7 +96,8 @@ axon/
 │   └── deploy/             # docker-compose*.yml, Dockerfile.*, k8s/ (kind + Argo CD), chaos/, cdc/
 ├── ui/
 │   ├── app/                # SwiftUI: App/, Core/{Models,Networking}, Features/{Auth,Lobby,Game,Games,Replay,Settings}
-│   └── web/                # Next.js: src/app, src/components (games/<game>/, chat/, calls/), src/lib, e2e/
+│   ├── web/                # Next.js: src/app, src/components (games/<game>/, chat/, calls/), src/lib, e2e/
+│   └── admin/              # Next.js-админка на /admin: src/app/(console), src/components/admin, src/lib
 └── docs/                   # architecture.md, adr/, benchmarks.md, calls.md
 ```
 

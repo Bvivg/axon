@@ -132,12 +132,18 @@ message GetMeRequest {}
 
 message GetMeResponse {
   User user = 1;
+
+  repeated OauthProvider linked_providers = 2;
 }
 
 message StartOAuthRequest {
   OauthProvider provider = 1;
 
   optional string return_to = 2;
+
+  optional bool link = 3;
+
+  optional string app_challenge = 4;
 }
 
 message StartOAuthResponse {
@@ -153,6 +159,8 @@ message CompleteOAuthRequest {
   string state = 3;
 
   optional string display_name = 4;
+
+  optional string app_verifier = 5;
 }
 
 message CompleteOAuthResponse {
@@ -160,6 +168,8 @@ message CompleteOAuthResponse {
   TokenPair tokens = 2;
 
   bool created = 3;
+
+  optional bool linked = 4;
 }
 
 message UpdateProfileRequest {
@@ -235,6 +245,7 @@ message ListRolesResponse {
 message AssignRoleRequest {
   string user_id = 1;
   string role_id = 2;
+  optional string reason = 3;
 }
 
 message AssignRoleResponse {}
@@ -242,6 +253,7 @@ message AssignRoleResponse {}
 message RevokeRoleRequest {
   string user_id = 1;
   string role_id = 2;
+  optional string reason = 3;
 }
 
 message RevokeRoleResponse {}

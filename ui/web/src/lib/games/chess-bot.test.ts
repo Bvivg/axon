@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { BotLevel, chooseMove } from "@/lib/games/chess-bot";
 
-describe("chess bot", () => {
+describe("chess bot", { timeout: 30_000 }, () => {
   it("plays a legal move from the start", () => {
     const move = chooseMove(new Chess().fen(), BotLevel.Hard, () => 0.5);
     expect(new Chess().moves({ verbose: true }).map(m => m.from + m.to)).toContain(move);

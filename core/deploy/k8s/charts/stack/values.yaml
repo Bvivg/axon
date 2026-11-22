@@ -35,6 +35,9 @@ components:
   - name: cdc
     chart: cdc
     wave: 4
+  - name: admin-web
+    chart: admin-web
+    wave: 5
   - name: web
     chart: web
     wave: 5

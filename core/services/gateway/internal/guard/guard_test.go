@@ -114,13 +114,15 @@ func (s *stubAuth) GetMe(
 }
 
 type harness struct {
-	client authv1connect.AuthServiceClient
-	stub   *stubAuth
+	client  authv1connect.AuthServiceClient
+	console authv1connect.AuthAdminServiceClient
+	stub    *stubAuth
 }
 
 type limits struct {
 	standard       int
 	sensitive      int
+	admin          int
 	network        int
 	trustedProxies int
 }
@@ -143,6 +145,9 @@ func newHarness(t *testing.T, l limits) *harness {
 	if l.sensitive == 0 {
 		l.sensitive = 1000
 	}
+	if l.admin == 0 {
+		l.admin = 1000
+	}
 
 	var network *ratelimit.Limiter
 	if l.network > 0 {
@@ -154,6 +159,7 @@ func newHarness(t *testing.T, l limits) *harness {
 		Search:    ratelimit.New(ratelimit.Config{PerMinute: 60}),
 		Standard:  ratelimit.New(ratelimit.Config{PerMinute: l.standard, Burst: l.standard}),
 		Sensitive: ratelimit.New(ratelimit.Config{PerMinute: l.sensitive, Burst: l.sensitive}),
+		Admin:     ratelimit.New(ratelimit.Config{PerMinute: l.admin, Burst: l.admin}),
 		Network:   network,
 		Logger:    logger.Discard(),
 	})
@@ -165,13 +171,15 @@ func newHarness(t *testing.T, l limits) *harness {
 
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(stub, connect.WithInterceptors(g)))
+	mux.Handle(authv1connect.NewAuthAdminServiceHandler(authv1connect.UnimplementedAuthAdminServiceHandler{}, connect.WithInterceptors(g)))
 
 	srv := httptest.NewServer(guard.ClientIPMiddleware(l.trustedProxies, logger.Discard())(mux))
 	t.Cleanup(srv.Close)
 
 	return &harness{
-		client: authv1connect.NewAuthServiceClient(srv.Client(), srv.URL),
-		stub:   stub,
+		client:  authv1connect.NewAuthServiceClient(srv.Client(), srv.URL),
+		console: authv1connect.NewAuthAdminServiceClient(srv.Client(), srv.URL),
+		stub:    stub,
 	}
 }
 
@@ -207,6 +215,30 @@ func (h *harness) getMe(accessToken string) error {
 	}
 	_, err := h.client.GetMe(context.Background(), req)
 	return err
+}
+
+func (h *harness) suspend(accessToken string) error {
+	req := connect.NewRequest(&authv1.SuspendUserRequest{})
+	req.Header().Set(authn.Header, "Bearer "+accessToken)
+	_, err := h.console.SuspendUser(context.Background(), req)
+	return err
+}
+
+func TestAdminWritesHaveTheirOwnBudget(t *testing.T) {
+	h := newHarness(t, limits{standard: 100, sensitive: 1, admin: 3})
+	staff := token(t, nil)
+
+	for i := range 3 {
+		if err := h.suspend(staff); connect.CodeOf(err) != connect.CodeUnimplemented {
+			t.Fatalf("admin write %d = %v, want it to reach the handler", i+1, err)
+		}
+	}
+	if connect.CodeOf(h.suspend(staff)) != connect.CodeResourceExhausted {
+		t.Fatal("the admin budget was not exhausted")
+	}
+	if err := h.login(""); err != nil {
+		t.Fatalf("admin writes spent the sensitive budget: %v", err)
+	}
 }
 
 func TestPublicProcedureNeedsNoToken(t *testing.T) {
@@ -340,9 +372,10 @@ func TestNewValidatesItsDependencies(t *testing.T) {
 	limiter := ratelimit.New(ratelimit.Config{PerMinute: 10})
 
 	cases := map[string]guard.Config{
-		"no verifier": {Standard: limiter, Sensitive: limiter, Logger: logger.Discard()},
-		"no limiters": {Logger: logger.Discard()},
-		"no logger":   {Standard: limiter, Sensitive: limiter},
+		"no verifier":      {Search: limiter, Standard: limiter, Sensitive: limiter, Admin: limiter, Logger: logger.Discard()},
+		"no limiters":      {Logger: logger.Discard()},
+		"no admin limiter": {Search: limiter, Standard: limiter, Sensitive: limiter, Logger: logger.Discard()},
+		"no logger":        {Search: limiter, Standard: limiter, Sensitive: limiter, Admin: limiter},
 	}
 
 	for name, cfg := range cases {

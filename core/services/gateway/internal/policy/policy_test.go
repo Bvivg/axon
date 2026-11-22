@@ -8,6 +8,7 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/rating/v1/ratingv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
 
 	"github.com/bvivg/axon/core/services/gateway/internal/policy"
@@ -261,6 +262,48 @@ func TestPolicyMatchesTheContract(t *testing.T) {
 		chatv1connect.ChatServiceGetPushKeyProcedure:      true,
 		chatv1connect.ChatServiceSubscribePushProcedure:   true,
 		chatv1connect.ChatServiceUnsubscribePushProcedure: true,
+
+		authv1connect.AuthAdminServiceGetMyPermissionsProcedure:   true,
+		authv1connect.AuthAdminServiceListUsersProcedure:          true,
+		authv1connect.AuthAdminServiceGetUserProcedure:            true,
+		authv1connect.AuthAdminServiceSuspendUserProcedure:        true,
+		authv1connect.AuthAdminServiceRestoreUserProcedure:        true,
+		authv1connect.AuthAdminServiceRevokeUserSessionsProcedure: true,
+		authv1connect.AuthAdminServiceListAuditEventsProcedure:    true,
+		authv1connect.AuthAdminServiceExportAuditEventsProcedure:  true,
+		authv1connect.AuthAdminServiceUpdateUserProfileProcedure:  true,
+		authv1connect.AuthAdminServiceSetUserRolesProcedure:       true,
+		authv1connect.AuthAdminServiceUnlinkOAuthAccountProcedure: true,
+		authv1connect.AuthAdminServiceListPermissionsProcedure:    true,
+		authv1connect.AuthAdminServiceListAdminRolesProcedure:     true,
+		authv1connect.AuthAdminServiceGetRoleProcedure:            true,
+		authv1connect.AuthAdminServiceCreateRoleProcedure:         true,
+		authv1connect.AuthAdminServiceUpdateRoleProcedure:         true,
+		authv1connect.AuthAdminServiceDeleteRoleProcedure:         true,
+
+		gamev1connect.GameAdminServiceListGameSessionsProcedure:     true,
+		gamev1connect.GameAdminServiceCancelGameSessionProcedure:    true,
+		gamev1connect.GameAdminServiceGetGameSessionProcedure:       true,
+		gamev1connect.GameAdminServiceListMatchQueueProcedure:       true,
+		gamev1connect.GameAdminServiceRemoveFromMatchQueueProcedure: true,
+
+		chatv1connect.ChatAdminServiceListChatRoomsProcedure:        true,
+		chatv1connect.ChatAdminServiceGetChatRoomProcedure:          true,
+		chatv1connect.ChatAdminServiceListChatRoomMessagesProcedure: true,
+		chatv1connect.ChatAdminServiceDeleteChatMessageProcedure:    true,
+		chatv1connect.ChatAdminServiceRemoveChatMemberProcedure:     true,
+		chatv1connect.ChatAdminServiceListChatUploadsProcedure:      true,
+
+		callsv1connect.CallsAdminServiceListAllCallsProcedure:  true,
+		callsv1connect.CallsAdminServiceTerminateCallProcedure: true,
+
+		ratingv1connect.RatingAdminServiceListRatingChangesProcedure: true,
+		ratingv1connect.RatingAdminServiceListRatingsProcedure:       true,
+
+		tournamentv1connect.TournamentAdminServiceUpdateTournamentProcedure:       true,
+		tournamentv1connect.TournamentAdminServiceRemoveTournamentPlayerProcedure: true,
+
+		analysisv1connect.AnalysisAdminServiceListAnalysisReportsProcedure: true,
 	}
 
 	for _, procedure := range policy.Procedures() {
@@ -287,5 +330,25 @@ func TestEndpointRegistrationIsOnTheStandardTierAndCallSetupStaysTight(t *testin
 		if policy.For(procedure).Tier != policy.TierSensitive {
 			t.Errorf("%s is not on the sensitive tier", procedure)
 		}
+	}
+}
+
+func TestAdminWritesSpendTheAdminBudget(t *testing.T) {
+	for _, procedure := range []string{
+		authv1connect.AuthAdminServiceSuspendUserProcedure,
+		authv1connect.AuthAdminServiceSetUserRolesProcedure,
+		authv1connect.AuthAdminServiceCreateRoleProcedure,
+		authv1connect.AuthAdminServiceDeleteRoleProcedure,
+		gamev1connect.GameAdminServiceCancelGameSessionProcedure,
+		chatv1connect.ChatAdminServiceDeleteChatMessageProcedure,
+		callsv1connect.CallsAdminServiceTerminateCallProcedure,
+		tournamentv1connect.TournamentAdminServiceUpdateTournamentProcedure,
+	} {
+		if policy.For(procedure).Tier != policy.TierAdmin {
+			t.Errorf("%s is not on the admin tier", procedure)
+		}
+	}
+	if policy.For(authv1connect.AuthAdminServiceExportAuditEventsProcedure).Tier != policy.TierSensitive {
+		t.Error("an audit export reads up to ten thousand rows, it must stay on the sensitive tier")
 	}
 }
