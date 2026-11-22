@@ -1,4 +1,4 @@
-import { Gamepad2, Images, MessageSquare, Network, Phone, Route, ShieldCheck, User, Users, type LucideIcon } from "lucide-react";
+import { Gamepad2, Images, LayoutDashboard, MessageSquare, Phone, User, Users, type LucideIcon } from "lucide-react";
 
 export enum Section {
   Lobby = "lobby",
@@ -8,9 +8,6 @@ export enum Section {
   Media = "media",
   Games = "games",
   Profile = "profile",
-  Admin = "admin",
-  ServiceMap = "service-map",
-  Gateway = "gateway",
 }
 
 export interface NavItem {
@@ -33,11 +30,9 @@ export const chatNavItems: NavItem[] = [
   { section: Section.Media, href: "/media", label: "Media", icon: Images },
 ];
 
-export const adminNavItems: NavItem[] = [
-  { section: Section.Admin, href: "/admin", label: "Admin", icon: ShieldCheck },
-  { section: Section.ServiceMap, href: "/admin/service-map", label: "Service map", icon: Network },
-  { section: Section.Gateway, href: "/admin/gateway", label: "Gateway", icon: Route },
-];
+export const adminConsoleHref = "/admin";
+
+export const adminConsoleItem = { href: adminConsoleHref, label: "Administration", icon: LayoutDashboard };
 
 const sectionPrefixes: [Section, string][] = [
   [Section.Games, "/games"],
@@ -46,9 +41,6 @@ const sectionPrefixes: [Section, string][] = [
   [Section.Contacts, "/contacts"],
   [Section.Media, "/media"],
   [Section.Profile, "/profile"],
-  [Section.ServiceMap, "/admin/service-map"],
-  [Section.Gateway, "/admin/gateway"],
-  [Section.Admin, "/admin"],
 ];
 
 export function sectionFor(pathname: string): Section | null {
@@ -71,7 +63,4 @@ export const sectionLabels: Record<Section, string> = {
   [Section.Media]: "Media",
   [Section.Games]: "Games",
   [Section.Profile]: "Profile",
-  [Section.Admin]: "Admin",
-  [Section.ServiceMap]: "Service map",
-  [Section.Gateway]: "Gateway",
 };
