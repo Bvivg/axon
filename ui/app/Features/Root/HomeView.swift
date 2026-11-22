@@ -8,6 +8,7 @@ struct HomeView: View {
     @State private var chats: ChatsViewModel
     @State private var calls: CallsViewModel
     @State private var profile: ProfileViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     init(app: AppModel, user: User, onSettings: @escaping () -> Void) {
         self.app = app
@@ -16,7 +17,15 @@ struct HomeView: View {
         _lobby = State(initialValue: LobbyViewModel(services: app.services, me: user.id) { [weak app] route in
             app?.open(route)
         })
-        _chats = State(initialValue: ChatsViewModel(services: app.services, me: user.id))
+        let alerts = LocalChatAlerts()
+        alerts.onOpen = { [weak app] room in app?.openChat(room) }
+        let chats = ChatsViewModel(services: app.services, me: user.id, alerts: alerts) { [weak app] route in
+            app?.open(route)
+        }
+        chats.onRevoked = { [weak app] in
+            Task { await app?.signOut() }
+        }
+        _chats = State(initialValue: chats)
         _calls = State(initialValue: CallsViewModel(services: app.services, me: user.id))
         _profile = State(initialValue: ProfileViewModel(services: app.services, user: user) { [weak app] next in
             app?.replaceUser(next)
@@ -51,13 +60,17 @@ struct HomeView: View {
         #endif
         .task { await lobby.run() }
         .task { await profile.loadAccount() }
-        .task { await chats.refresh() }
+        .task { await chats.run() }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            chats.sceneActive = phase == .active
+            chats.sceneVisible = phase != .background
+            if phase == .active { chats.resume() }
+        }
         .onDisappear { lobby.stop() }
+        .environment(\.media, app.services.media)
     }
 
-    private var unread: Int {
-        chats.rooms.reduce(0) { $0 + Int($1.unreadCount) }
-    }
+    private var unread: Int { chats.unread }
 
     private func stack(_ tab: AppTab, @ViewBuilder root: () -> some View) -> some View {
         NavigationStack(path: Binding(get: { app.paths[tab] ?? [] }, set: { app.paths[tab] = $0 })) {
@@ -78,6 +91,18 @@ struct HomeView: View {
                         ProfilePageView(page: page, model: profile) {
                             Task { await app.signOut() }
                         }
+                    case .room(let id):
+                        ConversationView(target: .room(id), hub: chats)
+                            .id(id)
+                    case .person(let id):
+                        ConversationView(target: .person(id), hub: chats)
+                            .id(id)
+                    case .roomInfo(let id):
+                        RoomInfoView(roomID: id, hub: chats) {
+                            app.paths[tab] = []
+                        }
+                    case .roomMedia(let id):
+                        RoomMediaView(roomID: id, hub: chats)
                     }
                 }
         }

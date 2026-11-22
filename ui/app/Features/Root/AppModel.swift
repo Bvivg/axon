@@ -6,6 +6,10 @@ enum Route: Hashable, Sendable {
     case game(String)
     case replay(String)
     case profile(ProfilePage)
+    case room(String)
+    case person(String)
+    case roomInfo(String)
+    case roomMedia(String)
 }
 
 enum ProfilePage: String, Hashable, Sendable, CaseIterable {
@@ -77,6 +81,13 @@ final class AppModel {
 
     func open(_ route: Route) {
         paths[tab, default: []].append(route)
+    }
+
+    func openChat(_ room: String) {
+        tab = .chats
+        if paths[.chats]?.last != .room(room) {
+            paths[.chats] = [.room(room)]
+        }
     }
 
     func replaceUser(_ user: User) {

@@ -79,6 +79,9 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Axon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.board-games
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Axon connects to a game server on your local network.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Axon records the voice messages you send in chats.
+        ENABLE_RESOURCE_ACCESS_AUDIO_INPUT[sdk=macosx*]: YES
+        ENABLE_USER_SELECTED_FILES[sdk=macosx*]: readonly
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]: YES
         INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone[sdk=iphone*]: UIInterfaceOrientationPortrait
@@ -115,6 +118,9 @@ targets:
         optional: true
         group: Gen
       - path: Gen/axon_game_v1_game.pb.swift
+        optional: true
+        group: Gen
+      - path: Gen/axon_chat_v1_chat.pb.swift
         optional: true
         group: Gen
     dependencies:

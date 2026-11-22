@@ -89,6 +89,10 @@ final class FakeAuth: AuthAPI, @unchecked Sendable {
         return try linkStart.get()
     }
 
+    var people: [PublicProfile] = []
+
+    func searchUsers(_ query: String) async throws(APIError) -> [PublicProfile] { people }
+
     func completeLink(_ provider: OAuthProvider, code: String, state: String, verifier: String) async throws(APIError) -> User {
         linkCompletions.append(OAuthCompletion(provider: provider, code: code, state: state, verifier: verifier))
         return try linkResult.get()
@@ -180,14 +184,6 @@ final class FakeGame: GameAPI, @unchecked Sendable {
     }
 }
 
-final class FakeChat: ChatAPI, @unchecked Sendable {
-    var result: Result<[Room], APIError> = .success([])
-
-    func rooms() async throws(APIError) -> [Room] {
-        try result.get()
-    }
-}
-
 final class FakeCalls: CallsAPI, @unchecked Sendable {
     var result: Result<[Call], APIError> = .success([])
 
@@ -241,7 +237,11 @@ struct FakeWorld {
     let chat = FakeChat()
     let calls = FakeCalls()
 
-    var services: Services { Services(auth: auth, game: game, chat: chat, calls: calls, channels: channels) }
+    let sockets = FakeChatSockets()
+    let media = FakeMedia()
+    var services: Services {
+        Services(auth: auth, game: game, chat: chat, calls: calls, channels: channels, chatSocket: sockets, media: media)
+    }
 }
 
 enum GameFixtures {

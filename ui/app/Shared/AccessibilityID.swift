@@ -45,8 +45,37 @@ enum AccessibilityID {
 
     enum Chats {
         static let root = "chats"
+        static let compose = "chats.compose"
+        static let conversation = "chats.conversation"
+        static let feed = "chats.feed"
+        static let composer = "chats.composer"
+        static let send = "chats.send"
+        static let attach = "chats.attach"
+        static let attachment = "chats.attachment"
+        static let record = "chats.record"
+        static let outgoing = "chats.outgoing"
+        static let notice = "chats.notice"
+        static let more = "chats.more"
+        static let info = "chats.info"
+        static let forwardSelection = "chats.selection.forward"
+        static let deleteSelection = "chats.selection.delete"
+        static let forwardSend = "chats.forward.send"
+        static let groupName = "chats.group.name"
+        static let createGroup = "chats.group.create"
+        static let addMembers = "chats.members.add"
+        static let confirmAdd = "chats.members.confirm"
+        static let rename = "chats.group.rename"
+        static let mediaLibrary = "chats.media"
+        static let mediaSection = "chats.media.section"
+        static let leave = "chats.leave"
 
         static func room(_ id: String) -> String { "chats.room.\(id)" }
+        static func message(_ id: String) -> String { "chats.message.\(id)" }
+        static func unread(_ id: String) -> String { "chats.unread.\(id)" }
+        static func person(_ id: String) -> String { "chats.person.\(id)" }
+        static func forwardTarget(_ id: String) -> String { "chats.forward.\(id)" }
+        static func searchResult(_ id: String) -> String { "chats.search.\(id)" }
+        static func removeMember(_ id: String) -> String { "chats.members.remove.\(id)" }
     }
 
     enum Calls {

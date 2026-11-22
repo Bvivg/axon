@@ -77,6 +77,23 @@ struct ChatsViewModelTests {
         #expect(model.visible.map(\.id) == ["mid"])
     }
 
+    @Test func loadsNamesOfPeopleInSystemPreviews() async {
+        let world = FakeWorld()
+        var group = SocialFixtures.room("g", name: "Team", sent: 10, author: GameFixtures.me)
+        group.lastMessage.kind = .system
+        group.lastMessage.system = Axon_Chat_V1_SystemPayload.with {
+            $0.event = "member_removed"
+            $0.actorID = GameFixtures.me
+            $0.targetID = "legend"
+        }
+        world.chat.result = .success([group])
+        world.auth.profileMap = ["legend": GameFixtures.profile("legend", "legend_1")]
+        let model = ChatsViewModel(services: world.services, me: GameFixtures.me)
+        await model.refresh()
+        let preview = model.room("g")?.lastMessage.systemText(me: model.me, name: model.name(ofUser:))
+        #expect(preview == "You removed legend_1")
+    }
+
     @Test func marksOwnMessagesAsReadOnceOthersCaughtUp() async {
         let world = FakeWorld()
         let sent = SocialFixtures.room("a", direct: GameFixtures.rival, author: GameFixtures.me, seq: 5, read: 4)
