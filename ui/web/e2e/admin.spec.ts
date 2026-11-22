@@ -165,11 +165,12 @@ test("an administrator creates, edits and deletes a role, with field errors and 
     await mine.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByRole("heading", { name: "Support desk, days", level: 1 })).toBeVisible();
 
-    await page.goto("/admin/audit?service=auth&action=role_updated");
+    const roleID = roleURL.split("/").pop();
+    await page.goto(`/admin/audit?targetType=role&target=${roleID}&action=role_updated`);
     const audit = page.getByRole("table", { name: "Audit events" });
     await expect(async () => {
       await page.reload();
-      await expect(audit.getByRole("button", { name: "role_updated" }).first()).toBeVisible({ timeout: 2_000 });
+      await expect(audit.getByRole("button", { name: "role_updated" })).toHaveCount(2, { timeout: 2_000 });
     }).toPass({ timeout: 45_000 });
     await audit.getByRole("button", { name: "role_updated" }).first().click();
     const changes = page.getByRole("dialog").getByRole("table", { name: "Changed fields" });
