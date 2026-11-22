@@ -40,6 +40,4 @@ fieldEnv: []
 secretEnv: {}
 env:
   HOSTNAME: 0.0.0.0
-  AXON_GATEWAY_RPC_URL: http://gateway:8080
-  AXON_GATEWAY_METRICS_URL: http://gateway:9090
-  AXON_GATEWAY_ENVIRONMENT: Kind
+  ADMIN_WEB_URL: http://admin-web:3000

@@ -25,7 +25,7 @@ extension XCTestCase {
     @MainActor
     func register(_ account: TestAccount, in app: XCUIApplication) async throws {
         let mode = try await existing(app.descendants(matching: .any)[AccessibilityID.Auth.mode], "the auth mode switch")
-        let registerMode = mode.buttons["Register"]
+        let registerMode = mode.buttons["Create account"]
         if registerMode.waitForExistence(timeout: 5) {
             registerMode.tap()
         } else {
@@ -60,13 +60,20 @@ extension XCTestCase {
 
     @MainActor
     func createGame(_ game: String, in app: XCUIApplication) async throws -> String {
-        let create = try await existing(app.buttons[AccessibilityID.Lobby.create(game)], "the \(game) button")
-        let sessionLabel = app.staticTexts[AccessibilityID.Game.sessionID]
         await dismissSavePasswordPrompt(in: app, within: 5)
+        let entry = try await existing(app.buttons[AccessibilityID.Lobby.game(game)], "the \(game) catalogue row")
+        attachScreenshot("Catalogue", of: app)
+        entry.tap()
+        let start = try await existing(app.buttons[AccessibilityID.Lobby.start], "the start button")
+        let sessionLabel = app.staticTexts[AccessibilityID.Game.sessionID]
         attachScreenshot("Lobby", of: app)
         for _ in 0..<3 where !sessionLabel.exists {
             await dismissSavePasswordPrompt(in: app, within: 2)
-            if create.exists && create.isHittable {
+            if start.exists && start.isHittable {
+                start.tap()
+            }
+            let create = app.buttons[AccessibilityID.Lobby.create(game)]
+            if create.waitForExistence(timeout: 5) {
                 create.tap()
             }
             _ = sessionLabel.waitForExistence(timeout: 8)

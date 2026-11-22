@@ -102,6 +102,7 @@ message Tournament {
   optional google.protobuf.Timestamp finished_at = 17;
   optional google.protobuf.Timestamp cancelled_at = 18;
   uint32 no_show_seconds = 19;
+  string etag = 20;
 }
 
 message CreateTournamentRequest {
@@ -135,6 +136,7 @@ message WithdrawFromTournamentResponse {
 
 message StartTournamentRequest {
   string tournament_id = 1;
+  optional string reason = 2;
 }
 
 message StartTournamentResponse {
@@ -160,6 +162,7 @@ message ListTournamentsResponse {
 
 message CancelTournamentRequest {
   string tournament_id = 1;
+  optional string reason = 2;
 }
 
 message CancelTournamentResponse {

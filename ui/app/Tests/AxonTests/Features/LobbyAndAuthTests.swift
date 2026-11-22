@@ -39,9 +39,9 @@ struct LobbyViewModelTests {
     @Test func hidesGamesTheAppCannotShow() async {
         let world = FakeWorld()
         var unknown = GameFixtures.session(id: "u", updated: 9)
-        unknown.game = "durak"
+        unknown.game = "go"
         var watched = GameFixtures.session(id: "w", players: [GameFixtures.rival, GameFixtures.third], updated: 8)
-        watched.game = "durak"
+        watched.game = "go"
         world.game.mine = [unknown, GameFixtures.session(id: "a", updated: 1)]
         world.game.live = [watched]
         let (model, _) = lobby(world)
@@ -205,7 +205,7 @@ struct ReplayViewModelTests {
         let fake = FakeGame()
         var history = SessionHistory()
         history.session = GameFixtures.session(status: .won, turn: nil, winner: GameFixtures.me)
-        history.session.game = "durak"
+        history.session.game = "go"
         fake.historyResult = history
         let model = ReplayViewModel(sessionID: GameFixtures.sessionID, game: fake)
         await model.load()
@@ -339,10 +339,13 @@ struct AppModelTests {
         world.auth.restored = GameFixtures.user()
         let (model, _) = app(world)
         await model.start()
-        model.path = [.game("x")]
+        model.tab = .chats
+        model.open(.game("x"))
+        #expect(model.paths[.chats] == [.game("x")])
         world.auth.signOuts.yield()
         #expect(await eventually { model.phase == .signedOut })
-        #expect(model.path.isEmpty)
+        #expect(model.paths.isEmpty)
+        #expect(model.tab == .games)
     }
 
     @Test func changingTheGatewayRebuildsServicesAndSignsOut() async throws {

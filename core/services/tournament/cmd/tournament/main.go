@@ -19,7 +19,9 @@ import (
 	"github.com/bvivg/axon/core/services/tournament/internal/server"
 	"github.com/bvivg/axon/core/services/tournament/internal/store"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
@@ -147,12 +149,17 @@ func run() error {
 
 	interceptors := connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log),
 		metrics.Interceptor(), middleware.NewLoggingInterceptor(log))
-	roles := server.NewAuthRoles(&http.Client{Timeout: 10 * time.Second, Transport: telemetry.Transport(mtls.Internal(identity))}, cfg.authURL,
-		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor()))
+	permissions := authz.NewCache(authz.NewRemote(&http.Client{Timeout: 10 * time.Second, Transport: telemetry.Transport(mtls.Internal(identity))}, cfg.authURL,
+		connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor())), authz.DefaultTTL)
 	checks := health.New(log, []health.Checker{pool, health.CheckerFunc{CheckerName: "kafka", Fn: probe.Ping}})
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.base.ShutdownTimeout, checks, log)
 	api := http.NewServeMux()
-	api.Handle(tournamentv1connect.NewTournamentServiceHandler(server.New(saga, verifier, roles, cfg.games, log), interceptors, rpclimit.Handler(cfg.base.RPCReadMaxBytes)))
+	api.Handle(tournamentv1connect.NewTournamentServiceHandler(server.New(saga, verifier, server.NewAuthModerators(permissions), cfg.games, log).WithAudit(authz.OutboxRecorder(pool, store.OutboxTable)), interceptors, rpclimit.Handler(cfg.base.RPCReadMaxBytes)))
+	api.Handle(tournamentv1connect.NewTournamentAdminServiceHandler(server.NewAdmin(saga, log), rpclimit.Handler(cfg.base.RPCReadMaxBytes), connect.WithInterceptors(
+		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
+		authz.NewInterceptor(authz.Config{Service: "tournament", Verifier: verifier, Cache: permissions, Rules: server.AdminRules, Record: authz.OutboxRecorder(pool, store.OutboxTable), Logger: log}),
+		admincrud.Validator(),
+	)))
 	public := graceful.Serve(&http.Server{
 		Addr:              cfg.base.HTTPAddr,
 		Handler:           middleware.Chain(middleware.Correlation, middleware.Recovery(log))(api),

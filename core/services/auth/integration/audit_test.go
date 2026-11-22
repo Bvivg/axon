@@ -60,7 +60,7 @@ func TestLoginsAndRoleChangesWriteSecurityEventsToTheOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
-	if err := svc.AssignRole(ctx, admin.ID, user, domain.RoleAdmin); err != nil {
+	if err := svc.AssignRole(ctx, admin.ID, user, domain.RoleAdmin, ""); err != nil {
 		t.Fatalf("AssignRole: %v", err)
 	}
 

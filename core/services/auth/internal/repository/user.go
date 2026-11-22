@@ -11,7 +11,8 @@ import (
 )
 
 const userColumns = `id, email, email_verified, username, display_name, avatar_url, ` +
-	`first_name, last_name, nickname, avatar_is_custom, created_at, updated_at, last_seen_at`
+	`first_name, last_name, nickname, avatar_is_custom, created_at, updated_at, last_seen_at, ` +
+	`suspended_at, suspended_reason`
 
 func (r *Repository) CreateUser(ctx context.Context, u domain.User) (domain.User, error) {
 	const query = `
@@ -198,6 +199,8 @@ func scanUser(row scanRow, extra ...any) (domain.User, error) {
 		&u.CreatedAt,
 		&u.UpdatedAt,
 		&u.LastSeenAt,
+		&u.SuspendedAt,
+		&u.SuspendedReason,
 	}
 	err := row.Scan(append(dest, extra...)...)
 	return u, err

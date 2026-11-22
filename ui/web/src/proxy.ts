@@ -4,7 +4,20 @@ import { contentSecurityPolicy, newNonce } from "@/lib/security/csp";
 
 const probePaths = ["/calls/probe", "/calls/spike"];
 
+const adminPrefix = "/admin";
+
+function adminTarget(request: NextRequest): URL | null {
+  const { pathname, search } = request.nextUrl;
+  if (pathname !== adminPrefix && !pathname.startsWith(`${adminPrefix}/`)) return null;
+  const upstream = process.env.ADMIN_WEB_URL;
+  if (!upstream) return null;
+  return new URL(`${pathname}${search}`, upstream);
+}
+
 export function proxy(request: NextRequest) {
+  const admin = adminTarget(request);
+  if (admin) return NextResponse.rewrite(admin);
+
   if (process.env.CALLS_E2E_PROBE !== "1" && probePaths.includes(request.nextUrl.pathname)) {
     return new NextResponse(null, { status: 404 });
   }
@@ -35,5 +48,7 @@ export const config = {
     },
     "/calls/probe",
     "/calls/spike",
+    "/admin",
+    "/admin/:path*",
   ],
 };

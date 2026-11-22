@@ -30,7 +30,9 @@ import (
 	"github.com/bvivg/axon/core/services/game/internal/session"
 	"github.com/bvivg/axon/core/services/game/internal/tournament"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/config"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
@@ -86,6 +88,7 @@ func run() error {
 	ratingTopic := loader.StringDefault("GAME_RATING_TOPIC", rating.Topic)
 	tournamentTopics := loader.StringSlice("GAME_TOURNAMENT_TOPICS", []string{tournament.RoundStartedTopic, tournament.ForfeitTopic, tournament.CancelledTopic})
 	outboxRetention := loader.DurationDefault("GAME_OUTBOX_RETENTION", 24*time.Hour)
+	authURL := loader.StringDefault("AUTH_SERVICE_URL", "http://auth:8081")
 	leaseTTL := loader.DurationDefault("GAME_LEASE_TTL", 6*time.Second)
 	finishedTTL := loader.DurationDefault("GAME_FINISHED_TTL", 2*time.Minute)
 	appendTimeout := loader.DurationDefault("GAME_APPEND_TIMEOUT", 15*time.Second)
@@ -192,6 +195,13 @@ func run() error {
 	)))
 	mux.Handle(gamev1connect.NewGameOwnerServiceHandler(handler, rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
 		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(),
+	)))
+	permissions := authz.NewCache(authz.NewRemote(&http.Client{Timeout: 5 * time.Second, Transport: telemetry.Transport(mtls.Internal(identity))}, authURL), authz.DefaultTTL)
+	recorder := authz.OutboxRecorder(db.primary.Pool, projection.OutboxTable)
+	mux.Handle(gamev1connect.NewGameAdminServiceHandler(server.NewAdmin(handler, recorder, log), rpclimit.Handler(cfg.RPCReadMaxBytes), connect.WithInterceptors(
+		telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), middleware.NewLoggingInterceptor(log),
+		authz.NewInterceptor(authz.Config{Service: "game", Verifier: verifier, Cache: permissions, Rules: server.AdminRules, Record: recorder, Logger: log}),
+		admincrud.Validator(),
 	)))
 	mux.HandleFunc("GET /ws", handler.Socket)
 	if testHooks {

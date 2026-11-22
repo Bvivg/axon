@@ -21,6 +21,7 @@ const (
 	SecurityRoleAssigned        SecurityAction = "role_assigned"
 	SecurityRoleRevoked         SecurityAction = "role_revoked"
 	SecurityEmailChanged        SecurityAction = "email_changed"
+	SecurityProviderLinked      SecurityAction = "provider_linked"
 )
 
 type SecurityEvent struct {

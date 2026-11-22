@@ -9,6 +9,7 @@ import (
 
 	"github.com/bvivg/axon/core/services/tournament/internal/saga"
 	tournamentv1 "github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
 )
 
 var presentedStatuses = map[saga.Status]tournamentv1.TournamentStatus{
@@ -39,7 +40,7 @@ func Present(t saga.Tournament, noShow time.Duration) *tournamentv1.Tournament {
 		Id: t.ID.String(), Name: t.Spec.Name, Game: t.Spec.Game, Status: presentedStatuses[t.Status], Capacity: uint32(t.Spec.Capacity),
 		TotalRounds: uint32(t.TotalRounds), CurrentRound: uint32(t.Round), CreatorId: t.Creator.String(),
 		CreatedAt: timestamppb.New(t.CreatedAt), StartedAt: stamp(t.StartedAt), FinishedAt: stamp(t.FinishedAt), CancelledAt: stamp(t.CancelledAt),
-		NoShowSeconds: uint32(noShow.Seconds()),
+		NoShowSeconds: uint32(noShow.Seconds()), Etag: admincrud.Etag(t.Version),
 	}
 	for format, value := range formats {
 		if value == t.Spec.Format {

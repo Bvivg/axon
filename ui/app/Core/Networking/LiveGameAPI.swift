@@ -90,4 +90,17 @@ struct LiveGameAPI: GameAPI {
             await client.getSessionHistory(request: request, headers: headers)
         }
     }
+
+    func rating(_ game: GameKind, user: String) async throws(APIError) -> Rating {
+        var request = Axon_Game_V1_GetRatingsRequest()
+        request.game = game.rawValue
+        request.userIds = [user]
+        let ratings = try await connect.call { headers in
+            await client.getRatings(request: request, headers: headers)
+        }.ratings
+        return ratings.first { $0.userID == user } ?? Rating.with {
+            $0.userID = user
+            $0.rating = Rating.starting
+        }
+    }
 }

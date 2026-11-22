@@ -297,7 +297,7 @@ func TestASignInIsRefusedWhenTheIdentityIsClaimedMidFlow(t *testing.T) {
 func TestStateCannotBeReplayed(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
-	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "")
+	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "", nil)
 	if err != nil {
 		t.Fatalf("StartOAuth: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestStateCannotBeReplayed(t *testing.T) {
 func TestStateIsBoundToItsProvider(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
-	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "")
+	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "", nil)
 	if err != nil {
 		t.Fatalf("StartOAuth: %v", err)
 	}
@@ -358,11 +358,11 @@ func TestAnUnknownStateIsRefused(t *testing.T) {
 func TestStartOauthChecksTheDestination(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
-	if _, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "https://evil.example/collect"); !errors.Is(err, domain.ErrOauthReturnToNotAllowed) {
+	if _, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "https://evil.example/collect", nil); !errors.Is(err, domain.ErrOauthReturnToNotAllowed) {
 		t.Fatalf("err = %v, want ErrOauthReturnToNotAllowed", err)
 	}
 
-	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, webOrigin+"/lobby")
+	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, webOrigin+"/lobby", nil)
 	if err != nil {
 		t.Fatalf("StartOAuth: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestUnconfiguredProvidersAreRefused(t *testing.T) {
 	h := newHarness(t, withOAuth(t))
 
 	for _, provider := range []domain.Provider{domain.ProviderApple} {
-		if _, err := h.svc.StartOAuth(t.Context(), provider, ""); !errors.Is(err, domain.ErrProviderUnsupported) {
+		if _, err := h.svc.StartOAuth(t.Context(), provider, "", nil); !errors.Is(err, domain.ErrProviderUnsupported) {
 			t.Errorf("StartOAuth(%q) = %v, want ErrProviderUnsupported", provider, err)
 		}
 	}
@@ -395,7 +395,7 @@ func TestUnconfiguredProvidersAreRefused(t *testing.T) {
 func TestOauthIsUnsupportedWhenNothingIsConfigured(t *testing.T) {
 	h := newHarness(t)
 
-	if _, err := h.svc.StartOAuth(t.Context(), domain.ProviderGoogle, ""); !errors.Is(err, domain.ErrProviderUnsupported) {
+	if _, err := h.svc.StartOAuth(t.Context(), domain.ProviderGoogle, "", nil); !errors.Is(err, domain.ErrProviderUnsupported) {
 		t.Errorf("StartOAuth = %v, want ErrProviderUnsupported", err)
 	}
 	completeGoogle := service.CompleteOAuthInput{Provider: domain.ProviderGoogle, Code: "c", State: "s"}
@@ -415,5 +415,45 @@ func TestEachOauthSignInStartsItsOwnRefreshFamily(t *testing.T) {
 
 	if firstFamily == secondFamily {
 		t.Error("two sign-ins share one refresh family")
+	}
+}
+
+func TestSignInReturnsToTheOriginItStartedFrom(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, otherOrigin+"/games", nil)
+	if err != nil {
+		t.Fatalf("StartOAuth: %v", err)
+	}
+
+	callback := h.callback(t, started.AuthorizationURL, identity("subject-1", "person@fake.axon.test"))
+	if got := callback.Scheme + "://" + callback.Host + callback.Path; got != otherOrigin+"/auth/callback/fake" {
+		t.Fatalf("the provider returned to %q, want the origin the sign-in started from", got)
+	}
+
+	result, err := h.svc.CompleteOAuth(t.Context(), service.CompleteOAuthInput{
+		Provider: domain.ProviderFake,
+		Code:     callback.Query().Get("code"),
+		State:    started.State,
+	})
+	if err != nil {
+		t.Fatalf("CompleteOAuth: %v", err)
+	}
+	if result.ReturnTo != otherOrigin+"/games" {
+		t.Errorf("ReturnTo = %q, want the page the sign-in started from", result.ReturnTo)
+	}
+}
+
+func TestSignInWithoutAReturnPageUsesTheConfiguredCallback(t *testing.T) {
+	h := newHarness(t, withOAuth(t))
+
+	started, err := h.svc.StartOAuth(t.Context(), domain.ProviderFake, "", nil)
+	if err != nil {
+		t.Fatalf("StartOAuth: %v", err)
+	}
+
+	callback := h.callback(t, started.AuthorizationURL, identity("subject-1", "person@fake.axon.test"))
+	if got := callback.Scheme + "://" + callback.Host + callback.Path; got != webOrigin+"/auth/callback/fake" {
+		t.Fatalf("the provider returned to %q, want the configured callback", got)
 	}
 }

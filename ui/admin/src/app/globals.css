@@ -1,0 +1,225 @@
+@import "tailwindcss";
+@import "./console.css";
+
+@theme {
+  --color-background: light-dark(#f3f4f8, #0e121b);
+  --color-foreground: light-dark(#25283a, #f0eff6);
+
+  --color-card: light-dark(#ffffff, #191d29);
+  --color-card-foreground: var(--color-foreground);
+
+  --color-popover: light-dark(#ffffff, #202533);
+  --color-popover-foreground: var(--color-foreground);
+
+  --color-primary: light-dark(#5945b9, #ad9ffc);
+  --color-primary-foreground: light-dark(#ffffff, #171127);
+
+  --color-secondary: light-dark(#eceef5, #242a39);
+  --color-secondary-foreground: var(--color-foreground);
+
+  --color-muted: var(--color-secondary);
+  --color-muted-foreground: light-dark(#565f73, #a5aec2);
+
+  --color-accent: light-dark(#ebe6fc, #2c2744);
+  --color-accent-foreground: var(--color-foreground);
+
+  --color-border: light-dark(#dadee9, #303646);
+  --color-input: light-dark(#838aa0, #68748b);
+  --color-message-incoming: light-dark(#e9ecf5, #242a39);
+  --color-message-outgoing: light-dark(#e7defa, #393260);
+
+  --color-signal: var(--color-primary);
+  --color-signal-foreground: var(--color-primary-foreground);
+  --color-ring: var(--color-signal);
+
+  --color-success: light-dark(#237a57, #72ce9f);
+  --color-warning: light-dark(#98600a, #f2bd64);
+  --color-destructive: light-dark(#b8324c, #f07f91);
+  --color-destructive-foreground: light-dark(#ffffff, #281218);
+
+  --color-scrim: light-dark(oklch(0.18 0.005 90 / 0.28), oklch(0 0 0 / 0.55));
+
+  --color-canvas: light-dark(#f0f1f8, #090c14);
+  --color-surface: light-dark(#ffffff, #141925);
+  --color-surface-raised: light-dark(#f8f8fc, #1b2130);
+  --color-line: light-dark(#e2e4ed, #2b3040);
+  --color-composer: light-dark(#ffffff, #1b2130);
+  --color-composer-border: light-dark(#dadee9, #343a4c);
+  --color-composer-border-focus: light-dark(#b9b0e6, #5b5490);
+
+  --color-sidebar: light-dark(#fbfbfe, #10131d);
+  --color-sidebar-foreground: var(--color-foreground);
+  --color-sidebar-primary: var(--color-primary);
+  --color-sidebar-primary-foreground: var(--color-primary-foreground);
+  --color-sidebar-accent: var(--color-accent);
+  --color-sidebar-accent-foreground: var(--color-foreground);
+  --color-sidebar-border: var(--color-border);
+  --color-sidebar-ring: var(--color-signal);
+
+  --shadow-overlay:
+    0 0 0 1px light-dark(transparent, oklch(1 0 0 / 0.06)),
+    0 1px 2px light-dark(oklch(0 0 0 / 0.06), transparent),
+    0 8px 28px light-dark(oklch(0 0 0 / 0.1), transparent),
+    0 16px 40px light-dark(transparent, oklch(0 0 0 / 0.55));
+  --shadow-raised: 0 0 0 1px var(--color-border), 0 1px 2px oklch(0 0 0 / 0.06);
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-md: 0.875rem;
+  --text-md--line-height: 1.25rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.375rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.875rem;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 2.375rem;
+
+  --tracking-snug: -0.015em;
+  --tracking-tight: -0.025em;
+  --tracking-display: -0.03em;
+  --tracking-eyebrow: 0.06em;
+
+  --ease-signal: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-dot: dot 1.2s infinite;
+  --animate-rise: rise 200ms var(--ease-signal);
+  --animate-fade: fade 200ms var(--ease-signal);
+
+  @keyframes shimmer {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes dot {
+    0%,
+    80%,
+    100% {
+      opacity: 0.25;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklch, var(--color-signal) 24%, transparent);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+  font-weight: 400;
+}
+
+@utility glow-signal {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-signal) 22%, transparent);
+}
+
+@utility grid-paper {
+  background-image:
+    linear-gradient(var(--color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(to bottom, black, transparent);
+}
+.axon-toast[data-sonner-toast] {
+  border-inline-start: 3px solid var(--color-signal);
+}
+
+.axon-toast-title[data-title] {
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.axon-toast-action[data-button] {
+  min-height: 44px;
+  white-space: nowrap;
+}

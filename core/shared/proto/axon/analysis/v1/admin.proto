@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package axon.analysis.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service AnalysisAdminService {
+  rpc ListAnalysisReports(ListAnalysisReportsRequest) returns (ListAnalysisReportsResponse);
+}
+
+message AnalysisReportEntry {
+  string session_id = 1;
+  string status = 2;
+  string engine = 3;
+  int32 depth = 4;
+  int32 moves = 5;
+  google.protobuf.Timestamp game_finished_at = 6;
+  google.protobuf.Timestamp started_at = 7;
+  optional google.protobuf.Timestamp completed_at = 8;
+  int32 duration_ms = 9;
+  string error = 10;
+}
+
+message ListAnalysisReportsRequest {
+  string status = 1;
+  string cursor = 2;
+  int32 page_size = 3;
+}
+
+message ListAnalysisReportsResponse {
+  repeated AnalysisReportEntry reports = 1;
+  string next_cursor = 2;
+}

@@ -15,7 +15,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 	"github.com/bvivg/axon/core/shared/pkg/health"
 	"github.com/bvivg/axon/core/shared/pkg/lifecycle"
 	"github.com/bvivg/axon/core/shared/pkg/logger"
@@ -29,6 +31,7 @@ import (
 	"github.com/bvivg/axon/core/shared/pkg/rpclimit"
 	"github.com/bvivg/axon/core/shared/pkg/telemetry"
 
+	"github.com/bvivg/axon/core/services/auth/internal/auditlog"
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/config"
 	"github.com/bvivg/axon/core/services/auth/internal/jwt"
@@ -169,7 +172,8 @@ func run() error {
 	})
 	metrics.Registry().MustRegister(auditFailures)
 
-	svc, err := service.New(repository.New(pool), hasher, issuer, log, service.Config{
+	repo := repository.New(pool)
+	svc, err := service.New(repo, hasher, issuer, log, service.Config{
 		RefreshTTL:    cfg.JWT.RefreshTTL,
 		PasswordGate:  limit.NewGate(cfg.PasswordWork.MaxConcurrent, cfg.PasswordWork.QueueTimeout),
 		LoginThrottle: throttle.NewLogins(cache, cfg.LoginThrottle),
@@ -191,6 +195,16 @@ func run() error {
 	})
 	if err != nil {
 		return err
+	}
+
+	if len(cfg.KafkaBrokers) > 0 {
+		auditLog := auditlog.New(auditlog.Config{
+			Brokers: cfg.KafkaBrokers,
+			Store:   repo,
+			Log:     log,
+			Events:  auditlog.NewEventCounter(metrics.Registry()),
+		})
+		go func() { _ = auditLog.Run(ctx) }()
 	}
 
 	checks := health.New(log, []health.Checker{pool, cache})
@@ -269,6 +283,13 @@ func publicHandler(cfg config.Config, handler *server.Handler, keys jwt.Keys, me
 
 	mux := http.NewServeMux()
 	mux.Handle(authv1connect.NewAuthServiceHandler(handler, interceptors))
+	admin := &server.Admin{Handler: handler}
+	permissions := authz.NewCache(server.LocalPermissions(handler), 5*time.Second)
+	mux.Handle(authv1connect.NewAuthAdminServiceHandler(admin, connect.WithHandlerOptions(
+		connectInterceptors(metrics, log),
+		connect.WithInterceptors(admin.Interceptor(permissions), admincrud.Validator()),
+		rpclimit.Handler(cfg.RPCReadMaxBytes),
+	)))
 	if len(cfg.InternalKey.Reveal()) >= 32 {
 		mux.Handle(authv1connect.NewSessionControlServiceHandler(&server.SessionControl{Handler: handler, Key: cfg.InternalKey.Reveal()}, rpclimit.Handler(cfg.RPCReadMaxBytes)))
 	}
