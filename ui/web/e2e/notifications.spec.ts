@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { chatAt, expectReady, openChatWith, say, startChat } from "./chat-support";
+import { chatAt, expectReady, expectSaid, openChatWith, say, startChat } from "./chat-support";
 import { newPerson } from "./support";
 
 test("a message in another chat shows a toast that opens it, and the tab counts what is unread", async ({
@@ -21,6 +21,7 @@ test("a message in another chat shows a toast that opens it, and the tab counts 
   await say(cid.page, "are you there?");
   await ada.page.bringToFront();
   await ada.page.mouse.move(10, 10);
+  await expectSaid(ada.page, "Grace", "in this chat");
 
   const toast = ada.page.locator("[data-sonner-toast]").filter({ hasText: "Cid" });
   await expect(toast).toContainText("are you there?");

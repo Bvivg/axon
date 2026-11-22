@@ -371,19 +371,27 @@ export function ChatRoomView({ target }: { target: ChatTarget }) {
   const attentive = useAttention();
   const [visibleSeq, setVisibleSeq] = useState(0);
   const markedSeq = useRef(0);
+  const pendingMark = useRef<{ roomID: string; seq: number } | null>(null);
+  const flushMark = useCallback(() => {
+    const mark = pendingMark.current;
+    if (!mark) return;
+    pendingMark.current = null;
+    markedSeq.current = mark.seq;
+    markReadRef.current(mark);
+  }, []);
   useEffect(() => {
     markedSeq.current = 0;
   }, [roomID]);
   useEffect(() => {
     if (!roomID || !attentive || visibleSeq <= Math.max(myReadSeq, markedSeq.current)) {
+      pendingMark.current = null;
       return;
     }
-    const timer = setTimeout(() => {
-      markedSeq.current = visibleSeq;
-      markReadRef.current({ roomID, seq: visibleSeq });
-    }, markReadDebounceMs);
+    pendingMark.current = { roomID, seq: visibleSeq };
+    const timer = setTimeout(flushMark, markReadDebounceMs);
     return () => clearTimeout(timer);
-  }, [roomID, visibleSeq, myReadSeq, attentive]);
+  }, [roomID, visibleSeq, myReadSeq, attentive, flushMark]);
+  useEffect(() => flushMark, [flushMark]);
 
   const fetchNextPageRef = useRef(history.fetchNextPage);
   useEffect(() => {
