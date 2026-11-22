@@ -132,12 +132,16 @@ message GetMeRequest {}
 
 message GetMeResponse {
   User user = 1;
+
+  repeated OauthProvider linked_providers = 2;
 }
 
 message StartOAuthRequest {
   OauthProvider provider = 1;
 
   optional string return_to = 2;
+
+  optional bool link = 3;
 }
 
 message StartOAuthResponse {
@@ -160,6 +164,8 @@ message CompleteOAuthResponse {
   TokenPair tokens = 2;
 
   bool created = 3;
+
+  optional bool linked = 4;
 }
 
 message UpdateProfileRequest {

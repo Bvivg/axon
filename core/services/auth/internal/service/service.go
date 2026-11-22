@@ -44,6 +44,7 @@ type Store interface {
 
 	OauthAccountByProviderID(ctx context.Context, p domain.Provider, providerUserID string) (domain.OauthAccount, error)
 	LinkOauthAccount(ctx context.Context, a domain.OauthAccount) error
+	OauthAccountsForUser(ctx context.Context, userID uuid.UUID) ([]domain.OauthAccount, error)
 
 	ListRoles(ctx context.Context) ([]domain.Role, error)
 	RoleNamesForUser(ctx context.Context, userID uuid.UUID) ([]string, error)

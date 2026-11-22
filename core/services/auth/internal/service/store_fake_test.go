@@ -571,6 +571,24 @@ func (s *fakeStore) LinkOauthAccount(_ context.Context, a domain.OauthAccount) e
 	return nil
 }
 
+func (s *fakeStore) OauthAccountsForUser(_ context.Context, userID uuid.UUID) ([]domain.OauthAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.fail("OauthAccountsForUser"); err != nil {
+		return nil, err
+	}
+
+	var accounts []domain.OauthAccount
+	for _, a := range s.oauth {
+		if a.UserID == userID {
+			accounts = append(accounts, a)
+		}
+	}
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].LinkedAt.Before(accounts[j].LinkedAt) })
+	return accounts, nil
+}
+
 func (s *fakeStore) linkDirectly(a domain.OauthAccount) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

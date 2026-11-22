@@ -112,7 +112,7 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 
 	case errors.Is(err, domain.ErrOauthAccountExists):
 		return connect.NewError(connect.CodeFailedPrecondition,
-			errors.New("an account with this email already exists; sign in with your password instead"))
+			errors.New("an account with this email already exists; sign in with your password, then connect this provider under Profile → Sessions"))
 
 	case errors.Is(err, domain.ErrOauthReturnToNotAllowed):
 		return connect.NewError(connect.CodeInvalidArgument,
