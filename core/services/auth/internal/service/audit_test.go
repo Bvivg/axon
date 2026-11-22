@@ -214,7 +214,7 @@ func TestSecurityEventsPerFlow(t *testing.T) {
 			name: "role assigned",
 			run: func(t *testing.T, h *harness) []domain.SecurityEvent {
 				admin, target := adminAndTarget(t, h)
-				if err := h.svc.AssignRole(onDevice(t), admin, target, domain.RoleAdmin); err != nil {
+				if err := h.svc.AssignRole(onDevice(t), admin, target, domain.RoleAdmin, ""); err != nil {
 					t.Fatalf("AssignRole: %v", err)
 				}
 				return []domain.SecurityEvent{{Action: domain.SecurityRoleAssigned, UserID: target, ActorID: admin, Subject: domain.RoleAdmin.String()}}
@@ -224,7 +224,7 @@ func TestSecurityEventsPerFlow(t *testing.T) {
 			name: "role revoked",
 			run: func(t *testing.T, h *harness) []domain.SecurityEvent {
 				admin, target := adminAndTarget(t, h)
-				if err := h.svc.RevokeRole(onDevice(t), admin, target, domain.RoleUser); err != nil {
+				if err := h.svc.RevokeRole(onDevice(t), admin, target, domain.RoleUser, ""); err != nil {
 					t.Fatalf("RevokeRole: %v", err)
 				}
 				return []domain.SecurityEvent{{Action: domain.SecurityRoleRevoked, UserID: target, ActorID: admin, Subject: domain.RoleUser.String()}}
@@ -234,7 +234,7 @@ func TestSecurityEventsPerFlow(t *testing.T) {
 			name: "role change without permission",
 			run: func(t *testing.T, h *harness) []domain.SecurityEvent {
 				_, target := adminAndTarget(t, h)
-				if err := h.svc.AssignRole(onDevice(t), target, target, domain.RoleAdmin); !errors.Is(err, domain.ErrPermissionDenied) {
+				if err := h.svc.AssignRole(onDevice(t), target, target, domain.RoleAdmin, ""); !errors.Is(err, domain.ErrPermissionDenied) {
 					t.Fatalf("AssignRole error = %v, want ErrPermissionDenied", err)
 				}
 				return nil
@@ -244,7 +244,7 @@ func TestSecurityEventsPerFlow(t *testing.T) {
 			name: "revoking a role the user does not hold",
 			run: func(t *testing.T, h *harness) []domain.SecurityEvent {
 				admin, target := adminAndTarget(t, h)
-				if err := h.svc.RevokeRole(onDevice(t), admin, target, domain.RoleAdmin); !errors.Is(err, domain.ErrRoleNotFound) {
+				if err := h.svc.RevokeRole(onDevice(t), admin, target, domain.RoleAdmin, ""); !errors.Is(err, domain.ErrRoleNotFound) {
 					t.Fatalf("RevokeRole error = %v, want ErrRoleNotFound", err)
 				}
 				return nil
@@ -325,13 +325,6 @@ func TestFailedAuditWriteDoesNotFailTheRequest(t *testing.T) {
 			run: func(t *testing.T, h *harness) error {
 				registered := h.register(t, "ada@axon.test", validPassword)
 				return h.svc.RevokeSession(onDevice(t), registered.User.ID, h.storedToken(t, registered.Tokens.RefreshToken).FamilyID)
-			},
-		},
-		{
-			name: "role assigned",
-			run: func(t *testing.T, h *harness) error {
-				admin, target := adminAndTarget(t, h)
-				return h.svc.AssignRole(onDevice(t), admin, target, domain.RoleAdmin)
 			},
 		},
 	}

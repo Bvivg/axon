@@ -45,6 +45,30 @@ var (
 	ErrRoleNotFound = errors.New("auth: role not found")
 
 	ErrPermissionDenied = errors.New("auth: permission denied")
+
+	ErrAccountSuspended = errors.New("auth: account is suspended")
+
+	ErrSelfAction = errors.New("auth: administrators cannot apply this action to themselves")
+
+	ErrLastAdmin = errors.New("auth: at least one active administrator must remain")
+
+	ErrAlreadySuspended = errors.New("auth: account is already suspended")
+
+	ErrNotSuspended = errors.New("auth: account is not suspended")
+
+	ErrRoleExists = errors.New("auth: a role with this name already exists")
+
+	ErrSystemRole = errors.New("auth: built-in roles cannot be changed")
+
+	ErrRoleInUse = errors.New("auth: the role still has members")
+
+	ErrUnknownPermission = errors.New("auth: unknown permission")
+
+	ErrRequestReused = errors.New("auth: request_id was already used for another role")
+
+	ErrOnlyLogin = errors.New("auth: this is the account's only way to sign in")
+
+	ErrLinkedAccountNotFound = errors.New("auth: no linked account for this provider")
 )
 
 type ThrottledError struct {
@@ -72,4 +96,18 @@ func AsValidationError(err error) (*ValidationError, bool) {
 	var v *ValidationError
 	ok := errors.As(err, &v)
 	return v, ok
+}
+
+type VersionConflict struct {
+	Current int64
+}
+
+func (e *VersionConflict) Error() string {
+	return "auth: the record was changed by someone else"
+}
+
+func AsVersionConflict(err error) (*VersionConflict, bool) {
+	var conflict *VersionConflict
+	ok := errors.As(err, &conflict)
+	return conflict, ok
 }

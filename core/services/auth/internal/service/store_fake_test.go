@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/bvivg/axon/core/shared/pkg/authz"
+
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
 	"github.com/bvivg/axon/core/services/auth/internal/service"
 )
@@ -29,6 +31,12 @@ type fakeStore struct {
 
 	securityEvents []domain.SecurityEvent
 
+	adminActions []authz.Action
+
+	adminRoles   map[uuid.UUID]domain.AdminRole
+	auditExport  []domain.AuditEvent
+	profileLocks map[uuid.UUID]int64
+
 	failOn map[string]error
 
 	beforeRotate func()
@@ -48,8 +56,9 @@ func newFakeStore() *fakeStore {
 		oauth:        make(map[string]domain.OauthAccount),
 
 		roles: map[uuid.UUID]domain.Role{
-			domain.RoleUser:  {ID: domain.RoleUser, Name: "user"},
-			domain.RoleAdmin: {ID: domain.RoleAdmin, Name: "admin"},
+			domain.RoleUser:      {ID: domain.RoleUser, Name: "user"},
+			domain.RoleAdmin:     {ID: domain.RoleAdmin, Name: "admin"},
+			domain.RoleModerator: {ID: domain.RoleModerator, Name: "moderator"},
 		},
 		rolePermissions: map[uuid.UUID]map[string]bool{
 			domain.RoleUser: {
@@ -59,6 +68,10 @@ func newFakeStore() *fakeStore {
 			domain.RoleAdmin: {
 				"user:manage": true, "session:manage": true, "chat:manage": true,
 				"game:manage": true, "calling:manage": true, "rbac:manage": true,
+				"admin.users:manage": true, "admin.games:manage": true, "admin.chat:manage": true, "admin.audit:manage": true,
+			},
+			domain.RoleModerator: {
+				"admin.users:read": true, "admin.games:manage": true, "admin.chat:manage": true, "admin.audit:read": true, "rbac:read": true,
 			},
 		},
 		userRoles: make(map[uuid.UUID]map[uuid.UUID]bool),
@@ -657,6 +670,9 @@ func (s *fakeStore) UserHasPermission(_ context.Context, userID uuid.UUID, names
 
 	if err := s.fail("UserHasPermission"); err != nil {
 		return false, err
+	}
+	if s.users[userID].Suspended() {
+		return false, nil
 	}
 
 	for roleID := range s.userRoles[userID] {

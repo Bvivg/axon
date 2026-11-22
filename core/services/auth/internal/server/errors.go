@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/bvivg/axon/core/shared/pkg/admincrud"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
@@ -38,7 +39,10 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	}
 
 	if v, ok := domain.AsValidationError(err); ok {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New(v.Field+" "+v.Reason))
+		return admincrud.Invalid(v.Field, "valid", v.Field+" "+v.Reason)
+	}
+	if conflict, ok := domain.AsVersionConflict(err); ok {
+		return admincrud.Conflict(conflict.Current)
 	}
 
 	switch {
@@ -55,6 +59,21 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 
 	case errors.Is(err, domain.ErrUserNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("user not found"))
+
+	case errors.Is(err, domain.ErrAccountSuspended):
+		return connect.NewError(connect.CodePermissionDenied, errors.New("this account is suspended"))
+
+	case errors.Is(err, domain.ErrSelfAction):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("you cannot apply this action to your own account"))
+
+	case errors.Is(err, domain.ErrLastAdmin):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("at least one active administrator must remain"))
+
+	case errors.Is(err, domain.ErrAlreadySuspended):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the account is already suspended"))
+
+	case errors.Is(err, domain.ErrNotSuspended):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the account is not suspended"))
 
 	case errors.Is(err, domain.ErrRefreshTokenInvalid),
 		errors.Is(err, domain.ErrRefreshTokenReused):
@@ -102,6 +121,20 @@ func translateError(ctx context.Context, log *slog.Logger, err error) error {
 	case errors.Is(err, domain.ErrSessionNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("session not found"))
 
+	case errors.Is(err, domain.ErrRoleExists):
+		return admincrud.Taken("name", "a role with this name already exists")
+	case errors.Is(err, domain.ErrUnknownPermission):
+		return admincrud.Invalid("permissions", "known", "one of the permissions does not exist")
+	case errors.Is(err, domain.ErrRequestReused):
+		return admincrud.Invalid("request_id", "unique", "request_id was already used for another role")
+	case errors.Is(err, domain.ErrSystemRole):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("built-in roles cannot be changed"))
+	case errors.Is(err, domain.ErrRoleInUse):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("take this role away from its members before deleting it"))
+	case errors.Is(err, domain.ErrOnlyLogin):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("this is the account's only way to sign in"))
+	case errors.Is(err, domain.ErrLinkedAccountNotFound):
+		return connect.NewError(connect.CodeNotFound, errors.New("no linked account for this provider"))
 	case errors.Is(err, domain.ErrRoleNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 
