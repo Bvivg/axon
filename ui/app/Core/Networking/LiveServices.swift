@@ -25,7 +25,9 @@ enum LiveServices {
             game: LiveGameAPI(client: game, connect: connect),
             chat: LiveChatAPI(client: chat, connect: connect),
             calls: LiveCallsAPI(client: calls, connect: connect),
-            channels: WebSocketGameChannelFactory(url: address.gameSocketURL, vault: vault, transport: sockets)
+            channels: WebSocketGameChannelFactory(url: address.gameSocketURL, vault: vault, transport: sockets),
+            chatSocket: WebSocketChatSocketFactory(url: address.chatSocketURL, vault: vault, transport: sockets),
+            media: LiveMediaAPI(address: address, vault: vault)
         )
     }
 }

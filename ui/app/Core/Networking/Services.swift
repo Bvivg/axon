@@ -37,6 +37,7 @@ protocol AuthAPI: Sendable {
     func revokeSession(id: String) async throws(APIError)
     func startLink(_ provider: OAuthProvider, challenge: String) async throws(APIError) -> OAuthStart
     func completeLink(_ provider: OAuthProvider, code: String, state: String, verifier: String) async throws(APIError) -> User
+    func searchUsers(_ query: String) async throws(APIError) -> [PublicProfile]
     var signedOut: AsyncStream<Void> { get }
 }
 
@@ -54,8 +55,39 @@ protocol GameAPI: Sendable {
     func rating(_ game: GameKind, user: String) async throws(APIError) -> Rating
 }
 
+struct MessagePage: Equatable, Sendable {
+    let messages: [ChatMessage]
+    let hasMore: Bool
+}
+
+struct RoomDetails: Equatable, Sendable {
+    let room: Room
+    let members: [RoomMember]
+}
+
+struct HistoryQuery: Equatable, Sendable {
+    var before: Int64?
+    var after: Int64?
+    var limit: Int32 = 50
+    var kinds: [Axon_Chat_V1_MessageKind] = []
+    var groupedItems = false
+}
+
 protocol ChatAPI: Sendable {
     func rooms() async throws(APIError) -> [Room]
+    func room(id: String) async throws(APIError) -> RoomDetails
+    func messages(in room: String, _ query: HistoryQuery) async throws(APIError) -> MessagePage
+    func search(in room: String, for text: String) async throws(APIError) -> [ChatMessage]
+    func markRead(room: String, seq: Int64) async throws(APIError)
+    func directRoom(with user: String) async throws(APIError) -> Room?
+    func createGroup(name: String, members: [String]) async throws(APIError) -> Room
+    func addMembers(_ users: [String], to room: String) async throws(APIError)
+    func removeMember(_ user: String, from room: String) async throws(APIError)
+    func renameGroup(_ room: String, to name: String) async throws(APIError) -> Room
+    func leave(room: String) async throws(APIError)
+    func hide(room: String) async throws(APIError)
+    func readers(of message: String) async throws(APIError) -> [MessageReader]
+    func forward(_ messages: [String], to rooms: [String], comment: String, clientID: String) async throws(APIError) -> Int
 }
 
 protocol CallsAPI: Sendable {
@@ -97,4 +129,6 @@ struct Services: Sendable {
     let chat: any ChatAPI
     let calls: any CallsAPI
     let channels: any GameChannelFactory
+    let chatSocket: any ChatSocketFactory
+    let media: any MediaAPI
 }

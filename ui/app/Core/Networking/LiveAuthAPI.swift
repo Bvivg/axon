@@ -78,6 +78,16 @@ struct LiveAuthAPI: AuthAPI {
         return Dictionary(response.users.map { ($0.id, $0) }) { first, _ in first }
     }
 
+    func searchUsers(_ query: String) async throws(APIError) -> [PublicProfile] {
+        let request = Axon_Auth_V1_SearchUsersRequest.with {
+            $0.query = query
+            $0.pageSize = 30
+        }
+        return try await connect.call { headers in
+            await client.searchUsers(request: request, headers: headers)
+        }.users
+    }
+
     func account() async throws(APIError) -> Account {
         let response = try await connect.call { headers in
             await client.getMe(request: Axon_Auth_V1_GetMeRequest(), headers: headers)
