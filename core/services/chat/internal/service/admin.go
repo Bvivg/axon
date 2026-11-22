@@ -164,18 +164,18 @@ func (s *Service) ModerateRemoveMember(ctx context.Context, roomID, targetID uui
 }
 
 type UploadAudit interface {
-	AdminUploads(ctx context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, error)
+	AdminUploads(ctx context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, *int64, error)
 }
 
-func (s *Service) AdminUploads(ctx context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, error) {
+func (s *Service) AdminUploads(ctx context.Context, f domain.AdminUploadFilter) ([]domain.AdminUpload, string, *int64, error) {
 	audit, ok := s.store.(UploadAudit)
 	if !ok {
-		return nil, "", ErrModerationUnavailable
+		return nil, "", nil, ErrModerationUnavailable
 	}
 	switch f.Kind {
 	case "", domain.MessageKindVoice, domain.MessageKindAttachment, domain.MessageKindImage, domain.MessageKindVideo:
 	default:
-		return nil, "", &domain.ValidationError{Field: "kind", Reason: "must be voice, attachment, image or video"}
+		return nil, "", nil, &domain.ValidationError{Field: "kind", Reason: "must be voice, attachment, image or video"}
 	}
 	if f.Limit < 1 || f.Limit > 100 {
 		f.Limit = 25
