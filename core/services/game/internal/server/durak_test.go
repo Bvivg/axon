@@ -117,6 +117,11 @@ type watcher struct {
 
 func (s *stand) watch(t *testing.T, user uuid.UUID, id string) *watcher {
 	t.Helper()
+	return s.open(t, user, &gamev1.SessionCommand{Action: &gamev1.SessionCommand_Subscribe{Subscribe: id}})
+}
+
+func (s *stand) open(t *testing.T, user uuid.UUID, first *gamev1.SessionCommand) *watcher {
+	t.Helper()
 	header := http.Header{}
 	header.Set(TestUserHeader, user.String())
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -127,7 +132,7 @@ func (s *stand) watch(t *testing.T, user uuid.UUID, id string) *watcher {
 	}
 	t.Cleanup(func() { _ = conn.CloseNow() })
 	w := &watcher{t: t, conn: conn, frames: make(chan frame, 8192)}
-	w.send(&gamev1.SessionCommand{Action: &gamev1.SessionCommand_Subscribe{Subscribe: id}})
+	w.send(first)
 	go func() {
 		defer close(w.frames)
 		for {

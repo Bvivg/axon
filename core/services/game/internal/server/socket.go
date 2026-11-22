@@ -82,6 +82,10 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		h.watchMatch(ctx, cancel, conn, user, engine.Key(game), write)
 		return
 	}
+	if watch := first.GetWatch(); watch != nil {
+		h.watchFeed(ctx, watch, write, commands(ctx, cancel, conn, read, invalidCommand))
+		return
+	}
 	id, err := sessionID(first.GetSubscribe())
 	if err != nil {
 		_ = fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND)
@@ -136,26 +140,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 	if push(initial, nil) != nil {
 		return
 	}
-	commands := make(chan incoming)
-	go func() {
-		defer cancel()
-		limiter, flood := rate.NewLimiter(4, 8), rate.NewLimiter(20, 40)
-		for {
-			command, err := read(ctx)
-			if err != nil && !errors.Is(err, invalidCommand) {
-				return
-			}
-			if !flood.Allow() {
-				_ = conn.Close(ws.StatusPolicyViolation, "Too many commands")
-				return
-			}
-			select {
-			case commands <- incoming{command: command, limited: !limiter.Allow()}:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	incomingCommands := commands(ctx, cancel, conn, read, invalidCommand)
 
 	for {
 		select {
@@ -168,7 +153,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 			if push(h.owner.Get(ctx, id, user)) != nil {
 				return
 			}
-		case next := <-commands:
+		case next := <-incomingCommands:
 			if next.limited {
 				if fail(gamev1.SessionError_SESSION_ERROR_RATE_LIMITED) != nil {
 					return
@@ -381,6 +366,30 @@ func pipe(ctx context.Context, from, to *ws.Conn) {
 type incoming struct {
 	command *gamev1.SessionCommand
 	limited bool
+}
+
+func commands(ctx context.Context, cancel context.CancelFunc, conn *ws.Conn, read func(context.Context) (*gamev1.SessionCommand, error), invalid error) <-chan incoming {
+	out := make(chan incoming)
+	go func() {
+		defer cancel()
+		limiter, flood := rate.NewLimiter(4, 8), rate.NewLimiter(20, 40)
+		for {
+			command, err := read(ctx)
+			if err != nil && !errors.Is(err, invalid) {
+				return
+			}
+			if !flood.Allow() {
+				_ = conn.Close(ws.StatusPolicyViolation, "Too many commands")
+				return
+			}
+			select {
+			case out <- incoming{command: command, limited: !limiter.Allow()}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
 }
 
 func moveError(err error) gamev1.SessionError {
