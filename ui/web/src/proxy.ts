@@ -6,6 +6,8 @@ const probePaths = ["/calls/probe", "/calls/spike"];
 
 const adminPrefix = "/admin";
 
+const embedPrefix = "/embed/";
+
 function adminTarget(request: NextRequest): URL | null {
   const { pathname, search } = request.nextUrl;
   if (pathname !== adminPrefix && !pathname.startsWith(`${adminPrefix}/`)) return null;
@@ -27,6 +29,7 @@ export function proxy(request: NextRequest) {
     gateway: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:18080",
     assets: process.env.AVATARS_PUBLIC_URL,
     development: process.env.NODE_ENV === "development",
+    embeddable: request.nextUrl.pathname.startsWith(embedPrefix),
   });
 
   const headers = new Headers(request.headers);

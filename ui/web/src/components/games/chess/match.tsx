@@ -34,7 +34,7 @@ export function ChessGame({ id }: { id: string }) {
   return <SessionLoader id={id}>{session => <ChessMatch key={id} initial={session} />}</SessionLoader>;
 }
 
-function reason(game: Session) {
+export function chessReason(game: Session) {
   if (game.timedOut) return "Time's up";
   if (game.resigned) return "Resignation";
   if (game.agreedDraw) return "Draw agreed";
@@ -110,7 +110,7 @@ function ChessMatch({ initial }: { initial: Session }) {
     return game.rated && id ? change?.after ?? ratings.data?.get(id)?.rating ?? 1200 : undefined;
   };
   const delta = ratingDelta(game, user?.id);
-  const why = reason(game);
+  const why = chessReason(game);
   const status = spectating ? spectatorStatus(game, names, ["White", "Black"])
     : game.status === SessionStatus.DRAW ? "Draw"
     : game.status === SessionStatus.WON ? (won ? "You won" : "You lost")
