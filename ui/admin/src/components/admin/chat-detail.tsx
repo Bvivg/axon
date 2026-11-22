@@ -10,20 +10,20 @@ import { Mono, Person, When } from "@/components/admin/admin-ui";
 import { roomKindLabels, roomTitle } from "@/components/admin/chats-table";
 import { BulkBar, bulkApply } from "@/components/admin/bulk-bar";
 import { ConfirmAction } from "@/components/admin/confirm-action";
+import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordIcon, RecordLoading, RecordPage, RecordRow, RecordRows, RecordSection, RecordState } from "@/components/admin/record";
 import { DataTable } from "@/components/admin/data-table";
-import { Pane as WorkspacePage } from "@/components/ui/pane";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorCard } from "@/components/ui/error-card";
-import { PaneSection } from "@/components/ui/pane";
-import { Skeleton } from "@/components/ui/skeleton";
 import { MemberRole, MessageKind, RoomKind, type Member, type Message } from "@/gen/axon/chat/v1/chat_pb";
 import { Permission, useAdminAccess } from "@/lib/admin/access";
 import { isCode } from "@/lib/errors";
 import { profileName } from "@/lib/format";
 import { bulkLimit } from "@/lib/admin/bulk";
 import { useAdminProfiles, useAdminRoom, useAdminRoomMessages, useDeleteChatMessage, useRemoveChatMember } from "@/lib/query/admin";
+
+const back = { section: "Chats", back: "/chats", backLabel: "Back to chats" };
 
 const kindLabels: Record<MessageKind, string> = {
   [MessageKind.UNSPECIFIED]: "message",
@@ -81,19 +81,13 @@ export function ChatDetail({ id }: { id: string }) {
     } satisfies ColumnDef<Message, unknown>] : []),
   ], [profiles.data, moderate]);
 
-  if (detail.isPending) {
-    return (
-      <WorkspacePage title="Chat" back="/chats" backLabel="Back to chats" width="wide">
-        <div role="status" aria-label="Loading chat" className="space-y-3"><Skeleton className="h-28 w-full" /><Skeleton className="h-40 w-full" /></div>
-      </WorkspacePage>
-    );
-  }
+  if (detail.isPending) return <RecordLoading {...back} label="Loading chat" />;
 
   if (detail.isError || !detail.data.room?.room) {
     return (
-      <WorkspacePage title="Chat" back="/chats" backLabel="Back to chats" width="wide">
+      <RecordState {...back}>
         {isCode(detail.error, Code.NotFound) ? <EmptyState icon={MessageSquareOff} title="This chat does not exist" /> : <ErrorCard title="Could not load the chat" error={detail.error} onRetry={() => void detail.refetch()} />}
-      </WorkspacePage>
+      </RecordState>
     );
   }
 
@@ -101,41 +95,61 @@ export function ChatDetail({ id }: { id: string }) {
   const room = admin.room!;
   const title = roomTitle(room);
   const group = room.kind === RoomKind.GROUP;
+  const memberCount = members?.length ?? 0;
 
   return (
-    <WorkspacePage title={title} back="/chats" backLabel="Back to chats" width="wide">
-      <PaneSection id="room" title="Chat" aside={<Badge variant="mono">{roomKindLabels[room.kind]}</Badge>}>
-        <dl className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-6 gap-y-3 text-sm">
-          <div><dt className="text-xs text-muted-foreground">Created by</dt><dd><Person id={room.createdBy} profiles={profiles.data} /></dd></div>
-          <div><dt className="text-xs text-muted-foreground">Created</dt><dd><When at={room.createdAt} /></dd></div>
-          <div><dt className="text-xs text-muted-foreground">Last activity</dt><dd><When at={admin.lastActivityAt} /></dd></div>
-          <div><dt className="text-xs text-muted-foreground">Messages</dt><dd className="tabular-nums">{admin.lastSeq.toLocaleString()}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Chat ID</dt><dd><Mono>{room.id}</Mono></dd></div>
-        </dl>
-      </PaneSection>
+    <RecordPage
+      {...back}
+      media={<RecordIcon icon={MessagesSquare} tone="muted" />}
+      title={title}
+      lines={
+        <>
+          <span className="capitalize">{roomKindLabels[room.kind]}</span>
+          <span className="tabular-nums">{memberCount.toLocaleString()} member{memberCount === 1 ? "" : "s"}</span>
+          <span className="tabular-nums">{admin.lastSeq.toLocaleString()} message{admin.lastSeq === BigInt(1) ? "" : "s"}</span>
+        </>
+      }
+      facts={
+        <Facts>
+          <Fact term="Created by"><Person id={room.createdBy} profiles={profiles.data} /></Fact>
+          <Fact term="Created"><When at={room.createdAt} /></Fact>
+          <Fact term="Last activity"><When at={admin.lastActivityAt} /></Fact>
+          <Fact term="Messages"><span className="tabular-nums">{admin.lastSeq.toLocaleString()}</span></Fact>
+          <Fact term="Chat ID"><CopyID value={room.id} label="chat ID" /></Fact>
+        </Facts>
+      }
+    >
+      <RecordSection id="members" title="Members" count={memberCount}>
+        <RecordFrame>
+          {memberCount === 0 ? <RecordEmpty>Nobody is in this chat</RecordEmpty> : (
+            <RecordRows label="Members">
+              {members?.map((member) => (
+                <RecordRow
+                  key={member.userId}
+                  aside={moderate && group ? (
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setLeaving(member); setRemoving(true); }}><UserMinus aria-hidden /> Remove</Button>
+                  ) : undefined}
+                >
+                  <Person id={member.userId} profiles={profiles.data} />
+                  {member.role === MemberRole.OWNER ? <Badge variant="signal">owner</Badge> : null}
+                  <span className="ml-auto hidden text-xs text-muted-foreground sm:inline">joined <When at={member.joinedAt} /></span>
+                </RecordRow>
+              ))}
+            </RecordRows>
+          )}
+        </RecordFrame>
+      </RecordSection>
 
-      <PaneSection id="members" title={`Members · ${members?.length ?? 0}`}>
-        <ul className="divide-y divide-line">
-          {members?.map((member) => (
-            <li key={member.userId} className="flex items-center justify-between gap-3 py-2">
-              <span className="flex min-w-0 items-center gap-2">
-                <Person id={member.userId} profiles={profiles.data} />
-                {member.role === MemberRole.OWNER ? <Badge variant="signal">owner</Badge> : null}
-                <span className="text-xs text-muted-foreground">joined <When at={member.joinedAt} /></span>
-              </span>
-              {moderate && group ? <Button variant="ghost" size="sm" onClick={() => { setLeaving(member); setRemoving(true); }}><UserMinus aria-hidden /> Remove</Button> : null}
-            </li>
-          ))}
-        </ul>
-      </PaneSection>
-
-      <PaneSection id="messages" title="Messages" aside={moderate && reason ? <Badge variant="warning">viewing is audited</Badge> : null}>
+      <RecordSection id="messages" title="Messages" aside={moderate && reason ? <Badge variant="warning" dot>Viewing is audited</Badge> : null}>
         {!moderate ? (
-          <EmptyState icon={Lock} title="Reading messages needs the chat moderation permission" />
+          <RecordFrame><EmptyState icon={Lock} title="Reading messages needs the chat moderation permission" /></RecordFrame>
         ) : !reason ? (
-          <Button variant="outline" className="self-start" onClick={() => setAsking(true)}><Eye aria-hidden /> View messages</Button>
+          <RecordFrame className="flex flex-col items-center gap-3 px-4 py-8">
+            <span aria-hidden className="grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground"><Lock className="size-5" /></span>
+            <Button variant="outline" onClick={() => setAsking(true)}><Eye aria-hidden /> View messages</Button>
+          </RecordFrame>
         ) : (
-          <div className="flex h-[32rem] flex-col overflow-hidden rounded-lg border border-line">
+          <RecordFrame className="flex h-[32rem] flex-col">
             <BulkBar count={picked.length} limit={bulkLimit} onClear={() => setSelected(new Set())}>
               <Button variant="destructive-outline" size="sm" onClick={() => setBulkDeleting(true)}><Trash2 aria-hidden /> Delete {picked.length}</Button>
             </BulkBar>
@@ -155,14 +169,14 @@ export function ChatDetail({ id }: { id: string }) {
               rowHeight={56}
               selection={{ selected, onChange: setSelected, selectable: (row) => !row.deletedAt && row.kind !== MessageKind.SYSTEM, limit: bulkLimit }}
             />
-          </div>
+          </RecordFrame>
         )}
-      </PaneSection>
+      </RecordSection>
 
       {access.can(Permission.AuditRead) ? (
-        <PaneSection id="history" title="Moderation history">
+        <RecordSection id="history" title="Moderation history">
           <AuditList filters={{ service: "chat", targetType: "room", target: room.id }} />
-        </PaneSection>
+        </RecordSection>
       ) : null}
 
       <ConfirmAction
@@ -202,6 +216,6 @@ export function ChatDetail({ id }: { id: string }) {
           setSelected(new Set());
         }}
       />
-    </WorkspacePage>
+    </RecordPage>
   );
 }

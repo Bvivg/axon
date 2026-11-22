@@ -1,7 +1,7 @@
 "use client";
 
 import { Code } from "@connectrpc/connect";
-import { KeyRound, Pencil, Trash2 } from "lucide-react";
+import { Check, KeyRound, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
@@ -9,27 +9,19 @@ import { useState, type ReactNode } from "react";
 import { AuditList } from "@/components/admin/audit-table";
 import { Mono, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
+import { CopyID, Fact, Facts, RecordFrame, RecordIcon, RecordLoading, RecordNote, RecordPage, RecordSection } from "@/components/admin/record";
 import { RoleForm } from "@/components/admin/roles/role-form";
 import { roleHref, RoleKind } from "@/components/admin/roles/roles-list";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorCard } from "@/components/ui/error-card";
-import { Pane, PaneSection } from "@/components/ui/pane";
+import { Pane } from "@/components/ui/pane";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AdminRole } from "@/gen/axon/auth/v1/admin_pb";
 import { Permission, useAdminAccess } from "@/lib/admin/access";
 import { isCode } from "@/lib/errors";
+import { cn } from "@/lib/utils";
 import { groupPermissions, useAdminRole, useDeleteRole, usePermissionCatalog } from "@/lib/query/roles";
-
-function Fact({ term, children }: { term: string; children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{term}</dt>
-      <dd className="min-w-0 text-sm break-words">{children}</dd>
-    </div>
-  );
-}
 
 function RoleShell({ title, back, children, actions }: { title: string; back: string; children: ReactNode; actions?: ReactNode }) {
   return <Pane title={title} back={back} backLabel="Back" width="wide" actions={actions}>{children}</Pane>;
@@ -38,7 +30,7 @@ function RoleShell({ title, back, children, actions }: { title: string; back: st
 function useLoadedRole(id: string, title: string, back: string) {
   const role = useAdminRole(id);
   if (role.isPending) {
-    return { view: <RoleShell title={title} back={back}><div role="status" aria-label="Loading role" className="space-y-3"><Skeleton className="h-28 w-full" /><Skeleton className="h-40 w-full" /></div></RoleShell> };
+    return { view: <RecordLoading section={title} back={back} backLabel="Back" label="Loading role" /> };
   }
   if (role.isError) {
     return {
@@ -57,25 +49,43 @@ function Permissions({ role }: { role: AdminRole }) {
   const granted = new Set(role.permissions);
   const known = new Set(catalog.data?.map((permission) => permission.name));
   const unknown = role.permissions.filter((name) => catalog.data && !known.has(name));
-  if (!catalog.data) return <Skeleton className="h-24 w-full" />;
+  if (!catalog.data) return <Skeleton className="h-40 w-full rounded-xl" />;
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {groupPermissions(catalog.data).map(([namespace, permissions]) => (
-        <div key={namespace} className="flex flex-col gap-1.5 rounded-lg border border-line p-3">
-          <span className="font-mono text-xs text-muted-foreground">{namespace}</span>
-          <ul aria-label={`${namespace} permissions`} className="flex flex-wrap gap-1.5">
-            {permissions.map((permission) => (
-              <li key={permission.name}>
-                <Badge variant={granted.has(permission.name) ? "success" : "outline"} className={granted.has(permission.name) ? undefined : "text-muted-foreground line-through decoration-muted-foreground/50"}>
-                  {permission.action}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-      {unknown.length ? <p className="text-xs text-muted-foreground">Not in the catalog: {unknown.join(", ")}</p> : null}
-    </div>
+    <RecordFrame>
+      <ul className="divide-y divide-line">
+        {groupPermissions(catalog.data).map(([namespace, permissions]) => {
+          const have = permissions.filter((permission) => granted.has(permission.name)).length;
+          return (
+            <li key={namespace} className="grid gap-x-6 gap-y-2 px-4 py-3.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
+              <div className="flex items-baseline justify-between gap-2 sm:flex-col sm:justify-start sm:gap-0.5">
+                <span className={cn("font-mono text-[13px]", have === 0 && "text-muted-foreground")}>{namespace}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{have} of {permissions.length}</span>
+              </div>
+              <ul aria-label={`${namespace} permissions`} className="flex flex-wrap gap-1.5">
+                {permissions.map((permission) => {
+                  const on = granted.has(permission.name);
+                  return (
+                    <li
+                      key={permission.name}
+                      title={permission.name}
+                      className={cn(
+                        "inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs",
+                        on ? "border-success/30 bg-success/10 font-medium" : "border-dashed border-line text-muted-foreground",
+                      )}
+                    >
+                      {on ? <Check aria-hidden className="size-3.5 text-success" /> : null}
+                      {permission.action}
+                      {on ? null : <span className="sr-only">(not granted)</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
+      {unknown.length ? <p className="border-t border-line px-4 py-3 text-xs text-muted-foreground">Not in the catalog: <span className="font-mono">{unknown.join(", ")}</span></p> : null}
+    </RecordFrame>
   );
 }
 
@@ -91,9 +101,14 @@ export function RoleDetail({ id }: { id: string }) {
   const mutate = access.can(Permission.RolesMutate) && !role.system;
 
   return (
-    <RoleShell
-      title={role.title || role.name}
+    <RecordPage
+      section="Roles"
       back="/roles"
+      backLabel="Back to roles"
+      media={<RecordIcon icon={KeyRound} tone={role.system ? "signal" : "muted"} />}
+      title={role.title || role.name}
+      lines={<Mono className="text-sm">{role.name}</Mono>}
+      tags={<RoleKind role={role} />}
       actions={mutate ? (
         <>
           <Link href={`${roleHref(role.id)}/edit`} className={buttonVariants({ variant: "outline", size: "sm" })}><Pencil aria-hidden /> Edit</Link>
@@ -102,27 +117,27 @@ export function RoleDetail({ id }: { id: string }) {
           </Button>
         </>
       ) : undefined}
-    >
-      <PaneSection id="role" title="Role" aside={<RoleKind role={role} />}>
-        <dl className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-6 gap-y-3">
-          <Fact term="Name"><Mono>{role.name}</Mono></Fact>
-          <Fact term="Title">{role.title || "—"}</Fact>
-          <Fact term="Members"><Link href={`/users?role=${encodeURIComponent(role.name)}`} className="hover:underline">{members.toLocaleString()}</Link></Fact>
+      facts={
+        <Facts>
+          <Fact term="Members"><Link href={`/users?role=${encodeURIComponent(role.name)}`} className="tabular-nums hover:underline">{members.toLocaleString()}</Link></Fact>
+          <Fact term="Permissions"><span className="tabular-nums">{role.permissions.length}</span></Fact>
           <Fact term="Created"><When at={role.createTime} /></Fact>
           <Fact term="Updated"><When at={role.updateTime} /></Fact>
           <Fact term="Version"><Mono>{role.etag}</Mono></Fact>
-        </dl>
-        {role.system ? <p className="text-xs text-muted-foreground">Built-in roles are managed by migrations and cannot be edited here.</p> : null}
-      </PaneSection>
+          <Fact term="Role ID"><CopyID value={role.id} label="role ID" /></Fact>
+        </Facts>
+      }
+    >
+      {role.system ? <RecordNote>Built-in roles are managed by migrations and cannot be edited here.</RecordNote> : null}
 
-      <PaneSection id="permissions" title={`Permissions · ${role.permissions.length}`}>
+      <RecordSection id="permissions" title="Permissions" count={role.permissions.length}>
         <Permissions role={role} />
-      </PaneSection>
+      </RecordSection>
 
       {access.can(Permission.AuditRead) ? (
-        <PaneSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?targetType=role&target=${role.id}`}>Open in audit log</Link>}>
+        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?targetType=role&target=${role.id}`}>Open in audit log</Link>}>
           <AuditList filters={{ targetType: "role", target: role.id }} />
-        </PaneSection>
+        </RecordSection>
       ) : null}
 
       <ConfirmAction
@@ -136,7 +151,7 @@ export function RoleDetail({ id }: { id: string }) {
           router.push("/roles");
         }}
       />
-    </RoleShell>
+    </RecordPage>
   );
 }
 

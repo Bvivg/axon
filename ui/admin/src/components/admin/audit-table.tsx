@@ -2,6 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { Download, ScrollText, X } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { useMemo, useState } from "react";
 
@@ -17,6 +18,8 @@ import { AuditOutcome, type AuditEvent } from "@/gen/axon/auth/v1/admin_pb";
 import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import { useUrlState } from "@/lib/admin/url-state";
 import { describe } from "@/lib/errors";
+import { shortID } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { flatten, OutcomeFilter, useAdminProfiles, useAuditEvents, useExportAudit, type AuditFilters } from "@/lib/query/admin";
 
 const keys = ["service", "action", "outcome", "actor", "targetType", "target", "since", "until"] as const;
@@ -80,8 +83,24 @@ export function OutcomeBadge({ outcome }: { outcome: AuditOutcome }) {
 function Target({ event, profiles }: { event: AuditEvent; profiles?: Map<string, PublicProfile> }) {
   if (!event.targetType) return <span className="text-muted-foreground">—</span>;
   if (event.targetType === "user") return <Person id={event.targetId} profiles={profiles} />;
-  return <span className="flex min-w-0 items-center gap-1.5"><Badge variant="mono">{event.targetType}</Badge><Mono className="truncate">{event.targetId.length > 40 ? `${event.targetId.slice(0, 40)}…` : event.targetId}</Mono></span>;
+  const href = targetPages[event.targetType];
+  const id = href && uuid.test(event.targetId) ? shortID(event.targetId) : event.targetId.length > 40 ? `${event.targetId.slice(0, 40)}…` : event.targetId;
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <Badge variant="mono">{event.targetType}</Badge>
+      {href ? <Link href={`${href}/${event.targetId}`} className="truncate font-mono text-xs hover:underline" title={event.targetId}>{id}</Link> : <Mono className="truncate">{id}</Mono>}
+    </span>
+  );
 }
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const targetPages: Record<string, string> = {
+  role: "/roles",
+  tournament: "/tournaments",
+  game_session: "/games",
+  room: "/chats",
+};
 
 function profileIDs(events: AuditEvent[]): string[] {
   return events.flatMap((event) => [event.actorId, event.targetType === "user" ? event.targetId : ""]).filter(Boolean);
@@ -197,29 +216,56 @@ export function AuditTable() {
   );
 }
 
-export function AuditList({ filters }: { filters: Partial<AuditFilters> }) {
+export function actionLabel(action: string): string {
+  const words = action.replaceAll("_", " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : action;
+}
+
+const outcomeDot: Record<AuditOutcome, string> = {
+  [AuditOutcome.UNSPECIFIED]: "bg-muted-foreground",
+  [AuditOutcome.SUCCEEDED]: "bg-signal",
+  [AuditOutcome.DENIED]: "bg-warning",
+  [AuditOutcome.FAILED]: "bg-destructive",
+};
+
+export function AuditList({ filters, showTarget = false }: { filters: Partial<AuditFilters>; showTarget?: boolean }) {
   const events = useAuditEvents({ ...blank, ...filters }, true, 10);
   const rows = useMemo(() => flatten(events.data), [events.data]);
   const ids = useMemo(() => profileIDs(rows), [rows]);
   const profiles = useAdminProfiles(ids);
   const [open, setOpen] = useState<AuditEvent>();
 
-  if (events.isPending) return <Skeleton className="h-16 w-full" />;
+  if (events.isPending) return <Skeleton className="h-24 w-full rounded-xl" />;
   if (events.isError) return <ErrorCard title="Could not load the audit log" error={events.error} onRetry={() => void events.refetch()} />;
-  if (rows.length === 0) return <p className="text-sm text-muted-foreground">Nothing recorded yet</p>;
+  if (rows.length === 0) return <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-muted-foreground">Nothing recorded yet</p>;
 
   return (
     <>
-      <ul className="divide-y divide-line">
-        {rows.map((event) => (
-          <li key={event.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
-            <When at={event.occurredAt} className="text-xs text-muted-foreground" />
-            <Button variant="link" size="sm" className="font-mono text-xs" onClick={() => setOpen(event)}>{event.service} · {event.action}</Button>
-            <OutcomeBadge outcome={event.outcome} />
-            <span className="min-w-0 flex-1 truncate text-muted-foreground" title={event.reason}>{event.reason}</span>
+      <ol aria-label="Recorded actions" className="flex flex-col">
+        {rows.map((event, i) => (
+          <li key={event.id} className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3">
+            <span aria-hidden className="relative flex justify-center">
+              <span className={cn("relative z-[1] mt-[7px] size-2 rounded-full ring-4 ring-background", outcomeDot[event.outcome])} />
+              {i < rows.length - 1 ? <span className="absolute top-4 bottom-0 w-px bg-line" /> : null}
+            </span>
+            <div className="flex min-w-0 flex-col gap-1 pb-5">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <button type="button" className="text-sm font-medium hover:underline focus-visible:underline focus-visible:outline-none" onClick={() => setOpen(event)}>
+                  {actionLabel(event.action)}
+                </button>
+                {event.outcome === AuditOutcome.SUCCEEDED ? null : <OutcomeBadge outcome={event.outcome} />}
+                {event.changes.length ? <span className="text-xs text-muted-foreground">{event.changes.map((change) => change.field).join(", ")}</span> : null}
+                <When at={event.occurredAt} className="ml-auto text-xs text-muted-foreground" />
+              </div>
+              {event.reason ? <p className="line-clamp-2 text-sm text-muted-foreground break-words">{event.reason}</p> : null}
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                {event.actorId ? <span className="inline-flex min-w-0 items-center gap-1.5">by <Person id={event.actorId} profiles={profiles.data} /></span> : <span>by the system</span>}
+                {showTarget && event.targetType ? <span className="inline-flex min-w-0 items-center gap-1.5">on <Target event={event} profiles={profiles.data} /></span> : null}
+              </div>
+            </div>
           </li>
         ))}
-      </ul>
+      </ol>
       <EventDialog event={open} profiles={profiles.data} onClose={() => setOpen(undefined)} />
     </>
   );

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 export function PaneHeader({
   title,
+  titleAs: Title = "h1",
   subtitle,
   leading,
   actions,
@@ -17,6 +18,7 @@ export function PaneHeader({
   children,
 }: {
   title?: ReactNode;
+  titleAs?: "h1" | "p";
   subtitle?: ReactNode;
   leading?: ReactNode;
   actions?: ReactNode;
@@ -40,7 +42,7 @@ export function PaneHeader({
           ) : null}
           {leading}
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[13px] font-semibold">{title}</h1>
+            <Title className="truncate text-[13px] font-semibold">{title}</Title>
             {subtitle ? <p className="truncate text-xs text-muted-foreground">{subtitle}</p> : null}
           </div>
           {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
@@ -52,6 +54,7 @@ export function PaneHeader({
 
 export function Pane({
   title,
+  titleAs,
   subtitle,
   leading,
   actions,
@@ -61,6 +64,7 @@ export function Pane({
   children,
 }: {
   title: ReactNode;
+  titleAs?: "h1" | "p";
   subtitle?: ReactNode;
   leading?: ReactNode;
   actions?: ReactNode;
@@ -71,7 +75,7 @@ export function Pane({
 }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PaneHeader title={title} subtitle={subtitle} leading={leading} actions={actions} back={back} backLabel={backLabel} />
+      <PaneHeader title={title} titleAs={titleAs} subtitle={subtitle} leading={leading} actions={actions} back={back} backLabel={backLabel} />
       <ScrollArea className="min-h-0 flex-1">
         <main
           className={cn(
