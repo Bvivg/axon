@@ -6,10 +6,11 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { AuditList } from "@/components/admin/audit-table";
-import { gameTitle, Mono, Person, When } from "@/components/admin/admin-ui";
+import { gameTitle, Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
-import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordIcon, RecordLoading, RecordNote, RecordPage, RecordSection, RecordState } from "@/components/admin/record";
+import { CopyID, Fact, Facts, RecordEmpty, RecordFrame, RecordIcon, RecordLoading, RecordNote, RecordPage, RecordRow, RecordRows, RecordSection, RecordState } from "@/components/admin/record";
 import { TournamentForm } from "@/components/admin/tournaments/tournament-form";
+import { Sheet } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -18,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { TournamentFormat, TournamentStatus, type Registration } from "@/gen/axon/tournament/v1/tournament_pb";
 import { Permission, useAdminAccess } from "@/lib/admin/access";
 import { isCode } from "@/lib/errors";
+import { profileName } from "@/lib/format";
 import { tournamentHref } from "@/lib/games/catalog";
 import { useAdminProfiles } from "@/lib/query/admin";
 import { useAdminTournament, useRemoveTournamentPlayer, useTournamentControls } from "@/lib/query/play";
@@ -94,7 +96,7 @@ export function TournamentDetail({ id }: { id: string }) {
       actions={
         <>
           <a href={tournamentHref(t.id)} className={buttonVariants({ variant: "ghost", size: "sm" })}><ExternalLink aria-hidden /> Open in Axon</a>
-          {moderate && registration && !editing ? <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Pencil aria-hidden /> Edit</Button> : null}
+          {moderate && registration ? <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Pencil aria-hidden /> Edit</Button> : null}
           {moderate && registration ? <Button variant="outline" size="sm" disabled={players.length < 2} onClick={() => setPending(Pending.Start)}><Play aria-hidden /> Start</Button> : null}
           {moderate && live ? <Button variant="destructive-outline" size="sm" onClick={() => setPending(Pending.Cancel)}><XCircle aria-hidden /> Cancel</Button> : null}
         </>
@@ -108,16 +110,13 @@ export function TournamentDetail({ id }: { id: string }) {
           <Fact term="Created"><When at={t.createdAt} /></Fact>
           <Fact term="Started"><When at={t.startedAt} /></Fact>
           <Fact term={cancelled ? "Cancelled" : "Finished"}><When at={t.finishedAt ?? t.cancelledAt} /></Fact>
-          <Fact term="Version"><Mono>{t.etag || "—"}</Mono></Fact>
           <Fact term="Tournament ID"><CopyID value={t.id} label="tournament ID" /></Fact>
         </Facts>
       }
     >
-      {editing ? (
-        <RecordSection id="settings" title="Settings">
-          <TournamentForm tournament={t} onDone={() => setEditing(false)} />
-        </RecordSection>
-      ) : null}
+      <Sheet open={editing} onOpenChange={setEditing} title={`Edit ${t.name}`}>
+        <TournamentForm tournament={t} onDone={() => setEditing(false)} />
+      </Sheet>
       {!registration ? <RecordNote>Settings and the player list are locked once the tournament starts.</RecordNote> : null}
 
       {t.standings.length ? (
@@ -162,43 +161,32 @@ export function TournamentDetail({ id }: { id: string }) {
       <RecordSection id="players" title="Players" count={players.length}>
         <RecordFrame>
           {players.length === 0 ? <RecordEmpty>Nobody has registered yet</RecordEmpty> : (
-            <ScrollArea orientation="horizontal">
-              <table aria-label="Registered players" className="w-full min-w-[32rem] text-left text-sm">
-                <thead className="bg-surface-raised text-xs text-muted-foreground">
-                  <tr>
-                    <th scope="col" className={th}>Player</th>
-                    <th scope="col" className={`${th} text-right`}>Rating</th>
-                    <th scope="col" className={`${th} text-right`}>Seed</th>
-                    <th scope="col" className={th}>Registered</th>
-                    <th scope="col" className={th}><span className="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {players.map((r) => (
-                    <tr key={r.userId} className="border-t border-line">
-                      <td className={td}><Person id={r.userId} profiles={profiles.data} /></td>
-                      <td className={`${td} text-right tabular-nums`}>{r.rating}</td>
-                      <td className={`${td} text-right tabular-nums text-muted-foreground`}>{r.seed ?? "—"}</td>
-                      <td className={`${td} text-muted-foreground`}><When at={r.registeredAt} /></td>
-                      <td className={`${td} py-1.5 text-right`}>
-                        {moderate && registration ? (
-                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => {
-                            setPlayer(r);
-                            setPending(Pending.Remove);
-                          }}><UserMinus aria-hidden /> Remove</Button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollArea>
+            <RecordRows label="Registered players">
+              {players.map((r) => (
+                <RecordRow
+                  key={r.userId}
+                  aside={moderate && registration ? (
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" aria-label={`Remove ${profileName(profiles.data?.get(r.userId))}`} onClick={() => {
+                      setPlayer(r);
+                      setPending(Pending.Remove);
+                    }}><UserMinus aria-hidden /><span className="max-sm:hidden">Remove</span></Button>
+                  ) : undefined}
+                >
+                  <Person id={r.userId} profiles={profiles.data} />
+                  <span className="ml-auto flex shrink-0 items-center gap-4 text-xs text-muted-foreground tabular-nums">
+                    <span><span className="sr-only">Rating </span>{r.rating}</span>
+                    <span className="max-sm:hidden">seed {r.seed ?? "—"}</span>
+                    <When at={r.registeredAt} className="max-md:hidden" />
+                  </span>
+                </RecordRow>
+              ))}
+            </RecordRows>
           )}
         </RecordFrame>
       </RecordSection>
 
       {access.can(Permission.AuditRead) ? (
-        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?targetType=tournament&target=${t.id}`}>Open in audit log</Link>}>
+        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?f.target_type=tournament&f.target=${t.id}`}>Open in audit log</Link>}>
           <AuditList filters={{ targetType: "tournament", target: t.id }} />
         </RecordSection>
       ) : null}

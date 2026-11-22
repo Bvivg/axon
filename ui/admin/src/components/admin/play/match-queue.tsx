@@ -7,67 +7,89 @@ import { useMemo, useState } from "react";
 
 import { AdminListPage, gameOptions, gameTitle, Mono, Person, When } from "@/components/admin/admin-ui";
 import { ConfirmAction } from "@/components/admin/confirm-action";
-import { DataTable } from "@/components/admin/data-table";
-import { SelectFilter, Toolbar } from "@/components/admin/filters";
+import { columnFilters, columnSorts, DataTable, MobileSlot } from "@/components/admin/data-table";
+import { ListToolbar } from "@/components/admin/list-toolbar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import type { PublicProfile } from "@/gen/axon/auth/v1/auth_pb";
 import type { QueueEntry } from "@/gen/axon/game/v1/admin_pb";
 import { Permission, useAdminAccess } from "@/lib/admin/access";
-import { useUrlState } from "@/lib/admin/url-state";
+import { useAdminList, useListState } from "@/lib/admin/list";
+import { FilterKind } from "@/lib/admin/list-query";
 import { shortID } from "@/lib/format";
 import { useAdminProfiles } from "@/lib/query/admin";
-import { useMatchQueue, useRemoveFromQueue } from "@/lib/query/play";
+import { loadQueue, playKeys, useRemoveFromQueue } from "@/lib/query/play";
 
-export function MatchQueue() {
-  const access = useAdminAccess();
-  const [state, update, clear] = useUrlState(["game"] as const);
-  const queue = useMatchQueue(state.game);
-  const rows = useMemo(() => queue.data ?? [], [queue.data]);
-  const profiles = useAdminProfiles(useMemo(() => rows.map((row) => row.userId), [rows]));
-  const remove = useRemoveFromQueue();
-  const [target, setTarget] = useState<QueueEntry>();
-  const moderate = access.can(Permission.GamesModerate);
-  const waiting = rows.filter((row) => !row.sessionId).length;
+const games = gameOptions.filter((option) => option.value);
 
-  const columns = useMemo<ColumnDef<QueueEntry, unknown>[]>(() => [
-    { id: "player", header: "Player", cell: ({ row }) => <Person id={row.original.userId} profiles={profiles.data} /> },
-    { id: "game", header: "Game", cell: ({ row }) => gameTitle(row.original.game) },
-    { id: "rating", header: "Rating", cell: ({ row }) => <span className="tabular-nums">{row.original.rating}</span> },
+function queueColumns(profiles?: Map<string, PublicProfile>): ColumnDef<QueueEntry, unknown>[] {
+  return [
+    {
+      id: "player",
+      header: "Player",
+      meta: { filter: { field: "user", label: "Player", kind: FilterKind.Person }, mobile: MobileSlot.Title },
+      cell: ({ row }) => <Person id={row.original.userId} profiles={profiles} />,
+    },
+    {
+      id: "game",
+      header: "Game",
+      meta: { filter: { field: "game", label: "Game", kind: FilterKind.Choice, options: games }, mobile: MobileSlot.Subtitle },
+      cell: ({ row }) => gameTitle(row.original.game),
+    },
+    {
+      id: "rating",
+      header: "Rating",
+      meta: { sort: "rating", filter: { field: "rating", label: "Rating", kind: FilterKind.Number }, align: "end" },
+      cell: ({ row }) => <span className="tabular-nums">{row.original.rating}</span>,
+    },
     {
       id: "state",
       header: "State",
+      meta: { filter: { field: "matched", label: "Matched", kind: FilterKind.Flag } },
       cell: ({ row }) => row.original.sessionId
         ? <Link href={`/games/${row.original.sessionId}`} className="inline-flex items-center gap-1.5 hover:underline"><Badge>matched</Badge><Mono>{shortID(row.original.sessionId)}</Mono></Link>
         : <Badge variant="warning" dot>waiting</Badge>,
     },
-    { id: "joined", header: "Joined", cell: ({ row }) => <When at={row.original.joinedAt} /> },
+    {
+      id: "joined",
+      header: "Joined",
+      meta: { sort: "joined", filter: { field: "joined", label: "Joined", kind: FilterKind.Date } },
+      cell: ({ row }) => <When at={row.original.joinedAt} />,
+    },
     { id: "seen", header: "Last seen", cell: ({ row }) => <When at={row.original.lastSeenAt} /> },
-    ...(moderate ? [{
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => row.original.sessionId ? null : (
-        <Button variant="destructive-outline" size="sm" onClick={() => setTarget(row.original)}><UserMinus aria-hidden /> Remove</Button>
-      ),
-    } satisfies ColumnDef<QueueEntry, unknown>] : []),
-  ], [profiles.data, moderate]);
+  ];
+}
+
+const rowKey = (row: QueueEntry) => `${row.game}:${row.userId}`;
+
+export function MatchQueue() {
+  const access = useAdminAccess();
+  const defs = useMemo(() => columnFilters(queueColumns()), []);
+  const sorts = useMemo(() => columnSorts(queueColumns()), []);
+  const state = useListState(defs);
+  const list = useAdminList([...playKeys.queue, "list"], state, loadQueue, rowKey, true, 10_000);
+  const profiles = useAdminProfiles(useMemo(() => list.rows.map((row) => row.userId), [list.rows]));
+  const columns = useMemo(() => queueColumns(profiles.data), [profiles.data]);
+  const remove = useRemoveFromQueue();
+  const [target, setTarget] = useState<QueueEntry>();
+  const moderate = access.can(Permission.GamesModerate);
 
   return (
     <AdminListPage
       title="Match queue"
-      subtitle={queue.data ? `${waiting} waiting` : undefined}
-      toolbar={<Toolbar><SelectFilter label="Game" value={state.game} options={gameOptions} onChange={(game) => update({ game })} /></Toolbar>}
+      subtitle={list.total === undefined ? undefined : `${list.total.toLocaleString()} in queue`}
+      toolbar={<ListToolbar state={state} sorts={sorts} />}
     >
       <DataTable
         label="Match queue"
         columns={columns}
-        rows={rows}
-        rowKey={(row) => `${row.game}:${row.userId}`}
-        status={queue.status}
-        error={queue.error}
-        onRetry={() => void queue.refetch()}
-        filtered={!!state.game}
-        onClearFilters={clear}
+        list={list}
+        state={state}
+        rowKey={rowKey}
         empty={{ icon: Hourglass, title: "Nobody is looking for a game" }}
+        rowActions={moderate ? (row) => row.sessionId ? null : (
+          <DropdownMenuItem className="text-destructive" onClick={() => setTarget(row)}><UserMinus aria-hidden /> Remove from queue</DropdownMenuItem>
+        ) : undefined}
       />
       <ConfirmAction
         open={!!target}

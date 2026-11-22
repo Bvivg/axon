@@ -119,11 +119,10 @@ export function RoleDetail({ id }: { id: string }) {
       ) : undefined}
       facts={
         <Facts>
-          <Fact term="Members"><Link href={`/users?role=${encodeURIComponent(role.name)}`} className="tabular-nums hover:underline">{members.toLocaleString()}</Link></Fact>
+          <Fact term="Members"><Link href={`/users?f.role=${encodeURIComponent(role.name)}`} className="tabular-nums hover:underline">{members.toLocaleString()}</Link></Fact>
           <Fact term="Permissions"><span className="tabular-nums">{role.permissions.length}</span></Fact>
           <Fact term="Created"><When at={role.createTime} /></Fact>
           <Fact term="Updated"><When at={role.updateTime} /></Fact>
-          <Fact term="Version"><Mono>{role.etag}</Mono></Fact>
           <Fact term="Role ID"><CopyID value={role.id} label="role ID" /></Fact>
         </Facts>
       }
@@ -135,7 +134,7 @@ export function RoleDetail({ id }: { id: string }) {
       </RecordSection>
 
       {access.can(Permission.AuditRead) ? (
-        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?targetType=role&target=${role.id}`}>Open in audit log</Link>}>
+        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?f.target_type=role&f.target=${role.id}`}>Open in audit log</Link>}>
           <AuditList filters={{ targetType: "role", target: role.id }} />
         </RecordSection>
       ) : null}

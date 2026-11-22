@@ -113,7 +113,7 @@ export function GameDetail({ id }: { id: string }) {
       </RecordSection>
 
       {access.can(Permission.AuditRead) ? (
-        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?targetType=game_session&target=${session.id}`}>Open in audit log</Link>}>
+        <RecordSection id="history" title="History" aside={<Link className={buttonVariants({ variant: "link", size: "sm" })} href={`/audit?f.target_type=game_session&f.target=${session.id}`}>Open in audit log</Link>}>
           <AuditList filters={{ targetType: "game_session", target: session.id }} />
         </RecordSection>
       ) : null}
