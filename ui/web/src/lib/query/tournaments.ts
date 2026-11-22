@@ -85,12 +85,12 @@ export enum TournamentAction {
 export function useTournamentAction(id: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (action: TournamentAction) => {
+    mutationFn: async ({ action, reason }: { action: TournamentAction; reason?: string }) => {
       const request = { tournamentId: id };
       const response = action === TournamentAction.Register ? await tournamentClient.registerForTournament(request)
         : action === TournamentAction.Withdraw ? await tournamentClient.withdrawFromTournament(request)
-        : action === TournamentAction.Start ? await tournamentClient.startTournament(request)
-        : await tournamentClient.cancelTournament(request);
+        : action === TournamentAction.Start ? await tournamentClient.startTournament({ ...request, reason })
+        : await tournamentClient.cancelTournament({ ...request, reason });
       if (!response.tournament) throw new Error("Tournament not found");
       return response.tournament;
     },

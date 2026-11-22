@@ -197,6 +197,7 @@ core/services/   one Go module per service
 core/shared/     contracts (proto), shared packages, cross-service e2e
 core/deploy/     Compose stack and overlays, CDC, chaos, observability, k8s
 ui/web/          Next.js client
+ui/admin/        Next.js admin console, served at /admin
 docs/            architecture, development, calls, runbooks
 .claude/         agent rules and phase plans
 ```

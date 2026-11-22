@@ -14,6 +14,7 @@ import (
 	authv1 "github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/auth/v1/authv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 
 	"github.com/bvivg/axon/core/services/auth/internal/avatar"
 	"github.com/bvivg/axon/core/services/auth/internal/domain"
@@ -437,7 +438,14 @@ func (h *Handler) AssignRole(
 		return nil, translateError(ctx, h.log, domain.ErrRoleNotFound)
 	}
 
-	if err := h.svc.AssignRole(ctx, claims.UserID, userID, roleID); err != nil {
+	reason := ""
+	if req.Msg.Reason != nil {
+		if reason, err = authz.Reason(req.Msg.GetReason()); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := h.svc.AssignRole(ctx, claims.UserID, userID, roleID, reason); err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 
@@ -462,7 +470,14 @@ func (h *Handler) RevokeRole(
 		return nil, translateError(ctx, h.log, domain.ErrRoleNotFound)
 	}
 
-	if err := h.svc.RevokeRole(ctx, claims.UserID, userID, roleID); err != nil {
+	reason := ""
+	if req.Msg.Reason != nil {
+		if reason, err = authz.Reason(req.Msg.GetReason()); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := h.svc.RevokeRole(ctx, claims.UserID, userID, roleID, reason); err != nil {
 		return nil, translateError(ctx, h.log, err)
 	}
 

@@ -245,7 +245,7 @@ services:
       retries: 12
       start_period: 10s
 
-  web:
+  admin-web:
     environment:
       AXON_GATEWAY_RPC_URL: "http://envoy:8080"
 

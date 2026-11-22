@@ -1,6 +1,7 @@
 import { createClient } from "@connectrpc/connect";
 
 import { AnalysisService } from "@/gen/axon/analysis/v1/analysis_pb";
+import { AuthAdminService } from "@/gen/axon/auth/v1/admin_pb";
 import { AuthService } from "@/gen/axon/auth/v1/auth_pb";
 import { ChatService } from "@/gen/axon/chat/v1/chat_pb";
 import { CallsService } from "@/gen/axon/calls/v1/calls_pb";
@@ -18,3 +19,5 @@ export const callsClient = createClient(CallsService, newTransport([authenticate
 export const gameClient = createClient(GameService, newTransport([authenticate]));
 export const analysisClient = createClient(AnalysisService, newTransport([authenticate]));
 export const tournamentClient = createClient(TournamentService, newTransport([authenticate]));
+
+export const authAdminClient = createClient(AuthAdminService, newTransport([authenticate]));

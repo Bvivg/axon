@@ -92,6 +92,7 @@ services:
       POSTGRES_DSN: postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: axon
+      KAFKA_BROKERS: kafka:29092
       JWT_ACTIVE_KEY_ID: dev-1
 
       JWT_PRIVATE_KEY_DEV_1: ${JWT_PRIVATE_KEY_DEV_1:?run make test-web-e2e, which generates a throwaway key}
@@ -119,6 +120,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
     healthcheck:
 
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/healthz"]
@@ -317,6 +320,10 @@ services:
       HTTP_ADDR: ":8084"
       METRICS_ADDR: ":9094"
       KAFKA_BROKERS: kafka:29092
+      AUTH_SERVICE_URL: http://auth:8081
+      JWKS_URL: http://auth:9091/.well-known/jwks.json
+      JWT_ISSUER: https://auth.axon.test
+      JWT_AUDIENCE: axon
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: axon
     depends_on:
@@ -347,6 +354,7 @@ services:
       HTTP_ADDR: ":8085"
       METRICS_ADDR: ":9095"
       KAFKA_BROKERS: kafka:29092
+      AUTH_SERVICE_URL: http://auth:8081
       JWKS_URL: http://auth:9091/.well-known/jwks.json
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
@@ -438,6 +446,7 @@ services:
       JWKS_URL: http://auth:9091/.well-known/jwks.json
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
+      AUTH_SERVICE_URL: http://auth:8081
       KAFKA_BROKERS: kafka:29092
       GAME_JOURNAL_REPLICATION: 1
       GAME_JOURNAL_MIN_INSYNC: 1
@@ -477,6 +486,7 @@ services:
       GAME_SERVICE_URL: http://game:8083
       ANALYSIS_SERVICE_URL: http://analysis:8085
       TOURNAMENT_SERVICE_URL: http://tournament:8086
+      RATING_SERVICE_URL: http://rating:8084
       JWKS_URL: http://auth:9091/.well-known/jwks.json
       JWT_ISSUER: https://auth.axon.test
       JWT_AUDIENCE: axon
@@ -517,6 +527,7 @@ services:
         NEXT_PUBLIC_OAUTH_PROVIDERS: fake
     environment:
       AVATARS_PUBLIC_URL: http://minio:9000
+      ADMIN_WEB_URL: http://admin-web:3000
     restart: "no"
     networks:
       default:
@@ -525,9 +536,34 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+      admin-web:
+        condition: service_healthy
     healthcheck:
 
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  admin-web:
+    build:
+      context: ../../ui/admin
+      dockerfile: ../../core/deploy/Dockerfile.web
+      target: runtime
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://gateway.axon.test:8080
+    environment:
+      AVATARS_PUBLIC_URL: http://minio:9000
+      AXON_GATEWAY_RPC_URL: http://gateway:8080
+      AXON_GATEWAY_METRICS_URL: http://gateway:9090
+      AXON_GATEWAY_ENVIRONMENT: E2E
+    restart: "no"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/admin"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -543,6 +579,7 @@ services:
 
       GATEWAY_URL: http://gateway.axon.test:8080
       OAUTH_FAKE_AUTHORIZE_URL: http://auth.axon.test:8081/oauth/fake/authorize
+      ADMIN_POSTGRES_DSN: postgres://auth_service:auth@postgres:5432/axon?sslmode=disable&search_path=auth
     volumes:
       - ../../docs/archive/design:/docs/archive/design:ro
     depends_on:

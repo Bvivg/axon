@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package axon.calls.v1;
+
+import "axon/calls/v1/calls.proto";
+
+service CallsAdminService {
+  rpc ListAllCalls(ListAllCallsRequest) returns (ListAllCallsResponse);
+  rpc TerminateCall(TerminateCallRequest) returns (TerminateCallResponse);
+}
+
+message ListAllCallsRequest {
+  bool active_only = 1;
+  string user_id = 2;
+  string cursor = 3;
+  int32 page_size = 4;
+}
+
+message ListAllCallsResponse {
+  repeated Call calls = 1;
+  string next_cursor = 2;
+  int64 active_total = 3;
+}
+
+message TerminateCallRequest {
+  string call_id = 1;
+  string reason = 2;
+}
+
+message TerminateCallResponse {
+  Call call = 1;
+}

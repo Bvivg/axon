@@ -245,6 +245,7 @@ message ListRolesResponse {
 message AssignRoleRequest {
   string user_id = 1;
   string role_id = 2;
+  optional string reason = 3;
 }
 
 message AssignRoleResponse {}
@@ -252,6 +253,7 @@ message AssignRoleResponse {}
 message RevokeRoleRequest {
   string user_id = 1;
   string role_id = 2;
+  optional string reason = 3;
 }
 
 message RevokeRoleResponse {}

@@ -20,6 +20,7 @@ import (
 	"github.com/bvivg/axon/core/shared/gen/go/axon/calls/v1/callsv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/chat/v1/chatv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/game/v1/gamev1connect"
+	"github.com/bvivg/axon/core/shared/gen/go/axon/rating/v1/ratingv1connect"
 	"github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1/tournamentv1connect"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
 	"github.com/bvivg/axon/core/shared/pkg/health"
@@ -52,6 +53,8 @@ var version = "dev"
 const standardBurst = 60
 
 const sensitiveBurst = 5
+
+const adminBurst = 20
 
 const uploadsBurst = 30
 
@@ -167,6 +170,7 @@ func run() error {
 	search := limiter("search", cfg.RateLimit.SearchPerMinute, 0)
 	standard := limiter("standard", cfg.RateLimit.StandardPerMinute, standardBurst)
 	sensitive := limiter("sensitive", cfg.RateLimit.SensitivePerMinute, sensitiveBurst)
+	adminWrites := limiter("admin", cfg.RateLimit.AdminPerMinute, adminBurst)
 	network := limiter("network", cfg.RateLimit.SensitivePerMinute*networkFactor, sensitiveBurst*networkFactor)
 	uploads := limiter("uploads", cfg.RateLimit.UploadsPerMinute, uploadsBurst)
 	uploadParts := limiter("upload-parts", cfg.RateLimit.UploadPartsPerMinute, 0)
@@ -175,6 +179,7 @@ func run() error {
 	go search.Start(ctx)
 	go standard.Start(ctx)
 	go sensitive.Start(ctx)
+	go adminWrites.Start(ctx)
 	go network.Start(ctx)
 	go uploads.Start(ctx)
 	go uploadParts.Start(ctx)
@@ -184,6 +189,7 @@ func run() error {
 		Search:    search,
 		Standard:  standard,
 		Sensitive: sensitive,
+		Admin:     adminWrites,
 		Network:   network,
 		Logger:    log,
 	})
@@ -280,6 +286,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	upstreamOptions := func() connect.ClientOption {
+		return connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), guarded())
+	}
+	admin := adminProxies{
+		auth:       proxy.NewAuthAdmin(upstream, cfg.AuthServiceURL, upstreamOptions()),
+		game:       proxy.NewGameAdmin(upstream, cfg.GameServiceURL, upstreamOptions()),
+		chat:       proxy.NewChatAdmin(upstream, cfg.ChatServiceURL, upstreamOptions()),
+		calls:      proxy.NewCallsAdmin(upstream, cfg.ChatServiceURL, upstreamOptions()),
+		rating:     proxy.NewRatingAdmin(upstream, cfg.RatingServiceURL, upstreamOptions()),
+		tournament: proxy.NewTournamentAdmin(upstream, cfg.TournamentServiceURL, upstreamOptions()),
+		analysis:   proxy.NewAnalysisAdmin(upstream, cfg.AnalysisServiceURL, upstreamOptions()),
+	}
 
 	avatarUpload, err := avatarproxy.New(avatarproxy.Config{
 		Upstream: cfg.AuthServiceURL + "/internal/avatar",
@@ -325,7 +343,7 @@ func run() error {
 	graceful := lifecycle.New(lifecycle.DrainFromEnv(), cfg.ShutdownTimeout, checks, log)
 	publicSrv := graceful.Serve(&http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, analysisProxy, tournamentProxy, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
+		Handler:           publicHandler(cfg, authProxy, chatProxy, callsProxy, gameProxy, analysisProxy, tournamentProxy, admin, chatSocket, presenceSocket, gameSocket, avatarUpload, attachmentUpload, uploadSessions, policyGuard, metrics, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,
 		IdleTimeout:       cfg.HTTP.IdleTimeout,
@@ -380,6 +398,16 @@ const (
 	uploadSessionsPath   = "/api/uploads"
 )
 
+type adminProxies struct {
+	auth       authv1connect.AuthAdminServiceHandler
+	game       gamev1connect.GameAdminServiceHandler
+	chat       chatv1connect.ChatAdminServiceHandler
+	calls      callsv1connect.CallsAdminServiceHandler
+	rating     ratingv1connect.RatingAdminServiceHandler
+	tournament tournamentv1connect.TournamentAdminServiceHandler
+	analysis   analysisv1connect.AnalysisAdminServiceHandler
+}
+
 func publicHandler(
 	cfg config.Config,
 	authProxy authv1connect.AuthServiceHandler,
@@ -388,6 +416,7 @@ func publicHandler(
 	gameProxy gamev1connect.GameServiceHandler,
 	analysisProxy analysisv1connect.AnalysisServiceHandler,
 	tournamentProxy tournamentv1connect.TournamentServiceHandler,
+	admin adminProxies,
 	chatSocket http.Handler,
 	presenceSocket http.Handler,
 	gameSocket http.Handler,
@@ -416,6 +445,17 @@ func publicHandler(
 	mux.Handle(rpc(gamev1connect.NewGameServiceHandler(gameProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)))
 	mux.Handle(rpc(analysisv1connect.NewAnalysisServiceHandler(analysisProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)))
 	mux.Handle(rpc(tournamentv1connect.NewTournamentServiceHandler(tournamentProxy, connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)))
+
+	adminOptions := func() connect.HandlerOption {
+		return connect.WithHandlerOptions(connect.WithInterceptors(telemetry.Interceptor(), middleware.NewCorrelationInterceptor(), middleware.NewRecoveryInterceptor(log), metrics.Interceptor(), policyGuard, middleware.NewLoggingInterceptor(log)), edge)
+	}
+	mux.Handle(rpc(authv1connect.NewAuthAdminServiceHandler(admin.auth, adminOptions())))
+	mux.Handle(rpc(gamev1connect.NewGameAdminServiceHandler(admin.game, adminOptions())))
+	mux.Handle(rpc(chatv1connect.NewChatAdminServiceHandler(admin.chat, adminOptions())))
+	mux.Handle(rpc(callsv1connect.NewCallsAdminServiceHandler(admin.calls, adminOptions())))
+	mux.Handle(rpc(ratingv1connect.NewRatingAdminServiceHandler(admin.rating, adminOptions())))
+	mux.Handle(rpc(tournamentv1connect.NewTournamentAdminServiceHandler(admin.tournament, adminOptions())))
+	mux.Handle(rpc(analysisv1connect.NewAnalysisAdminServiceHandler(admin.analysis, adminOptions())))
 
 	mux.Handle(rpc(authv1connect.NewAuthServiceHandler(authProxy,
 		connect.WithInterceptors(

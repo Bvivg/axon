@@ -304,6 +304,11 @@ func (r *Repository) Mutate(ctx context.Context, actor calls.Actor, cmd calls.Co
 			if err := tx.persistCall(ctx, result, now); err != nil {
 				return err
 			}
+			if cmd.Audit != nil {
+				if err := tx.RecordAdminAction(ctx, *cmd.Audit); err != nil {
+					return err
+				}
+			}
 			if tx.sfu && result.ReplacedByID != uuid.Nil {
 				if err := tx.advanceReplacement(ctx, result, now); err != nil {
 					return err

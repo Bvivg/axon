@@ -34,13 +34,13 @@ type querier interface {
 }
 
 const tournamentColumns = `id, creator_id, name, game, format, capacity, requested_rounds, total_rounds, status, current_round,
-	winner_id, created_at, started_at, finished_at, cancelled_at`
+	winner_id, version, created_at, started_at, finished_at, cancelled_at`
 
 func scanTournament(row pgx.Row, extra ...any) (saga.Tournament, error) {
 	var t saga.Tournament
 	var winner *uuid.UUID
 	targets := append([]any{&t.ID, &t.Creator, &t.Spec.Name, &t.Spec.Game, &t.Spec.Format, &t.Spec.Capacity, &t.Spec.Rounds,
-		&t.TotalRounds, &t.Status, &t.Round, &winner, &t.CreatedAt, &t.StartedAt, &t.FinishedAt, &t.CancelledAt}, extra...)
+		&t.TotalRounds, &t.Status, &t.Round, &winner, &t.Version, &t.CreatedAt, &t.StartedAt, &t.FinishedAt, &t.CancelledAt}, extra...)
 	if err := row.Scan(targets...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return saga.Tournament{}, ErrNotFound
@@ -158,8 +158,12 @@ func (s *Postgres) Update(ctx context.Context, id uuid.UUID, mutate Mutation) (s
 		if err != nil {
 			return err
 		}
-		if err := save(ctx, tx, before, after); err != nil {
+		changed, err := save(ctx, tx, before, after)
+		if err != nil {
 			return err
+		}
+		if changed {
+			after.Version = before.Version + 1
 		}
 		out = after
 		return nil
@@ -174,8 +178,12 @@ func sameTime(a, b *time.Time) bool {
 	return a == nil && b == nil || a != nil && b != nil && a.Equal(*b)
 }
 
-func save(ctx context.Context, tx pgx.Tx, before, after saga.Tournament) error {
+func save(ctx context.Context, tx pgx.Tx, before, after saga.Tournament) (bool, error) {
 	batch := &pgx.Batch{}
+	if before.Spec != after.Spec {
+		batch.Queue(`UPDATE tournament.tournaments SET name=$2, capacity=$3, requested_rounds=$4, total_rounds=$5 WHERE id=$1`,
+			after.ID, after.Spec.Name, after.Spec.Capacity, after.Spec.Rounds, after.TotalRounds)
+	}
 	if before.Status != after.Status || before.Round != after.Round || before.TotalRounds != after.TotalRounds || before.Winner != after.Winner ||
 		!sameTime(before.StartedAt, after.StartedAt) || !sameTime(before.FinishedAt, after.FinishedAt) || !sameTime(before.CancelledAt, after.CancelledAt) {
 		batch.Queue(`UPDATE tournament.tournaments SET total_rounds=$2, status=$3, current_round=$4, winner_id=$5, started_at=$6, finished_at=$7,
@@ -231,12 +239,13 @@ func save(ctx context.Context, tx pgx.Tx, before, after saga.Tournament) error {
 			after.ID, m.Round, m.Board, nullable(m.Session), m.Seats[0], nullable(m.Seats[1]), m.Result, nullable(m.Winner), m.Forfeit, m.FinishedAt)
 	}
 	if batch.Len() == 0 {
-		return nil
+		return false, nil
 	}
+	batch.Queue(`UPDATE tournament.tournaments SET version=version+1, updated_at=clock_timestamp() WHERE id=$1`, after.ID)
 	if err := tx.SendBatch(ctx, batch).Close(); err != nil {
-		return fmt.Errorf("store: save %s: %w", after.ID, err)
+		return false, fmt.Errorf("store: save %s: %w", after.ID, err)
 	}
-	return nil
+	return true, nil
 }
 
 func (tx *Tx) Publish(ctx context.Context, events ...outbox.Event) error {

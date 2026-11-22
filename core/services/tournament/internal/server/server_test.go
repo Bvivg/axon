@@ -17,6 +17,7 @@ import (
 	"github.com/bvivg/axon/core/services/tournament/internal/store"
 	tournamentv1 "github.com/bvivg/axon/core/shared/gen/go/axon/tournament/v1"
 	"github.com/bvivg/axon/core/shared/pkg/authn"
+	"github.com/bvivg/axon/core/shared/pkg/authz"
 )
 
 type tokens map[string]uuid.UUID
@@ -35,15 +36,12 @@ type roles struct {
 	fail   error
 }
 
-func (r *roles) Roles(_ context.Context, authorization string) ([]string, error) {
+func (r *roles) Moderator(_ context.Context, _ uuid.UUID, authorization string) (bool, error) {
 	r.calls++
 	if r.fail != nil {
-		return nil, r.fail
+		return false, r.fail
 	}
-	if r.admins[authorization] {
-		return []string{"user", server.AdminRole}, nil
-	}
-	return []string{"user"}, nil
+	return r.admins[authorization], nil
 }
 
 type fake struct {
@@ -191,7 +189,11 @@ func TestOnlyTheCreatorOrAnAdminStarts(t *testing.T) {
 	if r.calls != 1 {
 		t.Fatalf("the creator's start looked up roles: %d calls", r.calls)
 	}
-	if _, err := h.StartTournament(ctx, as("admin", req)); err != nil {
+	why := "the creator went quiet"
+	if _, err := h.StartTournament(ctx, as("admin", req)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("admin start without a reason = %v", err)
+	}
+	if _, err := h.StartTournament(ctx, as("admin", &tournamentv1.StartTournamentRequest{TournamentId: f.t.ID.String(), Reason: &why})); err != nil {
 		t.Fatal(err)
 	}
 	if f.started != 2 {
@@ -227,11 +229,62 @@ func TestCancellingAStartedTournamentIsAdminOnly(t *testing.T) {
 	if _, err := h.CancelTournament(ctx, as("stranger", req)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("stranger cancel = %v", err)
 	}
+	why := "a broken bracket"
+	req.Reason = &why
 	if _, err := h.CancelTournament(ctx, as("admin", req)); err != nil {
 		t.Fatalf("admin cancel during play = %v", err)
 	}
 	if want := []bool{false, false, true}; len(f.cancelled) != 3 || f.cancelled[0] != want[0] || f.cancelled[1] != want[1] || f.cancelled[2] != want[2] {
 		t.Fatalf("cancel calls = %v", f.cancelled)
+	}
+}
+
+func TestModeratorOverridesAreAudited(t *testing.T) {
+	ctx := context.Background()
+	f := &fake{t: tournament(t, false)}
+	h, _ := handler(t, f)
+	var recorded []authz.Action
+	h.WithAudit(func(_ context.Context, action authz.Action) error {
+		recorded = append(recorded, action)
+		return nil
+	})
+
+	if _, err := h.CancelTournament(ctx, as("creator", &tournamentv1.CancelTournamentRequest{TournamentId: f.t.ID.String()})); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded) != 0 {
+		t.Fatalf("the creator's own cancel was audited as moderation: %+v", recorded)
+	}
+
+	f.t = tournament(t, false)
+	if _, err := h.CancelTournament(ctx, as("stranger", &tournamentv1.CancelTournamentRequest{TournamentId: f.t.ID.String()})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("stranger cancel = %v", err)
+	}
+	if len(recorded) != 1 || recorded[0].Outcome != authz.Denied || recorded[0].ActorID != stranger || recorded[0].Name != "tournament_cancelled" {
+		t.Fatalf("denied attempt = %+v, want one denied cancellation by the stranger", recorded)
+	}
+	recorded = nil
+
+	if _, err := h.CancelTournament(ctx, as("admin", &tournamentv1.CancelTournamentRequest{TournamentId: f.t.ID.String()})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("admin override without a reason = %v", err)
+	}
+
+	reason := "x"
+	if _, err := h.CancelTournament(ctx, as("admin", &tournamentv1.CancelTournamentRequest{TournamentId: f.t.ID.String(), Reason: &reason})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("short reason = %v", err)
+	}
+
+	f.t = tournament(t, true)
+	reason = "players reported a broken bracket"
+	if _, err := h.CancelTournament(ctx, as("admin", &tournamentv1.CancelTournamentRequest{TournamentId: f.t.ID.String(), Reason: &reason})); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded) != 1 {
+		t.Fatalf("recorded %d actions, want 1", len(recorded))
+	}
+	got := recorded[0]
+	if got.Name != "tournament_cancelled" || got.Outcome != authz.Succeeded || got.ActorID != admin || got.TargetID != f.t.ID.String() || got.Reason != reason || got.Details["game"] != "tictactoe" {
+		t.Fatalf("action = %+v", got)
 	}
 }
 

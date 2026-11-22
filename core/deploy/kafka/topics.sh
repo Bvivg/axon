@@ -23,7 +23,7 @@ create game.partition-leases.v1 --partitions "$partitions" --replication-factor 
 
 create game.analysis_requested.v1 --partitions 6
 
-for topic in auth.audit.v1 game.finished.v1 rating.changed.v1 tournament.finished.v1; do
+for topic in auth.audit.v1 admin.audit.v1 game.finished.v1 rating.changed.v1 tournament.finished.v1; do
 	create "$topic" --config retention.ms=-1 --config cleanup.policy=delete
 done
 

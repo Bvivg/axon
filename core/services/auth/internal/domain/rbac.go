@@ -3,8 +3,9 @@ package domain
 import "github.com/google/uuid"
 
 var (
-	RoleUser  = uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	RoleAdmin = uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	RoleUser      = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	RoleAdmin     = uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	RoleModerator = uuid.MustParse("00000000-0000-0000-0000-000000000003")
 )
 
 type Permission struct {
