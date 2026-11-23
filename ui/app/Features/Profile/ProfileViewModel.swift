@@ -19,6 +19,8 @@ final class ProfileViewModel {
     private(set) var saved = false
     private(set) var saveError: String?
     private(set) var usernameError: String?
+    private(set) var uploadingPhoto = false
+    private(set) var photoError: String?
     var email = ""
     var username = ""
     var firstName = ""
@@ -100,6 +102,33 @@ final class ProfileViewModel {
             } else {
                 saveError = Self.message(error)
             }
+        }
+    }
+
+    func uploadPhoto(_ picked: Data) async {
+        guard !uploadingPhoto else { return }
+        uploadingPhoto = true
+        photoError = nil
+        defer { uploadingPhoto = false }
+        guard let jpeg = await Task.detached(operation: { AvatarImage.jpeg(from: picked) }).value else {
+            photoError = "That file is not an image we can use."
+            return
+        }
+        guard jpeg.count <= AvatarImage.maxBytes else {
+            photoError = "That image is larger than 5 MB."
+            return
+        }
+        do {
+            let uploaded = try await services.media.uploadAvatar(jpeg, type: "image/jpeg")
+            var next = user
+            next.avatarURL = uploaded.url
+            next.avatarUrls.small = uploaded.sizes.small
+            next.avatarUrls.medium = uploaded.sizes.medium
+            next.avatarUrls.large = uploaded.sizes.large
+            next.avatarUrls.original = uploaded.sizes.original
+            adopt(next)
+        } catch {
+            photoError = error.message.isEmpty ? "Could not upload that image." : error.message
         }
     }
 

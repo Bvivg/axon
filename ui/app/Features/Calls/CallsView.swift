@@ -2,6 +2,11 @@ import SwiftUI
 
 struct CallsView: View {
     @Bindable var model: CallsViewModel
+    let hub: ChatsViewModel
+    @State private var composing = false
+    @State private var picked: [PublicProfile] = []
+    @State private var chosen: PublicProfile?
+    @Environment(\.calls) private var engine
 
     var body: some View {
         List {
@@ -11,9 +16,18 @@ struct CallsView: View {
             if !model.visible.isEmpty {
                 Section {
                     ForEach(model.visible, id: \.id) { call in
-                        CallRow(call: call, model: model)
-                            .accessibilityIdentifier(AccessibilityID.Calls.call(call.id))
-                            .plainRow()
+                        NavigationLink(value: Route.call(call.id)) {
+                            CallRow(call: call, model: model)
+                        }
+                        .accessibilityIdentifier(AccessibilityID.Calls.call(call.id))
+                        .plainRow()
+                        .contextMenu { callBack(call) }
+                        .swipeActions(edge: .trailing) {
+                            if let peer = model.peer(of: call), canCall {
+                                Button("Call back", systemImage: "phone") { start(peer, call.mode) }
+                                    .tint(Theme.success)
+                            }
+                        }
                     }
                 } header: {
                     Eyebrow(model.filter == .all ? "Recent" : model.filter.rawValue)
@@ -37,6 +51,11 @@ struct CallsView: View {
         .searchField($model.query, prompt: "Search call history")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button("New call", systemImage: "phone.badge.plus") { composing = true }
+                    .disabled(!canCall)
+                    .accessibilityIdentifier(AccessibilityID.Calls.newCall)
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Picker("Show", selection: $model.filter) {
                         ForEach(CallFilter.allCases) { filter in
@@ -49,9 +68,60 @@ struct CallsView: View {
                 .accessibilityIdentifier(AccessibilityID.Calls.filter)
             }
         }
+        .sheet(isPresented: $composing) {
+            NavigationStack {
+                PeoplePicker(hub: hub, excluded: [model.me], picked: $picked) { person in
+                    model.remember(person)
+                    chosen = person
+                }
+                .navigationTitle("New call")
+                .confirmationDialog(
+                    "Call \(chosen?.shownName ?? "")",
+                    isPresented: Binding(get: { chosen != nil }, set: { if !$0 { chosen = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    if let person = chosen {
+                        Button("Audio call") { compose(person, .audio) }
+                            .accessibilityIdentifier(AccessibilityID.Calls.startAudio)
+                        Button("Video call") { compose(person, .video) }
+                            .accessibilityIdentifier(AccessibilityID.Calls.startVideo)
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", systemImage: "xmark") { composing = false }
+                    }
+                }
+            }
+            .presentationBackground(Theme.popover)
+        }
         .refreshable { await model.refresh() }
         .task { await model.refresh() }
         .accessibilityIdentifier(AccessibilityID.Calls.root)
+    }
+
+    private var canCall: Bool { engine?.canStart ?? false }
+
+    @ViewBuilder
+    private func callBack(_ call: Call) -> some View {
+        if let peer = model.peer(of: call) {
+            Button("Audio call", systemImage: "phone") { start(peer, .audio) }
+                .disabled(!canCall)
+            Button("Video call", systemImage: "video") { start(peer, .video) }
+                .disabled(!canCall)
+        }
+    }
+
+    private func compose(_ person: PublicProfile, _ mode: CallMode) {
+        chosen = nil
+        composing = false
+        start(person.id, mode)
+    }
+
+    private func start(_ peer: String, _ mode: CallMode) {
+        guard let engine else { return }
+        let name = hub.people[peer]?.shownName ?? model.people[peer]?.shownName ?? "Axon user"
+        Task { await engine.start(.person(peer), mode: mode, name: name) }
     }
 
     private var emptyTitle: String {
@@ -61,6 +131,10 @@ struct CallsView: View {
     private var filterSymbol: String {
         model.filter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill"
     }
+}
+
+extension CallEngine {
+    var canStart: Bool { available && !pending && call?.isOpen != true }
 }
 
 private struct CallRow: View {

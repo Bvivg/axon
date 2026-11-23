@@ -184,14 +184,6 @@ final class FakeGame: GameAPI, @unchecked Sendable {
     }
 }
 
-final class FakeCalls: CallsAPI, @unchecked Sendable {
-    var result: Result<[Call], APIError> = .success([])
-
-    func history(limit: Int) async throws(APIError) -> [Call] {
-        try result.get()
-    }
-}
-
 final class FakeChannel: GameChannel, @unchecked Sendable {
     let events: AsyncStream<ChannelEvent>
     private let continuation: AsyncStream<ChannelEvent>.Continuation
@@ -239,8 +231,13 @@ struct FakeWorld {
 
     let sockets = FakeChatSockets()
     let media = FakeMedia()
+    let tournaments = FakeTournaments()
+    let analysis = FakeAnalysis()
     var services: Services {
-        Services(auth: auth, game: game, chat: chat, calls: calls, channels: channels, chatSocket: sockets, media: media)
+        Services(
+            auth: auth, game: game, chat: chat, calls: calls, channels: channels, chatSocket: sockets, media: media,
+            tournaments: tournaments, analysis: analysis
+        )
     }
 }
 

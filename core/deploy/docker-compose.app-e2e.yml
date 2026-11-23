@@ -6,6 +6,8 @@ services:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9091/readyz"]
 
   chat:
+    environment:
+      CALLS_ENABLED: "true"
     healthcheck:
       test: ["CMD", "/service", "-healthcheck", "http://127.0.0.1:9092/readyz"]
 

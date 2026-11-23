@@ -151,4 +151,10 @@ final class FakeMedia: MediaAPI, @unchecked Sendable {
     func download(_ link: URL, named name: String) async throws(APIError) -> URL { link }
 
     func playbackHeaders(for link: URL) async -> [String: String] { [:] }
+
+    var avatarResult: Result<AvatarUpload, APIError> = .failure(APIError(.unavailable, "not scripted"))
+
+    func uploadAvatar(_ image: Data, type: String) async throws(APIError) -> AvatarUpload {
+        try avatarResult.get()
+    }
 }

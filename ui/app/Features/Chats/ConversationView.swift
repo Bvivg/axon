@@ -225,14 +225,30 @@ struct ConversationView: View {
             ComposerView(model: model)
         }
     }
+}
 
+final class FeedTracker {
+    var phase: ScrollPhase = .idle
+    var gap: CGFloat = 0
+    var laidOut = false
+    var proxy: ScrollViewProxy?
+
+    static func isUser(_ phase: ScrollPhase) -> Bool {
+        phase == .tracking || phase == .interacting || phase == .decelerating
+    }
+}
+
+extension ConversationView {
     @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
+    fileprivate var toolbar: some ToolbarContent {
         if model.selection != nil {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { model.selection = nil }
             }
         } else if let room = model.roomID {
+            ToolbarItem(placement: .primaryAction) {
+                CallMenu(target: model.isDirect ? .room(room) : .group(room), name: callName, group: !model.isDirect)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Search", systemImage: "magnifyingglass") { searching = true }
@@ -256,22 +272,15 @@ struct ConversationView: View {
                 .accessibilityIdentifier(AccessibilityID.Chats.info)
             }
             .sharedBackgroundVisibility(.hidden)
+        } else if let peer = model.peerID {
+            ToolbarItem(placement: .primaryAction) {
+                CallMenu(target: .person(peer), name: model.title)
+            }
         }
     }
-}
 
-final class FeedTracker {
-    var phase: ScrollPhase = .idle
-    var gap: CGFloat = 0
-    var laidOut = false
-    var proxy: ScrollViewProxy?
+    fileprivate var callName: String { model.isDirect ? model.title : "" }
 
-    static func isUser(_ phase: ScrollPhase) -> Bool {
-        phase == .tracking || phase == .interacting || phase == .decelerating
-    }
-}
-
-extension ConversationView {
     fileprivate var feed: some View {
         ScrollViewReader { proxy in
             feedScroll.onAppear { tracker.proxy = proxy }

@@ -60,56 +60,6 @@ final class GameViewModel {
         return SessionStatusText.detail(session) ?? SessionStatusText.hint(session, me: me)
     }
 
-    var canJoin: Bool {
-        guard let session else { return false }
-        return session.status == .waiting && !session.playerIds.contains(me)
-    }
-
-    var canResign: Bool {
-        guard let session, mySeat != nil else { return false }
-        return session.status == .playing || session.status == .waiting
-    }
-
-    var canOfferDraw: Bool {
-        guard let session, mySeat != nil, kind.supportsDrawOffers else { return false }
-        return session.status == .playing && !session.hasDrawOfferUserID
-    }
-
-    var drawOfferedToMe: Bool {
-        guard let session, mySeat != nil, session.status == .playing, session.hasDrawOfferUserID else { return false }
-        return session.drawOfferUserID != me
-    }
-
-    var drawOfferedByMe: Bool {
-        guard let session, session.status == .playing, session.hasDrawOfferUserID else { return false }
-        return session.drawOfferUserID == me
-    }
-
-    var canUndo: Bool {
-        guard let session, mySeat != nil, kind == .ticTacToe else { return false }
-        let rated = session.hasRated && session.rated
-        return session.status == .playing && session.ply > 0 && !rated && connected && !pending
-    }
-
-    var resignPrompt: String {
-        session?.status == .waiting ? "Cancel this game?" : "Resign this game?"
-    }
-
-    var moves: [String] {
-        guard let session else { return [] }
-        switch session.kind {
-        case .chess: return session.chess.san
-        case .quoridor: return session.quoridor.moves
-        case .checkers: return session.checkers.moves
-        case .ticTacToe: return []
-        }
-    }
-
-    var spectators: Int {
-        guard let session, session.hasSpectators else { return 0 }
-        return Int(session.spectators)
-    }
-
     func name(seat: Int) -> String {
         guard let session, seat < session.playerIds.count else { return "Waiting…" }
         let id = session.playerIds[seat]
@@ -331,6 +281,17 @@ extension GameViewModel {
         await send(command)
     }
 
+    func durakMove(_ move: String) async {
+        guard let session, isMyTurn else { return }
+        var command = SessionCommand()
+        command.durakMove = Axon_Game_V1_DurakMove.with {
+            $0.ply = session.ply
+            $0.move = move
+            if session.hasRevision { $0.revision = session.revision }
+        }
+        await send(command)
+    }
+
     func draw(_ action: DrawAction) async {
         var command = SessionCommand()
         command.draw = Axon_Game_V1_DrawCommand.with { $0.action = action }
@@ -342,6 +303,7 @@ extension GameViewModel {
         case .chess: await chessMove(move)
         case .quoridor: await quoridorMove(move)
         case .checkers: await checkersMove(move)
+        case .durak: await durakMove(move)
         case .ticTacToe: break
         }
     }

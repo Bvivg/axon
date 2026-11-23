@@ -81,6 +81,7 @@ actor Opponent {
     let account: TestAccount
     private(set) var userID = ""
     private var accessToken = ""
+    var callEndpoint = Axon_Calls_V1_EndpointRef()
     private let http: URLSession
 
     init(baseURL: URL, account: TestAccount = .random(prefix: "opp")) {
@@ -163,12 +164,21 @@ actor Opponent {
         return socket
     }
 
+    func profile(username: String) async throws -> Axon_Auth_V1_PublicProfile {
+        var request = Axon_Auth_V1_GetPublicProfileByUsernameRequest()
+        request.username = username
+        let response: Axon_Auth_V1_GetPublicProfileByUsernameResponse = try await call(
+            "axon.auth.v1.AuthService/GetPublicProfileByUsername", request
+        )
+        return response.user
+    }
+
     private func adopt(_ user: Axon_Auth_V1_User, _ tokens: Axon_Auth_V1_TokenPair) {
         userID = user.id
         accessToken = tokens.accessToken
     }
 
-    private func call<Request: SwiftProtobuf.Message, Response: SwiftProtobuf.Message>(
+    func call<Request: SwiftProtobuf.Message, Response: SwiftProtobuf.Message>(
         _ method: String,
         _ message: Request
     ) async throws -> Response {

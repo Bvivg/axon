@@ -226,7 +226,7 @@ struct GameViewModelTests {
     @Test func unsupportedGamesShowAnErrorAndStayOffline() async {
         let world = FakeWorld()
         var session = GameFixtures.session()
-        session.game = "durak"
+        session.game = "go"
         world.game.sessions[session.id] = session
         let model = GameViewModel(sessionID: session.id, me: GameFixtures.me, services: world.services)
         await model.start()

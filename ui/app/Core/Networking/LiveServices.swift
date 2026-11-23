@@ -17,6 +17,8 @@ enum LiveServices {
         let game = Axon_Game_V1_GameServiceClient(client: transport)
         let chat = Axon_Chat_V1_ChatServiceClient(client: transport)
         let calls = Axon_Calls_V1_CallsServiceClient(client: transport)
+        let tournaments = Axon_Tournament_V1_TournamentServiceClient(client: transport)
+        let analysis = Axon_Analysis_V1_AnalysisServiceClient(client: transport)
         let connect = ConnectClient(vault: vault)
         let refresher = TokenRefresher(client: auth)
         vault.setRefresher { refreshToken in await refresher.refresh(refreshToken) }
@@ -27,7 +29,9 @@ enum LiveServices {
             calls: LiveCallsAPI(client: calls, connect: connect),
             channels: WebSocketGameChannelFactory(url: address.gameSocketURL, vault: vault, transport: sockets),
             chatSocket: WebSocketChatSocketFactory(url: address.chatSocketURL, vault: vault, transport: sockets),
-            media: LiveMediaAPI(address: address, vault: vault)
+            media: LiveMediaAPI(address: address, vault: vault),
+            tournaments: LiveTournamentsAPI(client: tournaments, connect: connect),
+            analysis: LiveAnalysisAPI(client: analysis, connect: connect)
         )
     }
 }
