@@ -169,6 +169,8 @@ export const Transcript = memo(function Transcript({
   const olderRequested = useRef(false);
   const olderHeldUntil = useRef(0);
   const userMoved = useRef(false);
+  const inputAt = useRef(0);
+  const holdFrame = useRef(0);
   const anchoredKey = useRef<string | null>(null);
   const [settled, setSettled] = useState(false);
   const [away, setAway] = useState(false);
@@ -258,18 +260,40 @@ export const Transcript = memo(function Transcript({
     latest.current = { items, hasOlder, loadingOlder, onLoadOlder, onVisibleSeqChange, firstUnreadSeq };
   });
 
+  const releaseBottom = useCallback(() => cancelAnimationFrame(holdFrame.current), []);
+
   const pinToBottom = useCallback(() => {
     const element = viewport.current;
-    if (element) element.scrollTop = element.scrollHeight;
+    if (!element) return;
+    cancelAnimationFrame(holdFrame.current);
+    const since = performance.now();
+    let frames = 0;
+    let stable = 0;
+    let height = -1;
+    const hold = () => {
+      if (inputAt.current > since) return;
+      atBottom.current = true;
+      element.scrollTop = element.scrollHeight;
+      stable = element.scrollHeight === height ? stable + 1 : 0;
+      height = element.scrollHeight;
+      frames += 1;
+      if (stable < settleStableFrames && frames < settleMaxFrames) holdFrame.current = requestAnimationFrame(hold);
+    };
+    hold();
   }, []);
 
+  useEffect(() => releaseBottom, [releaseBottom]);
+
+  const pinnedSends = useRef(new Set<string>());
   const lastPendingID = pending.at(-1)?.message.id;
+  const lastPendingClientID = pending.at(-1)?.item.frame.client_id;
   useLayoutEffect(() => {
     if (!lastPendingID) return;
+    if (lastPendingClientID) pinnedSends.current.add(lastPendingClientID);
     userMoved.current = true;
     atBottom.current = true;
     pinToBottom();
-  }, [lastPendingID, pinToBottom]);
+  }, [lastPendingID, lastPendingClientID, pinToBottom]);
 
   const measureBottom = useCallback(() => {
     const element = viewport.current;
@@ -324,6 +348,7 @@ export const Transcript = memo(function Transcript({
     () => ({
       reveal: (messageID) => {
         if (indexOf(messageID) < 0) return false;
+        releaseBottom();
         atBottom.current = false;
         setAway(true);
         olderHeldUntil.current = performance.now() + revealHoldMs;
@@ -359,22 +384,24 @@ export const Transcript = memo(function Transcript({
         pinToBottom();
       },
     }),
-    [indexOf, pinToBottom],
+    [indexOf, pinToBottom, releaseBottom],
   );
 
   const lastMine = messages.at(-1)?.author_id === selfID;
+  const lastClientID = messages.at(-1)?.client_id;
   const shownLastID = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (lastID === null || !settled) return;
     const arrived = shownLastID.current !== null && shownLastID.current !== lastID;
     shownLastID.current = lastID;
-    if (atBottom.current || (arrived && lastMine)) {
+    const echoed = lastClientID !== undefined && pinnedSends.current.delete(lastClientID);
+    if (atBottom.current || (arrived && lastMine && !echoed)) {
       atBottom.current = true;
       setAway(false);
       pinToBottom();
     }
     reportVisible();
-  }, [lastID, lastMine, settled, pinToBottom, reportVisible]);
+  }, [lastID, lastMine, lastClientID, settled, pinToBottom, reportVisible]);
 
   useLayoutEffect(() => {
     if (settled || !hasMessages) return;
@@ -396,6 +423,7 @@ export const Transcript = memo(function Transcript({
       if (anchorUnread && initialUnread !== null) {
         const index = latest.current.items.findIndex((item) => item.key === initialUnread);
         if (index >= 0) {
+          releaseBottom();
           handle.scrollToIndex(index, { align: "start" });
           return;
         }
@@ -422,7 +450,7 @@ export const Transcript = memo(function Transcript({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [settled, hasMessages, lastPendingID, pinToBottom, loadOlderIfNear, reportVisible]);
+  }, [settled, hasMessages, lastPendingID, pinToBottom, releaseBottom, loadOlderIfNear, reportVisible]);
 
   const unreadKey = items.find((item) => item.unreadStart)?.key ?? null;
   useEffect(() => {
@@ -430,6 +458,7 @@ export const Transcript = memo(function Transcript({
     if (!frame) return;
     const moved = () => {
       userMoved.current = true;
+      inputAt.current = performance.now();
     };
     const events = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
     for (const type of events) frame.addEventListener(type, moved, { passive: true });
@@ -453,6 +482,7 @@ export const Transcript = memo(function Transcript({
     const tick = () => {
       const index = latest.current.items.findIndex((item) => item.key === unreadKey);
       if (index < 0 || userMoved.current) return;
+      releaseBottom();
       list.current?.scrollToIndex(index, { align: "start" });
       atBottom.current = false;
       setAway(true);
@@ -464,7 +494,7 @@ export const Transcript = memo(function Transcript({
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, [settled, unreadKey, reportVisible]);
+  }, [settled, unreadKey, releaseBottom, reportVisible]);
 
   useEffect(() => {
     const element = content.current;
