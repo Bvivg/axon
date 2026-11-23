@@ -58,7 +58,13 @@ func encodeEvent(event Event) (*gamev1.SessionRecorded, error) {
 		}
 		out.Fact = &gamev1.SessionRecorded_Created{Created: &gamev1.SessionCreated{RequestId: request}}
 	case session.FactJoined:
-		out.Fact = &gamev1.SessionRecorded_Joined{Joined: &gamev1.PlayerJoined{}}
+		joined := &gamev1.PlayerJoined{}
+		if seat, ok := game.SeatOf(change.Actor); ok && seat > 1 {
+			joined.Seat = proto.Uint32(uint32(seat))
+		}
+		out.Fact = &gamev1.SessionRecorded_Joined{Joined: joined}
+	case session.FactLeft:
+		out.Fact = &gamev1.SessionRecorded_Left{Left: &gamev1.PlayerLeft{}}
 	case session.FactMoved:
 		if change.Move == nil {
 			return nil, fmt.Errorf("%w: move without record", ErrMalformed)
@@ -128,6 +134,18 @@ func encodeSnapshot(game session.Session) (*gamev1.SessionSnapshot, error) {
 	if game.Tournament != nil {
 		tournament := game.Tournament.String()
 		out.TournamentId = &tournament
+	}
+	if game.Seats > 0 {
+		out.Seats = proto.Uint32(uint32(game.Seats))
+	}
+	for _, player := range game.Seated {
+		out.PlayerIds = append(out.PlayerIds, player.String())
+	}
+	if len(game.Options) > 0 {
+		out.OptionsJson = game.Options
+	}
+	for _, seat := range game.Left {
+		out.LeftSeats = append(out.LeftSeats, uint32(seat))
 	}
 	return out, nil
 }
@@ -217,6 +235,8 @@ func decodeEvent(in *gamev1.SessionRecorded) (Event, error) {
 		change.Fact = session.FactCancelled
 	case *gamev1.SessionRecorded_ClockAdjusted:
 		change.Fact = session.FactClockAdjusted
+	case *gamev1.SessionRecorded_Left:
+		change.Fact = session.FactLeft
 	default:
 		return Event{}, fmt.Errorf("%w: unknown fact", ErrMalformed)
 	}
@@ -258,6 +278,20 @@ func decodeSnapshot(id uuid.UUID, in *gamev1.SessionSnapshot) (session.Session, 
 			return session.Session{}, fmt.Errorf("%w: tournament: %w", ErrMalformed, err)
 		}
 		game.Tournament = &tournament
+	}
+	game.Seats = int(in.GetSeats())
+	for _, raw := range in.PlayerIds {
+		player, err := uuid.Parse(raw)
+		if err != nil {
+			return session.Session{}, fmt.Errorf("%w: player: %w", ErrMalformed, err)
+		}
+		game.Seated = append(game.Seated, player)
+	}
+	if len(in.OptionsJson) > 0 {
+		game.Options = in.OptionsJson
+	}
+	for _, seat := range in.LeftSeats {
+		game.Left = append(game.Left, int(seat))
 	}
 	if err := json.Unmarshal(in.StateJson, &game.State); err != nil {
 		return session.Session{}, fmt.Errorf("%w: state: %w", ErrMalformed, err)

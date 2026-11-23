@@ -35,6 +35,7 @@ message SessionRecorded {
     MoveUndone undone = 18;
     SessionCancelled cancelled = 19;
     ClockAdjusted clock_adjusted = 20;
+    PlayerLeft left = 21;
   }
   SessionSnapshot snapshot = 30;
 }
@@ -51,13 +52,21 @@ message SessionSnapshot {
   optional string draw_offer_user_id = 9;
   bool agreed_draw = 10;
   optional string tournament_id = 11;
+  repeated string player_ids = 12;
+  optional uint32 seats = 13;
+  optional bytes options_json = 14;
+  repeated uint32 left_seats = 15;
 }
 
 message SessionCreated {
   string request_id = 1;
 }
 
-message PlayerJoined {}
+message PlayerLeft {}
+
+message PlayerJoined {
+  optional uint32 seat = 1;
+}
 
 message MoveApplied {
   uint32 ply = 1;

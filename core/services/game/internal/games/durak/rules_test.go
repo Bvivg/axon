@@ -107,7 +107,7 @@ func TestTrumpAndFirstAttacker(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := FirstAttacker([2][]Card{cards(t, c.hands[0]), cards(t, c.hands[1])}, c.trump); got != c.want {
+			if got := FirstAttacker([][]Card{cards(t, c.hands[0]), cards(t, c.hands[1])}, c.trump); got != c.want {
 				t.Fatalf("first attacker = %d, want %d", got, c.want)
 			}
 		})
@@ -153,8 +153,8 @@ func TestBeating(t *testing.T) {
 
 func bout(t *testing.T, attacker, defender, stock string, limit int) Position {
 	t.Helper()
-	p := Position{Trump: card(t, "6S"), Attacker: 0, Limit: limit}
-	p.Hands[0], p.Hands[1], p.Stock = cards(t, attacker), cards(t, defender), cards(t, stock)
+	p := Position{Options: DefaultOptions(2), Trump: card(t, "6S"), Attacker: 0, Limit: limit}
+	p.Hands, p.Stock = [][]Card{cards(t, attacker), cards(t, defender)}, cards(t, stock)
 	return p
 }
 
@@ -317,21 +317,21 @@ func TestEndAndDraw(t *testing.T) {
 	if over, _ := mid.Outcome(); over {
 		t.Fatal("a game ended in the middle of a bout")
 	}
-	stocked := Position{Hands: [2][]Card{{}, cards(t, "8H")}, Stock: cards(t, "9S"), Trump: card(t, "9S")}
+	stocked := Position{Hands: [][]Card{{}, cards(t, "8H")}, Stock: cards(t, "9S"), Trump: card(t, "9S")}
 	if over, _ := stocked.Outcome(); over {
 		t.Fatal("a game ended with cards in the stock")
 	}
 }
 
 func TestParseMove(t *testing.T) {
-	valid := []string{"attack 7H", "attack TS", "defend 7H KH", "defend 6D 6S", "take", "pass"}
+	valid := []string{"attack 7H", "attack TS", "attack 2C", "attack 5H", "defend 7H KH", "defend 6D 6S", "take", "pass", "transfer 7C", "catch 9H"}
 	for _, raw := range valid {
 		m, err := ParseMove(raw)
 		if err != nil || m.String() != raw {
 			t.Errorf("ParseMove(%q) = %v, %v", raw, m, err)
 		}
 	}
-	invalid := []string{"", " ", "attack", "attack 7H ", "attack 10H", "attack 5H", "attack 7X", "attack 7h", "defend 7H", "defend 7H KH 9C", "take now", "PASS", "beat 7H KH", "attack\t7H", "defend 7H  KH", strings.Repeat("a", 1<<16), "attack 7♥"}
+	invalid := []string{"", " ", "attack", "attack 7H ", "attack 10H", "attack 1H", "attack 7X", "attack 7h", "defend 7H", "defend 7H KH 9C", "take now", "PASS", "beat 7H KH", "attack\t7H", "defend 7H  KH", strings.Repeat("a", 1<<16), "attack 7♥", "transfer", "transfer 7C 8C", "catch", "catch 7H 8H", "transfer 1H"}
 	for _, raw := range invalid {
 		if _, err := ParseMove(raw); !errors.Is(err, ErrBadMove) {
 			t.Errorf("ParseMove(%q) = %v, want ErrBadMove", raw, err)
@@ -340,7 +340,7 @@ func TestParseMove(t *testing.T) {
 }
 
 func FuzzParseMove(f *testing.F) {
-	for _, seed := range []string{"attack 7H", "defend 7H KH", "take", "pass", "", "defend 6S 6S6"} {
+	for _, seed := range []string{"attack 7H", "defend 7H KH", "take", "pass", "transfer 7C", "catch 9H", "", "defend 6S 6S6"} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {

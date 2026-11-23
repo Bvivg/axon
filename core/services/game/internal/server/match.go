@@ -53,7 +53,11 @@ func (h *Handler) FindMatch(ctx context.Context, req *connect.Request[gamev1.Fin
 	if err != nil || request == uuid.Nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid request ID"))
 	}
-	found, err := h.store.FindMatch(ctx, user, request, engine.Key(req.Msg.Game))
+	table, err := tableOf(engine.Key(req.Msg.Game), req.Msg.Seats, nil, req.Msg.Options)
+	if err != nil {
+		return nil, err
+	}
+	found, err := h.store.FindMatch(ctx, user, request, engine.Key(req.Msg.Game), table)
 	ticket, err := ticketView(req.Msg.Game, found, err)
 	if err != nil {
 		return nil, err
@@ -162,12 +166,18 @@ func (h *Handler) onOwnerOf(id uuid.UUID, local func() error, remote func(gamev1
 
 func (h *Handler) startMatch(ctx context.Context, item session.Pairing) error {
 	return h.onOwnerOf(item.ID, func() error {
-		_, err := h.owner.Start(ctx, item.ID, item.Game, item.Creator, item.Opponent, true)
+		_, err := h.owner.Start(ctx, item.ID, item.Game, item.Players, item.Table, !cheating(item.Game, item.Table.Options))
 		return err
 	}, func(peer gamev1connect.GameOwnerServiceClient) error {
-		_, err := peer.StartMatch(ctx, connect.NewRequest(&gamev1.StartMatchRequest{
-			SessionId: item.ID.String(), Game: string(item.Game), CreatorId: item.Creator.String(), OpponentId: item.Opponent.String(),
-		}))
+		request := &gamev1.StartMatchRequest{
+			SessionId: item.ID.String(), Game: string(item.Game), CreatorId: item.Players[0].String(), OpponentId: item.Players[1].String(),
+		}
+		if !item.Plain() {
+			request.PlayerIds = playerIDs(item.Players)
+			request.Seats = proto.Uint32(uint32(len(item.Players)))
+			request.OptionsJson = item.Table.Options
+		}
+		_, err := peer.StartMatch(ctx, connect.NewRequest(request))
 		return err
 	})
 }
@@ -176,6 +186,8 @@ type pairing struct {
 	session, creator, opponent uuid.UUID
 	tournament                 *uuid.UUID
 	game                       engine.Key
+	players                    []uuid.UUID
+	table                      session.Table
 }
 
 func parsePairing(req *gamev1.StartMatchRequest) (pairing, error) {
@@ -191,7 +203,14 @@ func parsePairing(req *gamev1.StartMatchRequest) (pairing, error) {
 		}
 		ids[i] = id
 	}
-	out := pairing{session: ids[0], creator: ids[1], opponent: ids[2], game: engine.Key(req.Game)}
+	players, ok := pairingPlayers(req, ids[1], ids[2])
+	if !ok {
+		return pairing{}, invalid
+	}
+	out := pairing{session: ids[0], creator: ids[1], opponent: ids[2], game: engine.Key(req.Game), players: players}
+	if len(req.GetOptionsJson()) > 0 || len(players) > session.DefaultSeats {
+		out.table = session.Table{Seats: len(players), Options: req.GetOptionsJson()}
+	}
 	if req.TournamentId != nil {
 		tournament, err := uuid.Parse(req.GetTournamentId())
 		if err != nil || tournament == uuid.Nil {
@@ -207,7 +226,7 @@ func (h *Handler) startPairing(ctx context.Context, p pairing) error {
 		_, err := h.owner.StartTournament(ctx, p.session, p.game, *p.tournament, p.creator, p.opponent)
 		return err
 	}
-	_, err := h.owner.Start(ctx, p.session, p.game, p.creator, p.opponent, true)
+	_, err := h.owner.Start(ctx, p.session, p.game, p.players, p.table, !cheating(p.game, p.table.Options))
 	return err
 }
 

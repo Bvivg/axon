@@ -1,9 +1,22 @@
 "use client";
 
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { boardSize, isKing, parseMove, Piece, sideOf, squareAt } from "@/lib/games/checkers";
+import { slideThrough } from "@/lib/games/motion";
 import { cn } from "@/lib/utils";
+
+type Motion = { path: number[]; ghosts: Map<number, Piece>; id: string };
+
+function capturedPieces(before: Piece[], after: Piece[], path: number[]): Map<number, Piece> {
+  const mover = after[path.at(-1) ?? -1];
+  const ghosts = new Map<number, Piece>();
+  if (mover === undefined || mover === Piece.Empty) return ghosts;
+  before.forEach((piece, square) => {
+    if (piece !== Piece.Empty && sideOf(piece) !== sideOf(mover) && after[square] === Piece.Empty) ghosts.set(square, piece);
+  });
+  return ghosts;
+}
 
 export const seatNames = ["Black", "White"];
 
@@ -17,13 +30,13 @@ const pieceNames: Record<Piece, string> = {
 
 const last = boardSize - 1;
 
-export function CheckersPiece({ piece, className }: { piece: Piece; className?: string }) {
+export function CheckersPiece({ piece, className, ghost }: { piece: Piece; className?: string; ghost?: boolean }) {
   if (piece === Piece.Empty) return null;
   const black = sideOf(piece) === 0;
   const fill = black ? "var(--color-chess-piece-black)" : "var(--color-chess-piece-white)";
   const detail = black ? "var(--color-chess-piece-white)" : "var(--color-chess-piece-black)";
   return (
-    <svg viewBox="0 0 100 100" aria-hidden data-piece={piece} className={cn("pointer-events-none select-none drop-shadow-[0_2px_2px_rgb(0_0_0/.3)]", className)}>
+    <svg viewBox="0 0 100 100" aria-hidden data-piece={ghost ? undefined : piece} className={cn("pointer-events-none select-none drop-shadow-[0_2px_2px_rgb(0_0_0/.3)]", className)}>
       <circle cx="50" cy="50" r="44" fill={fill} stroke="var(--color-chess-piece-black)" strokeWidth="4" />
       <circle cx="50" cy="50" r="31" fill="none" stroke={detail} strokeOpacity=".35" strokeWidth="3" />
       {isKing(piece) ? <path d="M30 62h40l4-26-12 10-12-16-12 16-12-10Z" fill={detail} stroke={detail} strokeWidth="3" strokeLinejoin="round" /> : null}
@@ -49,12 +62,27 @@ export function CheckersBoard({ squares, seat, legal, lastMove, playable, onMove
   const [path, setPath] = useState<number[]>([]);
   const [focused, setFocused] = useState(() => flipped ? 9 : 22);
   const [position, setPosition] = useState(() => `${squares.join("")}|${legal.join(" ")}`);
+  const [placed, setPlaced] = useState(squares);
+  const [motion, setMotion] = useState<Motion | null>(null);
+  const board = useRef<HTMLDivElement>(null);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const signature = `${squares.join("")}|${legal.join(" ")}`;
   if (position !== signature) {
     setPosition(signature);
     setPath([]);
   }
+  if (placed.join("") !== squares.join("")) {
+    const moved = parseMove(lastMove ?? "")?.path;
+    setMotion(moved && moved.length > 1 ? { path: moved, ghosts: capturedPieces(placed, squares, moved), id: signature } : null);
+    setPlaced(squares);
+  }
+
+  useLayoutEffect(() => {
+    if (!motion) return;
+    const square = (index: number) => board.current?.querySelector(`[data-square="${index + 1}"]`);
+    const end = motion.path.at(-1)!;
+    slideThrough(square(end)?.querySelector(":scope > svg[data-piece]"), motion.path.map(square));
+  }, [motion]);
 
   const candidates = useMemo<Candidate[]>(() => (playable ? legal : []).flatMap(name => {
     const move = parseMove(name);
@@ -121,6 +149,7 @@ export function CheckersBoard({ squares, seat, legal, lastMove, playable, onMove
         {trail.has(square) ? <span aria-hidden className="absolute inset-0 bg-chess-last" /> : null}
         {selected ? <span aria-hidden className="absolute inset-0 bg-chess-mark" /> : null}
         {movable && !path.length ? <span aria-hidden className="absolute inset-[7%] rounded-full ring-2 ring-game-primary/70" /> : null}
+        {motion?.ghosts.has(square) ? <CheckersPiece key={motion.id} ghost piece={motion.ghosts.get(square)!} className="absolute size-[80%] motion-safe:animate-game-vanish motion-reduce:hidden" /> : null}
         <CheckersPiece piece={piece} className="relative size-[80%]" />
         {target ? <span aria-hidden className="absolute size-[28%] rounded-full bg-chess-mark" /> : null}
         <span aria-hidden className="absolute top-0.5 left-1 text-[9px] font-semibold text-chess-light/90">{number}</span>
@@ -129,7 +158,7 @@ export function CheckersBoard({ squares, seat, legal, lastMove, playable, onMove
   });
 
   return (
-    <div role="group" aria-label="Checkers board"
+    <div ref={board} role="group" aria-label="Checkers board"
       className="grid aspect-square w-full touch-manipulation grid-cols-8 grid-rows-8 overflow-hidden rounded-game-md border border-game-border select-none">
       {cells}
     </div>

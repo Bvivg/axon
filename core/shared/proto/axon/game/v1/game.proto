@@ -16,6 +16,43 @@ service GameService {
   rpc LeaveSession(LeaveSessionRequest) returns (LeaveSessionResponse);
   rpc GetSessionHistory(GetSessionHistoryRequest) returns (GetSessionHistoryResponse);
   rpc ListLiveSessions(ListLiveSessionsRequest) returns (ListLiveSessionsResponse);
+  rpc ListOpenTables(ListOpenTablesRequest) returns (ListOpenTablesResponse);
+  rpc FillWithBots(FillWithBotsRequest) returns (FillWithBotsResponse);
+}
+
+enum DurakMode {
+  DURAK_MODE_UNSPECIFIED = 0;
+  DURAK_MODE_THROW_IN = 1;
+  DURAK_MODE_TRANSFER = 2;
+}
+
+enum DurakThrowIn {
+  DURAK_THROW_IN_UNSPECIFIED = 0;
+  DURAK_THROW_IN_ALL = 1;
+  DURAK_THROW_IN_NEIGHBORS = 2;
+}
+
+message DurakOptions {
+  DurakMode mode = 1;
+  bool cheats = 2;
+  uint32 deck = 3;
+  DurakThrowIn throw_in = 4;
+  bool draw = 5;
+  uint32 first_bout_limit = 6;
+}
+
+message GameOptions {
+  oneof game {
+    DurakOptions durak = 1;
+  }
+}
+
+message SessionSeat {
+  uint32 seat = 1;
+  optional string user_id = 2;
+  bool bot = 3;
+  optional uint32 place = 4;
+  bool left = 5;
 }
 
 enum SessionStatus {
@@ -51,6 +88,9 @@ message Session {
   optional bool move_limit = 22;
   CheckersBoard checkers = 23;
   DurakBoard durak = 24;
+  optional uint32 seats = 25;
+  optional GameOptions options = 26;
+  repeated SessionSeat seating = 27;
 }
 
 message CheckersBoard {
@@ -90,6 +130,9 @@ message DurakBoard {
   optional string last_move = 10;
   repeated string legal_moves = 11;
   DurakEnd end = 12;
+  uint32 defender_seat = 13;
+  repeated uint32 passed = 14;
+  repeated uint32 places = 15;
 }
 
 message DurakHand {
@@ -101,6 +144,8 @@ message DurakHand {
 message DurakPair {
   string attack = 1;
   optional string defense = 2;
+  uint32 by = 3;
+  repeated string checked = 4;
 }
 
 enum DurakEnd {
@@ -173,6 +218,7 @@ message SessionClock {
   optional uint32 x_remaining_ms = 1;
   optional uint32 o_remaining_ms = 2;
   google.protobuf.Timestamp sampled_at = 3;
+  repeated uint32 remaining_ms = 4;
 }
 
 enum Mark {
@@ -189,6 +235,9 @@ message TicTacToeBoard {
 message CreateSessionRequest {
   string game = 1;
   string request_id = 2;
+  optional uint32 seats = 3;
+  optional GameOptions options = 4;
+  optional uint32 bots = 5;
 }
 
 message CreateSessionResponse {
@@ -220,6 +269,24 @@ message ListSessionsResponse {
 message FindMatchRequest {
   string game = 1;
   string request_id = 2;
+  optional uint32 seats = 3;
+  optional GameOptions options = 4;
+}
+
+message ListOpenTablesRequest {
+  string game = 1;
+}
+
+message ListOpenTablesResponse {
+  repeated Session sessions = 1;
+}
+
+message FillWithBotsRequest {
+  string session_id = 1;
+}
+
+message FillWithBotsResponse {
+  Session session = 1;
 }
 
 message FindMatchResponse {

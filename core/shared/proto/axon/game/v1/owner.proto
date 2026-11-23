@@ -14,6 +14,9 @@ message StartMatchRequest {
   string creator_id = 3;
   string opponent_id = 4;
   optional string tournament_id = 5;
+  repeated string player_ids = 6;
+  optional uint32 seats = 7;
+  optional bytes options_json = 8;
 }
 
 message StartMatchResponse {}

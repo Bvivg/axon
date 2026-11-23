@@ -1,13 +1,32 @@
 "use client";
 
-import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 import { ChessPiece, PieceKind, pieceNames, Side } from "@/components/games/chess/pieces";
 import { placement, sideToMove, squareIndex, squareName } from "@/lib/games/chess-fen";
+import { slideThrough } from "@/lib/games/motion";
 import { cn } from "@/lib/utils";
 
 type Drag = { from: number; x: number; y: number; moved: boolean; wasSelected: boolean };
 type Promotion = { from: number; to: number };
+type Placed = ReturnType<typeof placement>[number];
+type Motion = { move: string; fen: string; ghosts: Map<number, NonNullable<Placed>> };
+
+function castlingRook(move: string, piece: Placed): [string, string] | null {
+  if (piece?.kind !== PieceKind.King) return null;
+  const from = move.charCodeAt(0), to = move.charCodeAt(2), rank = move[3];
+  if (Math.abs(from - to) !== 2) return null;
+  return to > from ? [`h${rank}`, `f${rank}`] : [`a${rank}`, `d${rank}`];
+}
+
+function captured(before: Placed[], after: Placed[], mover: Side | undefined): Map<number, NonNullable<Placed>> {
+  const ghosts = new Map<number, NonNullable<Placed>>();
+  before.forEach((piece, square) => {
+    const now = after[square];
+    if (piece && mover !== undefined && piece.side !== mover && (!now || now.side === mover)) ghosts.set(square, piece);
+  });
+  return ghosts;
+}
 
 const promotionKinds = [PieceKind.Queen, PieceKind.Rook, PieceKind.Bishop, PieceKind.Knight];
 
@@ -27,14 +46,32 @@ export function ChessBoard({ fen, orientation, legal, lastMove, check, playable,
   const [promotion, setPromotion] = useState<Promotion | null>(null);
   const [focused, setFocused] = useState(() => orientation === Side.White ? squareIndex("e2") : squareIndex("e7"));
   const [position, setPosition] = useState(fen);
+  const [motion, setMotion] = useState<Motion | null>(null);
   const board = useRef<HTMLDivElement>(null);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const dropped = useRef<string | null>(null);
   if (position !== fen) {
+    const mover = lastMove ? squares[squareIndex(lastMove.slice(2, 4))]?.side : undefined;
+    setMotion(lastMove ? { move: lastMove, fen, ghosts: captured(placement(position), squares, mover) } : null);
     setPosition(fen);
     setSelected(null);
     setPromotion(null);
     setDrag(null);
   }
+
+  useLayoutEffect(() => {
+    if (!motion) return;
+    const move = motion.move.slice(0, 4);
+    const skip = dropped.current === move;
+    dropped.current = null;
+    if (skip) return;
+    const square = (name: string) => board.current?.querySelector(`[data-square="${name}"]`);
+    const piece = (name: string) => square(name)?.querySelector(":scope > svg[data-live]");
+    const from = move.slice(0, 2), to = move.slice(2, 4);
+    slideThrough(piece(to), [square(from), square(to)]);
+    const rook = castlingRook(move, placement(motion.fen)[squareIndex(to)]);
+    if (rook) slideThrough(piece(rook[1]), [square(rook[0]), square(rook[1])]);
+  }, [motion]);
 
   const order = useMemo(() => {
     const ranks = orientation === Side.White ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
@@ -91,7 +128,10 @@ export function ChessBoard({ fen, orientation, legal, lastMove, check, playable,
   function onPointerUp(event: PointerEvent<HTMLDivElement>) {
     if (!drag) return;
     const target = squareAt(event.clientX, event.clientY);
-    if (drag.moved && target !== null && target !== drag.from && movesFrom(drag.from).some(move => move.slice(2, 4) === squareName(target))) attempt(drag.from, target);
+    if (drag.moved && target !== null && target !== drag.from && movesFrom(drag.from).some(move => move.slice(2, 4) === squareName(target))) {
+      dropped.current = `${squareName(drag.from)}${squareName(target)}`;
+      attempt(drag.from, target);
+    }
     else if (!drag.moved && drag.wasSelected) setSelected(null);
     setDrag(null);
   }
@@ -127,6 +167,7 @@ export function ChessBoard({ fen, orientation, legal, lastMove, check, playable,
               const name = squareName(square);
               const label = piece ? `${name}, ${piece.side === Side.White ? "white" : "black"} ${pieceNames[piece.kind]}` : `${name}, empty`;
               const target = targets.has(square);
+              const ghost = motion?.ghosts.get(square);
               return (
                 <div key={square} role="gridcell" className="min-h-0 min-w-0">
                   <button ref={element => { buttons.current[square] = element; }} type="button" data-square={name}
@@ -139,7 +180,8 @@ export function ChessBoard({ fen, orientation, legal, lastMove, check, playable,
                     {last.includes(square) ? <span aria-hidden className="absolute inset-0 bg-chess-last" /> : null}
                     {selected === square ? <span aria-hidden className="absolute inset-0 bg-chess-mark" /> : null}
                     {square === kingInCheck ? <span aria-hidden className="absolute inset-0 bg-[radial-gradient(circle,var(--color-chess-check)_35%,transparent_72%)]" /> : null}
-                    {piece ? <ChessPiece kind={piece.kind} side={piece.side} className={cn("relative size-[86%]", drag?.moved && drag.from === square && "opacity-30")} /> : null}
+                    {ghost ? <ChessPiece key={motion?.fen} kind={ghost.kind} side={ghost.side} className="absolute size-[86%] motion-safe:animate-game-vanish motion-reduce:hidden" /> : null}
+                    {piece ? <ChessPiece live kind={piece.kind} side={piece.side} className={cn("relative size-[86%]", drag?.moved && drag.from === square && "opacity-30")} /> : null}
                     {target ? <span aria-hidden className={cn("absolute rounded-full", piece ? "inset-[6%] border-[5px] border-chess-mark" : "size-[28%] bg-chess-mark")} /> : null}
                     {columnIndex === 0 ? <span aria-hidden className={cn("absolute top-0.5 left-1 text-[10px] font-semibold", dark ? "text-chess-light" : "text-chess-dark")}>{name[1]}</span> : null}
                     {rowIndex === 7 ? <span aria-hidden className={cn("absolute right-1 bottom-0 text-[10px] font-semibold", dark ? "text-chess-light" : "text-chess-dark")}>{name[0]}</span> : null}

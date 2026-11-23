@@ -256,4 +256,18 @@ final class ScriptedGameClient: Axon_Game_V1_GameServiceClientInterface {
     ) async -> ResponseMessage<Axon_Game_V1_ListLiveSessionsResponse> {
         await script.respond("ListLiveSessions", request, headers)
     }
+
+    func listOpenTables(
+        request: Axon_Game_V1_ListOpenTablesRequest,
+        headers: Headers
+    ) async -> ResponseMessage<Axon_Game_V1_ListOpenTablesResponse> {
+        await script.respond("ListOpenTables", request, headers)
+    }
+
+    func fillWithBots(
+        request: Axon_Game_V1_FillWithBotsRequest,
+        headers: Headers
+    ) async -> ResponseMessage<Axon_Game_V1_FillWithBotsResponse> {
+        await script.respond("FillWithBots", request, headers)
+    }
 }

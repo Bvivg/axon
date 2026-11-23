@@ -1,6 +1,7 @@
 package session
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ func TestClock(t *testing.T) {
 	for _, turn := range []int{0, 1} {
 		state := tictactoe.New().Init([]engine.PlayerID{"x", "o"})
 		state.Turn = turn
-		game := Session{State: state, Clock: NewClock(start, TimeLimitMS)}
+		game := Session{State: state, Clock: NewClock(start, TimeLimitMS, 2)}
 		clock := game.ClockAt(start.Add(1234 * time.Millisecond))
 		if clock.RemainingMS[turn] != TimeLimitMS-1234 || clock.RemainingMS[1-turn] != TimeLimitMS {
 			t.Fatal(clock)
@@ -36,7 +37,7 @@ func TestClock(t *testing.T) {
 		if game.expire(start.Add(6 * time.Minute)) {
 			t.Fatal("expired twice")
 		}
-		if game.ClockAt(start.Add(6*time.Minute)).RemainingMS != game.Clock.RemainingMS {
+		if !slices.Equal(game.ClockAt(start.Add(6*time.Minute)).RemainingMS, game.Clock.RemainingMS) {
 			t.Fatal("completed clock keeps running")
 		}
 	}

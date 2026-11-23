@@ -9,7 +9,7 @@ import { replayHref } from "@/lib/games/catalog";
 import { cn } from "@/lib/utils";
 
 export function isSpectator(game: Session, userId?: string) {
-  return Boolean(userId) && game.playerIds.length === 2 && !game.playerIds.includes(userId ?? "");
+  return Boolean(userId) && game.status !== SessionStatus.WAITING && !game.playerIds.includes(userId ?? "");
 }
 
 export function spectatorStatus(game: Session, names: string[], sides: string[]) {

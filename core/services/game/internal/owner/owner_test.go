@@ -21,7 +21,7 @@ func joined(t *testing.T, node *owner.Owner) (session.Session, uuid.UUID, uuid.U
 	t.Helper()
 	ctx := context.Background()
 	x, o := uuid.New(), uuid.New()
-	game, err := node.Create(ctx, x, uuid.New(), tictactoe.Key)
+	game, err := node.Create(ctx, x, uuid.New(), tictactoe.Key, session.Table{})
 	if err != nil || game.Revision != 1 || game.Clock != nil {
 		t.Fatal(game, err)
 	}
@@ -49,11 +49,11 @@ func TestCreateIsIdempotentPerRequest(t *testing.T) {
 	node := c.node(t, "a", nil, all(4)...)
 	ctx := context.Background()
 	user, request := uuid.New(), uuid.New()
-	first, err := node.Create(ctx, user, request, tictactoe.Key)
+	first, err := node.Create(ctx, user, request, tictactoe.Key, session.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := node.Create(ctx, user, request, tictactoe.Key)
+	again, err := node.Create(ctx, user, request, tictactoe.Key, session.Table{})
 	if err != nil || again.ID != first.ID || again.Revision != first.Revision {
 		t.Fatal(again, err)
 	}
@@ -189,7 +189,7 @@ func TestLeavingWaitingGameCancelsItAcrossHandover(t *testing.T) {
 	node := c.node(t, "a", nil, 0)
 	ctx := context.Background()
 	user := uuid.New()
-	game, err := node.Create(ctx, user, uuid.New(), tictactoe.Key)
+	game, err := node.Create(ctx, user, uuid.New(), tictactoe.Key, session.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func simulate(t *testing.T, seed uint64) {
 		x, o := uuid.New(), uuid.New()
 		id := session.SessionID(x, uuid.New())
 		node := serving(id)
-		game, err := node.Start(ctx, id, tictactoe.Key, x, o, false)
+		game, err := node.Start(ctx, id, tictactoe.Key, []uuid.UUID{x, o}, session.Table{}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -464,11 +464,11 @@ func TestLostAckOnCreateDoesNotCreateTwice(t *testing.T) {
 	ctx := context.Background()
 	user, request := uuid.New(), uuid.New()
 	c.log.LoseAcksWith(func(int32) error { return errors.New("ack lost") })
-	if _, err := node.Create(ctx, user, request, tictactoe.Key); err == nil {
+	if _, err := node.Create(ctx, user, request, tictactoe.Key, session.Table{}); err == nil {
 		t.Fatal("lost ack reported success")
 	}
 	c.log.LoseAcksWith(nil)
-	again, err := node.Create(ctx, user, request, tictactoe.Key)
+	again, err := node.Create(ctx, user, request, tictactoe.Key, session.Table{})
 	if err != nil || again.Revision != 1 {
 		t.Fatal(again, err)
 	}
@@ -532,7 +532,7 @@ func TestFinishedCellsAreEvictedOnceProjected(t *testing.T) {
 	node := c.node(t, "a", nil, 0)
 	ctx := context.Background()
 	game, x, o := joined(t, node)
-	waiting, err := node.Create(ctx, uuid.New(), uuid.New(), tictactoe.Key)
+	waiting, err := node.Create(ctx, uuid.New(), uuid.New(), tictactoe.Key, session.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,7 +582,7 @@ func TestCancelledCellsAreEvictedOnceProjected(t *testing.T) {
 	node := c.node(t, "a", nil, 0)
 	ctx := context.Background()
 	user := uuid.New()
-	game, err := node.Create(ctx, user, uuid.New(), tictactoe.Key)
+	game, err := node.Create(ctx, user, uuid.New(), tictactoe.Key, session.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}

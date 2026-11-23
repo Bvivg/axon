@@ -391,7 +391,7 @@ func TestDurakHistoryIsRedactedWhileLiveAndRevealedAfterwards(t *testing.T) {
 	h := New(Config{Store: session.NewStore(nil, games)})
 	a, b, stranger := uuid.New(), uuid.New(), uuid.New()
 	now := time.Now()
-	game, _, err := rules.Start(uuid.New(), durak.Key, a, b, false, now)
+	game, _, err := rules.Start(uuid.New(), durak.Key, []uuid.UUID{a, b}, session.Table{}, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestDurakListsRedactForTheCaller(t *testing.T) {
 	games := cardGames(t)
 	h := New(Config{Store: session.NewStore(nil, games)})
 	a, b := uuid.New(), uuid.New()
-	game, _, err := session.NewRules(games).Start(uuid.New(), durak.Key, a, b, false, time.Now())
+	game, _, err := session.NewRules(games).Start(uuid.New(), durak.Key, []uuid.UUID{a, b}, session.Table{}, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

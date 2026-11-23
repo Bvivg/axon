@@ -412,7 +412,7 @@ func moveError(err error) gamev1.SessionError {
 		return gamev1.SessionError_SESSION_ERROR_ILLEGAL_MOVE
 	case errors.Is(err, session.ErrNoDrawOffer):
 		return gamev1.SessionError_SESSION_ERROR_NO_DRAW_OFFER
-	case errors.Is(err, engine.ErrGameMismatch), errors.Is(err, engine.ErrMoveMalformed):
+	case errors.Is(err, engine.ErrGameMismatch), errors.Is(err, engine.ErrMoveMalformed), errors.Is(err, session.ErrTwoPlayers):
 		return gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND
 	case errors.Is(err, session.ErrRated), errors.Is(err, session.ErrNoUndo):
 		return gamev1.SessionError_SESSION_ERROR_UNDO_DISABLED

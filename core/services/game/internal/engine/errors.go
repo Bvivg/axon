@@ -28,4 +28,6 @@ var (
 	ErrDuplicatePlayer = errors.New("engine: player appears twice in the roster")
 
 	ErrSeedRequired = errors.New("engine: this game deals from a seed")
+
+	ErrInvalidOptions = errors.New("engine: invalid table options")
 )

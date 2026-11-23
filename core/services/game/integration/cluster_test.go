@@ -136,7 +136,7 @@ func TestOwnershipFailoverKeepsEveryAcceptedMove(t *testing.T) {
 	for i := range matches {
 		x, o := uuid.New(), uuid.New()
 		id := session.SessionID(x, uuid.New())
-		game, err := serving(id).Start(ctx, id, tictactoe.Key, x, o, true)
+		game, err := serving(id).Start(ctx, id, tictactoe.Key, []uuid.UUID{x, o}, session.Table{}, true)
 		if err != nil {
 			t.Fatal(err)
 		}

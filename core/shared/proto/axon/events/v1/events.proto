@@ -21,6 +21,7 @@ message GameFinished {
   repeated string moves = 9;
   optional string tournament_id = 10;
   optional uint32 plies = 11;
+  repeated uint32 places = 12;
 }
 
 message ChatMessageSent {

@@ -37,7 +37,7 @@ func (m *memoryStore) Apply(_ context.Context, game ledger.Game) (store.Applied,
 		return store.Applied{}, false, nil
 	}
 	changes := m.book.Changes[before:]
-	return store.Applied{Game: game, Before: [2]ledger.Player{changes[0].Before, changes[1].Before}, After: [2]ledger.Player{changes[0].After, changes[1].After}}, true, nil
+	return store.Applied{Game: game, Before: []ledger.Player{changes[0].Before, changes[1].Before}, After: []ledger.Player{changes[0].After, changes[1].After}}, true, nil
 }
 
 type memoryBoard struct {

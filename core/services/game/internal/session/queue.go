@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,7 +94,15 @@ func (s *Store) withTicket(ctx context.Context, user uuid.UUID, game engine.Key,
 	return item.ticket, tx.Commit(ctx)
 }
 
-func (s *Store) FindMatch(ctx context.Context, user, request uuid.UUID, game engine.Key) (Ticket, error) {
+func (s *Store) FindMatch(ctx context.Context, user, request uuid.UUID, game engine.Key, table Table) (Ticket, error) {
+	seats := max(table.Seats, DefaultSeats)
+	if err := s.games.ValidateTable(game, seats, table.Options); err != nil {
+		return Ticket{}, fmt.Errorf("%w: %w", ErrInvalidTable, err)
+	}
+	var options any
+	if len(table.Options) > 0 {
+		options = []byte(table.Options)
+	}
 	return s.withTicket(ctx, user, game, func(tx pgx.Tx) (queued, error) {
 		item, err := readTicket(ctx, tx, user, game, true)
 		switch {
@@ -106,10 +115,11 @@ func (s *Store) FindMatch(ctx context.Context, user, request uuid.UUID, game eng
 		if _, err := tx.Exec(ctx, `INSERT INTO game.ratings (user_id, game) VALUES ($1,$2) ON CONFLICT DO NOTHING`, user, game); err != nil {
 			return queued{}, err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO game.match_queue (user_id, game, rating, request_id)
-			SELECT $1, $2, rating, $3 FROM game.ratings WHERE user_id=$1 AND game=$2
+		if _, err := tx.Exec(ctx, `INSERT INTO game.match_queue (user_id, game, rating, request_id, seats, options, options_key)
+			SELECT $1, $2, rating, $3, $4, $5, $6 FROM game.ratings WHERE user_id=$1 AND game=$2
 			ON CONFLICT (user_id, game) DO UPDATE SET rating=EXCLUDED.rating, request_id=EXCLUDED.request_id,
-				joined_at=clock_timestamp(), last_seen_at=clock_timestamp(), session_id=NULL`, user, game, request); err != nil {
+				joined_at=clock_timestamp(), last_seen_at=clock_timestamp(), session_id=NULL,
+				seats=EXCLUDED.seats, options=EXCLUDED.options, options_key=EXCLUDED.options_key`, user, game, request, seats, options, string(table.Options)); err != nil {
 			return queued{}, err
 		}
 		return readTicket(ctx, tx, user, game, false)
@@ -180,34 +190,37 @@ func (s *Store) MatchRound(ctx context.Context) ([]Pairing, error) {
 	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT user_id, game, rating, joined_at FROM game.match_queue
-		WHERE session_id IS NULL AND last_seen_at >= $1 ORDER BY game, joined_at FOR UPDATE`, now.Add(-matchmaking.StaleAfter))
+	rows, err := tx.Query(ctx, `SELECT user_id, game, rating, joined_at, seats, options_key, options FROM game.match_queue
+		WHERE session_id IS NULL AND last_seen_at >= $1 ORDER BY game, seats, options_key, joined_at FOR UPDATE`, now.Add(-matchmaking.StaleAfter))
 	if err != nil {
 		return nil, err
 	}
-	queues := map[engine.Key][]matchmaking.Entry{}
-	var order []engine.Key
+	queues := map[queueKey][]matchmaking.Entry{}
+	tables := map[queueKey]Table{}
+	var order []queueKey
 	for rows.Next() {
 		var entry matchmaking.Entry
-		var game engine.Key
-		if err := rows.Scan(&entry.User, &game, &entry.Rating, &entry.JoinedAt); err != nil {
+		var key queueKey
+		var options []byte
+		if err := rows.Scan(&entry.User, &key.game, &entry.Rating, &entry.JoinedAt, &key.seats, &key.options, &options); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		if _, ok := queues[game]; !ok {
-			order = append(order, game)
+		if _, ok := queues[key]; !ok {
+			order = append(order, key)
+			tables[key] = Table{Seats: key.seats, Options: options}
 		}
-		queues[game] = append(queues[game], entry)
+		queues[key] = append(queues[key], entry)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	var created []Pairing
-	for _, game := range order {
-		for _, pair := range matchmaking.Match(queues[game], now, wait) {
-			item, err := s.pairUp(ctx, tx, game, pair, now)
-			if err != nil {
+	for _, key := range order {
+		for _, group := range matchmaking.Groups(queues[key], key.seats, now, wait) {
+			item := Pairing{ID: uuid.New(), Game: key.game, Players: group, Table: tables[key]}
+			if _, err := tx.Exec(ctx, `UPDATE game.match_queue SET session_id=$1, started=false WHERE game=$2 AND user_id = ANY($3)`, item.ID, key.game, group); err != nil {
 				return nil, err
 			}
 			created = append(created, item)
@@ -216,22 +229,26 @@ func (s *Store) MatchRound(ctx context.Context) ([]Pairing, error) {
 	return created, tx.Commit(ctx)
 }
 
-type Pairing struct {
-	ID       uuid.UUID
-	Game     engine.Key
-	Creator  uuid.UUID
-	Opponent uuid.UUID
+type queueKey struct {
+	game    engine.Key
+	seats   int
+	options string
 }
 
-func (s *Store) pairUp(ctx context.Context, tx pgx.Tx, game engine.Key, pair matchmaking.Pair, _ time.Time) (Pairing, error) {
-	item := Pairing{ID: uuid.New(), Game: game, Creator: pair.First.User, Opponent: pair.Second.User}
-	_, err := tx.Exec(ctx, `UPDATE game.match_queue SET session_id=$1, started=false WHERE game=$2 AND user_id = ANY($3)`, item.ID, game, []uuid.UUID{item.Creator, item.Opponent})
-	return item, err
+type Pairing struct {
+	ID      uuid.UUID
+	Game    engine.Key
+	Players []uuid.UUID
+	Table   Table
+}
+
+func (p Pairing) Plain() bool {
+	return len(p.Players) == DefaultSeats && len(p.Table.Options) == 0
 }
 
 func (s *Store) Pending(ctx context.Context) ([]Pairing, error) {
-	rows, err := s.pool.Query(ctx, `SELECT session_id, game, array_agg(user_id ORDER BY joined_at, user_id) FROM game.match_queue
-		WHERE session_id IS NOT NULL AND NOT started GROUP BY session_id, game`)
+	rows, err := s.pool.Query(ctx, `SELECT session_id, game, array_agg(user_id ORDER BY joined_at, user_id), max(seats), (array_agg(options))[1]
+		FROM game.match_queue WHERE session_id IS NOT NULL AND NOT started GROUP BY session_id, game`)
 	if err != nil {
 		return nil, err
 	}
@@ -239,14 +256,15 @@ func (s *Store) Pending(ctx context.Context) ([]Pairing, error) {
 	var pending []Pairing
 	for rows.Next() {
 		var item Pairing
-		var users []uuid.UUID
-		if err := rows.Scan(&item.ID, &item.Game, &users); err != nil {
+		var seats int
+		var options []byte
+		if err := rows.Scan(&item.ID, &item.Game, &item.Players, &seats, &options); err != nil {
 			return nil, err
 		}
-		if len(users) != 2 {
+		if len(item.Players) != seats {
 			continue
 		}
-		item.Creator, item.Opponent = users[0], users[1]
+		item.Table = Table{Seats: seats, Options: options}
 		pending = append(pending, item)
 	}
 	return pending, rows.Err()
@@ -261,7 +279,7 @@ func (s *Store) Started(ctx context.Context, item Pairing) error {
 	if _, err := tx.Exec(ctx, `UPDATE game.match_queue SET started=true WHERE session_id=$1`, item.ID); err != nil {
 		return err
 	}
-	for _, user := range []uuid.UUID{item.Creator, item.Opponent} {
+	for _, user := range item.Players {
 		if _, err := tx.Exec(ctx, `SELECT pg_notify($1,$2)`, matchChannel, user.String()); err != nil {
 			return err
 		}

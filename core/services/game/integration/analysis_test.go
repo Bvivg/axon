@@ -39,7 +39,7 @@ func TestOnlyRatedChessGamesRequestAnAnalysis(t *testing.T) {
 	t.Cleanup(node.RevokeAll)
 	mate := func(rated bool) session.Session {
 		x, o := uuid.New(), uuid.New()
-		game, err := node.Start(ctx, session.SessionID(x, uuid.New()), chess.Key, x, o, rated)
+		game, err := node.Start(ctx, session.SessionID(x, uuid.New()), chess.Key, []uuid.UUID{x, o}, session.Table{}, rated)
 		if err != nil {
 			t.Fatal(err)
 		}

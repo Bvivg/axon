@@ -47,7 +47,7 @@ func TestInitSeeded(t *testing.T) {
 		t.Fatalf("initial state %+v", state)
 	}
 	d, p := full(t, state)
-	if state.Turn != p.Attacker || d.Left != 24 || d.Held != [2]int{6, 6} || d.Trump != "JD" || len(d.Moves) != 0 {
+	if state.Turn != p.Attacker || d.Left != 24 || !slices.Equal(d.Held, []int{6, 6}) || d.Trump != "JD" || len(d.Moves) != 0 {
 		t.Fatalf("initial data %+v", d)
 	}
 	if moves := New().ValidMoves(state, players[1-state.Turn]); moves != nil {
@@ -124,7 +124,7 @@ func TestBoutThroughTheEngine(t *testing.T) {
 	}
 	state = apply(t, state, "pass")
 	d, p := full(t, state)
-	if state.Turn != 1 || p.Attacker != 1 || d.Held != [2]int{8, 6} || d.Left != 22 {
+	if state.Turn != 1 || p.Attacker != 1 || !slices.Equal(d.Held, []int{8, 6}) || d.Left != 22 {
 		t.Fatalf("after the take: turn %d held %v left %d", state.Turn, d.Held, d.Left)
 	}
 	if !slices.Equal(d.Moves, []string{"attack 6H", "defend 6H AH", "attack 6D", "take", "pass"}) {

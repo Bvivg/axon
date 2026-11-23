@@ -28,6 +28,8 @@ var procedures = map[string]Rule{
 	"/axon.game.v1.GameService/LeaveSession":      {Public: false, Tier: TierStandard},
 	"/axon.game.v1.GameService/GetSessionHistory": {Public: false, Tier: TierSearch},
 	"/axon.game.v1.GameService/ListLiveSessions":  {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/ListOpenTables":    {Public: false, Tier: TierStandard},
+	"/axon.game.v1.GameService/FillWithBots":      {Public: false, Tier: TierSensitive},
 
 	"/axon.analysis.v1.AnalysisService/GetAnalysis": {Public: false, Tier: TierStandard},
 

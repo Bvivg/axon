@@ -20,7 +20,11 @@ const (
 type Rank uint8
 
 const (
-	Six Rank = iota + 6
+	Two Rank = iota + 2
+	Three
+	Four
+	Five
+	Six
 	Seven
 	Eight
 	Nine
@@ -32,11 +36,13 @@ const (
 )
 
 const (
-	rankNames = "6789TJQKA"
+	rankNames = "23456789TJQKA"
 	suitNames = "SCDH"
 	DeckSize  = 36
 	HandSize  = 6
 )
+
+var deckSizes = map[int]Rank{24: Nine, 36: Six, 52: Two}
 
 type Card struct {
 	Rank Rank
@@ -44,7 +50,10 @@ type Card struct {
 }
 
 func (c Card) String() string {
-	return string([]byte{rankNames[c.Rank-Six], suitNames[c.Suit]})
+	if c.Rank < Two || c.Rank > Ace || c.Suit > Hearts {
+		return ""
+	}
+	return string([]byte{rankNames[c.Rank-Two], suitNames[c.Suit]})
 }
 
 func ParseCard(raw string) (Card, error) {
@@ -56,13 +65,21 @@ func ParseCard(raw string) (Card, error) {
 	if rank < 0 || suit < 0 {
 		return Card{}, fmt.Errorf("%w: card %q", ErrBadMove, raw)
 	}
-	return Card{Rank: Six + Rank(rank), Suit: Suit(suit)}, nil
+	return Card{Rank: Two + Rank(rank), Suit: Suit(suit)}, nil
 }
 
 func Deck() []Card {
-	deck := make([]Card, 0, DeckSize)
+	return DeckOf(DeckSize)
+}
+
+func DeckOf(size int) []Card {
+	lowest, ok := deckSizes[size]
+	if !ok {
+		return nil
+	}
+	deck := make([]Card, 0, size)
 	for suit := Spades; suit <= Hearts; suit++ {
-		for rank := Six; rank <= Ace; rank++ {
+		for rank := lowest; rank <= Ace; rank++ {
 			deck = append(deck, Card{Rank: rank, Suit: suit})
 		}
 	}
@@ -70,11 +87,15 @@ func Deck() []Card {
 }
 
 func Shuffled(seed uint64) []Card {
+	return ShuffledDeck(seed, DeckSize)
+}
+
+func ShuffledDeck(seed uint64, size int) []Card {
 	var key [32]byte
 	binary.LittleEndian.PutUint64(key[:8], seed)
 	copy(key[8:], "axon.durak.deck.v1")
 	rng := rand.NewChaCha8(key)
-	deck := Deck()
+	deck := DeckOf(size)
 	for i := len(deck) - 1; i > 0; i-- {
 		j := int(rng.Uint64() % uint64(i+1))
 		deck[i], deck[j] = deck[j], deck[i]
@@ -98,6 +119,10 @@ func sortHand(hand []Card, trump Suit) {
 		return suit*16 + int(c.Rank)
 	}
 	slices.SortFunc(hand, func(a, b Card) int { return weight(a) - weight(b) })
+}
+
+func byIdentity(a, b Card) int {
+	return int(a.Suit)*16 + int(a.Rank) - int(b.Suit)*16 - int(b.Rank)
 }
 
 func names(cards []Card) []string {

@@ -10,6 +10,8 @@ export function moveLabel(move: string) {
   const [action, first, second] = move.split(" ");
   if (action === "attack" && first) return short(first);
   if (action === "defend" && first && second) return `${short(first)} / ${short(second)}`;
+  if (action === "transfer" && first) return `→ ${short(first)}`;
+  if (action === "catch" && first) return `Catch ${short(first)}`;
   return action === "take" ? "Take" : action === "pass" ? "Pass" : move;
 }
 
