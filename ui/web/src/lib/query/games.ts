@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { SessionStatus, type Rating, type Session } from "@/gen/axon/game/v1/game_pb";
 import { gameClient } from "@/lib/connect/clients";
+import { emptyFeed, mergeFeed, type Feed } from "@/lib/games/tv";
 
 export const sessionsKey = ["game", "sessions"] as const;
 export const sessionKey = (id: string) => ["game", "session", id] as const;
@@ -23,6 +24,21 @@ export function useLiveSessions(game: string) {
     queryKey: liveSessionsKey(game),
     queryFn: async ({ signal }) => (await gameClient.listLiveSessions({ game }, { signal })).sessions,
     refetchInterval: 15_000,
+  });
+}
+
+export const liveFeedKey = (user?: string) => ["game", "tv", user ?? ""] as const;
+
+export function useLiveFeed(user?: string) {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: liveFeedKey(user),
+    queryFn: async ({ signal }) => {
+      const { sessions } = await gameClient.listLiveSessions({}, { signal });
+      return mergeFeed(client.getQueryData<Feed>(liveFeedKey(user)) ?? emptyFeed, sessions, user);
+    },
+    refetchInterval: 10_000,
+    enabled: Boolean(user),
   });
 }
 

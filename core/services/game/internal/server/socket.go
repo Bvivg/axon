@@ -82,6 +82,10 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 		h.watchMatch(ctx, cancel, conn, user, engine.Key(game), write)
 		return
 	}
+	if watch := first.GetWatch(); watch != nil {
+		h.watchFeed(ctx, r.Header, watch, write, commands(ctx, cancel, conn, read, invalidCommand))
+		return
+	}
 	id, err := sessionID(first.GetSubscribe())
 	if err != nil {
 		_ = fail(gamev1.SessionError_SESSION_ERROR_INVALID_COMMAND)
@@ -136,26 +140,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 	if push(initial, nil) != nil {
 		return
 	}
-	commands := make(chan incoming)
-	go func() {
-		defer cancel()
-		limiter, flood := rate.NewLimiter(4, 8), rate.NewLimiter(20, 40)
-		for {
-			command, err := read(ctx)
-			if err != nil && !errors.Is(err, invalidCommand) {
-				return
-			}
-			if !flood.Allow() {
-				_ = conn.Close(ws.StatusPolicyViolation, "Too many commands")
-				return
-			}
-			select {
-			case commands <- incoming{command: command, limited: !limiter.Allow()}:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	incomingCommands := commands(ctx, cancel, conn, read, invalidCommand)
 
 	for {
 		select {
@@ -168,7 +153,7 @@ func (h *Handler) Socket(w http.ResponseWriter, r *http.Request) {
 			if push(h.owner.Get(ctx, id, user)) != nil {
 				return
 			}
-		case next := <-commands:
+		case next := <-incomingCommands:
 			if next.limited {
 				if fail(gamev1.SessionError_SESSION_ERROR_RATE_LIMITED) != nil {
 					return
@@ -318,22 +303,7 @@ func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, inco
 		_ = client.Close(StatusMoved, "game moved")
 		return
 	}
-	header := http.Header{}
-	header.Set("Authorization", incoming.Get("Authorization"))
-	header.Set(HopHeader, "1")
-	if user := incoming.Get(TestUserHeader); user != "" && h.hooks {
-		header.Set(TestUserHeader, user)
-	}
-	socketScheme := "ws"
-	if h.scheme == "https" {
-		socketScheme = "wss"
-	}
-	upstream, err := ws.Dial(ctx, socketScheme+"://"+address+"/ws", ws.DialOptions{
-		HTTPClient:   h.sockets,
-		Subprotocols: []string{Protocol},
-		Header:       header,
-		Options:      ws.Options{ReadLimit: ws.LargeMessageReadLimit},
-	})
+	upstream, err := h.dialOwner(ctx, address, incoming)
 	if err != nil {
 		_ = client.Close(StatusMoved, "game moved")
 		return
@@ -344,6 +314,25 @@ func (h *Handler) relay(ctx context.Context, client *ws.Conn, id uuid.UUID, inco
 		return
 	}
 	join(ctx, client, upstream)
+}
+
+func (h *Handler) dialOwner(ctx context.Context, address string, incoming http.Header) (*ws.Conn, error) {
+	header := http.Header{}
+	header.Set("Authorization", incoming.Get("Authorization"))
+	header.Set(HopHeader, "1")
+	if user := incoming.Get(TestUserHeader); user != "" && h.hooks {
+		header.Set(TestUserHeader, user)
+	}
+	socketScheme := "ws"
+	if h.scheme == "https" {
+		socketScheme = "wss"
+	}
+	return ws.Dial(ctx, socketScheme+"://"+address+"/ws", ws.DialOptions{
+		HTTPClient:   h.sockets,
+		Subprotocols: []string{Protocol},
+		Header:       header,
+		Options:      ws.Options{ReadLimit: ws.LargeMessageReadLimit},
+	})
 }
 
 func join(ctx context.Context, client, upstream *ws.Conn) {
@@ -381,6 +370,30 @@ func pipe(ctx context.Context, from, to *ws.Conn) {
 type incoming struct {
 	command *gamev1.SessionCommand
 	limited bool
+}
+
+func commands(ctx context.Context, cancel context.CancelFunc, conn *ws.Conn, read func(context.Context) (*gamev1.SessionCommand, error), invalid error) <-chan incoming {
+	out := make(chan incoming)
+	go func() {
+		defer cancel()
+		limiter, flood := rate.NewLimiter(4, 8), rate.NewLimiter(20, 40)
+		for {
+			command, err := read(ctx)
+			if err != nil && !errors.Is(err, invalid) {
+				return
+			}
+			if !flood.Allow() {
+				_ = conn.Close(ws.StatusPolicyViolation, "Too many commands")
+				return
+			}
+			select {
+			case out <- incoming{command: command, limited: !limiter.Allow()}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
 }
 
 func moveError(err error) gamev1.SessionError {

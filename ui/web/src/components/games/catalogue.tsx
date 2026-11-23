@@ -1,6 +1,6 @@
 "use client";
 
-import { BrickWall, ChessKnight, Circle, CircleDot, Gamepad2, Spade, Trophy, X } from "lucide-react";
+import { BrickWall, ChessKnight, Circle, CircleDot, Gamepad2, Spade, Trophy, Tv, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -22,6 +22,8 @@ import { usePublicProfiles } from "@/lib/query/people";
 import { tournamentsHref } from "@/lib/query/tournaments";
 
 export const ticTacToeLobbyHref = lobbyHref(GameKey.TicTacToe);
+
+export const tvHref = "/games/tv";
 
 export function TicTacToeIcon({ className = "size-8" }: { className?: string }) {
   return (
@@ -114,6 +116,20 @@ export function GamesSidebar() {
             <p className="px-4 py-2 text-xs text-muted-foreground">No games found</p>
           )}
         </nav>
+        {!needle || "axon tv live".includes(needle) ? (
+          <>
+            <ListLabel>Watch</ListLabel>
+            <nav aria-label="Watch" className="flex flex-col gap-0.5">
+              <ListItem
+                href={tvHref}
+                active={pathname === tvHref}
+                leading={<ListIcon icon={Tv} />}
+                title="Axon TV"
+                subtitle="Live games"
+              />
+            </nav>
+          </>
+        ) : null}
         {!needle || "tournaments".includes(needle) ? (
           <>
             <ListLabel>Compete</ListLabel>
@@ -173,6 +189,7 @@ export function GamesCatalogue() {
             <Link href={lobbyHref(GameKey.Durak)} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Durak</Link>
             <Link href={ticTacToeLobbyHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Open Tic-Tac-Toe</Link>
             <Link href={tournamentsHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Tournaments</Link>
+            <Link href={tvHref} className={buttonVariants({ variant: "outline", className: "min-h-10" })}>Axon TV</Link>
           </div>
         </EmptyState>
       </div>

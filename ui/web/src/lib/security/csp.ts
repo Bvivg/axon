@@ -2,6 +2,7 @@ export type PolicySources = {
   gateway: string;
   assets?: string;
   development: boolean;
+  embeddable?: boolean;
 };
 
 const origin = (value: string | undefined): string | undefined => {
@@ -21,7 +22,7 @@ export function newNonce(): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
-export function contentSecurityPolicy(nonce: string, { gateway, assets, development }: PolicySources): string {
+export function contentSecurityPolicy(nonce: string, { gateway, assets, development, embeddable = false }: PolicySources): string {
   const api = origin(gateway);
   const store = origin(assets);
   const list = (...sources: (string | undefined | false)[]) => [...new Set(sources.filter((source): source is string => Boolean(source)))].join(" ");
@@ -40,6 +41,6 @@ export function contentSecurityPolicy(nonce: string, { gateway, assets, developm
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
-    `frame-ancestors 'none'`,
+    `frame-ancestors ${embeddable ? "'self'" : "'none'"}`,
   ].join("; ");
 }

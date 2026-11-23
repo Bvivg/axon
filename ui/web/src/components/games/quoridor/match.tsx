@@ -29,7 +29,7 @@ export function QuoridorGame({ id }: { id: string }) {
   return <SessionLoader id={id}>{session => <QuoridorMatch key={id} initial={session} />}</SessionLoader>;
 }
 
-function reason(game: Session) {
+export function quoridorReason(game: Session) {
   if (game.timedOut) return "Time's up";
   if (game.resigned) return "Resignation";
   if (game.moveLimit) return "Move limit";
@@ -104,7 +104,7 @@ function QuoridorMatch({ initial }: { initial: Session }) {
   };
   const left = (seat: number) => board?.wallsLeft[seat] ?? wallsEach;
   const delta = ratingDelta(game, user?.id);
-  const why = reason(game);
+  const why = quoridorReason(game);
   const status = spectating ? spectatorStatus(game, names, [...seatNames])
     : game.status === SessionStatus.DRAW ? "Draw"
     : game.status === SessionStatus.WON ? (won ? "You won" : "You lost")

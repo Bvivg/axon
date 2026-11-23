@@ -20,6 +20,12 @@ describe("contentSecurityPolicy", () => {
     expect(policy.get("form-action")).toEqual(["'self'"]);
   });
 
+  it("lets only embeddable pages be framed, and only by the same origin", () => {
+    const embedded = directives(contentSecurityPolicy("n", { gateway: "/api", development: false, embeddable: true }));
+    expect(embedded.get("frame-ancestors")).toEqual(["'self'"]);
+    expect(embedded.get("frame-src")).toEqual(["'none'"]);
+  });
+
   it("reaches the gateway over HTTP and WebSocket and nothing else", () => {
     expect(policy.get("connect-src")).toEqual(["'self'", "http://localhost:18080", "ws://localhost:18080"]);
   });

@@ -271,8 +271,13 @@ message SessionCommand {
     QuoridorMove quoridor_move = 7;
     CheckersMove checkers_move = 8;
     DurakMove durak_move = 9;
+    WatchSessions watch = 10;
   }
   optional string traceparent = 15;
+}
+
+message WatchSessions {
+  repeated string session_ids = 1;
 }
 
 message QuoridorMove {

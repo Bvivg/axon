@@ -34,7 +34,7 @@ export function CheckersGame({ id }: { id: string }) {
   return <SessionLoader id={id}>{session => <CheckersMatch key={id} initial={session} />}</SessionLoader>;
 }
 
-function reason(game: Session) {
+export function checkersReason(game: Session) {
   if (game.timedOut) return "Time's up";
   if (game.resigned) return "Resignation";
   if (game.agreedDraw) return "Draw agreed";
@@ -109,7 +109,7 @@ function CheckersMatch({ initial }: { initial: Session }) {
   };
   const count = (seat: number) => squares.filter(piece => sideOf(piece) === seat).length;
   const delta = ratingDelta(game, user?.id);
-  const why = reason(game);
+  const why = checkersReason(game);
   const legal = game.checkers?.legalMoves ?? [];
   const forced = myTurn && legal.some(move => move.includes("x"));
   const status = spectating ? spectatorStatus(game, names, seatNames)

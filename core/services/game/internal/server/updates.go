@@ -25,14 +25,22 @@ func newUpdates() updates {
 }
 
 func (u *updates) subscribe(id uuid.UUID) (<-chan struct{}, <-chan struct{}, func()) {
+	item := &listener{inbox: make(chan struct{}, 1), gone: make(chan struct{})}
+	return item.inbox, item.gone, u.add(id, item)
+}
+
+func (u *updates) share(id uuid.UUID, inbox chan struct{}) func() {
+	return u.add(id, &listener{inbox: inbox, gone: make(chan struct{})})
+}
+
+func (u *updates) add(id uuid.UUID, item *listener) func() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.sessions[id] == nil {
 		u.sessions[id] = map[*listener]struct{}{}
 	}
-	item := &listener{inbox: make(chan struct{}, 1), gone: make(chan struct{})}
 	u.sessions[id][item] = struct{}{}
-	return item.inbox, item.gone, func() {
+	return func() {
 		u.mu.Lock()
 		defer u.mu.Unlock()
 		delete(u.sessions[id], item)
