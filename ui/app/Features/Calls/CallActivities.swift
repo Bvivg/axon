@@ -34,39 +34,40 @@ extension CallEngine {
 
 @MainActor
 final class CallActivities {
-    private var current: (activity: String, call: String)?
-
     func show(_ snapshot: CallActivitySnapshot?) {
         #if os(iOS)
         guard let snapshot else {
             end()
             return
         }
+        let call = snapshot.callID
+        Self.endAll(except: call)
         let state = CallActivityAttributes.ContentState(status: snapshot.status, connectedAt: snapshot.connectedAt, muted: snapshot.muted)
-        if let current, current.call == snapshot.callID {
-            let id = current.activity
+        if let id = Activity<CallActivityAttributes>.activities.first(where: { $0.attributes.callID == call })?.id {
             Task.detached { await Self.activity(id)?.update(ActivityContent(state: state, staleDate: nil)) }
             return
         }
-        end()
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let attributes = CallActivityAttributes(callID: snapshot.callID, name: snapshot.name, video: snapshot.video)
-        if let activity = try? Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil)) {
-            current = (activity.id, snapshot.callID)
-        }
+        let attributes = CallActivityAttributes(callID: call, name: snapshot.name, video: snapshot.video)
+        _ = try? Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
         #endif
     }
 
     func end() {
         #if os(iOS)
-        guard let current else { return }
-        self.current = nil
-        let id = current.activity
-        Task.detached { await Self.activity(id)?.end(nil, dismissalPolicy: .immediate) }
+        Self.endAll(except: nil)
         #endif
     }
 
     #if os(iOS)
+    private nonisolated static func endAll(except call: String?) {
+        let ids = Activity<CallActivityAttributes>.activities.filter { $0.attributes.callID != call }.map(\.id)
+        guard !ids.isEmpty else { return }
+        Task.detached {
+            for id in ids { await activity(id)?.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     private nonisolated static func activity(_ id: String) -> Activity<CallActivityAttributes>? {
         Activity<CallActivityAttributes>.activities.first { $0.id == id }
     }

@@ -98,8 +98,11 @@ struct HomeView: View {
             follow(link)
         }
         .onChange(of: spotlight) { _, entries in Spotlight.index(entries) }
-        .onChange(of: engine.activitySnapshot) { _, snapshot in activities.show(snapshot) }
-        .onDisappear { lobby.stop() }
+        .onChange(of: engine.activitySnapshot, initial: true) { _, snapshot in activities.show(snapshot) }
+        .onDisappear {
+            lobby.stop()
+            activities.end()
+        }
         .environment(\.media, app.services.media)
     }
 
