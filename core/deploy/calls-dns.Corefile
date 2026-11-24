@@ -15,3 +15,13 @@ https://axon.test:8443 {
  errors
  log
 }
+
+https://axon.test:8444 {
+ tls /tls/server.crt /tls/server.key
+ hosts {
+  {$AXON_LAN_IP} axon.test
+ }
+ cache 30
+ errors
+ log
+}

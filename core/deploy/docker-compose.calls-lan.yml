@@ -4,6 +4,8 @@ services:
     image: coredns/coredns:1.13.1
     restart: unless-stopped
     command: ["-conf", "/Corefile"]
+    environment:
+      AXON_LAN_IP: ${AXON_LAN_IP:-192.168.2.1}
     volumes:
       - ./calls-dns.Corefile:/Corefile:ro
       - ../../.local/evidence/calls/LAN/.secrets/server.crt:/tls/server.crt:ro
@@ -15,6 +17,7 @@ services:
       - "100.66.60.10:1053:53/udp"
       - "100.66.60.10:1053:53/tcp"
       - "100.66.60.10:8443:8443/tcp"
+      - "${AXON_LAN_IP:-192.168.2.1}:8443:8444/tcp"
   calls-check:
     profiles: ["tools"]
     image: axon-calls-spike-playwright:local
@@ -52,7 +55,7 @@ services:
     environment:
       AVATARS_PUBLIC_URL: https://axon.test/storage
       OAUTH_FAKE_ENABLED: "false"
-      OAUTH_REDIRECT_BASE_URL: /auth/callback
+      OAUTH_REDIRECT_BASE_URL: https://axon.test/auth/callback
       OAUTH_ALLOWED_RETURN_ORIGINS: http://localhost:3003,http://127.0.0.1:3003,https://axon.test,https://axon.test:3443,https://${AXON_LAN_IP:-192.168.2.1},https://${AXON_LAN_ALT_IP:-10.80.10.122},https://${AXON_LAN_IP:-192.168.2.1}:3443,https://${AXON_LAN_ALT_IP:-10.80.10.122}:3443
   chat:
     env_file:
