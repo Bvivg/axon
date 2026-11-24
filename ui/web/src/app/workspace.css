@@ -54,12 +54,12 @@
 .workspace-nav-icon > svg { width: 19px; height: 19px; }
 .workspace-rail-link[aria-current] .workspace-nav-label { font-weight: 750; }
 .workspace-rail-bottom { margin-top: auto; }
-.workspace-user-link { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--color-line); padding: 10px 8px; border-radius: 10px; }
+.workspace-user-link { display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--color-line); padding: 6px 5px; border-radius: 10px; }
 .workspace-user-link:hover { background: var(--color-surface-raised); }
 .workspace-user-link > span { flex: 1; min-width: 0; }
 .workspace-user-link strong, .workspace-user-link small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-user-link strong { font-size: 12px; }
-.workspace-user-link small { color: var(--color-muted-foreground); margin-top: 4px; font-size: 10px; }
+.workspace-user-link strong { font-size: 13px; line-height: 18px; }
+.workspace-user-link small { color: var(--color-muted-foreground); margin-top: 2px; font-size: 12px; line-height: 16px; }
 .workspace-unread-dot { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--color-destructive); }
 .workspace-context { display: flex; min-height: 0; min-width: 0; flex-direction: column; overflow: hidden; border-inline-end: 1px solid var(--color-line); background: var(--color-surface); padding: 8px 0 0; }
 .workspace-main, .workspace-content { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }
