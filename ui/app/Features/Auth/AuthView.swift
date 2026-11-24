@@ -23,7 +23,7 @@ struct AuthView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 12) {
                     Picker("Mode", selection: $model.mode) {
                         ForEach(AuthViewModel.Mode.allCases) { mode in
                             Text(mode.rawValue).tag(mode)
@@ -35,8 +35,8 @@ struct AuthView: View {
                     card
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 32)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
                 .frame(maxWidth: 432)
                 .frame(maxWidth: .infinity)
             }
@@ -67,7 +67,7 @@ struct AuthView: View {
     }
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(model.mode == .login ? "Sign in to Axon" : "Create your account")
                 .font(.geist(20, .semibold, relativeTo: .title3))
                 .tracking(-0.3)
@@ -87,15 +87,16 @@ struct AuthView: View {
                     Text(model.mode == .login ? "Sign in" : "Create account").opacity(model.isSubmitting ? 0 : 1)
                     if model.isSubmitting {
                         ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 18, height: 18)
+                            .accessibilityHidden(true)
                     }
                 }
                 .font(.geist(15, .medium, relativeTo: .body))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: 34)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.roundedRectangle(radius: 10))
-            .controlSize(.large)
             .disabled(!model.canSubmit)
             .accessibilityIdentifier(AccessibilityID.Auth.submit)
             if !OAuthProvider.allCases.isEmpty {
@@ -108,7 +109,7 @@ struct AuthView: View {
                 }
             }
         }
-        .surface(padding: 24, cornerRadius: 18)
+        .surface(padding: 16, cornerRadius: 18)
         .animation(.snappy, value: model.mode)
         .animation(.snappy, value: model.error)
     }
@@ -124,7 +125,7 @@ struct AuthView: View {
     }
 
     private var fields: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             FormField("Email") {
                 TextField("you@example.com", text: $model.email)
                     .textContentType(.username)
@@ -203,6 +204,9 @@ private struct ProviderButton: View {
             HStack(spacing: 10) {
                 if busy {
                     ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 18, height: 18)
+                        .accessibilityHidden(true)
                 } else {
                     Image(provider.logo)
                         .resizable()

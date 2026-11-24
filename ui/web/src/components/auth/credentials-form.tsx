@@ -165,7 +165,10 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
       ) : null}
 
       <Field>
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-baseline justify-between gap-3">
+          <Label htmlFor="password">Password</Label>
+          {mode === Mode.Login ? <Link href="/forgot-password" className="rounded-sm text-sm font-medium text-signal underline-offset-4 hover:underline">Forgot password?</Link> : null}
+        </div>
         <InputGroup invalid={credentialsWrong} className="h-10 rounded-[10px] pr-1 md:pr-0.5">
           <InputGroupInput
             id="password"
@@ -193,7 +196,6 @@ export function CredentialsForm({ mode }: { mode: Mode }) {
         {credentialsWrong ? <FieldError id="password-error">{failure.message}</FieldError> : null}
       </Field>
 
-      {mode === Mode.Login ? <Link href="/forgot-password" className="self-end rounded-sm py-1 text-sm font-medium text-signal underline underline-offset-4">Forgot password?</Link> : null}
       <Button type="submit" size="lg" className="mt-1 min-h-11 w-full" disabled={pending} aria-busy={pending}>
         {pending ? <Spinner /> : null}
         {mode === Mode.Login ? (pending ? "Signing in" : "Sign in") : pending ? "Creating account" : "Create account"}

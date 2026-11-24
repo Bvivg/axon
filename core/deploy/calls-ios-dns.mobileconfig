@@ -6,7 +6,7 @@
 <key>PayloadIdentifier</key><string>test.axon.lan.dns</string>
 <key>PayloadUUID</key><string>748D802B-6E34-4D60-9A99-20C3C2AC9BD2</string>
 <key>PayloadDisplayName</key><string>AXON Local DNS</string>
-<key>PayloadDescription</key><string>Resolve only axon.test through this Mac. Requires trusted AXON LAN CA and the Mac Tailscale connection. Other domains keep their current DNS.</string>
+<key>PayloadDescription</key><string>Resolve only axon.test through this Mac. Requires the trusted AXON LAN CA and the Mac hotspot. Other domains keep their current DNS.</string>
 <key>PayloadContent</key><array><dict>
 <key>PayloadType</key><string>com.apple.dnsSettings.managed</string>
 <key>PayloadVersion</key><integer>1</integer>
@@ -15,8 +15,8 @@
 <key>PayloadDisplayName</key><string>AXON axon.test only</string>
 <key>DNSSettings</key><dict>
 <key>DNSProtocol</key><string>HTTPS</string>
-<key>ServerURL</key><string>https://axon.test:8443/dns-query</string>
-<key>ServerAddresses</key><array><string>100.66.60.10</string></array>
+<key>ServerURL</key><string>https://192.168.2.1:8443/dns-query</string>
+<key>ServerAddresses</key><array><string>192.168.2.1</string></array>
 <key>SupplementalMatchDomains</key><array><string>axon.test</string></array>
 </dict>
 </dict></array>

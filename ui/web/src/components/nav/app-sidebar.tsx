@@ -42,7 +42,7 @@ export function AppSidebar() {
       <div className="workspace-rail-bottom">
         {user ? <Link href="/profile?view=account" className="workspace-user-link" aria-label="My account">
           <Avatar self src={user.avatarUrls?.small || user.avatarUrl} alt="" fallback={initials(personName(user))} sizes="38px" className="size-[38px] rounded-xl text-xs" />
-          <span><strong>{personName(user)}</strong><small>{user.username ? `@${user.username}` : user.email}</small></span><ChevronRight aria-hidden size={17} />
+          <span><strong>{personName(user)}</strong><small>{user.username ? `@${user.username}` : user.email}</small></span><ChevronRight aria-hidden size={14} className="shrink-0" />
         </Link> : null}
       </div>
     </aside>
