@@ -139,13 +139,20 @@ struct MessageBubble: View {
                 ReplyQuote(author: model.name(of: message.replyTo.authorID), text: message.replyTo.summary)
                     .onTapGesture { actions.jump(message.replyTo.id) }
             }
-            content
+            if message.content == .text {
+                TextWithFooter(text: message.body) { footer }
+            } else {
+                content
+            }
             if !message.caption.isEmpty, message.content != .text, !message.isDeleted {
                 LinkedText(text: message.body)
             }
-            footer
+            if message.content != .text {
+                footer.frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
-        .padding(mediaOnly ? 4 : 10)
+        .padding(.horizontal, mediaOnly ? 4 : 12)
+        .padding(.vertical, mediaOnly ? 4 : 7)
         .background(mine ? Theme.outgoing : Theme.incoming, in: .rect(cornerRadius: 18, style: .continuous))
     }
 
@@ -190,7 +197,6 @@ struct MessageBubble: View {
         }
         .font(.axMono(10, relativeTo: .caption2))
         .foregroundStyle(Theme.muted)
-        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, mediaOnly ? 6 : 0)
         .padding(.bottom, mediaOnly ? 2 : 0)
     }
@@ -308,18 +314,17 @@ struct OutgoingRow: View {
                             .font(.axSubheadline)
                             .foregroundStyle(Theme.muted)
                     }
-                    if !item.draft.body.isEmpty {
-                        LinkedText(text: item.draft.body)
+                    TextWithFooter(text: item.draft.body) {
+                        HStack(spacing: 4) {
+                            Text(item.createdAt.formatted(date: .omitted, time: .shortened))
+                            status
+                        }
+                        .font(.axMono(10, relativeTo: .caption2))
+                        .foregroundStyle(Theme.muted)
                     }
-                    HStack(spacing: 4) {
-                        Text(item.createdAt.formatted(date: .omitted, time: .shortened))
-                        status
-                    }
-                    .font(.axMono(10, relativeTo: .caption2))
-                    .foregroundStyle(Theme.muted)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .padding(10)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
                 .background(Theme.outgoing.opacity(0.7), in: .rect(cornerRadius: 18, style: .continuous))
                 if case .failed(let reason) = item.status {
                     HStack(spacing: 8) {

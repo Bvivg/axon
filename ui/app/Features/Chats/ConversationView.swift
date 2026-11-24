@@ -264,9 +264,9 @@ extension ConversationView {
                 }
                 .accessibilityIdentifier(AccessibilityID.Chats.more)
             }
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .leadingAvatar) {
                 NavigationLink(value: Route.roomInfo(room)) {
-                    Avatar(name: model.title, url: model.avatar, size: 32, cornerRadius: 16)
+                    Avatar(name: model.title, url: model.avatar, size: 44, cornerRadius: 22)
                 }
                 .accessibilityLabel("Chat info")
                 .accessibilityIdentifier(AccessibilityID.Chats.info)
